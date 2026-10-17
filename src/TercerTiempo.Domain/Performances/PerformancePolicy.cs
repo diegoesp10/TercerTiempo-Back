@@ -1,21 +1,24 @@
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
-using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Domain.Performances;
 
-/// <summary>Reglas que deciden si un jugador puede registrar su rendimiento en un partido.</summary>
+/// <summary>Reglas que deciden quién puede registrar el acta de un partido y para qué plantilla.</summary>
 public static class PerformancePolicy
 {
-    public static void EnsureCanLog(Player player, Match match, Guid teamId)
+    public static void EnsureCanRecord(Squad squad, Guid coachId, Match match)
     {
-        if (!match.Involves(teamId))
-            throw new DomainException("Tu equipo no participa en este partido.");
+        if (!squad.IsStaff(coachId))
+            throw new DomainException("Solo el cuerpo técnico de la plantilla puede registrar el acta.");
+
+        if (match.SeasonId != squad.SeasonId)
+            throw new DomainException("El partido no pertenece a la temporada de esta plantilla.");
+
+        if (!match.Involves(squad.TeamId))
+            throw new DomainException("El equipo de la plantilla no participa en este partido.");
 
         if (match.Status != MatchStatus.Played)
-            throw new DomainException("Solo se puede registrar el rendimiento de partidos ya disputados.");
-
-        if (!player.IsActiveIn(teamId, match.SeasonId))
-            throw new DomainException("No perteneces a la plantilla activa de este equipo en la temporada del partido.");
+            throw new DomainException("Solo se puede registrar el acta de partidos ya disputados.");
     }
 }

@@ -48,6 +48,12 @@ internal sealed class GlobalExceptionHandler(
         UnauthenticatedException ex => Problem(StatusCodes.Status401Unauthorized, "No autenticado", ex.Message),
         InvalidCredentialsException ex => Problem(StatusCodes.Status401Unauthorized, "Credenciales incorrectas", ex.Message),
 
+        // Cuerpo JSON malformado, enum desconocido, parámetro obligatorio ausente... (en Development el framework los lanza).
+        BadHttpRequestException ex => Problem(
+            ex.StatusCode,
+            "Petición no válida",
+            ex.InnerException is JsonException json ? $"{ex.Message} {json.Message}" : ex.Message),
+
         _ => Problem(StatusCodes.Status500InternalServerError, "Error interno", "Se ha producido un error inesperado."),
     };
 

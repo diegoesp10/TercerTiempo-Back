@@ -1,0 +1,74 @@
+using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Players;
+
+namespace TercerTiempo.Domain.Squads;
+
+/// <summary>
+/// Ficha de un jugador dentro de la plantilla que gestiona el cuerpo técnico. Puede venir de la plantilla publicada
+/// por el proveedor (RosterEntryId) o añadirse a mano, y puede estar vinculada a un jugador con cuenta (PlayerId).
+/// </summary>
+public sealed class SquadPlayer : Entity
+{
+    public Guid SquadId { get; private set; }
+    public string FullName { get; private set; } = string.Empty;
+    public string NormalizedName { get; private set; } = string.Empty;
+    public Position? Position { get; private set; }
+    public int? ShirtNumber { get; private set; }
+    public Guid? RosterEntryId { get; private set; }
+    public Guid? PlayerId { get; private set; }
+    public SquadPlayerStatus Status { get; private set; }
+    public DateTimeOffset AddedAt { get; private set; }
+    public DateTimeOffset? LeftAt { get; private set; }
+
+    public bool IsActive => Status == SquadPlayerStatus.Active;
+    public bool IsLinked => PlayerId is not null;
+
+    private SquadPlayer() { }
+
+    internal static SquadPlayer Create(Guid squadId, string fullName, Position? position, int? shirtNumber, Guid? rosterEntryId, DateTimeOffset now)
+    {
+        var player = new SquadPlayer
+        {
+            Id = NewId(),
+            SquadId = Guard.NotEmpty(squadId, nameof(squadId)),
+            RosterEntryId = rosterEntryId,
+            Status = SquadPlayerStatus.Active,
+            AddedAt = now,
+        };
+        player.Update(fullName, position, shirtNumber);
+        return player;
+    }
+
+    internal void Update(string fullName, Position? position, int? shirtNumber)
+    {
+        if (position is { } p && !Enum.IsDefined(p))
+            throw new DomainException("Posición no válida.");
+
+        if (shirtNumber is < 1 or > 99)
+            throw new DomainException("El dorsal debe estar entre 1 y 99.");
+
+        var name = Guard.NotEmpty(fullName, "nombre", 150);
+        FullName = name;
+        NormalizedName = NameNormalizer.Normalize(name);
+        Position = position;
+        ShirtNumber = shirtNumber;
+    }
+
+    internal void Link(Guid playerId) => PlayerId = Guard.NotEmpty(playerId, nameof(playerId));
+
+    internal void Unlink() => PlayerId = null;
+
+    internal void Leave(DateTimeOffset now)
+    {
+        Status = SquadPlayerStatus.Left;
+        LeftAt = now;
+    }
+
+    internal void Reactivate()
+    {
+        Status = SquadPlayerStatus.Active;
+        LeftAt = null;
+    }
+
+    public bool Matches(string name) => NormalizedName == NameNormalizer.Normalize(name);
+}

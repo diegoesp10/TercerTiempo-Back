@@ -1,22 +1,24 @@
+using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Standings;
 using TercerTiempo.Domain.Competitions;
-using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Teams.GetTeam;
 
-/// <summary>Ficha del equipo: clasificación, plantilla del proveedor y jugadores registrados en la plataforma.</summary>
+/// <summary>Ficha pública del equipo: clasificación, plantilla del proveedor y si tiene plantilla gestionada en la plataforma.</summary>
 public sealed record GetTeamQuery(Guid TeamId) : IQuery<TeamDetailDto>;
 
 internal sealed class GetTeamHandler(
+    ICurrentUser currentUser,
     ICompetitionStore competitions,
     ITeamStore teams,
     IStandingStore standings,
-    IPlayerStore players) : IQueryHandler<GetTeamQuery, TeamDetailDto>
+    ISquadStore squads) : IQueryHandler<GetTeamQuery, TeamDetailDto>
 {
     public async Task<TeamDetailDto> Handle(GetTeamQuery query, CancellationToken cancellationToken)
     {
@@ -28,34 +30,26 @@ internal sealed class GetTeamHandler(
         var standing = (await standings.GetBySeasonAsync(season.Id, cancellationToken))
             .FirstOrDefault(s => s.TeamId == team.Id);
 
-        var roster = await teams.GetRosterAsync(team.Id, season.Id, cancellationToken);
-        var members = await players.GetBySquadAsync(team.Id, season.Id, cancellationToken);
-
-        var rosterDtos = roster
+        var roster = (await teams.GetRosterAsync(team.Id, season.Id, cancellationToken))
             .OrderBy(r => r.ShirtNumber ?? int.MaxValue)
             .ThenBy(r => r.FullName)
-            .Select(r => new RosterEntryDto(
-                r.Id, r.FullName, r.Position, r.ShirtNumber,
-                Claimed: members.Any(m =>
-                    (m.ExternalRef is not null && m.ExternalRef == r.ExternalRef) || m.NormalizedName == r.NormalizedName)))
+            .Select(r => new RosterEntryDto(r.Id, r.FullName, r.Position, r.ShirtNumber))
             .ToList();
 
-        var memberDtos = members
-            .Select(m =>
-            {
-                var membership = m.MembershipFor(season.Id);
-                return new SquadMemberDto(m.Id, m.DisplayName, m.Position, membership?.ShirtNumber,
-                    membership?.Status ?? MembershipStatus.Inactive);
-            })
-            .OrderBy(m => m.ShirtNumber ?? int.MaxValue)
-            .ToList();
+        var squad = await squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
+        var squadDto = squad is null
+            ? null
+            : new TeamSquadDto(
+                squad.Id, squad.Visibility, squad.ActivePlayers.Count(), squad.ActiveStaff.Count(),
+                SquadAccess.CanView(squad, currentUser),
+                SquadAccess.IsStaff(squad, currentUser) || SquadAccess.IsMember(squad, currentUser));
 
         return new TeamDetailDto(
             team.Id, team.Name, team.ShortName, team.CrestUrl,
             SeasonDto.From(competition, season),
             standing is null ? null : StandingDto.From(standing, team),
             RosterPublished: roster.Count > 0,
-            rosterDtos,
-            memberDtos);
+            roster,
+            squadDto);
     }
 }

@@ -4,18 +4,18 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Standings;
 using TercerTiempo.Domain.Competitions;
-using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Stats.GetLeagueTable;
 
-/// <summary>Clasificación de una competición. Sin CompetitionId se usa la del equipo del jugador autenticado.</summary>
+/// <summary>Clasificación de una competición. Sin CompetitionId se usa la de la plantilla del usuario autenticado.</summary>
 public sealed record GetLeagueTableQuery(Guid? CompetitionId) : IQuery<LeagueTableDto>;
 
 internal sealed class GetLeagueTableHandler(
     ICurrentUser currentUser,
-    IPlayerStore players,
+    ISquadStore squads,
     ICompetitionStore competitions,
     IStandingStore standings,
     ITeamStore teams) : IQueryHandler<GetLeagueTableQuery, LeagueTableDto>
@@ -48,14 +48,15 @@ internal sealed class GetLeagueTableHandler(
             return (competition, season);
         }
 
-        if (!currentUser.IsAuthenticated)
-            throw new ConflictException("Indica la competición (competitionId) o inicia sesión para ver la de tu equipo.");
+        var squad = currentUser.PlayerId is { } playerId
+            ? await squads.GetByPlayerAsync(playerId, cancellationToken)
+            : currentUser.CoachId is { } coachId
+                ? (await squads.GetByCoachAsync(coachId, cancellationToken)).FirstOrDefault()
+                : null;
 
-        var player = await Resolvers.CurrentPlayerAsync(currentUser, players, cancellationToken);
+        if (squad is null)
+            throw new ConflictException("Indica la competición (competitionId) o vincúlate a una plantilla para ver la suya.");
 
-        var membership = player.CurrentMembership
-            ?? throw new ConflictException("No perteneces a ninguna plantilla: indica la competición (competitionId).");
-
-        return await Resolvers.SeasonOfMembershipAsync(competitions, membership, cancellationToken);
+        return await Resolvers.SeasonOfSquadAsync(competitions, squad, cancellationToken);
     }
 }

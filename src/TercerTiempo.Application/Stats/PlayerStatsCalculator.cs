@@ -4,7 +4,7 @@ using TercerTiempo.Domain.Standings;
 
 namespace TercerTiempo.Application.Stats;
 
-/// <summary>Funciones puras de agregación. Sin dependencias: fáciles de testear.</summary>
+/// <summary>Funciones puras de agregación sobre líneas de acta. Sin dependencias: fáciles de testear.</summary>
 internal static class PlayerStatsCalculator
 {
     public static IndividualStatsDto Individual(IReadOnlyCollection<PlayerMatchPerformance> performances)
@@ -32,7 +32,7 @@ internal static class PlayerStatsCalculator
             Saves: performances.Sum(p => p.Saves),
             YellowCards: performances.Sum(p => p.YellowCards),
             RedCards: performances.Count(p => p.RedCard),
-            AverageRating: Round(performances.Average(p => (double)p.SelfRating)),
+            AverageRating: Round(performances.Average(p => (double)p.Rating)),
             GoalsPer90: Per90(goals, minutes),
             AssistsPer90: Per90(assists, minutes),
             GoalContributionsPer90: Per90(goals + assists, minutes),
@@ -85,11 +85,12 @@ internal static class PlayerStatsCalculator
             GoalsAgainstPerMatchWithoutPlayer: Average(withoutPlayer, m => m.GoalsAgainst(teamId) ?? 0));
     }
 
+    /// <summary>Percentiles del jugador (por ficha) frente al resto de fichas con minutos en las actas comparables.</summary>
     public static LeagueComparisonDto? LeagueComparison(
-        Guid playerId,
+        Guid squadPlayerId,
         Guid? teamId,
         IReadOnlyCollection<Standing> standings,
-        IReadOnlyCollection<PlayerMatchPerformance> seasonPerformances)
+        IReadOnlyCollection<PlayerMatchPerformance> comparablePerformances)
     {
         if (standings.Count == 0) return null;
 
@@ -99,18 +100,18 @@ internal static class PlayerStatsCalculator
 
         var teamStanding = teamId is { } id ? standings.FirstOrDefault(s => s.TeamId == id) : null;
 
-        var lines = seasonPerformances
-            .GroupBy(p => p.PlayerId)
+        var lines = comparablePerformances
+            .GroupBy(p => p.SquadPlayerId)
             .Select(g => new PlayerSeasonLine(
                 g.Key,
                 g.Sum(p => p.MinutesPlayed),
                 g.Sum(p => p.Goals),
                 g.Sum(p => p.Assists),
-                g.Average(p => (double)p.SelfRating)))
+                g.Average(p => (double)p.Rating)))
             .Where(l => l.Minutes > 0)
             .ToList();
 
-        var me = lines.FirstOrDefault(l => l.PlayerId == playerId);
+        var me = lines.FirstOrDefault(l => l.SquadPlayerId == squadPlayerId);
 
         return new LeagueComparisonDto(
             TeamsCount: standings.Count,
@@ -120,7 +121,7 @@ internal static class PlayerStatsCalculator
             TeamGoalsForPerMatch: teamStanding is { Played: > 0 } ? Round(teamStanding.GoalsFor / (double)teamStanding.Played) : null,
             TeamGoalsAgainstPerMatch: teamStanding is { Played: > 0 } ? Round(teamStanding.GoalsAgainst / (double)teamStanding.Played) : null,
             TeamPointsPerMatch: teamStanding is { Played: > 0 } ? Round(teamStanding.Points / (double)teamStanding.Played) : null,
-            PlayersOnPlatform: lines.Count,
+            PlayersCompared: lines.Count,
             GoalsPer90Percentile: Percentile(lines, me, l => l.Goals * 90.0 / l.Minutes),
             AssistsPer90Percentile: Percentile(lines, me, l => l.Assists * 90.0 / l.Minutes),
             RatingPercentile: Percentile(lines, me, l => l.AverageRating),
@@ -140,7 +141,7 @@ internal static class PlayerStatsCalculator
         return Round((below + 0.5 * equal) * 100.0 / lines.Count);
     }
 
-    internal sealed record PlayerSeasonLine(Guid PlayerId, int Minutes, int Goals, int Assists, double AverageRating);
+    internal sealed record PlayerSeasonLine(Guid SquadPlayerId, int Minutes, int Goals, int Assists, double AverageRating);
 
     private static double? Per90(int value, int minutes) => minutes > 0 ? Round(value * 90.0 / minutes) : null;
 

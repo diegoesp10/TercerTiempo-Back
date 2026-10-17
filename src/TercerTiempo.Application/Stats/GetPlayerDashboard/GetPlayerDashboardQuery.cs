@@ -9,16 +9,19 @@ using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Stats.GetPlayerDashboard;
 
+/// <summary>Panel del jugador autenticado, calculado a partir de las actas que registra su cuerpo técnico.</summary>
 public sealed record GetPlayerDashboardQuery : IQuery<PlayerDashboardDto>;
 
 internal sealed class GetPlayerDashboardHandler(
     ICurrentUser currentUser,
     IPlayerStore players,
+    ISquadStore squads,
     ICompetitionStore competitions,
     ITeamStore teams,
     IMatchStore matches,
@@ -31,20 +34,30 @@ internal sealed class GetPlayerDashboardHandler(
     {
         var player = await Resolvers.CurrentPlayerAsync(currentUser, players, cancellationToken);
 
-        if (player.CurrentMembership is not { } membership)
+        var squad = await squads.GetByPlayerAsync(player.Id, cancellationToken);
+        if (squad?.PlayerEntryOf(player.Id) is not { } entry)
             return new PlayerDashboardDto(PlayerMapper.ToDto(player, null, null, null, null), null, IndividualStatsDto.Empty, null, null, []);
 
-        var (competition, season) = await Resolvers.SeasonOfMembershipAsync(competitions, membership, cancellationToken);
-        var team = await teams.GetByIdAsync(membership.TeamId, cancellationToken);
+        var (competition, season) = await Resolvers.SeasonOfSquadAsync(competitions, squad, cancellationToken);
+        var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
 
-        var myPerformances = await performances.GetByPlayerAsync(player.Id, season.Id, cancellationToken);
+        var myPerformances = await performances.GetBySquadPlayerAsync(entry.Id, cancellationToken);
         var seasonMatches = await matches.GetBySeasonAsync(season.Id, cancellationToken);
         var table = await standings.GetBySeasonAsync(season.Id, cancellationToken);
-        var seasonPerformances = await performances.GetBySeasonAsync(season.Id, cancellationToken);
+
+        // Solo se compara contra actas visibles: plantillas públicas de la liga y la propia.
+        var comparableSquadIds = (await squads.GetBySeasonAsync(season.Id, cancellationToken))
+            .Where(s => s.Id == squad.Id || s.Visibility == SquadVisibility.Public)
+            .Select(s => s.Id)
+            .ToHashSet();
+
+        var comparable = (await performances.GetBySeasonAsync(season.Id, cancellationToken))
+            .Where(p => comparableSquadIds.Contains(p.SquadId))
+            .ToList();
 
         var individual = PlayerStatsCalculator.Individual(myPerformances);
-        var teamImpact = PlayerStatsCalculator.TeamImpact(membership.TeamId, seasonMatches, myPerformances);
-        var league = PlayerStatsCalculator.LeagueComparison(player.Id, membership.TeamId, table, seasonPerformances);
+        var teamImpact = PlayerStatsCalculator.TeamImpact(squad.TeamId, seasonMatches, myPerformances);
+        var league = PlayerStatsCalculator.LeagueComparison(entry.Id, squad.TeamId, table, comparable);
 
         var matchMap = seasonMatches.ToDictionary(m => m.Id);
         var teamIds = seasonMatches.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();
@@ -53,14 +66,14 @@ internal sealed class GetPlayerDashboardHandler(
         var recent = myPerformances
             .Where(p => matchMap.ContainsKey(p.MatchId))
             .Select(p => new PerformanceWithMatchDto(
-                PerformanceMapper.ToDto(p, player),
-                MatchMapper.ToDto(matchMap[p.MatchId], teamMap, p.Id)))
+                PerformanceMapper.ToDto(p, entry),
+                MatchMapper.ToDto(matchMap[p.MatchId], teamMap)))
             .OrderByDescending(x => x.Match.KickoffAt)
             .Take(RecentCount)
             .ToList();
 
         return new PlayerDashboardDto(
-            PlayerMapper.ToDto(player, membership, team, competition, season),
+            PlayerMapper.ToDto(player, squad, team, competition, season),
             SeasonDto.From(competition, season),
             individual,
             teamImpact,

@@ -1,10 +1,11 @@
 # Tercer Tiempo · Backend
 
-API de **Tercer Tiempo**, plataforma de seguimiento de rendimiento para futbolistas amateur. Un jugador se da de
-alta, se une a la plantilla de su equipo (verificada contra la plantilla que publica un proveedor externo: BeSoccer,
-FutbolAsturiano, ...) y, partido a partido, registra sus datos reales. Con eso la plataforma le dice **cuánto
-aporta**: a nivel individual, a su equipo (resultados con él y sin él, cuota de goles, minutos) y en comparación con
-el resto de la liga (equipo frente a la media y percentil frente a otros jugadores registrados).
+API de **Tercer Tiempo**, plataforma de actas y rendimiento para el fútbol amateur. El **cuerpo técnico** de cada
+equipo (entrenador, ayudante, delegado...) crea la plantilla de su equipo, importa las fichas que publica un proveedor
+externo (futbolasturiano.es) o las añade a mano y, tras cada partido, registra el **acta**: minutos, goles,
+asistencias, tiros, tarjetas y valoración de cada jugador. Cada **jugador** se vincula a su ficha con un código de
+invitación y ve cuánto aporta: a nivel individual, a su equipo (resultados con él y sin él, cuota de goles, minutos)
+y frente al resto de la liga. Los datos de cada plantilla son **privados** salvo que su cuerpo técnico la haga pública.
 
 El frontend vive en su propio repositorio: [TercerTiempo-Front](https://github.com/diegoesp10/TercerTiempo-Front).
 
@@ -35,10 +36,10 @@ endpoints y sus metadatos, sin Swashbuckle. Al arrancar, la raíz (`/`) redirige
 | `/docs` | Referencia interactiva renderizada con Scalar a partir del documento: endpoints agrupados por recurso en el orden del flujo de uso, cuerpo y parámetros de cada operación, respuestas posibles, ejemplos de cliente (C#/HttpClient por defecto, curl, fetch...) y autenticación Bearer para probar los endpoints protegidos. |
 
 Cada operación lleva `operationId`, resumen, descripción con las reglas de negocio que aplica y los códigos de
-error documentados; solo los endpoints protegidos muestran candado. Los campos de los cuerpos (`RegisterPlayerCommand`,
-`LoginCommand`, `JoinTeamCommand`, `LogPerformanceRequest`) están descritos uno a uno con `[Description]`.
-El documento se enriquece con transformadores (`Api/Infrastructure`): título y descripción, esquema Bearer y
-candado/401 solo en operaciones con `RequireAuthorization()`.
+error documentados; solo los endpoints protegidos muestran candado. Los campos de los cuerpos (`RegisterCommand`,
+`ClaimTeamCommand`, `JoinSquadStaffRequest`, `SquadPlayerRequest`, `MatchSheetRequest`, `JoinSquadAsPlayerCommand`...)
+están descritos uno a uno con `[Description]`. El documento se enriquece con transformadores (`Api/Infrastructure`):
+título y descripción con el flujo de uso, esquema Bearer y candado/401 solo en operaciones con `RequireAuthorization()`.
 
 Disponibilidad por entorno (sección `OpenApi` de la configuración):
 
@@ -57,9 +58,9 @@ OpenApi__Enabled=true OpenApi__BasicAuth__Username=docs OpenApi__BasicAuth__Pass
 
 | Proyecto | Responsabilidad | Depende de |
 |---|---|---|
-| `TercerTiempo.Domain` | Entidades, value objects, reglas de negocio, eventos de dominio y contratos de persistencia (`IPlayerStore`, `IMatchStore`...). Sin frameworks. | — |
-| `TercerTiempo.Application` | Casos de uso (commands/queries con handlers), DTOs, validación (FluentValidation), cálculo de estadísticas y abstracciones que implementa la infraestructura (`IIdentityService`, `ITokenService`, `ICurrentUser`, `IFootballDataProvider`). | Domain |
-| `TercerTiempo.Repository` | Fachada entre la API y la aplicación: una interfaz por recurso (`IAuthRepository`, `IPlayersRepository`, `ITeamsRepository`, `IMatchesRepository`, `IPerformancesRepository`, `IStatsRepository`, `IAdminRepository`) que despacha el command/query correspondiente. Cada endpoint la llama en una línea. | Application |
+| `TercerTiempo.Domain` | Entidades, value objects, reglas de negocio, eventos de dominio y contratos de persistencia (`ISquadStore`, `IPlayerStore`, `ICoachStore`, `IMatchStore`...). Sin frameworks. | — |
+| `TercerTiempo.Application` | Casos de uso (commands/queries con handlers), DTOs, validación (FluentValidation), cálculo de estadísticas, reglas de acceso a cada plantilla y abstracciones que implementa la infraestructura (`IIdentityService`, `ITokenService`, `ICurrentUser`, `IFootballDataProvider`). | Domain |
+| `TercerTiempo.Repository` | Fachada entre la API y la aplicación: una interfaz por recurso (`IAuthRepository`, `ISquadsRepository`, `IPlayersRepository`, `ICompetitionsRepository`, `ITeamsRepository`, `IMatchesRepository`, `IStatsRepository`, `IAdminRepository`) que despacha el command/query correspondiente. Cada endpoint la llama en una línea. | Application |
 | `TercerTiempo.Infrastructure` | EF Core + SQLite (stores), ASP.NET Identity, emisión de JWT, proveedores de datos de fútbol y el worker de sincronización. | Application |
 | `TercerTiempo.Api` | Minimal APIs agrupadas por recurso, autenticación JWT, CORS, documento OpenAPI nativo + referencia Scalar, `ProblemDetails` global. | Repository, Infrastructure |
 
@@ -73,40 +74,67 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 
 ## Dominio
 
-- **Player**: jugador registrado (vinculado al usuario de Identity). Agrega sus `SquadMembership`
-  (pertenencia a un equipo en una temporada); solo una vigente a la vez. Si al unirse coincide con una ficha de
-  la plantilla publicada nace **Active** y verificada; si el proveedor no publica plantilla para ese equipo nace
-  **Active** sin verificar; si la publica y no aparece, queda **Pending** hasta que se valide.
+- **Cuentas**: una cuenta es de **jugador** (`Player`, con posición y fecha de nacimiento) o de **cuerpo técnico**
+  (`Coach`). Identity guarda las credenciales; el JWT lleva el tipo de cuenta y el id del perfil
+  (`account_type`, `player_id` / `coach_id`).
+- **Squad** (plantilla): el agregado central y el **límite de privacidad**. Es la plantilla de un equipo en una
+  temporada (una por equipo y temporada) y agrega:
+  - `SquadStaff`: miembros del cuerpo técnico con su rol (`HeadCoach`, `AssistantCoach`, `Delegate`, `Physio`,
+    `Analyst`, `Other`). Siempre queda al menos un primer entrenador.
+  - `SquadPlayer`: fichas de los jugadores, importadas de la plantilla publicada por el proveedor (`RosterEntryId`)
+    o añadidas a mano; sin nombres repetidos; una baja conserva sus actas. Cada ficha puede estar **vinculada** a una
+    cuenta de jugador (`PlayerId`); un jugador solo está vinculado a una plantilla a la vez.
+  - `Visibility`: nace **Private** (solo el cuerpo técnico y los jugadores vinculados ven actas y estadísticas);
+    el cuerpo técnico puede hacerla **Public**.
+  - `InviteCode`: código corto sin caracteres ambiguos con el que el resto del staff se incorpora y los jugadores se
+    vinculan a su ficha; se puede regenerar.
 - **Competition** (liga = categoría + grupo, con `Level`, `Tier`, `Group` y `SortOrder`) → **Season**;
   **Team**, **RosterEntry** (plantilla scrapeada), **Standing**.
 - **Match**: partido sincronizado del proveedor, con resultado y estado. Sabe calcular resultado y
   puntos desde el punto de vista de cada equipo.
-- **PlayerMatchPerformance**: una ficha por jugador y partido. `PerformancePolicy` decide quién puede
-  registrarla (plantilla activa, partido disputado) y `PerformanceStats.EnsureValid()` las reglas de los
-  datos (minutos, coherencia tiros/tiros a puerta, dos amarillas ⇒ roja...).
+- **PlayerMatchPerformance**: una línea del acta por ficha y partido, registrada por un miembro del cuerpo técnico
+  (`RecordedByCoachId`). `PerformancePolicy` decide quién puede registrarla (staff de la plantilla, partido de su
+  temporada en el que juega su equipo, ya disputado) y `PerformanceStats.EnsureValid()` las reglas de los datos
+  (minutos 0-120, coherencia tiros/tiros a puerta, dos amarillas ⇒ roja, sin minutos no hay acciones, valoración 1-10).
 
 ## Casos de uso (endpoints)
 
 | Método | Ruta | Caso de uso |
 |---|---|---|
-| POST | `/api/auth/register` | Alta de jugador (crea usuario + Player, devuelve JWT) |
+| POST | `/api/auth/register` | Alta como jugador o cuerpo técnico (crea usuario + perfil, devuelve JWT) |
 | POST | `/api/auth/login` | Login |
-| GET | `/api/players/me` | Perfil y pertenencia actual |
-| POST / DELETE | `/api/players/me/team` | Unirse a (reclamando ficha) / abandonar la plantilla |
+| GET | `/api/auth/me` | Cuenta autenticada: jugador con su plantilla, o técnico con sus plantillas |
+| POST | `/api/squads` | Crear la plantilla de un equipo (importa la publicada por el proveedor; nace privada) |
+| POST | `/api/squads/join` | Incorporarse al cuerpo técnico con el código de invitación |
+| GET | `/api/squads/mine` | Plantillas del técnico autenticado |
+| GET | `/api/squads/{id}` | Detalle: staff y fichas (el código solo lo ve el cuerpo técnico) |
+| POST / PUT / DELETE | `/api/squads/{id}/players[/{squadPlayerId}]` | Añadir, modificar y dar de baja fichas |
+| POST | `/api/squads/{id}/players/import` | Importar las fichas publicadas por el proveedor que falten |
+| PUT | `/api/squads/{id}/visibility` | Hacer la plantilla pública o privada |
+| POST | `/api/squads/{id}/invite-code` | Generar un nuevo código de invitación |
+| GET | `/api/squads/{id}/matches` | Partidos del equipo con el número de líneas registradas en cada acta |
+| GET / PUT | `/api/squads/{id}/matches/{matchId}/sheet` | Consultar / registrar el acta de un partido (idempotente; `played = false` borra la línea) |
+| GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
+| GET | `/api/players/me/invite/{code}` | Plantilla que hay detrás de un código y sus fichas sin vincular |
+| POST / DELETE | `/api/players/me/squad` | Vincularse a la ficha (por id o por nombre) / desvincularse |
+| GET | `/api/players/me/dashboard` | Panel del jugador: individual, impacto en el equipo, comparativa con la liga |
+| GET | `/api/players/me/performances` | Actas en las que aparece el jugador |
 | GET | `/api/competitions` | Ligas disponibles por nivel, categoría y grupo, con su temporada |
-| GET | `/api/teams?competitionId=`, `/api/teams/{id}`, `/api/teams/{id}/matches` | Equipos de una liga, ficha con plantilla y jugadores registrados, calendario |
-| GET | `/api/matches/{id}` | Detalle con los rendimientos registrados |
-| PUT | `/api/matches/{id}/performance` | Registrar/actualizar mi rendimiento |
-| GET | `/api/performances/me` | Mi historial |
-| GET | `/api/stats/dashboard` | Panel: individual, impacto en el equipo, comparativa con la liga |
-| GET | `/api/league/table?competitionId=` | Clasificación de una liga (sin parámetro, la del equipo del jugador) |
+| GET | `/api/teams?competitionId=`, `/api/teams/{id}`, `/api/teams/{id}/matches` | Equipos de una liga, ficha con plantilla publicada y estado de su plantilla en la plataforma, calendario |
+| GET | `/api/matches/{id}` | Detalle con las actas de ambas plantillas (cada una solo si es visible para el usuario) |
+| GET | `/api/league/table?competitionId=` | Clasificación de una liga (sin parámetro, la de la plantilla del usuario) |
 | POST | `/api/admin/sync` | Forzar sincronización con el proveedor |
 
+Las lecturas de una plantilla (`GET /api/squads/{id}`, sus partidos, actas y estadísticas) son públicas si la
+plantilla es pública y, si es privada, solo para su cuerpo técnico y sus jugadores vinculados (403 en otro caso).
+Las escrituras son siempre del cuerpo técnico. La comparativa "frente a la liga" de un jugador solo usa actas que
+él puede ver: las de plantillas públicas de su liga y la suya.
+
 Los endpoints no conocen los handlers: reciben la fachada de la capa Repository por inyección y la
-llaman en una línea, p. ej. `(Guid teamId, ITeamsRepository teams, CancellationToken ct) => teams.GetAsync(teamId, ct)`.
+llaman en una línea, p. ej. `(Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetStatsAsync(squadId, ct)`.
 Los handlers se registran por reflexión (`AddApplication`), las fachadas en `AddRepositoryLayer()`, y
 los commands pasan por un decorador que ejecuta sus validadores. Las excepciones de dominio/aplicación se
-traducen a `ProblemDetails` (400 validación, 401, 403, 404, 409, 422 regla de negocio).
+traducen a `ProblemDetails` (400 validación o cuerpo malformado, 401, 403, 404, 409, 422 regla de negocio).
 
 ## Ligas, grupos y proveedor de datos
 
@@ -119,9 +147,8 @@ Cada **competición** es una liga concreta (categoría + grupo) con su nivel y s
 | `Professional` | Primera y Segunda División (desactivadas por defecto) |
 | `Cup` / `Youth` | Copa AsturFútbol, División de Honor juvenil (desactivadas por defecto) |
 
-El jugador elige nivel → liga/grupo → equipo (`GET /api/competitions`, `GET /api/teams?competitionId=`).
-Un jugador solo pertenece a una plantilla a la vez; la comparativa "frente a la liga" se hace siempre
-contra la competición de su equipo.
+El cuerpo técnico elige nivel → liga/grupo → equipo (`GET /api/competitions`, `GET /api/teams?competitionId=`) y
+crea su plantilla; la comparativa "frente a la liga" se hace siempre contra la competición del equipo.
 
 `IFootballDataProvider` devuelve instantáneas (ligas con su temporada, equipos, partidos, clasificación y
 plantillas); `SyncSeasonCommand` las vuelca al dominio de forma idempotente, liga a liga (un fallo en una
@@ -137,7 +164,7 @@ no impide sincronizar las demás). Se elige en `appsettings.json` → `FootballD
   - clasificación → `sportspress/v2/sp_table` (`data` por id de equipo);
   - plantillas → catálogo completo de `sp_player` agrupado por `current_teams` (una descarga por sincronización).
     La web publica plantillas en 1ª/2ª/3ª RFEF y 1ª AsturFútbol; en 2ª y 3ª AsturFútbol no, por lo que ahí la
-    unión a un equipo queda **activa sin verificar** en lugar de pendiente.
+    plantilla nace vacía y el cuerpo técnico añade las fichas a mano.
   - Qué se sincroniza: `IncludeNational`, `IncludeRegional`, `IncludeProfessional`, `IncludeCups`, `IncludeYouth`
     y, para afinar, `IncludeLeagueIds` / `ExcludeLeagueIds` (ids de `sp_league`).
   - Una sincronización completa (10 ligas) son ~110 peticiones y tarda alrededor de un minuto.
@@ -171,13 +198,18 @@ dotnet test
 
 (`dotnet-ef` está como herramienta local: `dotnet tool restore` si hace falta.)
 
+Ojo con SQLite: no admite `ORDER BY` sobre columnas `DateTimeOffset`; si hay que ordenar por fecha se hace en
+memoria (ver `SquadStore.GetByCoachAsync`). Al pasar a SQL Server deja de ser necesario.
+
 ## Decisiones y siguientes pasos sugeridos
 
-- **Identidad separada del dominio**: Identity gestiona credenciales; `Player` es el agregado de negocio.
-- **Verificación de plantilla**: hoy el jugador reclama su ficha; falta un rol de capitán/administrador
-  que valide pertenencias *Pending* y resuelva conflictos (dos personas reclamando la misma ficha).
-- **Proveedor real**: implementar el contrato de BeSoccer o un scraper (p. ej. AngleSharp sobre
-  FutbolAsturiano) detrás de `IFootballDataProvider`; el resto no cambia.
-- **Estadísticas**: añadir evolución por jornada, vista colectiva de la plantilla y comparativa por posición.
-- **Infra**: refresh tokens, PostgreSQL en lugar de SQLite, despliegue en contenedores, eventos de dominio
+- **Identidad separada del dominio**: Identity gestiona credenciales; `Player` y `Coach` son los agregados de negocio.
+- **La plantilla es el límite de privacidad**: actas y estadísticas pertenecen a la `Squad`; nada sale de ella
+  salvo que su cuerpo técnico la haga pública. No hay validación externa de pertenencias: el código de invitación
+  lo controla el propio cuerpo técnico (y puede regenerarlo).
+- **Roles del staff**: hoy todos los miembros del cuerpo técnico pueden registrar actas y gestionar la plantilla;
+  queda por decidir si algunas acciones (visibilidad, bajas de staff) se reservan al primer entrenador.
+- **Estadísticas**: añadir evolución por jornada, comparativa por posición e importar las estadísticas oficiales por
+  jugador que publica SportsPress en los eventos jugados para precargar el acta.
+- **Infra**: refresh tokens, SQL Server en lugar de SQLite, despliegue en contenedores, eventos de dominio
   con outbox (ya hay punto de extensión en `AppDbContext.SaveChangesAsync`).

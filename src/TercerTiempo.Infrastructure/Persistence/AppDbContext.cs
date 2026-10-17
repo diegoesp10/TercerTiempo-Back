@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Infrastructure.Identity;
@@ -16,7 +18,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options), IUnitOfWork
 {
     public DbSet<Player> Players => Set<Player>();
-    public DbSet<SquadMembership> SquadMemberships => Set<SquadMembership>();
+    public DbSet<Coach> Coaches => Set<Coach>();
+    public DbSet<Squad> Squads => Set<Squad>();
+    public DbSet<SquadStaff> SquadStaff => Set<SquadStaff>();
+    public DbSet<SquadPlayer> SquadPlayers => Set<SquadPlayer>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<RosterEntry> RosterEntries => Set<RosterEntry>();
     public DbSet<Competition> Competitions => Set<Competition>();

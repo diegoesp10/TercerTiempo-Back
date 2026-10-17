@@ -5,11 +5,11 @@ public static class EndpointExtensions
     public static IEndpointRouteBuilder MapTercerTiempoEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapAuthEndpoints();
+        app.MapSquadEndpoints();
         app.MapPlayerEndpoints();
         app.MapCompetitionEndpoints();
         app.MapTeamEndpoints();
         app.MapMatchEndpoints();
-        app.MapPerformanceEndpoints();
         app.MapStatsEndpoints();
         app.MapAdminEndpoints();
 

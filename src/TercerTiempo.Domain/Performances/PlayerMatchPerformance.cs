@@ -1,13 +1,17 @@
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
-using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Domain.Performances;
 
-/// <summary>Rendimiento de un jugador en un partido concreto (una única ficha por jugador y partido).</summary>
+/// <summary>
+/// Línea del acta: rendimiento de una ficha de la plantilla en un partido, registrado por el cuerpo técnico.
+/// Una única línea por ficha y partido.
+/// </summary>
 public sealed class PlayerMatchPerformance : AggregateRoot
 {
-    public Guid PlayerId { get; private set; }
+    public Guid SquadId { get; private set; }
+    public Guid SquadPlayerId { get; private set; }
     public Guid MatchId { get; private set; }
     public Guid TeamId { get; private set; }
     public Guid SeasonId { get; private set; }
@@ -24,9 +28,13 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     public int Saves { get; private set; }
     public int YellowCards { get; private set; }
     public bool RedCard { get; private set; }
-    public int SelfRating { get; private set; }
+
+    /// <summary>Valoración del cuerpo técnico, de 1 a 10.</summary>
+    public int Rating { get; private set; }
+
     public string? Notes { get; private set; }
 
+    public Guid RecordedByCoachId { get; private set; }
     public DateTimeOffset LoggedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -34,18 +42,25 @@ public sealed class PlayerMatchPerformance : AggregateRoot
 
     private PlayerMatchPerformance() { }
 
-    public static PlayerMatchPerformance Log(Player player, Match match, Guid teamId, PerformanceStats stats, DateTimeOffset now)
+    public static PlayerMatchPerformance Record(
+        Squad squad, SquadPlayer player, Match match, Guid coachId, PerformanceStats stats, DateTimeOffset now)
     {
-        PerformancePolicy.EnsureCanLog(player, match, teamId);
+        PerformancePolicy.EnsureCanRecord(squad, coachId, match);
+
+        if (player.SquadId != squad.Id)
+            throw new DomainException("El jugador no pertenece a esta plantilla.");
+
         stats.EnsureValid();
 
         var performance = new PlayerMatchPerformance
         {
             Id = NewId(),
-            PlayerId = player.Id,
+            SquadId = squad.Id,
+            SquadPlayerId = player.Id,
             MatchId = match.Id,
-            TeamId = teamId,
+            TeamId = squad.TeamId,
             SeasonId = match.SeasonId,
+            RecordedByCoachId = coachId,
             LoggedAt = now,
             UpdatedAt = now,
         };
@@ -53,16 +68,17 @@ public sealed class PlayerMatchPerformance : AggregateRoot
         return performance;
     }
 
-    public void Update(PerformanceStats stats, DateTimeOffset now)
+    public void Update(PerformanceStats stats, Guid coachId, DateTimeOffset now)
     {
         stats.EnsureValid();
         Apply(stats);
+        RecordedByCoachId = Guard.NotEmpty(coachId, nameof(coachId));
         UpdatedAt = now;
     }
 
     public PerformanceStats ToStats() => new(
         Started, MinutesPlayed, Goals, Assists, Shots, ShotsOnTarget, KeyPasses,
-        Tackles, Interceptions, Saves, YellowCards, RedCard, SelfRating, Notes);
+        Tackles, Interceptions, Saves, YellowCards, RedCard, Rating, Notes);
 
     private void Apply(PerformanceStats stats)
     {
@@ -78,7 +94,7 @@ public sealed class PlayerMatchPerformance : AggregateRoot
         Saves = stats.Saves;
         YellowCards = stats.YellowCards;
         RedCard = stats.RedCard;
-        SelfRating = stats.SelfRating;
+        Rating = stats.Rating;
         Notes = string.IsNullOrWhiteSpace(stats.Notes) ? null : stats.Notes.Trim();
     }
 }

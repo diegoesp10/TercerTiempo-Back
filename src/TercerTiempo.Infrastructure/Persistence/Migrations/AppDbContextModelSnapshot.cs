@@ -143,6 +143,35 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Coaches.Coach", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("RegisteredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("Coaches", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Competitions.Competition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -299,7 +328,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("PlayerId")
+                    b.Property<int>("Rating")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("RecordedByCoachId")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("RedCard")
@@ -311,14 +343,17 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("SeasonId")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("SelfRating")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int>("Shots")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("ShotsOnTarget")
                         .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SquadPlayerId")
+                        .HasColumnType("TEXT");
 
                     b.Property<bool>("Started")
                         .HasColumnType("INTEGER");
@@ -339,14 +374,16 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("MatchId");
 
+                    b.HasIndex("RecordedByCoachId");
+
                     b.HasIndex("SeasonId");
 
-                    b.HasIndex("PlayerId", "MatchId")
+                    b.HasIndex("TeamId");
+
+                    b.HasIndex("SquadId", "MatchId");
+
+                    b.HasIndex("SquadPlayerId", "MatchId")
                         .IsUnique();
-
-                    b.HasIndex("PlayerId", "SeasonId");
-
-                    b.HasIndex("TeamId", "SeasonId");
 
                     b.ToTable("PlayerMatchPerformances", (string)null);
                 });
@@ -390,9 +427,102 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("Players", (string)null);
                 });
 
-            modelBuilder.Entity("TercerTiempo.Domain.Players.SquadMembership", b =>
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.Squad", b =>
                 {
                     b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("InviteCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InviteCode")
+                        .IsUnique();
+
+                    b.HasIndex("SeasonId");
+
+                    b.HasIndex("TeamId", "SeasonId")
+                        .IsUnique();
+
+                    b.ToTable("Squads", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.SquadPlayer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LeftAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PlayerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Position")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("RosterEntryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ShirtNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlayerId");
+
+                    b.HasIndex("RosterEntryId");
+
+                    b.HasIndex("SquadId", "NormalizedName");
+
+                    b.ToTable("SquadPlayers", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.SquadStaff", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CoachId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("JoinedAt")
@@ -401,35 +531,21 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("LeftAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("PlayerId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("SeasonId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("ShirtNumber")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Status")
+                    b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("TeamId")
+                    b.Property<Guid>("SquadId")
                         .HasColumnType("TEXT");
-
-                    b.Property<bool>("VerifiedInRoster")
-                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SeasonId");
+                    b.HasIndex("CoachId");
 
-                    b.HasIndex("PlayerId", "SeasonId");
+                    b.HasIndex("SquadId", "CoachId");
 
-                    b.HasIndex("TeamId", "SeasonId");
-
-                    b.ToTable("SquadMemberships", (string)null);
+                    b.ToTable("SquadStaff", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Standings.Standing", b =>
@@ -788,12 +904,39 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("TercerTiempo.Domain.Players.Player", null)
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
                         .WithMany()
-                        .HasForeignKey("PlayerId")
+                        .HasForeignKey("RecordedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.SquadPlayer", null)
+                        .WithMany()
+                        .HasForeignKey("SquadPlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.Squad", b =>
+                {
                     b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
                         .WithMany()
                         .HasForeignKey("SeasonId")
@@ -807,56 +950,37 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("TercerTiempo.Domain.Players.Player", b =>
-                {
-                    b.OwnsOne("TercerTiempo.Domain.Common.ExternalRef", "ExternalRef", b1 =>
-                        {
-                            b1.Property<Guid>("PlayerId")
-                                .HasColumnType("TEXT");
-
-                            b1.Property<string>("ExternalId")
-                                .IsRequired()
-                                .HasMaxLength(200)
-                                .HasColumnType("TEXT")
-                                .HasColumnName("ExternalId");
-
-                            b1.Property<string>("Provider")
-                                .IsRequired()
-                                .HasMaxLength(50)
-                                .HasColumnType("TEXT")
-                                .HasColumnName("ExternalProvider");
-
-                            b1.HasKey("PlayerId");
-
-                            b1.HasIndex("Provider", "ExternalId");
-
-                            b1.ToTable("Players");
-
-                            b1.WithOwner()
-                                .HasForeignKey("PlayerId");
-                        });
-
-                    b.Navigation("ExternalRef");
-                });
-
-            modelBuilder.Entity("TercerTiempo.Domain.Players.SquadMembership", b =>
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.SquadPlayer", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Players.Player", null)
-                        .WithMany("Memberships")
+                        .WithMany()
                         .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("TercerTiempo.Domain.Teams.RosterEntry", null)
+                        .WithMany()
+                        .HasForeignKey("RosterEntryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany("Players")
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.SquadStaff", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("CoachId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
-                        .WithMany()
-                        .HasForeignKey("SeasonId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
-                        .WithMany()
-                        .HasForeignKey("TeamId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany("Staff")
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -956,9 +1080,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Navigation("Seasons");
                 });
 
-            modelBuilder.Entity("TercerTiempo.Domain.Players.Player", b =>
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.Squad", b =>
                 {
-                    b.Navigation("Memberships");
+                    b.Navigation("Players");
+
+                    b.Navigation("Staff");
                 });
 #pragma warning restore 612, 618
         }

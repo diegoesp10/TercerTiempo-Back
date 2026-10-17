@@ -1,15 +1,19 @@
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Performances;
 
+/// <summary>Línea del acta de un partido para una ficha de la plantilla.</summary>
 public sealed record PerformanceDto(
     Guid Id,
     Guid MatchId,
-    Guid PlayerId,
+    Guid SquadId,
+    Guid SquadPlayerId,
     string PlayerName,
-    Position PlayerPosition,
+    Position? Position,
+    int? ShirtNumber,
     Guid TeamId,
     bool Started,
     int MinutesPlayed,
@@ -23,7 +27,7 @@ public sealed record PerformanceDto(
     int Saves,
     int YellowCards,
     bool RedCard,
-    int SelfRating,
+    int Rating,
     string? Notes,
     DateTimeOffset UpdatedAt);
 
@@ -31,10 +35,10 @@ public sealed record PerformanceWithMatchDto(PerformanceDto Performance, MatchDt
 
 internal static class PerformanceMapper
 {
-    public static PerformanceDto ToDto(PlayerMatchPerformance p, Player? player) =>
-        new(p.Id, p.MatchId, p.PlayerId,
-            player?.DisplayName ?? "Jugador", player?.Position ?? Position.Midfielder,
+    public static PerformanceDto ToDto(PlayerMatchPerformance p, SquadPlayer? player) =>
+        new(p.Id, p.MatchId, p.SquadId, p.SquadPlayerId,
+            player?.FullName ?? "Jugador", player?.Position, player?.ShirtNumber,
             p.TeamId, p.Started, p.MinutesPlayed, p.Goals, p.Assists, p.Shots, p.ShotsOnTarget,
             p.KeyPasses, p.Tackles, p.Interceptions, p.Saves, p.YellowCards, p.RedCard,
-            p.SelfRating, p.Notes, p.UpdatedAt);
+            p.Rating, p.Notes, p.UpdatedAt);
 }

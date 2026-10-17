@@ -4,7 +4,7 @@ using TercerTiempo.Application.Abstractions.Identity;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>Resuelve el usuario/jugador autenticado a partir de los claims del JWT de la petición.</summary>
+/// <summary>Resuelve la cuenta autenticada (usuario, tipo y perfil) a partir de los claims del JWT de la petición.</summary>
 internal sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : ICurrentUser
 {
     private ClaimsPrincipal? Principal => httpContextAccessor.HttpContext?.User;
@@ -14,7 +14,12 @@ internal sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : IC
     public Guid? UserId => ParseGuid(
         Principal?.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? Principal?.FindFirstValue(ClaimTypes.NameIdentifier));
 
+    public AccountType? AccountType =>
+        Enum.TryParse<AccountType>(Principal?.FindFirstValue(AuthClaims.AccountType), out var type) ? type : null;
+
     public Guid? PlayerId => ParseGuid(Principal?.FindFirstValue(AuthClaims.PlayerId));
+
+    public Guid? CoachId => ParseGuid(Principal?.FindFirstValue(AuthClaims.CoachId));
 
     private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var id) ? id : null;
 }

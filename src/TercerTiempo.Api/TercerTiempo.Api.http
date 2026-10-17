@@ -2,10 +2,25 @@
 @token = PEGA_AQUI_EL_ACCESS_TOKEN
 @competitionId = PEGA_AQUI_UN_ID_DE_GET_COMPETITIONS
 @teamId = PEGA_AQUI_UN_ID_DE_GET_TEAMS
-@rosterEntryId = PEGA_AQUI_UN_ID_DE_ROSTER
+@squadId = PEGA_AQUI_EL_ID_DE_LA_PLANTILLA
+@squadPlayerId = PEGA_AQUI_EL_ID_DE_UNA_FICHA
 @matchId = PEGA_AQUI_UN_ID_DE_PARTIDO
+@inviteCode = PEGA_AQUI_EL_CODIGO_DE_INVITACION
 
-### Alta de jugador
+### Alta como cuerpo técnico
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "mister@example.com",
+  "password": "Password123",
+  "displayName": "Óscar Cano",
+  "accountType": "Coach",
+  "position": null,
+  "birthDate": null
+}
+
+### Alta como jugador (con el nombre con el que aparece en la plantilla)
 POST {{baseUrl}}/api/auth/register
 Content-Type: application/json
 
@@ -13,6 +28,7 @@ Content-Type: application/json
   "email": "pelayo@example.com",
   "password": "Password123",
   "displayName": "Pelayo Fernández",
+  "accountType": "Player",
   "position": "Forward",
   "birthDate": "1998-04-12"
 }
@@ -22,12 +38,12 @@ POST {{baseUrl}}/api/auth/login
 Content-Type: application/json
 
 {
-  "email": "pelayo@example.com",
+  "email": "mister@example.com",
   "password": "Password123"
 }
 
-### Mi perfil
-GET {{baseUrl}}/api/players/me
+### Mi cuenta (jugador con su plantilla / técnico con sus plantillas)
+GET {{baseUrl}}/api/auth/me
 Authorization: Bearer {{token}}
 
 ### Ligas disponibles (nivel, categoría, grupo y temporada)
@@ -36,51 +52,130 @@ GET {{baseUrl}}/api/competitions
 ### Equipos de una liga
 GET {{baseUrl}}/api/teams?competitionId={{competitionId}}
 
-### Ficha de un equipo (plantilla scrapeada + jugadores registrados)
+### Ficha de un equipo (plantilla publicada por el proveedor + estado de su plantilla en la plataforma)
 GET {{baseUrl}}/api/teams/{{teamId}}
 
-### Unirse a un equipo reclamando una ficha de la plantilla (rosterEntryId null si no está publicada)
-POST {{baseUrl}}/api/players/me/team
+### Cuerpo técnico: crear la plantilla de mi equipo (importa las fichas publicadas; nace privada)
+POST {{baseUrl}}/api/squads
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "teamId": "{{teamId}}",
-  "rosterEntryId": "{{rosterEntryId}}",
-  "shirtNumber": 9
+  "teamId": "{{teamId}}"
 }
 
-### Partidos de un equipo
-GET {{baseUrl}}/api/teams/{{teamId}}/matches
+### Cuerpo técnico: mis plantillas
+GET {{baseUrl}}/api/squads/mine
 Authorization: Bearer {{token}}
 
-### Registrar rendimiento en un partido disputado
-PUT {{baseUrl}}/api/matches/{{matchId}}/performance
+### Detalle de la plantilla (staff, fichas y, para el cuerpo técnico, el código de invitación)
+GET {{baseUrl}}/api/squads/{{squadId}}
+Authorization: Bearer {{token}}
+
+### Cuerpo técnico: añadir una ficha a mano
+POST {{baseUrl}}/api/squads/{{squadId}}/players
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "started": true,
-  "minutesPlayed": 90,
-  "goals": 1,
-  "assists": 1,
-  "shots": 4,
-  "shotsOnTarget": 2,
-  "keyPasses": 2,
-  "tackles": 1,
-  "interceptions": 0,
-  "saves": 0,
-  "yellowCards": 0,
-  "redCard": false,
-  "selfRating": 8,
-  "notes": "Buen partido, marqué de cabeza."
+  "fullName": "Nel Suárez",
+  "position": "Defender",
+  "shirtNumber": 4
 }
 
-### Panel del jugador
-GET {{baseUrl}}/api/stats/dashboard
+### Cuerpo técnico: importar las fichas publicadas por el proveedor que falten
+POST {{baseUrl}}/api/squads/{{squadId}}/players/import
 Authorization: Bearer {{token}}
 
-### Clasificación de una liga (sin competitionId, la de mi equipo)
+### Partidos de la plantilla (con el número de líneas registradas en cada acta)
+GET {{baseUrl}}/api/squads/{{squadId}}/matches
+Authorization: Bearer {{token}}
+
+### Acta de un partido (una línea por ficha; performance null si no está registrada)
+GET {{baseUrl}}/api/squads/{{squadId}}/matches/{{matchId}}/sheet
+Authorization: Bearer {{token}}
+
+### Cuerpo técnico: registrar el acta (idempotente; played = false borra la línea)
+PUT {{baseUrl}}/api/squads/{{squadId}}/matches/{{matchId}}/sheet
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "entries": [
+    {
+      "squadPlayerId": "{{squadPlayerId}}",
+      "played": true,
+      "started": true,
+      "minutesPlayed": 90,
+      "goals": 1,
+      "assists": 1,
+      "shots": 4,
+      "shotsOnTarget": 2,
+      "keyPasses": 2,
+      "tackles": 1,
+      "interceptions": 0,
+      "saves": 0,
+      "yellowCards": 0,
+      "redCard": false,
+      "rating": 8,
+      "notes": "Gol de cabeza en el 70'."
+    }
+  ]
+}
+
+### Estadísticas de la plantilla
+GET {{baseUrl}}/api/squads/{{squadId}}/stats
+Authorization: Bearer {{token}}
+
+### Cuerpo técnico: hacer pública (o privada) la plantilla
+PUT {{baseUrl}}/api/squads/{{squadId}}/visibility
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "visibility": "Public"
+}
+
+### Cuerpo técnico: generar un nuevo código de invitación
+POST {{baseUrl}}/api/squads/{{squadId}}/invite-code
+Authorization: Bearer {{token}}
+
+### Cuerpo técnico: incorporarse al staff de una plantilla con su código
+POST {{baseUrl}}/api/squads/join
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "inviteCode": "{{inviteCode}}",
+  "role": "AssistantCoach"
+}
+
+### Jugador: consultar el código de invitación (fichas sin vincular)
+GET {{baseUrl}}/api/players/me/invite/{{inviteCode}}
+Authorization: Bearer {{token}}
+
+### Jugador: vincularse a su ficha (squadPlayerId null = buscar por nombre)
+POST {{baseUrl}}/api/players/me/squad
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "inviteCode": "{{inviteCode}}",
+  "squadPlayerId": "{{squadPlayerId}}"
+}
+
+### Jugador: panel (individual, impacto en el equipo, comparativa con la liga)
+GET {{baseUrl}}/api/players/me/dashboard
+Authorization: Bearer {{token}}
+
+### Jugador: actas en las que aparece
+GET {{baseUrl}}/api/players/me/performances
+Authorization: Bearer {{token}}
+
+### Partido con las actas visibles de ambas plantillas
+GET {{baseUrl}}/api/matches/{{matchId}}
+
+### Clasificación de una liga (sin competitionId, la de mi plantilla)
 GET {{baseUrl}}/api/league/table?competitionId={{competitionId}}
 
 ### Forzar sincronización con futbolasturiano.es (~1 minuto)

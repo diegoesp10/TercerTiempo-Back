@@ -10,13 +10,22 @@ internal sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider
 {
     private readonly JsonWebTokenHandler _handler = new();
 
-    public AuthToken CreateToken(Guid userId, string email, Guid playerId)
+    public AuthToken CreateToken(Guid userId, string email, AccountType accountType, Guid profileId)
     {
         var settings = options.Value;
         var now = clock.GetUtcNow();
         var expires = now.AddMinutes(settings.ExpirationMinutes);
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.Key));
+
+        var claims = new Dictionary<string, object>
+        {
+            [JwtRegisteredClaimNames.Sub] = userId.ToString(),
+            [JwtRegisteredClaimNames.Email] = email,
+            [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
+            [AuthClaims.AccountType] = accountType.ToString(),
+            [accountType == AccountType.Player ? AuthClaims.PlayerId : AuthClaims.CoachId] = profileId.ToString(),
+        };
 
         var descriptor = new SecurityTokenDescriptor
         {
@@ -26,13 +35,7 @@ internal sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider
             NotBefore = now.UtcDateTime,
             Expires = expires.UtcDateTime,
             SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256),
-            Claims = new Dictionary<string, object>
-            {
-                [JwtRegisteredClaimNames.Sub] = userId.ToString(),
-                [JwtRegisteredClaimNames.Email] = email,
-                [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
-                [AuthClaims.PlayerId] = playerId.ToString(),
-            },
+            Claims = claims,
         };
 
         return new AuthToken(_handler.CreateToken(descriptor), expires);

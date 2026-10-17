@@ -1,5 +1,6 @@
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Players;
@@ -9,10 +10,12 @@ public sealed record PlayerDto(
     string DisplayName,
     Position Position,
     DateOnly? BirthDate,
-    bool LinkedToProvider,
-    SquadMembershipDto? Membership);
+    PlayerSquadDto? Squad);
 
-public sealed record SquadMembershipDto(
+/// <summary>Plantilla a la que está vinculado el jugador.</summary>
+public sealed record PlayerSquadDto(
+    Guid SquadId,
+    Guid SquadPlayerId,
     Guid TeamId,
     string TeamName,
     string TeamShortName,
@@ -23,42 +26,39 @@ public sealed record SquadMembershipDto(
     Guid SeasonId,
     string SeasonLabel,
     int? ShirtNumber,
-    MembershipStatus Status,
-    bool VerifiedInRoster,
-    DateTimeOffset JoinedAt);
+    SquadVisibility Visibility);
 
 internal static class PlayerMapper
 {
-    public static PlayerDto ToDto(Player player, SquadMembership? membership, Team? team, Competition? competition, Season? season)
+    public static PlayerDto ToDto(Player player, Squad? squad, Team? team, Competition? competition, Season? season)
     {
-        SquadMembershipDto? membershipDto = null;
+        PlayerSquadDto? squadDto = null;
 
-        if (membership is not null && team is not null && competition is not null && season is not null)
+        if (squad is not null && team is not null && competition is not null && season is not null
+            && squad.PlayerEntryOf(player.Id) is { } entry)
         {
-            membershipDto = new SquadMembershipDto(
+            squadDto = new PlayerSquadDto(
+                squad.Id, entry.Id,
                 team.Id, team.Name, team.ShortName, team.CrestUrl,
                 competition.Id, competition.Name, competition.Level,
                 season.Id, season.Label,
-                membership.ShirtNumber, membership.Status, membership.VerifiedInRoster, membership.JoinedAt);
+                entry.ShirtNumber, squad.Visibility);
         }
 
-        return new PlayerDto(
-            player.Id, player.DisplayName, player.Position, player.BirthDate,
-            player.ExternalRef is not null, membershipDto);
+        return new PlayerDto(player.Id, player.DisplayName, player.Position, player.BirthDate, squadDto);
     }
 
-    /// <summary>Resuelve la pertenencia vigente del jugador (equipo, competición y temporada) y construye el DTO.</summary>
     public static async Task<PlayerDto> ToDtoAsync(
-        Player player, ICompetitionStore competitions, ITeamStore teams, CancellationToken cancellationToken)
+        Player player, ISquadStore squads, ITeamStore teams, ICompetitionStore competitions, CancellationToken cancellationToken)
     {
-        var membership = player.CurrentMembership;
-        if (membership is null)
+        var squad = await squads.GetByPlayerAsync(player.Id, cancellationToken);
+        if (squad is null)
             return ToDto(player, null, null, null, null);
 
-        var team = await teams.GetByIdAsync(membership.TeamId, cancellationToken);
-        var competition = await competitions.GetBySeasonAsync(membership.SeasonId, cancellationToken);
-        var season = competition?.Seasons.FirstOrDefault(s => s.Id == membership.SeasonId);
+        var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
+        var competition = await competitions.GetBySeasonAsync(squad.SeasonId, cancellationToken);
+        var season = competition?.Seasons.FirstOrDefault(s => s.Id == squad.SeasonId);
 
-        return ToDto(player, membership, team, competition, season);
+        return ToDto(player, squad, team, competition, season);
     }
 }
