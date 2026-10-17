@@ -63,7 +63,12 @@ public static class OpenApiExtensions
         var isDevelopment = app.Environment.IsDevelopment();
 
         if (!(options.Enabled ?? isDevelopment))
+        {
+            app.Logger.LogInformation(
+                "Documentación OpenAPI desactivada en el entorno {Environment}. Para publicarla configura OpenApi:Enabled=true y OpenApi:BasicAuth.",
+                app.Environment.EnvironmentName);
             return app;
+        }
 
         var protect = !isDevelopment || options.BasicAuth.IsConfigured;
 
