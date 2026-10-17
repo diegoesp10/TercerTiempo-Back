@@ -1,8 +1,10 @@
+using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Domain.Common;
@@ -15,6 +17,7 @@ using TercerTiempo.Domain.Teams;
 using TercerTiempo.Infrastructure.FootballData;
 using TercerTiempo.Infrastructure.FootballData.BeSoccer;
 using TercerTiempo.Infrastructure.FootballData.Fake;
+using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.FootballData.JsonFiles;
 using TercerTiempo.Infrastructure.Identity;
 using TercerTiempo.Infrastructure.Persistence;
@@ -80,21 +83,34 @@ public static class DependencyInjection
         services.AddOptions<FootballDataOptions>()
             .Bind(configuration.GetSection(FootballDataOptions.SectionName));
 
-        var provider = configuration[$"{FootballDataOptions.SectionName}:Provider"] ?? FootballDataOptions.FakeProvider;
+        var provider = configuration[$"{FootballDataOptions.SectionName}:Provider"] ?? FootballDataOptions.FutbolAsturianoProvider;
 
-        switch (provider.ToLowerInvariant())
+        switch (provider.Trim().ToLowerInvariant())
         {
-            case FootballDataOptions.BeSoccerProvider:
-                services.AddHttpClient<BeSoccerFootballDataProvider>();
-                services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<BeSoccerFootballDataProvider>());
+            case FootballDataOptions.FakeProvider:
+                services.AddSingleton<IFootballDataProvider, FakeFootballDataProvider>();
                 break;
 
             case FootballDataOptions.JsonFilesProvider:
                 services.AddSingleton<IFootballDataProvider, JsonFileFootballDataProvider>();
                 break;
 
+            case FootballDataOptions.BeSoccerProvider:
+                services.AddHttpClient<BeSoccerFootballDataProvider>();
+                services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<BeSoccerFootballDataProvider>());
+                break;
+
             default:
-                services.AddSingleton<IFootballDataProvider, FakeFootballDataProvider>();
+                // Una instancia por ámbito (sincronización): cachea catálogos de temporada, estadios, posiciones y jugadores.
+                services.AddHttpClient<FutbolAsturianoFootballDataProvider>((sp, client) =>
+                {
+                    var settings = sp.GetRequiredService<IOptions<FootballDataOptions>>().Value.FutbolAsturiano;
+                    client.BaseAddress = new Uri(settings.BaseUrl.EndsWith('/') ? settings.BaseUrl : settings.BaseUrl + "/");
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
+                    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                });
+                services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<FutbolAsturianoFootballDataProvider>());
                 break;
         }
 

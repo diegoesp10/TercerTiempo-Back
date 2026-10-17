@@ -66,7 +66,7 @@ public class PlayerStatsCalculatorTests
         var played = matches.Where(m => m.Status == MatchStatus.Played).ToList();
 
         var other = Player.Register(Guid.NewGuid(), "Rival Goleador", Position.Forward, null, Now);
-        other.JoinSquad(Rival, SeasonId, 10, true, Now);
+        other.JoinSquad(Rival, SeasonId, 10, true, true, Now);
         var otherPerformances = played.Take(2)
             .Select(m => PlayerMatchPerformance.Log(other, m, Rival,
                 new PerformanceStats(true, 90, 0, 0, 1, 0, 0, 2, 2, 0, 0, false, 5, null), Now))
@@ -103,7 +103,7 @@ public class PlayerStatsCalculatorTests
     private static (Player Player, List<PlayerMatchPerformance> Performances, List<Match> Matches) Scenario()
     {
         var player = Player.Register(Guid.NewGuid(), "Pelayo Fernández", Position.Forward, null, Now);
-        player.JoinSquad(MyTeam, SeasonId, 9, true, Now);
+        player.JoinSquad(MyTeam, SeasonId, 9, true, true, Now);
 
         var matches = new List<Match>
         {

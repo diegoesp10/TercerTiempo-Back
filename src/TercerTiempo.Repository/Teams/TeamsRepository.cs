@@ -12,8 +12,8 @@ internal sealed class TeamsRepository(
     IQueryHandler<GetTeamQuery, TeamDetailDto> getTeam,
     IQueryHandler<ListTeamMatchesQuery, IReadOnlyList<MatchDto>> listMatches) : ITeamsRepository
 {
-    public Task<IReadOnlyList<TeamSummaryDto>> ListAsync(CancellationToken cancellationToken = default) =>
-        listTeams.Handle(new ListTeamsQuery(), cancellationToken);
+    public Task<IReadOnlyList<TeamSummaryDto>> ListAsync(Guid competitionId, CancellationToken cancellationToken = default) =>
+        listTeams.Handle(new ListTeamsQuery(competitionId), cancellationToken);
 
     public Task<TeamDetailDto> GetAsync(Guid teamId, CancellationToken cancellationToken = default) =>
         getTeam.Handle(new GetTeamQuery(teamId), cancellationToken);

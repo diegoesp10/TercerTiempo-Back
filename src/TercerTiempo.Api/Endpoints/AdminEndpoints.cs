@@ -10,7 +10,9 @@ internal static class AdminEndpoints
         var group = app.MapGroup("/api/admin").WithTags("Admin").RequireAuthorization();
 
         group.MapPost("/sync", (IAdminRepository admin, CancellationToken ct) => admin.SyncSeasonAsync(ct))
-            .WithSummary("Fuerza una sincronización con el proveedor de datos de fútbol");
+            .WithName("SyncSeason")
+            .WithSummary("Forzar sincronización con el proveedor de datos")
+            .WithDescription("Descarga todas las ligas del proveedor configurado (FootballData:Provider) con sus equipos, partidos, clasificación y plantillas y las vuelca en la base de datos. Idempotente; cada liga se guarda por separado y los errores se devuelven en errors. El worker lo ejecuta además al arrancar y cada FootballData:SyncIntervalHours horas. Con futbolasturiano.es tarda del orden de un minuto.");
 
         return app;
     }

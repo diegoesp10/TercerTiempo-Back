@@ -12,7 +12,12 @@ internal sealed class CompetitionConfiguration : IEntityTypeConfiguration<Compet
         builder.ConfigureAggregate();
 
         builder.Property(c => c.Name).HasMaxLength(150).IsRequired();
+        builder.Property(c => c.Category).HasMaxLength(100).IsRequired();
+        builder.Property(c => c.Level).HasConversion<string>().HasMaxLength(20);
+        builder.Property(c => c.Group).HasMaxLength(20);
         builder.Property(c => c.Region).HasMaxLength(100).IsRequired();
+
+        builder.HasIndex(c => c.SortOrder);
 
         builder.OwnsExternalRef(c => c.ExternalRef);
 

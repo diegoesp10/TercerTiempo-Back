@@ -6,6 +6,7 @@ public static class EndpointExtensions
     {
         app.MapAuthEndpoints();
         app.MapPlayerEndpoints();
+        app.MapCompetitionEndpoints();
         app.MapTeamEndpoints();
         app.MapMatchEndpoints();
         app.MapPerformanceEndpoints();

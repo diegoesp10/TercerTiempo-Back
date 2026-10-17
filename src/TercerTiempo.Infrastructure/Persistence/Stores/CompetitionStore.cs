@@ -14,11 +14,34 @@ internal sealed class CompetitionStore(AppDbContext db) : ICompetitionStore
             c => c.ExternalRef!.Provider == externalRef.Provider && c.ExternalRef.ExternalId == externalRef.ExternalId,
             cancellationToken);
 
-    public Task<Competition?> GetCurrentAsync(CancellationToken cancellationToken = default) =>
-        db.Competitions.FirstOrDefaultAsync(c => c.Seasons.Any(s => s.IsCurrent), cancellationToken);
+    public async Task<IReadOnlyList<Competition>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        await db.Competitions.OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToListAsync(cancellationToken);
 
     public Task<Competition?> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
         db.Competitions.FirstOrDefaultAsync(c => c.Seasons.Any(s => s.Id == seasonId), cancellationToken);
+
+    public async Task<Competition?> GetByTeamAsync(Guid teamId, CancellationToken cancellationToken = default)
+    {
+        var currentSeasons = db.Seasons.Where(s => s.IsCurrent).Select(s => s.Id);
+
+        var seasonId = await db.Standings
+            .Where(s => s.TeamId == teamId && currentSeasons.Contains(s.SeasonId))
+            .Select(s => s.SeasonId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (seasonId == Guid.Empty)
+        {
+            seasonId = await db.Matches
+                .Where(m => (m.HomeTeamId == teamId || m.AwayTeamId == teamId) && currentSeasons.Contains(m.SeasonId))
+                .Select(m => m.SeasonId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (seasonId == Guid.Empty)
+            return null;
+
+        return await GetBySeasonAsync(seasonId, cancellationToken);
+    }
 
     public void Add(Competition competition) => db.Competitions.Add(competition);
 }

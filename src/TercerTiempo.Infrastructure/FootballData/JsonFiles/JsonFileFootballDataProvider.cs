@@ -6,10 +6,13 @@ using TercerTiempo.Application.Abstractions.FootballData;
 namespace TercerTiempo.Infrastructure.FootballData.JsonFiles;
 
 /// <summary>
-/// Proveedor que lee instantáneas desde ficheros JSON locales. Útil para volcar el resultado de
-/// un scraper externo (Python, Playwright, ...) sin acoplarlo a la API, y para pruebas.
-/// Estructura esperada en la carpeta configurada:
-///   competition.json, teams.json, matches.json, standings.json, rosters/{teamExternalId}.json
+/// Proveedor que lee instantáneas desde ficheros JSON locales. Útil para volcar el resultado de un scraper
+/// externo (Python, Playwright, ...) sin acoplarlo a la API, y para pruebas. Estructura esperada:
+///   competitions.json                                  → CompetitionSnapshot[]
+///   competitions/{competitionExternalId}/teams.json     → TeamSnapshot[]
+///   competitions/{competitionExternalId}/matches.json   → MatchSnapshot[]
+///   competitions/{competitionExternalId}/standings.json → StandingSnapshot[]
+///   rosters/{teamExternalId}.json                       → RosterEntrySnapshot[]
 /// </summary>
 internal sealed class JsonFileFootballDataProvider(IOptions<FootballDataOptions> options) : IFootballDataProvider
 {
@@ -23,18 +26,18 @@ internal sealed class JsonFileFootballDataProvider(IOptions<FootballDataOptions>
 
     private string Directory => options.Value.JsonFiles.Directory;
 
-    public async Task<CompetitionSeasonSnapshot> GetCompetitionSeasonAsync(CancellationToken cancellationToken) =>
-        await ReadAsync<CompetitionSeasonSnapshot>("competition.json", cancellationToken)
-        ?? throw new InvalidOperationException($"No se encontró competition.json en '{Directory}'.");
+    public async Task<IReadOnlyList<CompetitionSnapshot>> GetCompetitionsAsync(CancellationToken cancellationToken) =>
+        await ReadAsync<List<CompetitionSnapshot>>("competitions.json", cancellationToken)
+        ?? throw new InvalidOperationException($"No se encontró competitions.json en '{Directory}'.");
 
-    public async Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(CancellationToken cancellationToken) =>
-        await ReadAsync<List<TeamSnapshot>>("teams.json", cancellationToken) ?? [];
+    public async Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(string competitionExternalId, CancellationToken cancellationToken) =>
+        await ReadAsync<List<TeamSnapshot>>(Path.Combine("competitions", competitionExternalId, "teams.json"), cancellationToken) ?? [];
 
-    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(CancellationToken cancellationToken) =>
-        await ReadAsync<List<MatchSnapshot>>("matches.json", cancellationToken) ?? [];
+    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, CancellationToken cancellationToken) =>
+        await ReadAsync<List<MatchSnapshot>>(Path.Combine("competitions", competitionExternalId, "matches.json"), cancellationToken) ?? [];
 
-    public async Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(CancellationToken cancellationToken) =>
-        await ReadAsync<List<StandingSnapshot>>("standings.json", cancellationToken) ?? [];
+    public async Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken) =>
+        await ReadAsync<List<StandingSnapshot>>(Path.Combine("competitions", competitionExternalId, "standings.json"), cancellationToken) ?? [];
 
     public async Task<IReadOnlyList<RosterEntrySnapshot>> GetRosterAsync(string teamExternalId, CancellationToken cancellationToken) =>
         await ReadAsync<List<RosterEntrySnapshot>>(Path.Combine("rosters", $"{teamExternalId}.json"), cancellationToken) ?? [];

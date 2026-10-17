@@ -31,14 +31,11 @@ internal sealed class GetPlayerDashboardHandler(
     {
         var player = await Resolvers.CurrentPlayerAsync(currentUser, players, cancellationToken);
 
-        var competition = await competitions.GetCurrentAsync(cancellationToken);
-        var season = competition?.CurrentSeason;
+        if (player.CurrentMembership is not { } membership)
+            return new PlayerDashboardDto(PlayerMapper.ToDto(player, null, null, null, null), null, IndividualStatsDto.Empty, null, null, []);
 
-        if (competition is null || season is null)
-            return new PlayerDashboardDto(PlayerMapper.ToDto(player, null, null, null), null, IndividualStatsDto.Empty, null, null, []);
-
-        var membership = player.MembershipFor(season.Id);
-        var team = membership is null ? null : await teams.GetByIdAsync(membership.TeamId, cancellationToken);
+        var (competition, season) = await Resolvers.SeasonOfMembershipAsync(competitions, membership, cancellationToken);
+        var team = await teams.GetByIdAsync(membership.TeamId, cancellationToken);
 
         var myPerformances = await performances.GetByPlayerAsync(player.Id, season.Id, cancellationToken);
         var seasonMatches = await matches.GetBySeasonAsync(season.Id, cancellationToken);
@@ -46,12 +43,8 @@ internal sealed class GetPlayerDashboardHandler(
         var seasonPerformances = await performances.GetBySeasonAsync(season.Id, cancellationToken);
 
         var individual = PlayerStatsCalculator.Individual(myPerformances);
-
-        var teamImpact = membership is null
-            ? null
-            : PlayerStatsCalculator.TeamImpact(membership.TeamId, seasonMatches, myPerformances);
-
-        var league = PlayerStatsCalculator.LeagueComparison(player.Id, membership?.TeamId, table, seasonPerformances);
+        var teamImpact = PlayerStatsCalculator.TeamImpact(membership.TeamId, seasonMatches, myPerformances);
+        var league = PlayerStatsCalculator.LeagueComparison(player.Id, membership.TeamId, table, seasonPerformances);
 
         var matchMap = seasonMatches.ToDictionary(m => m.Id);
         var teamIds = seasonMatches.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();
@@ -67,7 +60,7 @@ internal sealed class GetPlayerDashboardHandler(
             .ToList();
 
         return new PlayerDashboardDto(
-            PlayerMapper.ToDto(player, membership, team, season),
+            PlayerMapper.ToDto(player, membership, team, competition, season),
             SeasonDto.From(competition, season),
             individual,
             teamImpact,

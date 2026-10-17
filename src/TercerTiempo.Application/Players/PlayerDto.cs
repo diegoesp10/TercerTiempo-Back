@@ -17,6 +17,9 @@ public sealed record SquadMembershipDto(
     string TeamName,
     string TeamShortName,
     string? TeamCrestUrl,
+    Guid CompetitionId,
+    string CompetitionName,
+    CompetitionLevel CompetitionLevel,
     Guid SeasonId,
     string SeasonLabel,
     int? ShirtNumber,
@@ -26,14 +29,15 @@ public sealed record SquadMembershipDto(
 
 internal static class PlayerMapper
 {
-    public static PlayerDto ToDto(Player player, SquadMembership? membership, Team? team, Season? season)
+    public static PlayerDto ToDto(Player player, SquadMembership? membership, Team? team, Competition? competition, Season? season)
     {
         SquadMembershipDto? membershipDto = null;
 
-        if (membership is not null && team is not null && season is not null)
+        if (membership is not null && team is not null && competition is not null && season is not null)
         {
             membershipDto = new SquadMembershipDto(
                 team.Id, team.Name, team.ShortName, team.CrestUrl,
+                competition.Id, competition.Name, competition.Level,
                 season.Id, season.Label,
                 membership.ShirtNumber, membership.Status, membership.VerifiedInRoster, membership.JoinedAt);
         }
@@ -43,15 +47,18 @@ internal static class PlayerMapper
             player.ExternalRef is not null, membershipDto);
     }
 
-    /// <summary>Resuelve la pertenencia del jugador en la temporada activa (si la hay) y construye el DTO.</summary>
+    /// <summary>Resuelve la pertenencia vigente del jugador (equipo, competición y temporada) y construye el DTO.</summary>
     public static async Task<PlayerDto> ToDtoAsync(
         Player player, ICompetitionStore competitions, ITeamStore teams, CancellationToken cancellationToken)
     {
-        var competition = await competitions.GetCurrentAsync(cancellationToken);
-        var season = competition?.CurrentSeason;
-        var membership = season is null ? null : player.MembershipFor(season.Id);
-        var team = membership is null ? null : await teams.GetByIdAsync(membership.TeamId, cancellationToken);
+        var membership = player.CurrentMembership;
+        if (membership is null)
+            return ToDto(player, null, null, null, null);
 
-        return ToDto(player, membership, team, season);
+        var team = await teams.GetByIdAsync(membership.TeamId, cancellationToken);
+        var competition = await competitions.GetBySeasonAsync(membership.SeasonId, cancellationToken);
+        var season = competition?.Seasons.FirstOrDefault(s => s.Id == membership.SeasonId);
+
+        return ToDto(player, membership, team, competition, season);
     }
 }

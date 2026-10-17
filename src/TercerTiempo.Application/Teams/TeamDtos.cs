@@ -9,6 +9,8 @@ public sealed record TeamSummaryDto(
     string Name,
     string ShortName,
     string? CrestUrl,
+    Guid CompetitionId,
+    string CompetitionName,
     int? Position,
     int? Played,
     int? Points);
@@ -20,6 +22,7 @@ public sealed record TeamDetailDto(
     string? CrestUrl,
     SeasonDto Season,
     StandingDto? Standing,
+    bool RosterPublished,
     IReadOnlyList<RosterEntryDto> Roster,
     IReadOnlyList<SquadMemberDto> RegisteredPlayers);
 

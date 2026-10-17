@@ -2,27 +2,59 @@ using TercerTiempo.Domain.Common;
 
 namespace TercerTiempo.Domain.Competitions;
 
-/// <summary>Liga o competición (p. ej. "Regional Preferente de Asturias") con sus temporadas.</summary>
+/// <summary>
+/// Una liga concreta: categoría + grupo (p. ej. "2ª AsturFútbol · Grupo 1" o "3ª RFEF"), con sus temporadas.
+/// Cada competición tiene su propia temporada activa; un equipo participa en una competición por temporada.
+/// </summary>
 public sealed class Competition : AggregateRoot
 {
     private readonly List<Season> _seasons = [];
 
     public string Name { get; private set; } = string.Empty;
+
+    /// <summary>Categoría sin el grupo: "3ª RFEF", "1ª AsturFútbol", "2ª AsturFútbol"...</summary>
+    public string Category { get; private set; } = string.Empty;
+
+    public CompetitionLevel Level { get; private set; }
+
+    /// <summary>Escalón dentro del nivel (1 = el más alto): 1ª RFEF = 1, 3ª RFEF = 3, 2ª AsturFútbol = 2...</summary>
+    public int Tier { get; private set; }
+
+    /// <summary>Grupo dentro de la categoría ("1", "2", "A"...), o null si solo hay uno.</summary>
+    public string? Group { get; private set; }
+
     public string Region { get; private set; } = string.Empty;
+
+    /// <summary>Orden de presentación: nivel, escalón y grupo.</summary>
+    public int SortOrder { get; private set; }
+
     public ExternalRef? ExternalRef { get; private set; }
 
     public IReadOnlyCollection<Season> Seasons => _seasons.AsReadOnly();
 
     private Competition() { }
 
-    public static Competition Create(string name, string region, ExternalRef? externalRef) =>
-        new()
-        {
-            Id = NewId(),
-            Name = Guard.NotEmpty(name, "nombre", 150),
-            Region = Guard.NotEmpty(region, "región", 100),
-            ExternalRef = externalRef,
-        };
+    public static Competition Create(
+        string name, string category, CompetitionLevel level, int tier, string? group, string region, ExternalRef? externalRef)
+    {
+        var competition = new Competition { Id = NewId(), ExternalRef = externalRef };
+        competition.UpdateDetails(name, category, level, tier, group, region);
+        return competition;
+    }
+
+    public void UpdateDetails(string name, string category, CompetitionLevel level, int tier, string? group, string region)
+    {
+        if (!Enum.IsDefined(level))
+            throw new DomainException("Nivel de competición no válido.");
+
+        Name = Guard.NotEmpty(name, "nombre", 150);
+        Category = Guard.NotEmpty(category, "categoría", 100);
+        Level = level;
+        Tier = Guard.InRange(tier, 0, 20, "escalón");
+        Group = string.IsNullOrWhiteSpace(group) ? null : Guard.NotEmpty(group, "grupo", 20);
+        Region = Guard.NotEmpty(region, "región", 100);
+        SortOrder = (int)level * 1000 + Tier * 20 + (int.TryParse(Group, out var number) ? Math.Min(number, 19) : 0);
+    }
 
     public Season AddSeason(string label, DateOnly startsOn, DateOnly endsOn, ExternalRef? externalRef)
     {
@@ -46,11 +78,5 @@ public sealed class Competition : AggregateRoot
 
         foreach (var season in _seasons)
             season.SetCurrent(season.Id == seasonId);
-    }
-
-    public void UpdateDetails(string name, string region)
-    {
-        Name = Guard.NotEmpty(name, "nombre", 150);
-        Region = Guard.NotEmpty(region, "región", 100);
     }
 }

@@ -11,12 +11,16 @@ internal static class AuthEndpoints
         var group = app.MapGroup("/api/auth").WithTags("Auth");
 
         group.MapPost("/register", (RegisterPlayerCommand command, IAuthRepository auth, CancellationToken ct) => auth.RegisterAsync(command, ct))
+            .WithName("RegisterPlayer")
             .WithSummary("Alta de un jugador en la plataforma")
+            .WithDescription("Crea el usuario y su perfil de jugador y devuelve el JWT ya iniciado. Usa el nombre con el que apareces en la plantilla de tu equipo para que la verificación sea automática.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapPost("/login", (LoginCommand command, IAuthRepository auth, CancellationToken ct) => auth.LoginAsync(command, ct))
-            .WithSummary("Inicio de sesión: devuelve un JWT y el perfil del jugador")
+            .WithName("Login")
+            .WithSummary("Inicio de sesión")
+            .WithDescription("Devuelve un JWT (caduca según Jwt:ExpirationMinutes) y el perfil del jugador con su pertenencia en la temporada actual.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 

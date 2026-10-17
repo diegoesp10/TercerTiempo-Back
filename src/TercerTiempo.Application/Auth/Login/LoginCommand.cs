@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
@@ -9,7 +10,11 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Auth.Login;
 
-public sealed record LoginCommand(string Email, string Password) : ICommand<AuthResponse>;
+public sealed record LoginCommand(
+    [property: Description("Email con el que te diste de alta.")]
+    string Email,
+    [property: Description("Contraseña.")]
+    string Password) : ICommand<AuthResponse>;
 
 internal sealed class LoginValidator : AbstractValidator<LoginCommand>
 {

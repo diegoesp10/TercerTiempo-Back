@@ -9,7 +9,9 @@ internal static class PerformanceEndpoints
         var group = app.MapGroup("/api/performances").WithTags("Rendimiento").RequireAuthorization();
 
         group.MapGet("/me", (IPerformancesRepository performances, CancellationToken ct) => performances.GetMineAsync(ct))
-            .WithSummary("Historial de rendimiento del jugador autenticado en la temporada actual");
+            .WithName("ListMyPerformances")
+            .WithSummary("Mi historial de rendimiento")
+            .WithDescription("Todos los partidos de la temporada actual en los que has registrado rendimiento, del más reciente al más antiguo, con los datos del partido.");
 
         return app;
     }

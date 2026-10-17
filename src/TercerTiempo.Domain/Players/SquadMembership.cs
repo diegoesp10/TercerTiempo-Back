@@ -10,17 +10,23 @@ public sealed class SquadMembership : Entity
     public Guid SeasonId { get; private set; }
     public int? ShirtNumber { get; private set; }
     public MembershipStatus Status { get; private set; }
+
+    /// <summary>true si el jugador coincide con una ficha de la plantilla publicada por el proveedor.</summary>
     public bool VerifiedInRoster { get; private set; }
+
     public DateTimeOffset JoinedAt { get; private set; }
     public DateTimeOffset? LeftAt { get; private set; }
 
     private SquadMembership() { }
 
     internal static SquadMembership Create(
-        Guid playerId, Guid teamId, Guid seasonId, int? shirtNumber, bool verifiedInRoster, DateTimeOffset now)
+        Guid playerId, Guid teamId, Guid seasonId, int? shirtNumber, bool verifiedInRoster, MembershipStatus status, DateTimeOffset now)
     {
         if (shirtNumber is < 1 or > 99)
             throw new DomainException("El dorsal debe estar entre 1 y 99.");
+
+        if (status == MembershipStatus.Inactive)
+            throw new DomainException("Una pertenencia no puede crearse ya finalizada.");
 
         return new SquadMembership
         {
@@ -30,7 +36,7 @@ public sealed class SquadMembership : Entity
             SeasonId = Guard.NotEmpty(seasonId, nameof(seasonId)),
             ShirtNumber = shirtNumber,
             VerifiedInRoster = verifiedInRoster,
-            Status = verifiedInRoster ? MembershipStatus.Active : MembershipStatus.Pending,
+            Status = status,
             JoinedAt = now,
         };
     }

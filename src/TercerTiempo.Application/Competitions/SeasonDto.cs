@@ -7,10 +7,11 @@ public sealed record SeasonDto(
     string Label,
     Guid CompetitionId,
     string CompetitionName,
+    CompetitionLevel Level,
     string Region,
     DateOnly StartsOn,
     DateOnly EndsOn)
 {
     public static SeasonDto From(Competition competition, Season season) =>
-        new(season.Id, season.Label, competition.Id, competition.Name, competition.Region, season.StartsOn, season.EndsOn);
+        new(season.Id, season.Label, competition.Id, competition.Name, competition.Level, competition.Region, season.StartsOn, season.EndsOn);
 }

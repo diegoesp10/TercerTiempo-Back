@@ -9,7 +9,7 @@ public class PerformancePolicyTests
     public void Active_squad_member_can_log_performance_on_played_match()
     {
         var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: true, TestData.Now);
+        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: true, rosterAvailable: true, TestData.Now);
         var match = TestData.PlayedMatch();
 
         var performance = PlayerMatchPerformance.Log(player, match, TestData.HomeTeamId, TestData.ValidStats(), TestData.Now);
@@ -24,7 +24,7 @@ public class PerformancePolicyTests
     public void Pending_membership_cannot_log_performance()
     {
         var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: false, TestData.Now);
+        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: false, rosterAvailable: true, TestData.Now);
         var match = TestData.PlayedMatch();
 
         Assert.Throws<DomainException>(() =>
@@ -35,7 +35,7 @@ public class PerformancePolicyTests
     public void Cannot_log_performance_on_scheduled_match()
     {
         var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: true, TestData.Now);
+        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: true, rosterAvailable: true, TestData.Now);
         var match = TestData.ScheduledMatch();
 
         Assert.Throws<DomainException>(() =>
@@ -47,7 +47,7 @@ public class PerformancePolicyTests
     {
         var player = TestData.NewPlayer();
         var otherTeam = Guid.NewGuid();
-        player.JoinSquad(otherTeam, TestData.SeasonId, 9, verifiedInRoster: true, TestData.Now);
+        player.JoinSquad(otherTeam, TestData.SeasonId, 9, verifiedInRoster: true, rosterAvailable: true, TestData.Now);
         var match = TestData.PlayedMatch();
 
         Assert.Throws<DomainException>(() =>
@@ -58,7 +58,7 @@ public class PerformancePolicyTests
     public void Update_replaces_stats_and_bumps_timestamp()
     {
         var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: true, TestData.Now);
+        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: true, rosterAvailable: true, TestData.Now);
         var performance = PlayerMatchPerformance.Log(player, TestData.PlayedMatch(), TestData.HomeTeamId, TestData.ValidStats(), TestData.Now);
 
         performance.Update(TestData.ValidStats(goals: 2, assists: 1, rating: 9), TestData.Now.AddHours(1));

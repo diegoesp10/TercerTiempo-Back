@@ -39,8 +39,8 @@ internal sealed class FootballDataSyncWorker(
             var result = await handler.Handle(new SyncSeasonCommand(), cancellationToken);
 
             logger.LogInformation(
-                "Datos de fútbol sincronizados ({Provider}): {Competition} {Season} - {Teams} equipos, {Matches} partidos",
-                result.Provider, result.Competition, result.Season, result.Teams, result.Matches);
+                "Datos de fútbol sincronizados ({Provider}): {Competitions} competiciones, {Teams} equipos, {Matches} partidos, {Roster} fichas de plantilla, {Errors} errores",
+                result.Provider, result.Competitions, result.Teams, result.Matches, result.RosterEntries, result.Errors.Count);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

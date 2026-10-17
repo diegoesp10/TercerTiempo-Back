@@ -1,5 +1,9 @@
 @baseUrl = http://localhost:5080
 @token = PEGA_AQUI_EL_ACCESS_TOKEN
+@competitionId = PEGA_AQUI_UN_ID_DE_GET_COMPETITIONS
+@teamId = PEGA_AQUI_UN_ID_DE_GET_TEAMS
+@rosterEntryId = PEGA_AQUI_UN_ID_DE_ROSTER
+@matchId = PEGA_AQUI_UN_ID_DE_PARTIDO
 
 ### Alta de jugador
 POST {{baseUrl}}/api/auth/register
@@ -26,13 +30,16 @@ Content-Type: application/json
 GET {{baseUrl}}/api/players/me
 Authorization: Bearer {{token}}
 
-### Equipos de la temporada
-GET {{baseUrl}}/api/teams
+### Ligas disponibles (nivel, categoría, grupo y temporada)
+GET {{baseUrl}}/api/competitions
+
+### Equipos de una liga
+GET {{baseUrl}}/api/teams?competitionId={{competitionId}}
 
 ### Ficha de un equipo (plantilla scrapeada + jugadores registrados)
 GET {{baseUrl}}/api/teams/{{teamId}}
 
-### Unirse a un equipo reclamando una ficha de la plantilla
+### Unirse a un equipo reclamando una ficha de la plantilla (rosterEntryId null si no está publicada)
 POST {{baseUrl}}/api/players/me/team
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -43,7 +50,7 @@ Content-Type: application/json
   "shirtNumber": 9
 }
 
-### Partidos de mi equipo
+### Partidos de un equipo
 GET {{baseUrl}}/api/teams/{{teamId}}/matches
 Authorization: Bearer {{token}}
 
@@ -73,9 +80,9 @@ Content-Type: application/json
 GET {{baseUrl}}/api/stats/dashboard
 Authorization: Bearer {{token}}
 
-### Clasificación
-GET {{baseUrl}}/api/league/table
+### Clasificación de una liga (sin competitionId, la de mi equipo)
+GET {{baseUrl}}/api/league/table?competitionId={{competitionId}}
 
-### Forzar sincronización con el proveedor
+### Forzar sincronización con futbolasturiano.es (~1 minuto)
 POST {{baseUrl}}/api/admin/sync
 Authorization: Bearer {{token}}

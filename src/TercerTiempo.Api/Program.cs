@@ -1,4 +1,3 @@
-using Scalar.AspNetCore;
 using TercerTiempo.Api.Endpoints;
 using TercerTiempo.Api.Extensions;
 using TercerTiempo.Application;
@@ -21,15 +20,12 @@ await app.Services.MigrateDatabaseAsync();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    app.MapScalarApiReference(options => options.Title = "Tercer Tiempo API");
-}
-else
-{
+// Documento OpenAPI (/openapi/v1.json) y referencia interactiva (/docs): siempre en Development;
+// en otros entornos solo con OpenApi:Enabled y Basic Auth.
+app.UseOpenApiDocs();
+
+if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
-}
 
 app.UseCors();
 app.UseAuthentication();

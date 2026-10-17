@@ -10,19 +10,20 @@ using TercerTiempo.Domain.Teams;
 namespace TercerTiempo.Application.Sync;
 
 /// <summary>
-/// Descarga la competición/temporada configurada en el proveedor externo y la vuelca en el dominio
-/// (equipos, calendario y resultados, clasificación y plantillas). Es idempotente: se puede repetir.
+/// Descarga todas las ligas que publica el proveedor externo y las vuelca en el dominio: competiciones y
+/// temporadas, equipos, calendario y resultados, clasificación y plantillas. Es idempotente y cada liga
+/// se guarda por separado, de modo que un fallo en una no impide sincronizar las demás.
 /// </summary>
 public sealed record SyncSeasonCommand : ICommand<SyncResultDto>;
 
 public sealed record SyncResultDto(
     string Provider,
-    string Competition,
-    string Season,
+    int Competitions,
     int Teams,
     int Matches,
     int Standings,
     int RosterEntries,
+    IReadOnlyList<string> Errors,
     DateTimeOffset SyncedAt);
 
 internal sealed class SyncSeasonHandler(
@@ -40,20 +41,71 @@ internal sealed class SyncSeasonHandler(
         var now = clock.GetUtcNow();
         var providerName = provider.ProviderName;
 
+        var snapshots = await provider.GetCompetitionsAsync(cancellationToken);
+
+        // Los equipos pueden cambiar de liga entre temporadas: se indexan por id externo una sola vez.
+        var teamsByExternalId = (await teams.GetAllAsync(cancellationToken))
+            .Where(t => t.ExternalRef?.Provider == providerName)
+            .ToDictionary(t => t.ExternalRef!.ExternalId);
+
+        var totals = (Competitions: 0, Teams: 0, Matches: 0, Standings: 0, Roster: 0);
+        var errors = new List<string>();
+
+        foreach (var snapshot in snapshots)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var counts = await SyncCompetitionAsync(snapshot, providerName, teamsByExternalId, now, cancellationToken);
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+
+                totals.Competitions++;
+                totals.Teams += counts.Teams;
+                totals.Matches += counts.Matches;
+                totals.Standings += counts.Standings;
+                totals.Roster += counts.Roster;
+
+                logger.LogInformation("Sincronizada {Competition} ({Season}): {Teams} equipos, {Matches} partidos, {Standings} filas, {Roster} fichas",
+                    snapshot.Name, snapshot.SeasonLabel, counts.Teams, counts.Matches, counts.Standings, counts.Roster);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error sincronizando la competición {Competition}", snapshot.Name);
+                errors.Add($"{snapshot.Name}: {ex.Message}");
+            }
+        }
+
+        logger.LogInformation("Sincronización con {Provider} completada: {Competitions} competiciones, {Teams} equipos, {Matches} partidos, {Errors} errores",
+            providerName, totals.Competitions, totals.Teams, totals.Matches, errors.Count);
+
+        return new SyncResultDto(providerName, totals.Competitions, totals.Teams, totals.Matches, totals.Standings, totals.Roster, errors, now);
+    }
+
+    private async Task<(int Teams, int Matches, int Standings, int Roster)> SyncCompetitionAsync(
+        CompetitionSnapshot snapshot,
+        string providerName,
+        Dictionary<string, Team> teamsByExternalId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
         // 1. Competición y temporada
-        var snapshot = await provider.GetCompetitionSeasonAsync(cancellationToken);
-        var competitionRef = ExternalRef.Create(providerName, snapshot.CompetitionExternalId);
+        var competitionRef = ExternalRef.Create(providerName, snapshot.ExternalId);
         var seasonRef = ExternalRef.Create(providerName, snapshot.SeasonExternalId);
 
         var competition = await competitions.GetByExternalRefAsync(competitionRef, cancellationToken);
         if (competition is null)
         {
-            competition = Competition.Create(snapshot.CompetitionName, snapshot.Region, competitionRef);
+            competition = Competition.Create(snapshot.Name, snapshot.Category, snapshot.Level, snapshot.Tier, snapshot.Group, snapshot.Region, competitionRef);
             competitions.Add(competition);
         }
         else
         {
-            competition.UpdateDetails(snapshot.CompetitionName, snapshot.Region);
+            competition.UpdateDetails(snapshot.Name, snapshot.Category, snapshot.Level, snapshot.Tier, snapshot.Group, snapshot.Region);
         }
 
         var season = competition.Seasons.FirstOrDefault(s => s.ExternalRef == seasonRef)
@@ -61,10 +113,7 @@ internal sealed class SyncSeasonHandler(
         competition.MarkCurrent(season.Id);
 
         // 2. Equipos
-        var teamSnapshots = await provider.GetTeamsAsync(cancellationToken);
-        var teamsByExternalId = (await teams.GetAllAsync(cancellationToken))
-            .Where(t => t.ExternalRef?.Provider == providerName)
-            .ToDictionary(t => t.ExternalRef!.ExternalId);
+        var teamSnapshots = await provider.GetTeamsAsync(snapshot.ExternalId, cancellationToken);
 
         foreach (var ts in teamSnapshots)
         {
@@ -80,7 +129,7 @@ internal sealed class SyncSeasonHandler(
         }
 
         // 3. Partidos
-        var matchSnapshots = await provider.GetMatchesAsync(cancellationToken);
+        var matchSnapshots = await provider.GetMatchesAsync(snapshot.ExternalId, cancellationToken);
         var matchesByExternalId = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
             .Where(m => m.ExternalRef?.Provider == providerName)
             .ToDictionary(m => m.ExternalRef!.ExternalId);
@@ -91,8 +140,8 @@ internal sealed class SyncSeasonHandler(
             if (!teamsByExternalId.TryGetValue(ms.HomeTeamExternalId, out var home)
                 || !teamsByExternalId.TryGetValue(ms.AwayTeamExternalId, out var away))
             {
-                logger.LogWarning("Partido {ExternalId} ignorado: equipo desconocido ({Home} vs {Away})",
-                    ms.ExternalId, ms.HomeTeamExternalId, ms.AwayTeamExternalId);
+                logger.LogWarning("Partido {ExternalId} de {Competition} ignorado: equipo desconocido ({Home} vs {Away})",
+                    ms.ExternalId, snapshot.Name, ms.HomeTeamExternalId, ms.AwayTeamExternalId);
                 continue;
             }
 
@@ -109,7 +158,7 @@ internal sealed class SyncSeasonHandler(
         }
 
         // 4. Clasificación
-        var standingSnapshots = await provider.GetStandingsAsync(cancellationToken);
+        var standingSnapshots = await provider.GetStandingsAsync(snapshot.ExternalId, cancellationToken);
         var standingsByTeam = (await standings.GetBySeasonAsync(season.Id, cancellationToken)).ToDictionary(s => s.TeamId);
 
         var syncedStandings = 0;
@@ -157,14 +206,7 @@ internal sealed class SyncSeasonHandler(
             }
         }
 
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-
-        logger.LogInformation(
-            "Sincronización completada con {Provider}: {Teams} equipos, {Matches} partidos, {Standings} filas, {Roster} fichas",
-            providerName, teamSnapshots.Count, syncedMatches, syncedStandings, syncedRoster);
-
-        return new SyncResultDto(providerName, competition.Name, season.Label,
-            teamSnapshots.Count, syncedMatches, syncedStandings, syncedRoster, now);
+        return (teamSnapshots.Count, syncedMatches, syncedStandings, syncedRoster);
     }
 
     private static void ApplyMatchSnapshot(Match match, MatchSnapshot snapshot, DateTimeOffset now)

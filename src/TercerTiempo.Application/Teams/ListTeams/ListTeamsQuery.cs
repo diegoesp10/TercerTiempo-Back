@@ -1,12 +1,13 @@
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Teams.ListTeams;
 
-/// <summary>Equipos de la temporada activa ordenados por clasificación.</summary>
-public sealed record ListTeamsQuery : IQuery<IReadOnlyList<TeamSummaryDto>>;
+/// <summary>Equipos de la temporada activa de una competición, ordenados por clasificación.</summary>
+public sealed record ListTeamsQuery(Guid CompetitionId) : IQuery<IReadOnlyList<TeamSummaryDto>>;
 
 internal sealed class ListTeamsHandler(
     ICompetitionStore competitions,
@@ -15,22 +16,22 @@ internal sealed class ListTeamsHandler(
 {
     public async Task<IReadOnlyList<TeamSummaryDto>> Handle(ListTeamsQuery query, CancellationToken cancellationToken)
     {
-        var competition = await competitions.GetCurrentAsync(cancellationToken);
-        var season = competition?.CurrentSeason;
+        var competition = await competitions.GetByIdAsync(query.CompetitionId, cancellationToken)
+            ?? throw new NotFoundException("Competición", query.CompetitionId);
 
-        var table = season is null
-            ? []
-            : await standings.GetBySeasonAsync(season.Id, cancellationToken);
+        if (competition.CurrentSeason is not { } season)
+            return [];
 
-        var byTeam = table.ToDictionary(s => s.TeamId);
-        var all = await teams.GetAllAsync(cancellationToken);
+        var table = (await standings.GetBySeasonAsync(season.Id, cancellationToken)).ToDictionary(s => s.TeamId);
+        var seasonTeams = await teams.GetBySeasonAsync(season.Id, cancellationToken);
 
-        return all
+        return seasonTeams
             .Select(team =>
             {
-                var standing = byTeam.GetValueOrDefault(team.Id);
+                var standing = table.GetValueOrDefault(team.Id);
                 return new TeamSummaryDto(
                     team.Id, team.Name, team.ShortName, team.CrestUrl,
+                    competition.Id, competition.Name,
                     standing?.Position, standing?.Played, standing?.Points);
             })
             .OrderBy(t => t.Position ?? int.MaxValue)

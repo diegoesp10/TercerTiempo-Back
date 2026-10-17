@@ -1,40 +1,53 @@
+using System.Globalization;
 using System.Text;
 using TercerTiempo.Application.Abstractions.FootballData;
+using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Players;
 
 namespace TercerTiempo.Infrastructure.FootballData.Fake;
 
 /// <summary>
-/// Proveedor de desarrollo: genera una liga regional ficticia de 12 equipos (calendario completo a doble vuelta,
-/// resultados hasta la fecha actual, clasificación y plantillas). Es determinista: los identificadores y los
-/// resultados no cambian entre arranques, así que la sincronización es idempotente y la liga "avanza" sola
-/// a medida que pasan las jornadas.
+/// Proveedor de desarrollo sin red: genera tres ligas ficticias (3ª RFEF, 1ª AsturFútbol y 2ª AsturFútbol · Grupo 1)
+/// de 12 equipos, con calendario completo a doble vuelta, resultados hasta la fecha actual, clasificación y
+/// plantillas (solo en las dos primeras, como ocurre en futbolasturiano.es). Es determinista: los identificadores
+/// y los resultados no cambian entre arranques, así que la sincronización es idempotente y la liga "avanza" sola.
 /// </summary>
 internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDataProvider
 {
-    private const string CompetitionId = "ast-preferente";
     private const string SeasonId = "2026-27";
+    private const string SeasonLabel = "2026/2027";
     private const int MatchdaysPerHalf = 11;
     private const int PlayersPerTeam = 18;
 
     private static readonly DateOnly SeasonStart = new(2026, 9, 6);
     private static readonly DateOnly SeasonEnd = new(2027, 5, 30);
 
+    private sealed record League(string Id, string Name, string Category, CompetitionLevel Level, int Tier, string? Group, bool PublishesRosters, int FirstTeam);
+
+    private static readonly League[] Leagues =
+    [
+        new("3-rfef", "3ª RFEF", "3ª RFEF", CompetitionLevel.National, 3, null, true, 0),
+        new("1-asturfutbol", "1ª AsturFútbol", "1ª AsturFútbol", CompetitionLevel.Regional, 1, null, true, 12),
+        new("2-asturfutbol-g1", "2ª AsturFútbol · Grupo 1", "2ª AsturFútbol", CompetitionLevel.Regional, 2, "1", false, 24),
+    ];
+
     private static readonly (string Id, string Name, string ShortName, int Strength)[] TeamSeeds =
     [
-        ("nalon", "CD Nalón", "NAL", 78),
-        ("cabranes", "UD Cabranes", "CAB", 73),
-        ("candamo", "Sporting de Candamo", "CAN", 70),
-        ("pravia", "Racing de Pravia", "PRA", 68),
-        ("cudillero", "CD Cudillero", "CUD", 66),
-        ("norena", "Atlético Noreña", "NOR", 64),
-        ("siero", "UD Siero", "SIE", 62),
-        ("quiros", "CD Quirós", "QUI", 58),
-        ("colombres", "SD Colombres", "COL", 56),
-        ("valdes", "Unión Valdés", "VAL", 54),
-        ("bimenes", "CD Bimenes", "BIM", 50),
-        ("tapia", "Atlético Tapia", "TAP", 46),
+        ("nalon", "CD Nalón", "NAL", 78), ("cabranes", "UD Cabranes", "CAB", 73), ("candamo", "Sporting de Candamo", "CAN", 70),
+        ("pravia", "Racing de Pravia", "PRA", 68), ("cudillero", "CD Cudillero", "CUD", 66), ("norena", "Atlético Noreña", "NOR", 64),
+        ("siero", "UD Siero", "SIE", 62), ("quiros", "CD Quirós", "QUI", 58), ("colombres", "SD Colombres", "COL", 56),
+        ("valdes", "Unión Valdés", "VAL", 54), ("bimenes", "CD Bimenes", "BIM", 50), ("tapia", "Atlético Tapia", "TAP", 46),
+
+        ("llanera", "Atlético Llanera", "LLA", 76), ("grado", "CD Grado", "GRA", 72), ("tineo", "UD Tineo", "TIN", 69),
+        ("cangas", "SD Cangas", "CGS", 67), ("ribadesella", "CD Ribadesella", "RIB", 65), ("salas", "CD Salas", "SAL", 63),
+        ("castropol", "UD Castropol", "CAS", 60), ("piloña", "CD Piloña", "PIL", 57), ("nava", "CD Nava", "NAV", 55),
+        ("laviana", "CD Laviana", "LAV", 53), ("aller", "Atlético Aller", "ALL", 49), ("boal", "CD Boal", "BOA", 45),
+
+        ("belmonte", "CD Belmonte", "BEL", 74), ("carreño", "Atlético Carreño", "CAR", 71), ("gozon", "UD Gozón", "GOZ", 68),
+        ("illas", "CD Illas", "ILL", 66), ("lena", "SD Lena", "LEN", 64), ("morcin", "CD Morcín", "MOR", 62),
+        ("proaza", "CD Proaza", "PRO", 59), ("ribera", "Ribera de Arriba CF", "RIA", 57), ("sariego", "CD Sariego", "SAR", 54),
+        ("somiedo", "UD Somiedo", "SOM", 52), ("teverga", "CD Teverga", "TEV", 48), ("yernes", "Atlético Yernes", "YER", 44),
     ];
 
     private static readonly string[] FirstNames =
@@ -55,23 +68,24 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
 
     public string ProviderName => FootballDataOptions.FakeProvider;
 
-    public Task<CompetitionSeasonSnapshot> GetCompetitionSeasonAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(new CompetitionSeasonSnapshot(
-            CompetitionId, "Regional Preferente de Asturias", "Asturias",
-            SeasonId, "2026/27", SeasonStart, SeasonEnd));
+    public Task<IReadOnlyList<CompetitionSnapshot>> GetCompetitionsAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<CompetitionSnapshot>>(Leagues
+            .Select(l => new CompetitionSnapshot(l.Id, l.Name, l.Category, l.Level, l.Tier, l.Group, "Asturias", SeasonId, SeasonLabel, SeasonStart, SeasonEnd))
+            .ToList());
 
-    public Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<TeamSnapshot>>(
-            TeamSeeds.Select(t => new TeamSnapshot(t.Id, t.Name, t.ShortName, null)).ToList());
+    public Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(string competitionExternalId, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<TeamSnapshot>>(TeamsOf(competitionExternalId)
+            .Select(t => new TeamSnapshot(t.Id, t.Name, t.ShortName, null))
+            .ToList());
 
-    public Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<MatchSnapshot>>(BuildMatches(clock.GetUtcNow()));
+    public Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<MatchSnapshot>>(BuildMatches(competitionExternalId, clock.GetUtcNow()));
 
-    public Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken)
     {
-        var played = BuildMatches(clock.GetUtcNow()).Where(m => m.Status == MatchStatus.Played).ToList();
+        var played = BuildMatches(competitionExternalId, clock.GetUtcNow()).Where(m => m.Status == MatchStatus.Played).ToList();
 
-        var rows = TeamSeeds.Select(team =>
+        var rows = TeamsOf(competitionExternalId).Select(team =>
         {
             var home = played.Where(m => m.HomeTeamExternalId == team.Id).ToList();
             var away = played.Where(m => m.AwayTeamExternalId == team.Id).ToList();
@@ -96,7 +110,8 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
 
     public Task<IReadOnlyList<RosterEntrySnapshot>> GetRosterAsync(string teamExternalId, CancellationToken cancellationToken)
     {
-        if (TeamSeeds.All(t => t.Id != teamExternalId))
+        var league = Leagues.FirstOrDefault(l => TeamsOf(l.Id).Any(t => t.Id == teamExternalId));
+        if (league is null || !league.PublishesRosters)
             return Task.FromResult<IReadOnlyList<RosterEntrySnapshot>>([]);
 
         var random = StableRandom($"roster:{teamExternalId}");
@@ -126,11 +141,21 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
         return Task.FromResult<IReadOnlyList<RosterEntrySnapshot>>(roster);
     }
 
-    /// <summary>Calendario a doble vuelta por el método del círculo; resultados para las jornadas ya pasadas.</summary>
-    private static List<MatchSnapshot> BuildMatches(DateTimeOffset now)
+    private static IEnumerable<(string Id, string Name, string ShortName, int Strength)> TeamsOf(string leagueId)
     {
-        var teams = TeamSeeds.Select(t => t.Id).ToList();
-        var strength = TeamSeeds.ToDictionary(t => t.Id, t => t.Strength);
+        var league = Leagues.FirstOrDefault(l => l.Id == leagueId);
+        return league is null ? [] : TeamSeeds.Skip(league.FirstTeam).Take(12);
+    }
+
+    /// <summary>Calendario a doble vuelta por el método del círculo; resultados para las jornadas ya pasadas.</summary>
+    private static List<MatchSnapshot> BuildMatches(string leagueId, DateTimeOffset now)
+    {
+        var seeds = TeamsOf(leagueId).ToList();
+        if (seeds.Count == 0) return [];
+
+        var teams = seeds.Select(t => t.Id).ToList();
+        var strength = seeds.ToDictionary(t => t.Id, t => t.Strength);
+        var names = seeds.ToDictionary(t => t.Id, t => t.Name);
         var matches = new List<MatchSnapshot>();
 
         for (var round = 0; round < MatchdaysPerHalf; round++)
@@ -145,7 +170,6 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
                 pairs.Add(round % 2 == 0 ? (a, b) : (b, a));
             }
 
-            // Primera y segunda vuelta (local/visitante invertidos)
             for (var half = 0; half < 2; half++)
             {
                 var matchday = round + 1 + half * MatchdaysPerHalf;
@@ -154,7 +178,7 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
                 foreach (var (home, away) in pairs)
                 {
                     var (h, a) = half == 0 ? (home, away) : (away, home);
-                    var externalId = $"{SeasonId}-j{matchday:00}-{h}-{a}";
+                    var externalId = $"{leagueId}-{SeasonId}-j{matchday:00}-{h}-{a}";
                     var played = kickoff.AddHours(2) < now;
 
                     int? homeGoals = null, awayGoals = null;
@@ -165,25 +189,23 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
                         externalId, matchday, h, a, kickoff,
                         played ? MatchStatus.Played : MatchStatus.Scheduled,
                         homeGoals, awayGoals,
-                        $"Campo municipal de {TeamSeeds.First(t => t.Id == h).Name.Split(' ').Last()}"));
+                        $"Campo municipal de {names[h].Split(' ').Last()}"));
                 }
             }
 
-            // Rotación del círculo (el primer equipo queda fijo)
             var last = teams[^1];
             teams.RemoveAt(teams.Count - 1);
             teams.Insert(1, last);
         }
 
-        return matches.OrderBy(m => m.Matchday).ThenBy(m => m.ExternalId).ToList();
+        return matches.OrderBy(m => m.Matchday).ThenBy(m => m.ExternalId, StringComparer.Ordinal).ToList();
     }
 
     private static DateTimeOffset KickoffFor(int matchday)
     {
         var date = SeasonStart.AddDays(7 * (matchday - 1));
         var local = date.ToDateTime(new TimeOnly(17, 0));
-        var offset = MadridTimeZone.GetUtcOffset(local);
-        return new DateTimeOffset(local, offset);
+        return new DateTimeOffset(local, MadridTimeZone.GetUtcOffset(local));
     }
 
     private static (int Home, int Away) SimulateScore(string matchId, int homeStrength, int awayStrength)

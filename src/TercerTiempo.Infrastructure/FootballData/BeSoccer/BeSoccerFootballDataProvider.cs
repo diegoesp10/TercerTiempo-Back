@@ -9,7 +9,7 @@ using TercerTiempo.Domain.Players;
 namespace TercerTiempo.Infrastructure.FootballData.BeSoccer;
 
 /// <summary>
-/// Integración con la API de BeSoccer (apiclient.besoccerapps.com).
+/// Integración con la API de BeSoccer (apiclient.besoccerapps.com) para una única liga configurada.
 /// ESQUELETO: la fontanería (HttpClient tipado, opciones, parseo tolerante) está lista, pero los nombres de
 /// "req" y de los campos de respuesta dependen del plan contratado: revísalos contra la documentación oficial.
 /// </summary>
@@ -22,22 +22,21 @@ internal sealed class BeSoccerFootballDataProvider(
 
     private BeSoccerOptions Settings => options.Value.BeSoccer;
 
-    public Task<CompetitionSeasonSnapshot> GetCompetitionSeasonAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<CompetitionSnapshot>> GetCompetitionsAsync(CancellationToken cancellationToken)
     {
         EnsureConfigured();
 
         // La competición/temporada se define por configuración: la API solo aporta equipos, partidos y clasificación.
-        return Task.FromResult(new CompetitionSeasonSnapshot(
-            Settings.CompetitionId,
-            Settings.CompetitionName,
-            Settings.Region,
-            Settings.Season,
-            Settings.SeasonLabel,
-            Settings.SeasonStartsOn,
-            Settings.SeasonEndsOn));
+        IReadOnlyList<CompetitionSnapshot> competitions =
+        [
+            new(Settings.CompetitionId, Settings.CompetitionName, Settings.CompetitionName, Settings.Level, Settings.Tier, Settings.Group,
+                Settings.Region, Settings.Season, Settings.SeasonLabel, Settings.SeasonStartsOn, Settings.SeasonEndsOn),
+        ];
+
+        return Task.FromResult(competitions);
     }
 
-    public async Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(string competitionExternalId, CancellationToken cancellationToken)
     {
         using var document = await GetAsync("teams", cancellationToken);
         if (!TryGetArray(document, "team", out var teams)) return [];
@@ -52,7 +51,7 @@ internal sealed class BeSoccerFootballDataProvider(
             .ToList();
     }
 
-    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, CancellationToken cancellationToken)
     {
         using var document = await GetAsync("matchs", cancellationToken);
         if (!TryGetArray(document, "match", out var matches)) return [];
@@ -71,7 +70,6 @@ internal sealed class BeSoccerFootballDataProvider(
             {
                 1 => MatchStatus.Played,
                 0 => MatchStatus.InProgress,
-                -1 => MatchStatus.Scheduled,
                 _ => MatchStatus.Scheduled,
             };
 
@@ -90,7 +88,7 @@ internal sealed class BeSoccerFootballDataProvider(
         return result;
     }
 
-    public async Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken)
     {
         using var document = await GetAsync("tables", cancellationToken);
         if (!TryGetArray(document, "table", out var rows)) return [];

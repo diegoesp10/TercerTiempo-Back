@@ -23,7 +23,7 @@ internal sealed class GetTeamHandler(
         var team = await teams.GetByIdAsync(query.TeamId, cancellationToken)
             ?? throw new NotFoundException("Equipo", query.TeamId);
 
-        var (competition, season) = await Resolvers.CurrentSeasonAsync(competitions, cancellationToken);
+        var (competition, season) = await Resolvers.SeasonOfTeamAsync(competitions, team.Id, cancellationToken);
 
         var standing = (await standings.GetBySeasonAsync(season.Id, cancellationToken))
             .FirstOrDefault(s => s.TeamId == team.Id);
@@ -54,6 +54,7 @@ internal sealed class GetTeamHandler(
             team.Id, team.Name, team.ShortName, team.CrestUrl,
             SeasonDto.From(competition, season),
             standing is null ? null : StandingDto.From(standing, team),
+            RosterPublished: roster.Count > 0,
             rosterDtos,
             memberDtos);
     }

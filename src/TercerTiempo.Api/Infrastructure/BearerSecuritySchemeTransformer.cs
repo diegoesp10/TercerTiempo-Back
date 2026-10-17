@@ -5,44 +5,25 @@ using Microsoft.OpenApi;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>Declara el esquema Bearer en el documento OpenAPI para poder probar endpoints protegidos desde Scalar.</summary>
+/// <summary>Declara el esquema Bearer (JWT) en el documento OpenAPI para autenticarse desde la referencia interactiva.</summary>
 internal sealed class BearerSecuritySchemeTransformer(IAuthenticationSchemeProvider authenticationSchemeProvider)
     : IOpenApiDocumentTransformer
 {
-    private const string SchemeName = JwtBearerDefaults.AuthenticationScheme;
-
     public async Task TransformAsync(OpenApiDocument document, OpenApiDocumentTransformerContext context, CancellationToken cancellationToken)
     {
         var schemes = await authenticationSchemeProvider.GetAllSchemesAsync();
-        if (schemes.All(s => s.Name != SchemeName))
+        if (schemes.All(s => s.Name != JwtBearerDefaults.AuthenticationScheme))
             return;
 
         document.Components ??= new OpenApiComponents();
         document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
-        document.Components.SecuritySchemes[SchemeName] = new OpenApiSecurityScheme
+        document.Components.SecuritySchemes[JwtBearerDefaults.AuthenticationScheme] = new OpenApiSecurityScheme
         {
             Type = SecuritySchemeType.Http,
             Scheme = "bearer",
             BearerFormat = "JWT",
             In = ParameterLocation.Header,
-            Description = "Token obtenido en /api/auth/login o /api/auth/register",
+            Description = "Token devuelto por POST /api/auth/register o POST /api/auth/login. Pega solo el token, sin el prefijo 'Bearer'.",
         };
-
-        if (document.Paths is null)
-            return;
-
-        foreach (var path in document.Paths.Values)
-        {
-            if (path.Operations is null) continue;
-
-            foreach (var operation in path.Operations.Values)
-            {
-                operation.Security ??= [];
-                operation.Security.Add(new OpenApiSecurityRequirement
-                {
-                    [new OpenApiSecuritySchemeReference(SchemeName, document)] = [],
-                });
-            }
-        }
     }
 }

@@ -8,7 +8,7 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Matches.ListTeamMatches;
 
-/// <summary>Calendario y resultados de un equipo en la temporada activa.</summary>
+/// <summary>Calendario y resultados de un equipo en la temporada activa de su competición.</summary>
 public sealed record ListTeamMatchesQuery(Guid TeamId) : IQuery<IReadOnlyList<MatchDto>>;
 
 internal sealed class ListTeamMatchesHandler(
@@ -20,7 +20,7 @@ internal sealed class ListTeamMatchesHandler(
 {
     public async Task<IReadOnlyList<MatchDto>> Handle(ListTeamMatchesQuery query, CancellationToken cancellationToken)
     {
-        var (_, season) = await Resolvers.CurrentSeasonAsync(competitions, cancellationToken);
+        var (_, season) = await Resolvers.SeasonOfTeamAsync(competitions, query.TeamId, cancellationToken);
 
         var list = await matches.GetTeamMatchesAsync(season.Id, query.TeamId, cancellationToken);
 

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
@@ -10,11 +11,17 @@ using TercerTiempo.Domain.Teams;
 namespace TercerTiempo.Application.Players.JoinTeam;
 
 /// <summary>
-/// El jugador se une a la plantilla de un equipo en la temporada activa.
-/// Si indica una ficha de la plantilla scrapeada (RosterEntryId) o su nombre coincide con una,
-/// la pertenencia nace verificada/activa; si no, queda pendiente de validación.
+/// El jugador se une a la plantilla de un equipo en la temporada activa de su competición.
+/// Si indica una ficha de la plantilla publicada (RosterEntryId) o su nombre coincide con una, la pertenencia nace
+/// verificada; si el equipo no tiene plantilla publicada nace activa sin verificar; si la tiene y no aparece, queda pendiente.
 /// </summary>
-public sealed record JoinTeamCommand(Guid TeamId, Guid? RosterEntryId, int? ShirtNumber) : ICommand<PlayerDto>;
+public sealed record JoinTeamCommand(
+    [property: Description("Id del equipo (GET /api/teams?competitionId=...).")]
+    Guid TeamId,
+    [property: Description("Opcional: id de tu ficha en la plantilla del equipo (campo roster[].id de GET /api/teams/{teamId}). Si se omite se intenta casar por nombre.")]
+    Guid? RosterEntryId,
+    [property: Description("Opcional, 1-99. Si se omite se toma el de la ficha reclamada.")]
+    int? ShirtNumber) : ICommand<PlayerDto>;
 
 internal sealed class JoinTeamValidator : AbstractValidator<JoinTeamCommand>
 {
@@ -36,10 +43,11 @@ internal sealed class JoinTeamHandler(
     public async Task<PlayerDto> Handle(JoinTeamCommand command, CancellationToken cancellationToken)
     {
         var player = await Resolvers.CurrentPlayerAsync(currentUser, players, cancellationToken);
-        var (_, season) = await Resolvers.CurrentSeasonAsync(competitions, cancellationToken);
 
         var team = await teams.GetByIdAsync(command.TeamId, cancellationToken)
             ?? throw new NotFoundException("Equipo", command.TeamId);
+
+        var (competition, season) = await Resolvers.SeasonOfTeamAsync(competitions, team.Id, cancellationToken);
 
         var roster = await teams.GetRosterAsync(team.Id, season.Id, cancellationToken);
 
@@ -51,6 +59,7 @@ internal sealed class JoinTeamHandler(
             team.Id, season.Id,
             command.ShirtNumber ?? entry?.ShirtNumber,
             verifiedInRoster: entry is not null,
+            rosterAvailable: roster.Count > 0,
             clock.GetUtcNow());
 
         // Copia del value object: EF no permite compartir la misma instancia owned entre dos agregados.
@@ -59,6 +68,6 @@ internal sealed class JoinTeamHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return PlayerMapper.ToDto(player, membership, team, season);
+        return PlayerMapper.ToDto(player, membership, team, competition, season);
     }
 }

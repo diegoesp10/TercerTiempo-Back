@@ -68,8 +68,11 @@ internal sealed class LogPerformanceHandler(
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
             ?? throw new NotFoundException("Partido", command.MatchId);
 
-        var membership = player.MembershipFor(match.SeasonId)
-            ?? throw new ForbiddenException("No perteneces a ninguna plantilla en la temporada de este partido.");
+        var membership = player.CurrentMembership
+            ?? throw new ForbiddenException("No perteneces a ninguna plantilla.");
+
+        if (membership.SeasonId != match.SeasonId)
+            throw new ForbiddenException("Este partido no es de la competición de tu equipo.");
 
         var now = clock.GetUtcNow();
         var stats = command.ToStats();

@@ -5,6 +5,7 @@ namespace TercerTiempo.Domain.Players;
 /// <summary>
 /// Jugador registrado en la plataforma. Está vinculado a un usuario de identidad (UserId)
 /// y, opcionalmente, a su ficha en el proveedor externo (ExternalRef) cuando se verifica en la plantilla.
+/// Solo puede pertenecer a una plantilla a la vez.
 /// </summary>
 public sealed class Player : AggregateRoot
 {
@@ -19,6 +20,9 @@ public sealed class Player : AggregateRoot
     public DateTimeOffset RegisteredAt { get; private set; }
 
     public IReadOnlyCollection<SquadMembership> Memberships => _memberships.AsReadOnly();
+
+    /// <summary>Pertenencia vigente (pendiente o activa), si la hay.</summary>
+    public SquadMembership? CurrentMembership => _memberships.FirstOrDefault(m => m.IsCurrent);
 
     private Player() { }
 
@@ -48,23 +52,27 @@ public sealed class Player : AggregateRoot
     }
 
     /// <summary>
-    /// Se une a la plantilla de un equipo para una temporada. Si el nombre aparece en la plantilla
-    /// del proveedor la pertenencia nace activa; si no, queda pendiente de validación.
+    /// Se une a la plantilla de un equipo en una temporada. La pertenencia nace activa si el jugador
+    /// coincide con una ficha de la plantilla publicada o si el proveedor no publica plantilla para ese equipo
+    /// (no hay nada contra lo que verificar); si hay plantilla y no aparece, queda pendiente de validación.
     /// </summary>
-    public SquadMembership JoinSquad(Guid teamId, Guid seasonId, int? shirtNumber, bool verifiedInRoster, DateTimeOffset now)
+    public SquadMembership JoinSquad(
+        Guid teamId, Guid seasonId, int? shirtNumber, bool verifiedInRoster, bool rosterAvailable, DateTimeOffset now)
     {
-        if (_memberships.Any(m => m.SeasonId == seasonId && m.IsCurrent))
-            throw new DomainException("Ya perteneces a una plantilla en esta temporada. Abandónala antes de unirte a otra.");
+        if (CurrentMembership is not null)
+            throw new DomainException("Ya perteneces a una plantilla. Abandónala antes de unirte a otra.");
 
-        var membership = SquadMembership.Create(Id, teamId, seasonId, shirtNumber, verifiedInRoster, now);
+        var status = verifiedInRoster || !rosterAvailable ? MembershipStatus.Active : MembershipStatus.Pending;
+
+        var membership = SquadMembership.Create(Id, teamId, seasonId, shirtNumber, verifiedInRoster, status, now);
         _memberships.Add(membership);
         return membership;
     }
 
-    public void LeaveSquad(Guid seasonId, DateTimeOffset now)
+    public void LeaveSquad(DateTimeOffset now)
     {
-        var membership = MembershipFor(seasonId)
-            ?? throw new DomainException("No perteneces a ninguna plantilla en esta temporada.");
+        var membership = CurrentMembership
+            ?? throw new DomainException("No perteneces a ninguna plantilla.");
 
         membership.Leave(now);
     }

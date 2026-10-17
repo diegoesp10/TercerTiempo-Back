@@ -30,18 +30,20 @@ public class PlayerTests
     {
         var player = TestData.NewPlayer();
 
-        var membership = player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 7, verifiedInRoster: true, TestData.Now);
+        var membership = player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 7, verifiedInRoster: true, rosterAvailable: true, TestData.Now);
 
         Assert.Equal(MembershipStatus.Active, membership.Status);
+        Assert.True(membership.VerifiedInRoster);
         Assert.True(player.IsActiveIn(TestData.HomeTeamId, TestData.SeasonId));
+        Assert.Same(membership, player.CurrentMembership);
     }
 
     [Fact]
-    public void Unverified_join_creates_pending_membership()
+    public void Unverified_join_with_published_roster_is_pending()
     {
         var player = TestData.NewPlayer();
 
-        var membership = player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, verifiedInRoster: false, TestData.Now);
+        var membership = player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, verifiedInRoster: false, rosterAvailable: true, TestData.Now);
 
         Assert.Equal(MembershipStatus.Pending, membership.Status);
         Assert.False(player.IsActiveIn(TestData.HomeTeamId, TestData.SeasonId));
@@ -49,27 +51,48 @@ public class PlayerTests
     }
 
     [Fact]
-    public void Cannot_join_two_squads_in_same_season()
+    public void Join_without_published_roster_is_active_but_unverified()
     {
         var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, true, TestData.Now);
+
+        var membership = player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, verifiedInRoster: false, rosterAvailable: false, TestData.Now);
+
+        Assert.Equal(MembershipStatus.Active, membership.Status);
+        Assert.False(membership.VerifiedInRoster);
+        Assert.True(player.IsActiveIn(TestData.HomeTeamId, TestData.SeasonId));
+    }
+
+    [Fact]
+    public void Cannot_join_a_squad_while_belonging_to_another()
+    {
+        var player = TestData.NewPlayer();
+        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, true, true, TestData.Now);
 
         Assert.Throws<DomainException>(() =>
-            player.JoinSquad(TestData.AwayTeamId, TestData.SeasonId, null, true, TestData.Now));
+            player.JoinSquad(TestData.AwayTeamId, Guid.NewGuid(), null, true, true, TestData.Now));
     }
 
     [Fact]
     public void Can_join_another_squad_after_leaving()
     {
         var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, true, TestData.Now);
+        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, true, true, TestData.Now);
 
-        player.LeaveSquad(TestData.SeasonId, TestData.Now.AddDays(1));
-        var membership = player.JoinSquad(TestData.AwayTeamId, TestData.SeasonId, null, true, TestData.Now.AddDays(2));
+        player.LeaveSquad(TestData.Now.AddDays(1));
+        var membership = player.JoinSquad(TestData.AwayTeamId, TestData.SeasonId, null, true, true, TestData.Now.AddDays(2));
 
         Assert.Equal(TestData.AwayTeamId, membership.TeamId);
         Assert.Equal(2, player.Memberships.Count);
         Assert.False(player.IsActiveIn(TestData.HomeTeamId, TestData.SeasonId));
+        Assert.Same(membership, player.CurrentMembership);
+    }
+
+    [Fact]
+    public void Leaving_without_membership_fails()
+    {
+        var player = TestData.NewPlayer();
+
+        Assert.Throws<DomainException>(() => player.LeaveSquad(TestData.Now));
     }
 
     [Theory]
@@ -80,6 +103,6 @@ public class PlayerTests
         var player = TestData.NewPlayer();
 
         Assert.Throws<DomainException>(() =>
-            player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, shirtNumber, true, TestData.Now));
+            player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, shirtNumber, true, true, TestData.Now));
     }
 }

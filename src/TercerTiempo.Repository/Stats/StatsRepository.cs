@@ -12,6 +12,6 @@ internal sealed class StatsRepository(
     public Task<PlayerDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default) =>
         getDashboard.Handle(new GetPlayerDashboardQuery(), cancellationToken);
 
-    public Task<LeagueTableDto> GetLeagueTableAsync(CancellationToken cancellationToken = default) =>
-        getLeagueTable.Handle(new GetLeagueTableQuery(), cancellationToken);
+    public Task<LeagueTableDto> GetLeagueTableAsync(Guid? competitionId, CancellationToken cancellationToken = default) =>
+        getLeagueTable.Handle(new GetLeagueTableQuery(competitionId), cancellationToken);
 }
