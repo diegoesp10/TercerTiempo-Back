@@ -1,0 +1,35 @@
+using Microsoft.EntityFrameworkCore;
+using TercerTiempo.Domain.Teams;
+
+namespace TercerTiempo.Infrastructure.Persistence.Stores;
+
+internal sealed class TeamStore(AppDbContext db) : ITeamStore
+{
+    public Task<Team?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.Teams.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<Team>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        var list = ids.Distinct().ToList();
+        if (list.Count == 0) return [];
+
+        return await db.Teams.Where(t => list.Contains(t.Id)).ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Team>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        await db.Teams.OrderBy(t => t.Name).ToListAsync(cancellationToken);
+
+    public void Add(Team team) => db.Teams.Add(team);
+
+    public async Task<IReadOnlyList<RosterEntry>> GetRosterAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken = default) =>
+        await db.RosterEntries
+            .Where(r => r.TeamId == teamId && r.SeasonId == seasonId)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<RosterEntry>> GetSeasonRosterAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
+        await db.RosterEntries
+            .Where(r => r.SeasonId == seasonId)
+            .ToListAsync(cancellationToken);
+
+    public void AddRosterEntry(RosterEntry entry) => db.RosterEntries.Add(entry);
+}

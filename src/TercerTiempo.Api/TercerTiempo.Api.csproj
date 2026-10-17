@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Capa de presentación: Minimal APIs, autenticación JWT, OpenAPI + Scalar,
+       manejo global de errores y composición de dependencias.
+       Los endpoints solo hablan con la capa Repository (Application y Domain llegan de forma transitiva). -->
+
+  <PropertyGroup>
+    <UserSecretsId>tercer-tiempo-api</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TercerTiempo.Repository\TercerTiempo.Repository.csproj" />
+    <ProjectReference Include="..\TercerTiempo.Infrastructure\TercerTiempo.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.*">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Scalar.AspNetCore" Version="2.18.0" />
+  </ItemGroup>
+
+</Project>

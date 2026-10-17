@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Capa de dominio: entidades, value objects, reglas de negocio y contratos de persistencia (stores).
+       No depende de ningún framework ni de otras capas. -->
+
+</Project>

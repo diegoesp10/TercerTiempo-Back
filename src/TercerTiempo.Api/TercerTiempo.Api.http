@@ -1,0 +1,81 @@
+@baseUrl = http://localhost:5080
+@token = PEGA_AQUI_EL_ACCESS_TOKEN
+
+### Alta de jugador
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "pelayo@example.com",
+  "password": "Password123",
+  "displayName": "Pelayo Fernández",
+  "position": "Forward",
+  "birthDate": "1998-04-12"
+}
+
+### Login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "pelayo@example.com",
+  "password": "Password123"
+}
+
+### Mi perfil
+GET {{baseUrl}}/api/players/me
+Authorization: Bearer {{token}}
+
+### Equipos de la temporada
+GET {{baseUrl}}/api/teams
+
+### Ficha de un equipo (plantilla scrapeada + jugadores registrados)
+GET {{baseUrl}}/api/teams/{{teamId}}
+
+### Unirse a un equipo reclamando una ficha de la plantilla
+POST {{baseUrl}}/api/players/me/team
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "teamId": "{{teamId}}",
+  "rosterEntryId": "{{rosterEntryId}}",
+  "shirtNumber": 9
+}
+
+### Partidos de mi equipo
+GET {{baseUrl}}/api/teams/{{teamId}}/matches
+Authorization: Bearer {{token}}
+
+### Registrar rendimiento en un partido disputado
+PUT {{baseUrl}}/api/matches/{{matchId}}/performance
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "started": true,
+  "minutesPlayed": 90,
+  "goals": 1,
+  "assists": 1,
+  "shots": 4,
+  "shotsOnTarget": 2,
+  "keyPasses": 2,
+  "tackles": 1,
+  "interceptions": 0,
+  "saves": 0,
+  "yellowCards": 0,
+  "redCard": false,
+  "selfRating": 8,
+  "notes": "Buen partido, marqué de cabeza."
+}
+
+### Panel del jugador
+GET {{baseUrl}}/api/stats/dashboard
+Authorization: Bearer {{token}}
+
+### Clasificación
+GET {{baseUrl}}/api/league/table
+
+### Forzar sincronización con el proveedor
+POST {{baseUrl}}/api/admin/sync
+Authorization: Bearer {{token}}

@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TercerTiempo.Api/TercerTiempo.Api.csproj" />
+    <Project Path="src/TercerTiempo.Application/TercerTiempo.Application.csproj" />
+    <Project Path="src/TercerTiempo.Domain/TercerTiempo.Domain.csproj" />
+    <Project Path="src/TercerTiempo.Infrastructure/TercerTiempo.Infrastructure.csproj" />
+    <Project Path="src/TercerTiempo.Repository/TercerTiempo.Repository.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TercerTiempo.Application.Tests/TercerTiempo.Application.Tests.csproj" />
+    <Project Path="tests/TercerTiempo.Domain.Tests/TercerTiempo.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,36 @@
+# --- Compilación .NET ---
+bin/
+obj/
+out/
+publish/
+TestResults/
+*.binlog
+
+# --- Visual Studio / Rider / VS Code ---
+.vs/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.user
+*.suo
+*.swp
+*.rsuser
+*.DotSettings.user
+
+# --- Base de datos local (SQLite) ---
+*.db
+*.db-shm
+*.db-wal
+
+# --- Secretos y entorno ---
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+
+# --- Sistema operativo ---
+.DS_Store
+Thumbs.db
+desktop.ini
