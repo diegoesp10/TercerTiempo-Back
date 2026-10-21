@@ -9,6 +9,7 @@ using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Application.Abstractions.Teams;
+using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
@@ -174,6 +175,7 @@ public static class DependencyInjection
         services.AddOptions<CrestOptions>()
             .Bind(configuration.GetSection(CrestOptions.SectionName));
         services.AddSingleton<ICrestStorage, FileSystemCrestStorage>();
+        services.AddScoped<IErrorMessageStore, ErrorMessageStore>();
         services.AddHttpClient<ICrestDownloader, HttpCrestDownloader>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);

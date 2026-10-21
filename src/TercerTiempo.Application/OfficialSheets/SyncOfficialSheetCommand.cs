@@ -7,6 +7,7 @@ using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
@@ -47,7 +48,7 @@ internal sealed class SyncOfficialSheetHandler(
     public async Task<OfficialSheetDto> Handle(SyncOfficialSheetCommand command, CancellationToken cancellationToken)
     {
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
-            ?? throw new NotFoundException("Partido", command.MatchId);
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
 
         var now = clock.GetUtcNow();
         var sheet = await sheets.GetByMatchAsync(match.Id, cancellationToken);

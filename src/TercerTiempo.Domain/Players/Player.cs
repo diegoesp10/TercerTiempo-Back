@@ -1,4 +1,5 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Players;
 
@@ -23,10 +24,10 @@ public sealed class Player : AggregateRoot
         var name = Guard.NotEmpty(displayName, "nombre", 100);
 
         if (!Enum.IsDefined(position))
-            throw new DomainException("Posición no válida.");
+            throw new DomainException(ErrorCode.PlayerInvalidPosition);
 
         if (birthDate is { } date && date > DateOnly.FromDateTime(now.UtcDateTime).AddYears(-14))
-            throw new DomainException("El jugador debe tener al menos 14 años.");
+            throw new DomainException(ErrorCode.PlayerMinAge);
 
         var player = new Player
         {
@@ -48,7 +49,7 @@ public sealed class Player : AggregateRoot
         var name = Guard.NotEmpty(displayName, "nombre", 100);
 
         if (!Enum.IsDefined(position))
-            throw new DomainException("Posición no válida.");
+            throw new DomainException(ErrorCode.PlayerInvalidPosition);
 
         DisplayName = name;
         NormalizedName = NameNormalizer.Normalize(name);

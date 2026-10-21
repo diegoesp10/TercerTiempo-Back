@@ -8,6 +8,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Teams;
 using TercerTiempo.Application.Teams.ImportCrest;
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Clubs.ManageTeams;
 
@@ -33,10 +34,10 @@ internal sealed class UploadTeamCrestValidator : AbstractValidator<UploadTeamCre
     {
         RuleFor(x => x.TeamId).NotEmpty();
         RuleFor(x => x.File).NotNull();
-        RuleFor(x => x.File.Length).GreaterThan(0).WithMessage("El archivo está vacío.")
-            .LessThanOrEqualTo(MaxBytes).WithMessage("El escudo no puede superar los 2 MB.");
+        RuleFor(x => x.File.Length).GreaterThan(0).WithCatalogMessage(ErrorCode.FileEmpty)
+            .LessThanOrEqualTo(MaxBytes).WithCatalogMessage(ErrorCode.ClubCrestTooLarge);
         RuleFor(x => x.File.ContentType).Must(AllowedContentTypes.Contains)
-            .WithMessage("Formato no admitido: usa PNG, JPG, WebP, SVG o GIF.");
+            .WithCatalogMessage(ErrorCode.ClubCrestFormat);
     }
 }
 
@@ -50,15 +51,15 @@ internal sealed class UploadTeamCrestHandler(
     {
         var club = await Resolvers.CurrentClubAsync(currentUser, stores.Clubs, cancellationToken);
         if (!club.Manages(command.TeamId))
-            throw new ForbiddenException("Solo puedes cambiar el escudo de los equipos de tu club.");
+            throw new ForbiddenException(ErrorCode.ClubCrestOwnTeamsOnly);
 
         var team = await stores.Teams.GetByIdAsync(command.TeamId, cancellationToken)
-            ?? throw new NotFoundException("Equipo", command.TeamId);
+            ?? throw new NotFoundException(ErrorCode.TeamNotFound, command.TeamId);
 
         using var buffer = new MemoryStream();
         await command.File.Content.CopyToAsync(buffer, cancellationToken);
         if (buffer.Length == 0 || buffer.Length > UploadTeamCrestValidator.MaxBytes)
-            throw new DomainException("El escudo tiene que ser una imagen de hasta 2 MB.");
+            throw new DomainException(ErrorCode.ClubCrestInvalid);
 
         var image = new CrestImage(buffer.ToArray(), command.File.ContentType.ToLowerInvariant());
         team.SetCrest(await crests.SaveAsync(team.Id, image, cancellationToken));

@@ -6,6 +6,7 @@ using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Matches.GetMatch;
 
@@ -23,7 +24,7 @@ internal sealed class GetMatchHandler(
     public async Task<MatchDetailDto> Handle(GetMatchQuery query, CancellationToken cancellationToken)
     {
         var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
-            ?? throw new NotFoundException("Partido", query.MatchId);
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
 
         var teamMap = (await teams.GetByIdsAsync([match.HomeTeamId, match.AwayTeamId], cancellationToken))
             .ToDictionary(t => t.Id);

@@ -8,6 +8,7 @@ using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Teams.GetTeam;
 
@@ -26,7 +27,7 @@ internal sealed class GetTeamHandler(
     public async Task<TeamDetailDto> Handle(GetTeamQuery query, CancellationToken cancellationToken)
     {
         var team = await teams.GetByIdAsync(query.TeamId, cancellationToken)
-            ?? throw new NotFoundException("Equipo", query.TeamId);
+            ?? throw new NotFoundException(ErrorCode.TeamNotFound, query.TeamId);
 
         var (competition, season) = await Resolvers.SeasonOfTeamAsync(competitions, team.Id, cancellationToken);
 

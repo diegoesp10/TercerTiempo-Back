@@ -13,6 +13,7 @@ using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Auth.Register;
 
@@ -43,14 +44,14 @@ internal sealed class RegisterValidator : AbstractValidator<RegisterCommand>
     public RegisterValidator()
     {
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
-        RuleFor(x => x.Password).NotEmpty().MinimumLength(8).MaximumLength(100);
+        RuleFor(x => x.Password).NotEmpty().MinimumLength(8).WithCatalogMessage(ErrorCode.AuthPasswordTooShort, 8).MaximumLength(100);
         RuleFor(x => x.DisplayName).NotEmpty().MaximumLength(120);
         RuleFor(x => x.AccountType).IsInEnum();
         RuleFor(x => x.Position).NotNull().When(x => x.AccountType == AccountType.Player)
-            .WithMessage("Indica tu posición.");
+            .WithCatalogMessage(ErrorCode.AuthPositionRequired);
         RuleFor(x => x.Position).IsInEnum().When(x => x.Position.HasValue);
         RuleFor(x => x.AccessCode).NotEmpty().When(x => x.AccountType == AccountType.Coach)
-            .WithMessage("Introduce el código de acceso que te ha dado tu club.");
+            .WithCatalogMessage(ErrorCode.AuthAccessCodeRequired);
         RuleFor(x => x.AccessCode).MaximumLength(20);
     }
 }
@@ -120,10 +121,10 @@ internal sealed class RegisterHandler(
         var normalized = NameNormalizer.Normalize(name);
         var catalog = await ClubCatalog.LoadAsync(stores, cancellationToken);
         var entry = catalog.FirstOrDefault(e => e.NormalizedName == normalized)
-            ?? throw new ValidationException([new ValidationFailure(nameof(RegisterCommand.DisplayName), "Elige tu club de la lista: solo pueden darse de alta los clubes de las ligas que sigue Tercer Tiempo.")]);
+            ?? throw new ValidationException([new ValidationFailure(nameof(RegisterCommand.DisplayName), ErrorCatalog.Template(ErrorCode.AuthClubNotInCatalog)) { ErrorCode = ErrorCode.AuthClubNotInCatalog }]);
 
         if (await stores.Clubs.GetByNormalizedNameAsync(entry.NormalizedName, cancellationToken) is not null)
-            throw new ConflictException($"{entry.Name} ya tiene cuenta en Tercer Tiempo.");
+            throw new ConflictException(ErrorCode.AuthClubAlreadyRegistered, entry.Name);
 
         return entry;
     }

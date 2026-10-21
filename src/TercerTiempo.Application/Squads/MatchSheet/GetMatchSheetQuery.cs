@@ -7,6 +7,7 @@ using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.MatchSheet;
 
@@ -26,15 +27,15 @@ internal sealed class GetMatchSheetHandler(
     public async Task<MatchSheetDto> Handle(GetMatchSheetQuery query, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
-            ?? throw new NotFoundException("Plantilla", query.SquadId);
+            ?? throw new NotFoundException(ErrorCode.SquadNotFound, query.SquadId);
 
         SquadAccess.EnsureCanView(squad, currentUser, clock);
 
         var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
-            ?? throw new NotFoundException("Partido", query.MatchId);
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
 
         if (match.SeasonId != squad.SeasonId || !match.Involves(squad.TeamId))
-            throw new ConflictException("El partido no es de esta plantilla.");
+            throw new ConflictException(ErrorCode.MatchNotOfSquad);
 
         return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, cancellationToken);
     }

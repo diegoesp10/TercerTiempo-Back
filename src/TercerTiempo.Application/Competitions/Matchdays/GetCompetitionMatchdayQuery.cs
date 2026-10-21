@@ -4,6 +4,7 @@ using TercerTiempo.Application.Matches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Competitions.Matchdays;
 
@@ -40,10 +41,10 @@ internal sealed class GetCompetitionMatchdayHandler(
     public async Task<CompetitionMatchdayDto> Handle(GetCompetitionMatchdayQuery query, CancellationToken cancellationToken)
     {
         var competition = await competitions.GetByIdAsync(query.CompetitionId, cancellationToken)
-            ?? throw new NotFoundException("Competición", query.CompetitionId);
+            ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, query.CompetitionId);
 
         var season = competition.CurrentSeason
-            ?? throw new ConflictException($"{competition.Name} no tiene temporada en curso.");
+            ?? throw new ConflictException(ErrorCode.CompetitionNoCurrentSeasonNamed, competition.Name);
 
         var all = await matches.GetBySeasonAsync(season.Id, cancellationToken);
         var summaries = MatchdayCalculator.Summaries(all);
@@ -51,7 +52,7 @@ internal sealed class GetCompetitionMatchdayHandler(
 
         var matchday = query.Matchday ?? current;
         if (query.Matchday is { } requested && summaries.All(s => s.Number != requested))
-            throw new NotFoundException("Jornada", requested);
+            throw new NotFoundException(ErrorCode.MatchdayNotFound, requested);
 
         var selected = all
             .Where(m => m.Matchday == matchday)

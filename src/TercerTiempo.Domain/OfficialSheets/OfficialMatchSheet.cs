@@ -1,4 +1,5 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.OfficialSheets;
 
@@ -177,7 +178,7 @@ public sealed class OfficialSheetEvent : Entity
     internal static OfficialSheetEvent Create(Guid sheetId, OfficialEventData data, int order)
     {
         if (!Enum.IsDefined(data.Type))
-            throw new DomainException("Tipo de suceso no válido.");
+            throw new DomainException(ErrorCode.OfficialSheetInvalidEvent);
 
         return new OfficialSheetEvent
         {

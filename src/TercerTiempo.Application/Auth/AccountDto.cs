@@ -9,6 +9,7 @@ using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Auth;
 
@@ -40,7 +41,7 @@ internal static class AccountResolver
         if (await clubs.GetByUserIdAsync(userId, cancellationToken) is { } club)
             return (AccountType.Club, club.Id);
 
-        throw new NotFoundException("Cuenta", userId);
+        throw new NotFoundException(ErrorCode.AccountNotFound, userId);
     }
 
     public static async Task<AccountDto> ForUserAsync(Guid userId, AccountStores stores, CancellationToken cancellationToken)
@@ -52,7 +53,7 @@ internal static class AccountResolver
             return new AccountDto(AccountType.Coach, null, await CoachMapper.ToDtoAsync(coach, stores, cancellationToken), null);
 
         var club = await stores.Clubs.GetByUserIdAsync(userId, cancellationToken)
-            ?? throw new NotFoundException("Cuenta", userId);
+            ?? throw new NotFoundException(ErrorCode.AccountNotFound, userId);
 
         return new AccountDto(AccountType.Club, null, null, await ClubMapper.ToDtoAsync(club, stores, cancellationToken));
     }

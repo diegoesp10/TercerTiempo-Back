@@ -6,6 +6,7 @@ using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.GetSquad;
 
@@ -24,7 +25,7 @@ internal sealed class GetSquadHandler(
     public async Task<SquadDetailDto> Handle(GetSquadQuery query, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
-            ?? throw new NotFoundException("Plantilla", query.SquadId);
+            ?? throw new NotFoundException(ErrorCode.SquadNotFound, query.SquadId);
 
         SquadAccess.EnsureCanView(squad, currentUser, clock);
 

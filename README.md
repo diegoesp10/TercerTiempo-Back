@@ -343,6 +343,29 @@ que se puede generar la migración sin parar el depurador (`--configuration Migr
 Las migraciones son de SQL Server (`InitialCreate` recrea todo el esquema desde cero). Para empezar de cero basta con
 borrar la base de datos: al arrancar se vuelve a crear, migrar y sincronizar.
 
+## Errores: códigos y mensajes en base de datos
+
+Ningún mensaje de error va escrito en el código. Cada excepción lleva un **código** (`ErrorCode`, `Domain/Common/Errors`,
+convención `área.motivo`) y sus argumentos; `DomainException`, `NotFoundException`, `ConflictException`,
+`ForbiddenException`, `UnauthenticatedException` e `InvalidCredentialsException` derivan de `CodedException`. El
+texto sale de la tabla **`ErrorMessages`** (código, idioma, plantilla con `{0}`, `{1}`...), cuya semilla es el
+catálogo embebido `ErrorCatalog` (hoy solo español): la configuración de EF la vuelca con `HasData`, así que cada
+migración que cambie el catálogo lleva las filas y al crear la base de datos desde cero quedan insertadas.
+
+`GlobalExceptionHandler` resuelve el mensaje con `IErrorMessageResolver` (tabla cacheada 10 minutos) en el idioma de
+`Accept-Language` (`es-ES,es;q=0.9` → `es`); si no hay traducción usa el español y, si el código no estuviera en la
+tabla, la plantilla embebida. La respuesta ProblemDetails incluye el código en `code`:
+
+```json
+{ "status": 422, "title": "Regla de negocio incumplida", "detail": "CD Llanes no se corresponde con el nombre del club (CD Lealtad de Villaviciosa).", "code": "club.team_name_mismatch" }
+```
+
+Las reglas de FluentValidation usan `WithCatalogMessage(ErrorCode.X, args)` (código + argumentos + texto por defecto)
+y las de contraseña/email de Identity se mapean a `identity.*`; en los errores de validación cada campo lleva el
+mensaje ya traducido. Para añadir un idioma: filas nuevas en `ErrorCatalog` (o directamente en la tabla) con el mismo
+código y `Language` = "en", y la cultura en `UseRequestLocalization` (Program.cs). El test `ErrorCatalogTests`
+comprueba que todo `ErrorCode` tiene mensaje.
+
 ## Decisiones y siguientes pasos sugeridos
 
 - **Identidad separada del dominio**: Identity gestiona credenciales; `Player`, `Coach` y `Club` son los agregados de negocio.

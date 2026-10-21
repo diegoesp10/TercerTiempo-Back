@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
@@ -40,6 +41,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();
     public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
     public DbSet<VideoPurchase> VideoPurchases => Set<VideoPurchase>();
+    public DbSet<ErrorMessage> ErrorMessages => Set<ErrorMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

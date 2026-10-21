@@ -8,6 +8,7 @@ using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Players.JoinSquad;
 
@@ -39,15 +40,15 @@ internal sealed class JoinSquadAsPlayerHandler(
         var player = await Resolvers.CurrentPlayerAsync(currentUser, players, cancellationToken);
 
         if (await squads.GetByPlayerAsync(player.Id, cancellationToken) is not null)
-            throw new ConflictException("Ya estás vinculado a una plantilla. Desvincúlate antes de unirte a otra.");
+            throw new ConflictException(ErrorCode.PlayerAlreadyInSquad);
 
         var squad = await squads.GetByInviteCodeAsync(InviteCodes.Normalize(command.InviteCode), cancellationToken)
-            ?? throw new NotFoundException("Código de invitación", command.InviteCode);
+            ?? throw new NotFoundException(ErrorCode.InviteCodeNotFound, command.InviteCode);
 
         var entry = command.SquadPlayerId is { } squadPlayerId
             ? squad.GetPlayer(squadPlayerId)
             : squad.ActivePlayers.FirstOrDefault(p => !p.IsLinked && p.Matches(player.DisplayName))
-                ?? throw new ConflictException("No hay ninguna ficha con tu nombre: elige la tuya en la lista o pide al cuerpo técnico que te añada.");
+                ?? throw new ConflictException(ErrorCode.PlayerNoMatchingEntry);
 
         squad.LinkPlayer(entry.Id, player.Id);
         await unitOfWork.SaveChangesAsync(cancellationToken);

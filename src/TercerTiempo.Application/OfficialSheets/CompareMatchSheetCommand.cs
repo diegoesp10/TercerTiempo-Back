@@ -12,6 +12,7 @@ using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
@@ -45,15 +46,15 @@ internal sealed class CompareMatchSheetHandler(
     public async Task<SheetComparisonDto> Handle(CompareMatchSheetCommand command, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(command.SquadId, cancellationToken)
-            ?? throw new NotFoundException("Plantilla", command.SquadId);
+            ?? throw new NotFoundException(ErrorCode.SquadNotFound, command.SquadId);
 
         SquadAccess.EnsureCanView(squad, currentUser, clock);
 
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
-            ?? throw new NotFoundException("Partido", command.MatchId);
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
 
         if (match.SeasonId != squad.SeasonId || !match.Involves(squad.TeamId))
-            throw new ConflictException("El partido no es de esta plantilla.");
+            throw new ConflictException(ErrorCode.MatchNotOfSquad);
 
         var official = await syncOfficialSheet.Handle(new SyncOfficialSheetCommand(match.Id, command.Refresh), cancellationToken);
 

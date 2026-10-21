@@ -1,6 +1,7 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Auth.GetMyAccount;
 
@@ -18,7 +19,7 @@ internal sealed class GetMyAccountHandler(ICurrentUser currentUser, AccountStore
         {
             return await AccountResolver.ForUserAsync(userId, stores, cancellationToken);
         }
-        catch (NotFoundException ex) when (ex.Entity == "Cuenta")
+        catch (NotFoundException ex) when (ex.Code == ErrorCode.AccountNotFound)
         {
             // El token es válido pero su usuario ya no existe (base de datos recreada, cuenta borrada):
             // se responde 401 para que el cliente descarte la sesión guardada en lugar de un 404.

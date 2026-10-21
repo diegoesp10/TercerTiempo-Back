@@ -6,6 +6,7 @@ using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Matches.GetMatchPreview;
 
@@ -89,10 +90,10 @@ internal sealed class GetMatchPreviewHandler(
         if (!currentUser.IsAuthenticated)
             throw new UnauthenticatedException();
         if (currentUser.AccountType != AccountType.Coach)
-            throw new ForbiddenException("La previa del partido es para el cuerpo técnico.");
+            throw new ForbiddenException(ErrorCode.MatchPreviewCoachOnly);
 
         var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
-            ?? throw new NotFoundException("Partido", query.MatchId);
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
 
         var (competition, season) = await Resolvers.SeasonByIdAsync(competitions, match.SeasonId, cancellationToken);
         var seasonMatches = await matches.GetBySeasonAsync(season.Id, cancellationToken);

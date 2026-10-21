@@ -7,6 +7,7 @@ using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 
 using TercerTiempo.Application.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads;
 
@@ -26,7 +27,7 @@ internal static class SquadMapper
         Squad squad, Guid? coachId, TimeProvider clock, ITeamStore teams, ICompetitionStore competitions, CancellationToken cancellationToken)
     {
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken)
-            ?? throw new NotFoundException("Equipo", squad.TeamId);
+            ?? throw new NotFoundException(ErrorCode.TeamNotFound, squad.TeamId);
 
         var (competition, season) = await Resolvers.SeasonOfSquadAsync(competitions, squad, cancellationToken);
 

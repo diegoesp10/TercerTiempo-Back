@@ -7,6 +7,7 @@ using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Stats.GetLeagueTable;
 
@@ -41,10 +42,10 @@ internal sealed class GetLeagueTableHandler(
         if (competitionId is { } id)
         {
             var competition = await competitions.GetByIdAsync(id, cancellationToken)
-                ?? throw new NotFoundException("Competición", id);
+                ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, id);
 
             var season = competition.CurrentSeason
-                ?? throw new ConflictException("La competición no tiene una temporada en curso.");
+                ?? throw new ConflictException(ErrorCode.CompetitionNoCurrentSeason);
 
             return (competition, season);
         }
@@ -56,7 +57,7 @@ internal sealed class GetLeagueTableHandler(
                 : null;
 
         if (squad is null)
-            throw new ConflictException("Indica la competición (competitionId) o vincúlate a una plantilla para ver la suya.");
+            throw new ConflictException(ErrorCode.LeagueCompetitionRequired);
 
         return await Resolvers.SeasonOfSquadAsync(competitions, squad, cancellationToken);
     }

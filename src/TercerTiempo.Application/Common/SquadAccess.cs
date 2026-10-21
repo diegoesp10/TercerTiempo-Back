@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Common;
 
@@ -27,12 +28,12 @@ internal static class SquadAccess
             throw new UnauthenticatedException();
 
         if (!IsStaff(squad, user, clock))
-            throw new ForbiddenException("Solo el cuerpo técnico vigente de la plantilla puede hacer esto.");
+            throw new ForbiddenException(ErrorCode.SquadStaffOnly);
     }
 
     public static void EnsureCanView(Squad squad, ICurrentUser user, TimeProvider clock)
     {
         if (!CanView(squad, user, clock))
-            throw new ForbiddenException("Los datos de esta plantilla son privados: solo su cuerpo técnico y sus jugadores pueden verlos.");
+            throw new ForbiddenException(ErrorCode.SquadPrivate);
     }
 }

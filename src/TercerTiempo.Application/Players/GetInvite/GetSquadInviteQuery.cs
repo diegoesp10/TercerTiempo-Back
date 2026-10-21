@@ -5,6 +5,7 @@ using TercerTiempo.Application.Squads;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Players.GetInvite;
 
@@ -23,10 +24,10 @@ internal sealed class GetSquadInviteHandler(
             throw new UnauthenticatedException();
 
         var squad = await squads.GetByInviteCodeAsync(InviteCodes.Normalize(query.InviteCode), cancellationToken)
-            ?? throw new NotFoundException("Código de invitación", query.InviteCode);
+            ?? throw new NotFoundException(ErrorCode.InviteCodeNotFound, query.InviteCode);
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken)
-            ?? throw new NotFoundException("Equipo", squad.TeamId);
+            ?? throw new NotFoundException(ErrorCode.TeamNotFound, squad.TeamId);
 
         var (competition, season) = await Resolvers.SeasonOfSquadAsync(competitions, squad, cancellationToken);
 

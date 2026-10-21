@@ -310,6 +310,808 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("Coaches", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Common.Errors.ErrorMessage", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Language")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Code", "Language");
+
+                    b.ToTable("ErrorMessages", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Code = "title.validation",
+                            Language = "es",
+                            Message = "Datos no válidos"
+                        },
+                        new
+                        {
+                            Code = "title.domain",
+                            Language = "es",
+                            Message = "Regla de negocio incumplida"
+                        },
+                        new
+                        {
+                            Code = "title.not_found",
+                            Language = "es",
+                            Message = "No encontrado"
+                        },
+                        new
+                        {
+                            Code = "title.conflict",
+                            Language = "es",
+                            Message = "Conflicto"
+                        },
+                        new
+                        {
+                            Code = "title.forbidden",
+                            Language = "es",
+                            Message = "Acceso denegado"
+                        },
+                        new
+                        {
+                            Code = "title.unauthenticated",
+                            Language = "es",
+                            Message = "No autenticado"
+                        },
+                        new
+                        {
+                            Code = "title.invalid_credentials",
+                            Language = "es",
+                            Message = "Credenciales incorrectas"
+                        },
+                        new
+                        {
+                            Code = "title.bad_request",
+                            Language = "es",
+                            Message = "Petición no válida"
+                        },
+                        new
+                        {
+                            Code = "title.internal",
+                            Language = "es",
+                            Message = "Error interno"
+                        },
+                        new
+                        {
+                            Code = "common.required",
+                            Language = "es",
+                            Message = "'{0}' no puede estar vacío."
+                        },
+                        new
+                        {
+                            Code = "common.too_long",
+                            Language = "es",
+                            Message = "'{0}' no puede superar {1} caracteres."
+                        },
+                        new
+                        {
+                            Code = "common.out_of_range",
+                            Language = "es",
+                            Message = "'{0}' debe estar entre {1} y {2}."
+                        },
+                        new
+                        {
+                            Code = "common.negative",
+                            Language = "es",
+                            Message = "'{0}' no puede ser negativo."
+                        },
+                        new
+                        {
+                            Code = "common.unexpected",
+                            Language = "es",
+                            Message = "Se ha producido un error inesperado."
+                        },
+                        new
+                        {
+                            Code = "auth.unauthenticated",
+                            Language = "es",
+                            Message = "Debes iniciar sesión para realizar esta acción."
+                        },
+                        new
+                        {
+                            Code = "auth.invalid_credentials",
+                            Language = "es",
+                            Message = "Email o contraseña incorrectos."
+                        },
+                        new
+                        {
+                            Code = "auth.email_taken",
+                            Language = "es",
+                            Message = "Ya existe una cuenta con ese email."
+                        },
+                        new
+                        {
+                            Code = "auth.position_required",
+                            Language = "es",
+                            Message = "Indica tu posición."
+                        },
+                        new
+                        {
+                            Code = "auth.access_code_required",
+                            Language = "es",
+                            Message = "Introduce el código de acceso que te ha dado tu club."
+                        },
+                        new
+                        {
+                            Code = "auth.password_too_short",
+                            Language = "es",
+                            Message = "La contraseña debe tener al menos {0} caracteres."
+                        },
+                        new
+                        {
+                            Code = "auth.club_not_in_catalog",
+                            Language = "es",
+                            Message = "Elige tu club de la lista: solo pueden darse de alta los clubes de las ligas que sigue Tercer Tiempo."
+                        },
+                        new
+                        {
+                            Code = "auth.club_already_registered",
+                            Language = "es",
+                            Message = "{0} ya tiene cuenta en Tercer Tiempo."
+                        },
+                        new
+                        {
+                            Code = "auth.player_account_required",
+                            Language = "es",
+                            Message = "Esta acción requiere una cuenta de jugador."
+                        },
+                        new
+                        {
+                            Code = "auth.coach_account_required",
+                            Language = "es",
+                            Message = "Esta acción requiere una cuenta del cuerpo técnico."
+                        },
+                        new
+                        {
+                            Code = "auth.club_account_required",
+                            Language = "es",
+                            Message = "Esta acción requiere una cuenta de club."
+                        },
+                        new
+                        {
+                            Code = "account.not_found",
+                            Language = "es",
+                            Message = "La cuenta '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "identity.DuplicateUserName",
+                            Language = "es",
+                            Message = "Ya existe una cuenta con ese email."
+                        },
+                        new
+                        {
+                            Code = "identity.DuplicateEmail",
+                            Language = "es",
+                            Message = "Ya existe una cuenta con ese email."
+                        },
+                        new
+                        {
+                            Code = "identity.InvalidEmail",
+                            Language = "es",
+                            Message = "El email no es válido."
+                        },
+                        new
+                        {
+                            Code = "identity.InvalidUserName",
+                            Language = "es",
+                            Message = "El email no es válido."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordTooShort",
+                            Language = "es",
+                            Message = "La contraseña debe tener al menos {0} caracteres."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordRequiresNonAlphanumeric",
+                            Language = "es",
+                            Message = "La contraseña debe incluir al menos un carácter que no sea letra ni número."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordRequiresDigit",
+                            Language = "es",
+                            Message = "La contraseña debe incluir al menos un número."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordRequiresLower",
+                            Language = "es",
+                            Message = "La contraseña debe incluir al menos una minúscula."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordRequiresUpper",
+                            Language = "es",
+                            Message = "La contraseña debe incluir al menos una mayúscula."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordRequiresUniqueChars",
+                            Language = "es",
+                            Message = "La contraseña debe tener al menos {0} caracteres distintos."
+                        },
+                        new
+                        {
+                            Code = "identity.DefaultError",
+                            Language = "es",
+                            Message = "No se ha podido crear la cuenta."
+                        },
+                        new
+                        {
+                            Code = "team.not_found",
+                            Language = "es",
+                            Message = "El equipo '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "team.active_season_not_found",
+                            Language = "es",
+                            Message = "El equipo '{0}' no tiene temporada activa."
+                        },
+                        new
+                        {
+                            Code = "team.no_current_season",
+                            Language = "es",
+                            Message = "La competición del equipo no tiene una temporada marcada como actual."
+                        },
+                        new
+                        {
+                            Code = "competition.not_found",
+                            Language = "es",
+                            Message = "La competición '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "competition.no_current_season",
+                            Language = "es",
+                            Message = "La competición no tiene una temporada en curso."
+                        },
+                        new
+                        {
+                            Code = "competition.no_current_season_named",
+                            Language = "es",
+                            Message = "{0} no tiene temporada en curso."
+                        },
+                        new
+                        {
+                            Code = "competition.invalid_level",
+                            Language = "es",
+                            Message = "Nivel de competición no válido."
+                        },
+                        new
+                        {
+                            Code = "competition.season_dates",
+                            Language = "es",
+                            Message = "La temporada debe terminar después de empezar."
+                        },
+                        new
+                        {
+                            Code = "competition.season_exists",
+                            Language = "es",
+                            Message = "La temporada '{0}' ya existe en esta competición."
+                        },
+                        new
+                        {
+                            Code = "competition.season_mismatch",
+                            Language = "es",
+                            Message = "La temporada no pertenece a esta competición."
+                        },
+                        new
+                        {
+                            Code = "league.competition_required",
+                            Language = "es",
+                            Message = "Indica la competición (competitionId) o vincúlate a una plantilla para ver la suya."
+                        },
+                        new
+                        {
+                            Code = "matchday.not_found",
+                            Language = "es",
+                            Message = "La jornada {0} no existe."
+                        },
+                        new
+                        {
+                            Code = "match.not_found",
+                            Language = "es",
+                            Message = "El partido '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "match.same_team",
+                            Language = "es",
+                            Message = "Un equipo no puede jugar contra sí mismo."
+                        },
+                        new
+                        {
+                            Code = "match.result_on_cancelled",
+                            Language = "es",
+                            Message = "No se puede registrar el resultado de un partido cancelado."
+                        },
+                        new
+                        {
+                            Code = "match.reschedule_played",
+                            Language = "es",
+                            Message = "No se puede reprogramar un partido ya disputado."
+                        },
+                        new
+                        {
+                            Code = "match.postpone_played",
+                            Language = "es",
+                            Message = "No se puede aplazar un partido ya disputado."
+                        },
+                        new
+                        {
+                            Code = "match.cancel_played",
+                            Language = "es",
+                            Message = "No se puede cancelar un partido ya disputado."
+                        },
+                        new
+                        {
+                            Code = "match.cannot_start",
+                            Language = "es",
+                            Message = "El partido no puede pasar a 'en juego' desde su estado actual."
+                        },
+                        new
+                        {
+                            Code = "match.team_not_involved",
+                            Language = "es",
+                            Message = "El equipo no participa en este partido."
+                        },
+                        new
+                        {
+                            Code = "match.not_of_squad",
+                            Language = "es",
+                            Message = "El partido no es de esta plantilla."
+                        },
+                        new
+                        {
+                            Code = "match.preview_coach_only",
+                            Language = "es",
+                            Message = "La previa del partido es para el cuerpo técnico."
+                        },
+                        new
+                        {
+                            Code = "official_sheet.invalid_event",
+                            Language = "es",
+                            Message = "Tipo de suceso no válido."
+                        },
+                        new
+                        {
+                            Code = "club.team_not_linked",
+                            Language = "es",
+                            Message = "Ese equipo no está vinculado a tu club."
+                        },
+                        new
+                        {
+                            Code = "club.team_already_in_club",
+                            Language = "es",
+                            Message = "Ese equipo ya forma parte del club."
+                        },
+                        new
+                        {
+                            Code = "club.team_not_in_club",
+                            Language = "es",
+                            Message = "Ese equipo no forma parte del club."
+                        },
+                        new
+                        {
+                            Code = "club.team_name_mismatch",
+                            Language = "es",
+                            Message = "{0} no se corresponde con el nombre del club ({1})."
+                        },
+                        new
+                        {
+                            Code = "club.team_linked_elsewhere",
+                            Language = "es",
+                            Message = "Ese equipo ya está vinculado a otro club."
+                        },
+                        new
+                        {
+                            Code = "club.crest_own_teams_only",
+                            Language = "es",
+                            Message = "Solo puedes cambiar el escudo de los equipos de tu club."
+                        },
+                        new
+                        {
+                            Code = "club.crest_invalid",
+                            Language = "es",
+                            Message = "El escudo tiene que ser una imagen de hasta 2 MB."
+                        },
+                        new
+                        {
+                            Code = "club.crest_too_large",
+                            Language = "es",
+                            Message = "El escudo no puede superar los 2 MB."
+                        },
+                        new
+                        {
+                            Code = "club.crest_format",
+                            Language = "es",
+                            Message = "Formato no admitido: usa PNG, JPG, WebP, SVG o GIF."
+                        },
+                        new
+                        {
+                            Code = "club.roster_own_teams_only",
+                            Language = "es",
+                            Message = "Solo puedes editar la plantilla de los equipos de tu club."
+                        },
+                        new
+                        {
+                            Code = "roster_entry.not_found",
+                            Language = "es",
+                            Message = "La ficha '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "roster_entry.duplicate_name",
+                            Language = "es",
+                            Message = "Ya hay una ficha con ese nombre en la plantilla."
+                        },
+                        new
+                        {
+                            Code = "crest.download_failed",
+                            Language = "es",
+                            Message = "No se ha podido descargar una imagen de esa URL."
+                        },
+                        new
+                        {
+                            Code = "crest.invalid_url",
+                            Language = "es",
+                            Message = "Indica una URL http(s) válida."
+                        },
+                        new
+                        {
+                            Code = "file.empty",
+                            Language = "es",
+                            Message = "El archivo está vacío."
+                        },
+                        new
+                        {
+                            Code = "appointment.not_found",
+                            Language = "es",
+                            Message = "El nombramiento '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "appointment.not_of_club",
+                            Language = "es",
+                            Message = "Ese nombramiento no es de tu club."
+                        },
+                        new
+                        {
+                            Code = "appointment.beyond_season",
+                            Language = "es",
+                            Message = "El nombramiento no puede ir más allá del final de la temporada ({0})."
+                        },
+                        new
+                        {
+                            Code = "appointment.validity_past",
+                            Language = "es",
+                            Message = "La fecha de validez ya ha pasado."
+                        },
+                        new
+                        {
+                            Code = "appointment.validity_order",
+                            Language = "es",
+                            Message = "La validez del nombramiento no puede terminar antes de empezar."
+                        },
+                        new
+                        {
+                            Code = "appointment.revoked",
+                            Language = "es",
+                            Message = "El club ha revocado este código de acceso."
+                        },
+                        new
+                        {
+                            Code = "appointment.already_redeemed",
+                            Language = "es",
+                            Message = "Este código de acceso ya se ha utilizado."
+                        },
+                        new
+                        {
+                            Code = "appointment.expired",
+                            Language = "es",
+                            Message = "Este código de acceso ha caducado: pide al club uno nuevo."
+                        },
+                        new
+                        {
+                            Code = "appointment.already_revoked",
+                            Language = "es",
+                            Message = "El nombramiento ya estaba revocado."
+                        },
+                        new
+                        {
+                            Code = "appointment.revoked_validity",
+                            Language = "es",
+                            Message = "No se puede cambiar la validez de un nombramiento revocado."
+                        },
+                        new
+                        {
+                            Code = "appointment.code_regenerate",
+                            Language = "es",
+                            Message = "El código ya se ha canjeado: no se puede regenerar."
+                        },
+                        new
+                        {
+                            Code = "access_code.not_found",
+                            Language = "es",
+                            Message = "El código de acceso '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "staff.invalid_role",
+                            Language = "es",
+                            Message = "Rol del cuerpo técnico no válido."
+                        },
+                        new
+                        {
+                            Code = "squad.not_found",
+                            Language = "es",
+                            Message = "La plantilla '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "squad.staff_only",
+                            Language = "es",
+                            Message = "Solo el cuerpo técnico vigente de la plantilla puede hacer esto."
+                        },
+                        new
+                        {
+                            Code = "squad.private",
+                            Language = "es",
+                            Message = "Los datos de esta plantilla son privados: solo su cuerpo técnico y sus jugadores pueden verlos."
+                        },
+                        new
+                        {
+                            Code = "squad.already_staff",
+                            Language = "es",
+                            Message = "Ya formas parte del cuerpo técnico de esta plantilla."
+                        },
+                        new
+                        {
+                            Code = "squad.staff_not_member",
+                            Language = "es",
+                            Message = "Ese técnico no forma parte de la plantilla."
+                        },
+                        new
+                        {
+                            Code = "squad.player_duplicate",
+                            Language = "es",
+                            Message = "'{0}' ya está en la plantilla."
+                        },
+                        new
+                        {
+                            Code = "squad.player_not_member",
+                            Language = "es",
+                            Message = "El jugador no pertenece a esta plantilla."
+                        },
+                        new
+                        {
+                            Code = "squad.player_already_left",
+                            Language = "es",
+                            Message = "El jugador ya había causado baja."
+                        },
+                        new
+                        {
+                            Code = "squad.entry_inactive",
+                            Language = "es",
+                            Message = "Esa ficha ya no está activa en la plantilla."
+                        },
+                        new
+                        {
+                            Code = "squad.entry_linked",
+                            Language = "es",
+                            Message = "Esa ficha ya está vinculada a otro jugador registrado."
+                        },
+                        new
+                        {
+                            Code = "squad.already_linked_here",
+                            Language = "es",
+                            Message = "Ya estás vinculado a otra ficha de esta plantilla."
+                        },
+                        new
+                        {
+                            Code = "squad.not_linked",
+                            Language = "es",
+                            Message = "No estás vinculado a esta plantilla."
+                        },
+                        new
+                        {
+                            Code = "squad.invalid_visibility",
+                            Language = "es",
+                            Message = "Visibilidad no válida."
+                        },
+                        new
+                        {
+                            Code = "squad_player.not_found",
+                            Language = "es",
+                            Message = "El jugador '{0}' no existe en la plantilla."
+                        },
+                        new
+                        {
+                            Code = "player.invalid_position",
+                            Language = "es",
+                            Message = "Posición no válida."
+                        },
+                        new
+                        {
+                            Code = "player.min_age",
+                            Language = "es",
+                            Message = "El jugador debe tener al menos 14 años."
+                        },
+                        new
+                        {
+                            Code = "player.shirt_number_range",
+                            Language = "es",
+                            Message = "El dorsal tiene que estar entre 1 y 99."
+                        },
+                        new
+                        {
+                            Code = "player.already_in_squad",
+                            Language = "es",
+                            Message = "Ya estás vinculado a una plantilla. Desvincúlate antes de unirte a otra."
+                        },
+                        new
+                        {
+                            Code = "player.no_matching_entry",
+                            Language = "es",
+                            Message = "No hay ninguna ficha con tu nombre: elige la tuya en la lista o pide al cuerpo técnico que te añada."
+                        },
+                        new
+                        {
+                            Code = "player.not_in_squad",
+                            Language = "es",
+                            Message = "No estás vinculado a ninguna plantilla."
+                        },
+                        new
+                        {
+                            Code = "invite_code.not_found",
+                            Language = "es",
+                            Message = "El código de invitación '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "sheet.staff_only",
+                            Language = "es",
+                            Message = "Solo el cuerpo técnico vigente de la plantilla puede registrar el acta."
+                        },
+                        new
+                        {
+                            Code = "sheet.match_other_season",
+                            Language = "es",
+                            Message = "El partido no pertenece a la temporada de esta plantilla."
+                        },
+                        new
+                        {
+                            Code = "sheet.team_not_involved",
+                            Language = "es",
+                            Message = "El equipo de la plantilla no participa en este partido."
+                        },
+                        new
+                        {
+                            Code = "sheet.match_not_played",
+                            Language = "es",
+                            Message = "Solo se puede registrar el acta de partidos ya disputados."
+                        },
+                        new
+                        {
+                            Code = "sheet.shots_on_target",
+                            Language = "es",
+                            Message = "Los tiros a puerta no pueden superar los tiros totales."
+                        },
+                        new
+                        {
+                            Code = "sheet.two_yellows",
+                            Language = "es",
+                            Message = "Dos amarillas implican expulsión: marca la tarjeta roja."
+                        },
+                        new
+                        {
+                            Code = "sheet.no_minutes",
+                            Language = "es",
+                            Message = "Sin minutos jugados no se pueden registrar acciones de juego."
+                        },
+                        new
+                        {
+                            Code = "sheet.notes_too_long",
+                            Language = "es",
+                            Message = "Las notas no pueden superar {0} caracteres."
+                        },
+                        new
+                        {
+                            Code = "sheet.line_mismatch",
+                            Language = "es",
+                            Message = "La línea del acta no corresponde a ese jugador o partido."
+                        },
+                        new
+                        {
+                            Code = "video.not_found",
+                            Language = "es",
+                            Message = "El vídeo '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "video.format_not_allowed",
+                            Language = "es",
+                            Message = "Formato no admitido. Sube un vídeo en {0}."
+                        },
+                        new
+                        {
+                            Code = "video.too_large",
+                            Language = "es",
+                            Message = "El vídeo no puede superar {0} MB."
+                        },
+                        new
+                        {
+                            Code = "video.too_small",
+                            Language = "es",
+                            Message = "El archivo está vacío o es demasiado pequeño para ser un vídeo."
+                        },
+                        new
+                        {
+                            Code = "video.already_deleted",
+                            Language = "es",
+                            Message = "El vídeo ya se había eliminado."
+                        },
+                        new
+                        {
+                            Code = "video.owner_access",
+                            Language = "es",
+                            Message = "Este vídeo es de tu plantilla: ya puedes verlo."
+                        },
+                        new
+                        {
+                            Code = "video.already_purchased",
+                            Language = "es",
+                            Message = "Ya tienes acceso a este vídeo."
+                        },
+                        new
+                        {
+                            Code = "video.payment_failed",
+                            Language = "es",
+                            Message = "El pago no se ha completado."
+                        },
+                        new
+                        {
+                            Code = "video.payment_rejected",
+                            Language = "es",
+                            Message = "El pago no se ha completado: {0}"
+                        },
+                        new
+                        {
+                            Code = "video.ticket_invalid",
+                            Language = "es",
+                            Message = "El ticket de reproducción no es válido o ha caducado."
+                        },
+                        new
+                        {
+                            Code = "video.locked",
+                            Language = "es",
+                            Message = "Este vídeo es de pago: compra el acceso para verlo."
+                        },
+                        new
+                        {
+                            Code = "video.not_allowed",
+                            Language = "es",
+                            Message = "Solo la plantilla que subió el vídeo y los técnicos que lo han comprado pueden verlo."
+                        });
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Competitions.Competition", b =>
                 {
                     b.Property<Guid>("Id")

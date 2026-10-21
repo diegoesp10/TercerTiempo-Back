@@ -11,6 +11,7 @@ using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.MatchSheet;
 
@@ -67,7 +68,7 @@ internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchS
                 entry.RuleFor(e => e.Assists).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.Shots).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.ShotsOnTarget).GreaterThanOrEqualTo(0).LessThanOrEqualTo(e => e.Shots)
-                    .WithMessage("Los tiros a puerta no pueden superar los tiros totales.");
+                    .WithCatalogMessage(ErrorCode.SheetShotsOnTarget);
                 entry.RuleFor(e => e.KeyPasses).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.Tackles).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.Interceptions).GreaterThanOrEqualTo(0);
@@ -98,7 +99,7 @@ internal sealed class RecordMatchSheetHandler(
         var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
 
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
-            ?? throw new NotFoundException("Partido", command.MatchId);
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
 
         PerformancePolicy.EnsureCanRecord(squad, coach.Id, match, SquadAccess.Today(clock));
 

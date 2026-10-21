@@ -1,4 +1,5 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Videos;
 
@@ -40,7 +41,7 @@ public sealed class MatchVideo : AggregateRoot
         string? title, string fileName, string contentType, long sizeBytes, string storageKey, int priceCents, DateTimeOffset now)
     {
         if (sizeBytes < MinSizeBytes)
-            throw new DomainException("El archivo está vacío o es demasiado pequeño para ser un vídeo.");
+            throw new DomainException(ErrorCode.VideoTooSmall);
 
         var file = Guard.NotEmpty(fileName, "archivo", 255);
 
@@ -67,7 +68,7 @@ public sealed class MatchVideo : AggregateRoot
     public void Delete(DateTimeOffset now)
     {
         if (IsDeleted)
-            throw new DomainException("El vídeo ya se había eliminado.");
+            throw new DomainException(ErrorCode.VideoAlreadyDeleted);
 
         DeletedAt = now;
     }

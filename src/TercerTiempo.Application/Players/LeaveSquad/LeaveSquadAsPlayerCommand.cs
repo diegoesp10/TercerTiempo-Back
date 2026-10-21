@@ -4,6 +4,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Players.LeaveSquad;
 
@@ -21,7 +22,7 @@ internal sealed class LeaveSquadAsPlayerHandler(
         var player = await Resolvers.CurrentPlayerAsync(currentUser, players, cancellationToken);
 
         var squad = await squads.GetByPlayerAsync(player.Id, cancellationToken)
-            ?? throw new ConflictException("No estás vinculado a ninguna plantilla.");
+            ?? throw new ConflictException(ErrorCode.PlayerNotInSquad);
 
         squad.UnlinkPlayer(player.Id);
         await unitOfWork.SaveChangesAsync(cancellationToken);

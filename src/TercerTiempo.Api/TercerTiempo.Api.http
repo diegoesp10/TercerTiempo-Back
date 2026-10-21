@@ -67,6 +67,10 @@ Content-Type: application/json
 GET {{baseUrl}}/api/matches/{{matchId}}/preview
 Authorization: Bearer {{token}}
 
+### Error con código e idioma (Accept-Language): el mensaje sale de la tabla ErrorMessages
+GET {{baseUrl}}/api/teams/00000000-0000-0000-0000-000000000000
+Accept-Language: es-ES,es;q=0.9
+
 ### Catálogo de clubes (público): de aquí sale el nombre con el que se da de alta un club
 GET {{baseUrl}}/api/clubs/catalog?search=lealtad
 

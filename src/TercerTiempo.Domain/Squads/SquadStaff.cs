@@ -1,4 +1,5 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Squads;
 
@@ -31,7 +32,7 @@ public sealed class SquadStaff : Entity
     internal static SquadStaff Create(Guid squadId, Guid coachId, StaffRole role, DateTimeOffset now, DateOnly? validUntil, Guid? appointmentId)
     {
         if (!Enum.IsDefined(role))
-            throw new DomainException("Rol del cuerpo técnico no válido.");
+            throw new DomainException(ErrorCode.StaffInvalidRole);
 
         return new SquadStaff
         {
@@ -48,7 +49,7 @@ public sealed class SquadStaff : Entity
     internal void ChangeRole(StaffRole role)
     {
         if (!Enum.IsDefined(role))
-            throw new DomainException("Rol del cuerpo técnico no válido.");
+            throw new DomainException(ErrorCode.StaffInvalidRole);
 
         Role = role;
     }

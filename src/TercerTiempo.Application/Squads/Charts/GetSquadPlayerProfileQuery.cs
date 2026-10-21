@@ -10,6 +10,7 @@ using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.Charts;
 
@@ -29,12 +30,12 @@ internal sealed class GetSquadPlayerProfileHandler(
     public async Task<SquadPlayerProfileDto> Handle(GetSquadPlayerProfileQuery query, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
-            ?? throw new NotFoundException("Plantilla", query.SquadId);
+            ?? throw new NotFoundException(ErrorCode.SquadNotFound, query.SquadId);
 
         SquadAccess.EnsureCanView(squad, currentUser, clock);
 
         var entry = squad.Players.FirstOrDefault(p => p.Id == query.SquadPlayerId)
-            ?? throw new NotFoundException("Jugador", query.SquadPlayerId);
+            ?? throw new NotFoundException(ErrorCode.SquadPlayerNotFound, query.SquadPlayerId);
 
         var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
 

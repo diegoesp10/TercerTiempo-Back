@@ -3,6 +3,7 @@ using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Coaches.Appointments;
 
@@ -16,13 +17,13 @@ internal sealed class AppointmentRedemption(ICoachAppointmentStore appointments,
     public async Task<CoachAppointment> FindRedeemableAsync(string accessCode, CancellationToken cancellationToken)
     {
         var appointment = await appointments.GetByAccessCodeAsync(AccessCodes.Normalize(accessCode), cancellationToken)
-            ?? throw new NotFoundException("Código de acceso", accessCode);
+            ?? throw new NotFoundException(ErrorCode.AccessCodeNotFound, accessCode);
 
         if (appointment.IsRevoked)
-            throw new ConflictException("El club ha revocado este código de acceso.");
+            throw new ConflictException(ErrorCode.AppointmentRevoked);
 
         if (appointment.IsRedeemed)
-            throw new ConflictException("Este código de acceso ya se ha utilizado.");
+            throw new ConflictException(ErrorCode.AppointmentAlreadyRedeemed);
 
         return appointment;
     }

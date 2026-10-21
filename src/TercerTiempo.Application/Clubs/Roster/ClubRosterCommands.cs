@@ -8,6 +8,7 @@ using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Clubs.Roster;
 
@@ -72,7 +73,7 @@ internal static class ClubRoster
     {
         var club = await Resolvers.CurrentClubAsync(currentUser, stores.Clubs, cancellationToken);
         if (!club.Manages(teamId))
-            throw new ForbiddenException("Solo puedes editar la plantilla de los equipos de tu club.");
+            throw new ForbiddenException(ErrorCode.ClubRosterOwnTeamsOnly);
 
         var (_, season) = await Resolvers.SeasonOfTeamAsync(stores.Competitions, teamId, cancellationToken);
         return (season.Id, stores.Clock.GetUtcNow());
@@ -89,7 +90,7 @@ internal static class ClubRoster
     {
         var entry = await teams.GetRosterEntryAsync(entryId, cancellationToken);
         if (entry is null || entry.TeamId != teamId || entry.SeasonId != seasonId)
-            throw new NotFoundException("Ficha", entryId);
+            throw new NotFoundException(ErrorCode.RosterEntryNotFound, entryId);
         return entry;
     }
 }
@@ -103,7 +104,7 @@ internal sealed class AddClubRosterEntryHandler(ICurrentUser currentUser, Accoun
 
         var roster = await stores.Teams.GetRosterAsync(command.TeamId, seasonId, cancellationToken);
         if (roster.Any(r => r.Matches(command.FullName)))
-            throw new ConflictException("Ya hay una ficha con ese nombre en la plantilla.");
+            throw new ConflictException(ErrorCode.RosterEntryDuplicateName);
 
         stores.Teams.AddRosterEntry(RosterEntry.CreateByClub(command.TeamId, seasonId, command.FullName.Trim(), command.Position, command.ShirtNumber, now));
         await unitOfWork.SaveChangesAsync(cancellationToken);

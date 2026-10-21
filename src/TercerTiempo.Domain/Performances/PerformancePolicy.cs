@@ -1,6 +1,7 @@
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Performances;
 
@@ -10,15 +11,15 @@ public static class PerformancePolicy
     public static void EnsureCanRecord(Squad squad, Guid coachId, Match match, DateOnly today)
     {
         if (!squad.IsStaff(coachId, today))
-            throw new DomainException("Solo el cuerpo técnico vigente de la plantilla puede registrar el acta.");
+            throw new DomainException(ErrorCode.SheetStaffOnly);
 
         if (match.SeasonId != squad.SeasonId)
-            throw new DomainException("El partido no pertenece a la temporada de esta plantilla.");
+            throw new DomainException(ErrorCode.SheetMatchOtherSeason);
 
         if (!match.Involves(squad.TeamId))
-            throw new DomainException("El equipo de la plantilla no participa en este partido.");
+            throw new DomainException(ErrorCode.SheetTeamNotInvolved);
 
         if (match.Status != MatchStatus.Played)
-            throw new DomainException("Solo se puede registrar el acta de partidos ya disputados.");
+            throw new DomainException(ErrorCode.SheetMatchNotPlayed);
     }
 }

@@ -1,4 +1,5 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Competitions;
 
@@ -45,7 +46,7 @@ public sealed class Competition : AggregateRoot
     public void UpdateDetails(string name, string category, CompetitionLevel level, int tier, string? group, string region)
     {
         if (!Enum.IsDefined(level))
-            throw new DomainException("Nivel de competición no válido.");
+            throw new DomainException(ErrorCode.CompetitionInvalidLevel);
 
         Name = Guard.NotEmpty(name, "nombre", 150);
         Category = Guard.NotEmpty(category, "categoría", 100);
@@ -59,10 +60,10 @@ public sealed class Competition : AggregateRoot
     public Season AddSeason(string label, DateOnly startsOn, DateOnly endsOn, ExternalRef? externalRef)
     {
         if (endsOn <= startsOn)
-            throw new DomainException("La temporada debe terminar después de empezar.");
+            throw new DomainException(ErrorCode.CompetitionSeasonDates);
 
         if (_seasons.Any(s => s.Label.Equals(label, StringComparison.OrdinalIgnoreCase)))
-            throw new DomainException($"La temporada '{label}' ya existe en esta competición.");
+            throw new DomainException(ErrorCode.CompetitionSeasonExists, label);
 
         var season = Season.Create(Id, label, startsOn, endsOn, externalRef);
         _seasons.Add(season);
@@ -74,7 +75,7 @@ public sealed class Competition : AggregateRoot
     public void MarkCurrent(Guid seasonId)
     {
         if (_seasons.All(s => s.Id != seasonId))
-            throw new DomainException("La temporada no pertenece a esta competición.");
+            throw new DomainException(ErrorCode.CompetitionSeasonMismatch);
 
         foreach (var season in _seasons)
             season.SetCurrent(season.Id == seasonId);

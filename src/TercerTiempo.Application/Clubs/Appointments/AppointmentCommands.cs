@@ -7,6 +7,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Clubs.Appointments;
 
@@ -47,17 +48,17 @@ internal sealed class CreateAppointmentHandler(
         var club = await Resolvers.CurrentClubAsync(currentUser, stores.Clubs, cancellationToken);
 
         if (!club.Manages(command.TeamId))
-            throw new ForbiddenException("Ese equipo no está vinculado a tu club.");
+            throw new ForbiddenException(ErrorCode.ClubTeamNotLinked);
 
         var (_, season) = await Resolvers.SeasonOfTeamAsync(stores.Competitions, command.TeamId, cancellationToken);
         var today = SquadAccess.Today(stores.Clock);
         var validUntil = command.ValidUntil ?? season.EndsOn;
 
         if (validUntil > season.EndsOn)
-            throw new ConflictException($"El nombramiento no puede ir más allá del final de la temporada ({season.EndsOn:dd/MM/yyyy}).");
+            throw new ConflictException(ErrorCode.AppointmentBeyondSeason, season.EndsOn.ToString("dd/MM/yyyy"));
 
         if (validUntil < today)
-            throw new ConflictException("La fecha de validez ya ha pasado.");
+            throw new ConflictException(ErrorCode.AppointmentValidityPast);
 
         var appointment = CoachAppointment.Create(
             club.Id, command.TeamId, season.Id, command.CoachName, command.Email, command.Role, today, validUntil, stores.Clock.GetUtcNow());
@@ -105,10 +106,10 @@ internal sealed class RevokeAppointmentHandler(
     internal static async Task<CoachAppointment> AppointmentOfClubAsync(AccountStores stores, Guid clubId, Guid appointmentId, CancellationToken cancellationToken)
     {
         var appointment = await stores.Appointments.GetByIdAsync(appointmentId, cancellationToken)
-            ?? throw new NotFoundException("Nombramiento", appointmentId);
+            ?? throw new NotFoundException(ErrorCode.AppointmentNotFound, appointmentId);
 
         if (appointment.ClubId != clubId)
-            throw new ForbiddenException("Ese nombramiento no es de tu club.");
+            throw new ForbiddenException(ErrorCode.AppointmentNotOfClub);
 
         return appointment;
     }
@@ -137,7 +138,7 @@ internal sealed class UpdateAppointmentHandler(
         var (_, season) = await Resolvers.SeasonByIdAsync(stores.Competitions, appointment.SeasonId, cancellationToken);
 
         if (command.ValidUntil > season.EndsOn)
-            throw new ConflictException($"El nombramiento no puede ir más allá del final de la temporada ({season.EndsOn:dd/MM/yyyy}).");
+            throw new ConflictException(ErrorCode.AppointmentBeyondSeason, season.EndsOn.ToString("dd/MM/yyyy"));
 
         appointment.SetValidity(command.ValidUntil);
 

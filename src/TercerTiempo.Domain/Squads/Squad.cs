@@ -1,5 +1,6 @@
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Squads;
 
@@ -63,7 +64,7 @@ public sealed class Squad : AggregateRoot
         if (_staff.FirstOrDefault(s => s.CoachId == coachId && s.IsActive) is { } current)
         {
             if (current.IsActiveOn(today))
-                throw new DomainException("Ya formas parte del cuerpo técnico de esta plantilla.");
+                throw new DomainException(ErrorCode.SquadAlreadyStaff);
 
             current.Renew(role, validUntil, appointmentId);
             return current;
@@ -77,7 +78,7 @@ public sealed class Squad : AggregateRoot
     public void RemoveStaff(Guid coachId, DateTimeOffset now)
     {
         var member = _staff.FirstOrDefault(s => s.CoachId == coachId && s.IsActive)
-            ?? throw new DomainException("Ese técnico no forma parte de la plantilla.");
+            ?? throw new DomainException(ErrorCode.SquadStaffNotMember);
 
         member.Leave(now);
     }
@@ -86,7 +87,7 @@ public sealed class Squad : AggregateRoot
     public void SetStaffValidity(Guid coachId, DateOnly? validUntil)
     {
         var member = _staff.FirstOrDefault(s => s.CoachId == coachId && s.IsActive)
-            ?? throw new DomainException("Ese técnico no forma parte de la plantilla.");
+            ?? throw new DomainException(ErrorCode.SquadStaffNotMember);
 
         member.SetValidity(validUntil);
     }
@@ -113,7 +114,7 @@ public sealed class Squad : AggregateRoot
         }
 
         if (ActivePlayers.Any(p => p.NormalizedName == normalized))
-            throw new DomainException($"'{fullName.Trim()}' ya está en la plantilla.");
+            throw new DomainException(ErrorCode.SquadPlayerDuplicate, fullName.Trim());
 
         var player = SquadPlayer.Create(Id, fullName, position, shirtNumber, rosterEntryId, now);
         _players.Add(player);
@@ -122,7 +123,7 @@ public sealed class Squad : AggregateRoot
 
     public SquadPlayer GetPlayer(Guid squadPlayerId) =>
         _players.FirstOrDefault(p => p.Id == squadPlayerId)
-            ?? throw new DomainException("El jugador no pertenece a esta plantilla.");
+            ?? throw new DomainException(ErrorCode.SquadPlayerNotMember);
 
     public void UpdatePlayer(Guid squadPlayerId, string fullName, Position? position, int? shirtNumber)
     {
@@ -130,7 +131,7 @@ public sealed class Squad : AggregateRoot
         var normalized = NameNormalizer.Normalize(fullName);
 
         if (ActivePlayers.Any(p => p.Id != squadPlayerId && p.NormalizedName == normalized))
-            throw new DomainException($"'{fullName.Trim()}' ya está en la plantilla.");
+            throw new DomainException(ErrorCode.SquadPlayerDuplicate, fullName.Trim());
 
         player.Update(fullName, position, shirtNumber);
     }
@@ -139,7 +140,7 @@ public sealed class Squad : AggregateRoot
     {
         var player = GetPlayer(squadPlayerId);
         if (!player.IsActive)
-            throw new DomainException("El jugador ya había causado baja.");
+            throw new DomainException(ErrorCode.SquadPlayerAlreadyLeft);
 
         player.Leave(now);
     }
@@ -149,13 +150,13 @@ public sealed class Squad : AggregateRoot
         var entry = GetPlayer(squadPlayerId);
 
         if (!entry.IsActive)
-            throw new DomainException("Esa ficha ya no está activa en la plantilla.");
+            throw new DomainException(ErrorCode.SquadEntryInactive);
 
         if (entry.PlayerId is { } current && current != playerId)
-            throw new DomainException("Esa ficha ya está vinculada a otro jugador registrado.");
+            throw new DomainException(ErrorCode.SquadEntryLinked);
 
         if (_players.Any(p => p.Id != squadPlayerId && p.IsActive && p.PlayerId == playerId))
-            throw new DomainException("Ya estás vinculado a otra ficha de esta plantilla.");
+            throw new DomainException(ErrorCode.SquadAlreadyLinkedHere);
 
         entry.Link(playerId);
         return entry;
@@ -164,7 +165,7 @@ public sealed class Squad : AggregateRoot
     public void UnlinkPlayer(Guid playerId)
     {
         var entry = PlayerEntryOf(playerId)
-            ?? throw new DomainException("No estás vinculado a esta plantilla.");
+            ?? throw new DomainException(ErrorCode.SquadNotLinked);
 
         entry.Unlink();
     }
@@ -178,7 +179,7 @@ public sealed class Squad : AggregateRoot
     public void SetVisibility(SquadVisibility visibility)
     {
         if (!Enum.IsDefined(visibility))
-            throw new DomainException("Visibilidad no válida.");
+            throw new DomainException(ErrorCode.SquadInvalidVisibility);
 
         Visibility = visibility;
     }

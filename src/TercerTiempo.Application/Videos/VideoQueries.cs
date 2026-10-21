@@ -7,6 +7,7 @@ using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Domain.Videos;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Videos;
 
@@ -26,7 +27,7 @@ internal sealed class ListMatchVideosHandler(
     public async Task<IReadOnlyList<MatchVideoDto>> Handle(ListMatchVideosQuery query, CancellationToken cancellationToken)
     {
         _ = await matches.GetByIdAsync(query.MatchId, cancellationToken)
-            ?? throw new NotFoundException("Partido", query.MatchId);
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
 
         var list = await videos.GetByMatchAsync(query.MatchId, cancellationToken);
         if (list.Count == 0) return [];
@@ -73,11 +74,11 @@ internal sealed class OpenVideoStreamHandler(
     public async Task<VideoStreamDto> Handle(OpenVideoStreamQuery query, CancellationToken cancellationToken)
     {
         var videoId = tickets.Resolve(query.Ticket)
-            ?? throw new ForbiddenException("El ticket de reproducción no es válido o ha caducado.");
+            ?? throw new ForbiddenException(ErrorCode.VideoTicketInvalid);
 
         var video = await videos.GetByIdAsync(videoId, cancellationToken);
         if (video is null || video.IsDeleted)
-            throw new NotFoundException("Vídeo", videoId);
+            throw new NotFoundException(ErrorCode.VideoNotFound, videoId);
 
         var content = await storage.OpenReadAsync(video.StorageKey, cancellationToken);
         return new VideoStreamDto(content, video.ContentType, video.FileName, video.SizeBytes);

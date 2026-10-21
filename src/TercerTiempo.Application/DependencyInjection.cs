@@ -1,4 +1,5 @@
 using FluentValidation;
+using TercerTiempo.Application.Abstractions.Errors;
 using Microsoft.Extensions.DependencyInjection;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Auth;
@@ -21,6 +22,7 @@ public static class DependencyInjection
 
         // Servicios internos compartidos por varios handlers.
         services.AddScoped<AccountStores>();
+        services.AddScoped<IErrorMessageResolver, ErrorMessageResolver>();
         services.AddScoped<AppointmentRedemption>();
         services.AddScoped<OfficialSheetLocator>();
 

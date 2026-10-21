@@ -6,6 +6,7 @@ using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Clubs.ManageTeams;
 
@@ -35,13 +36,13 @@ internal sealed class AddClubTeamHandler(
         var club = await Resolvers.CurrentClubAsync(currentUser, stores.Clubs, cancellationToken);
 
         var team = await stores.Teams.GetByIdAsync(command.TeamId, cancellationToken)
-            ?? throw new NotFoundException("Equipo", command.TeamId);
+            ?? throw new NotFoundException(ErrorCode.TeamNotFound, command.TeamId);
 
         if (TeamNameSimilarity.Score(club.Name, team.Name) < MinimumSimilarity)
-            throw new DomainException($"{team.Name} no se corresponde con el nombre del club ({club.Name}).");
+            throw new DomainException(ErrorCode.ClubTeamNameMismatch, team.Name, club.Name);
 
         if (await stores.Clubs.GetByTeamAsync(command.TeamId, cancellationToken) is { } owner && owner.Id != club.Id)
-            throw new ConflictException("Ese equipo ya está vinculado a otro club.");
+            throw new ConflictException(ErrorCode.ClubTeamLinkedElsewhere);
 
         club.AddTeam(command.TeamId, stores.Clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);

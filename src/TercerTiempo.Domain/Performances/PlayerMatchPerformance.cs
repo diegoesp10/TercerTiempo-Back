@@ -2,6 +2,7 @@ using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Performances;
 
@@ -47,7 +48,7 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     public void SetShirtNumber(int? shirtNumber)
     {
         if (shirtNumber is < 1 or > 99)
-            throw new DomainException("El dorsal tiene que estar entre 1 y 99.");
+            throw new DomainException(ErrorCode.PlayerShirtNumberRange);
 
         ShirtNumber = shirtNumber;
     }
@@ -60,7 +61,7 @@ public sealed class PlayerMatchPerformance : AggregateRoot
         PerformancePolicy.EnsureCanRecord(squad, coachId, match, Squad.Today(now));
 
         if (player.SquadId != squad.Id)
-            throw new DomainException("El jugador no pertenece a esta plantilla.");
+            throw new DomainException(ErrorCode.SquadPlayerNotMember);
 
         stats.EnsureValid();
 
@@ -97,7 +98,7 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     public RatingBreakdown? Recalculate(SquadPlayer player, Match match)
     {
         if (player.Id != SquadPlayerId || match.Id != MatchId)
-            throw new DomainException("La línea del acta no corresponde a ese jugador o partido.");
+            throw new DomainException(ErrorCode.SheetLineMismatch);
 
         var breakdown = Breakdown(player.Position, match);
         Rating = breakdown?.Total;

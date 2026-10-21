@@ -23,6 +23,13 @@ await app.Services.RecalculateMissingRatingsAsync();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
+// Idioma de la petición (Accept-Language): los mensajes de error salen de la tabla ErrorMessages en ese idioma
+// (español por defecto) y FluentValidation usa la misma cultura para sus mensajes genéricos.
+app.UseRequestLocalization(new RequestLocalizationOptions()
+    .SetDefaultCulture("es-ES")
+    .AddSupportedCultures("es-ES", "en-US")
+    .AddSupportedUICultures("es-ES", "en-US"));
+
 // Documento OpenAPI (/openapi/v1.json) y referencia interactiva (/docs): siempre en Development;
 // en otros entornos solo con OpenApi:Enabled y Basic Auth.
 app.UseOpenApiDocs();

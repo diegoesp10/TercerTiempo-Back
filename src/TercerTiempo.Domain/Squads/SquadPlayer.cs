@@ -1,5 +1,6 @@
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Squads;
 
@@ -42,10 +43,10 @@ public sealed class SquadPlayer : Entity
     internal void Update(string fullName, Position? position, int? shirtNumber)
     {
         if (position is { } p && !Enum.IsDefined(p))
-            throw new DomainException("Posición no válida.");
+            throw new DomainException(ErrorCode.PlayerInvalidPosition);
 
         if (shirtNumber is < 1 or > 99)
-            throw new DomainException("El dorsal debe estar entre 1 y 99.");
+            throw new DomainException(ErrorCode.PlayerShirtNumberRange);
 
         var name = Guard.NotEmpty(fullName, "nombre", 150);
         FullName = name;

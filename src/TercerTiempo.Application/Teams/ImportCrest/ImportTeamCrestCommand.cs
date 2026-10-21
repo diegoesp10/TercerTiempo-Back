@@ -5,6 +5,7 @@ using TercerTiempo.Application.Abstractions.Teams;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Teams.ImportCrest;
 
@@ -23,7 +24,7 @@ internal sealed class ImportTeamCrestValidator : AbstractValidator<ImportTeamCre
         RuleFor(x => x.TeamId).NotEmpty();
         RuleFor(x => x.Url).NotEmpty().MaximumLength(1000)
             .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
-            .WithMessage("Indica una URL http(s) válida.");
+            .WithCatalogMessage(ErrorCode.CrestInvalidUrl);
     }
 }
 
@@ -36,10 +37,10 @@ internal sealed class ImportTeamCrestHandler(
     public async Task<TeamCrestImportDto> Handle(ImportTeamCrestCommand command, CancellationToken cancellationToken)
     {
         var team = await teams.GetByIdAsync(command.TeamId, cancellationToken)
-            ?? throw new NotFoundException("Equipo", command.TeamId);
+            ?? throw new NotFoundException(ErrorCode.TeamNotFound, command.TeamId);
 
         var image = await downloader.DownloadAsync(command.Url, cancellationToken)
-            ?? throw new DomainException("No se ha podido descargar una imagen de esa URL.");
+            ?? throw new DomainException(ErrorCode.CrestDownloadFailed);
 
         team.SetCrest(await crests.SaveAsync(team.Id, image, cancellationToken));
         await unitOfWork.SaveChangesAsync(cancellationToken);

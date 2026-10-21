@@ -1,5 +1,6 @@
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Clubs;
 
@@ -36,10 +37,10 @@ public sealed class CoachAppointment : AggregateRoot
         DateOnly validFrom, DateOnly validUntil, DateTimeOffset now)
     {
         if (!Enum.IsDefined(role))
-            throw new DomainException("Rol del cuerpo técnico no válido.");
+            throw new DomainException(ErrorCode.StaffInvalidRole);
 
         if (validUntil < validFrom)
-            throw new DomainException("La validez del nombramiento no puede terminar antes de empezar.");
+            throw new DomainException(ErrorCode.AppointmentValidityOrder);
 
         var name = Guard.NotEmpty(coachName, "nombre del técnico", 100);
 
@@ -76,13 +77,13 @@ public sealed class CoachAppointment : AggregateRoot
     public void Redeem(Guid coachId, DateTimeOffset now)
     {
         if (IsRevoked)
-            throw new DomainException("El club ha revocado este código de acceso.");
+            throw new DomainException(ErrorCode.AppointmentRevoked);
 
         if (IsRedeemed)
-            throw new DomainException("Este código de acceso ya se ha utilizado.");
+            throw new DomainException(ErrorCode.AppointmentAlreadyRedeemed);
 
         if (IsExpiredOn(Today(now)))
-            throw new DomainException("Este código de acceso ha caducado: pide al club uno nuevo.");
+            throw new DomainException(ErrorCode.AppointmentExpired);
 
         CoachId = Guard.NotEmpty(coachId, nameof(coachId));
         RedeemedAt = now;
@@ -91,7 +92,7 @@ public sealed class CoachAppointment : AggregateRoot
     public void Revoke(DateTimeOffset now)
     {
         if (IsRevoked)
-            throw new DomainException("El nombramiento ya estaba revocado.");
+            throw new DomainException(ErrorCode.AppointmentAlreadyRevoked);
 
         RevokedAt = now;
     }
@@ -100,10 +101,10 @@ public sealed class CoachAppointment : AggregateRoot
     public void SetValidity(DateOnly validUntil)
     {
         if (IsRevoked)
-            throw new DomainException("No se puede cambiar la validez de un nombramiento revocado.");
+            throw new DomainException(ErrorCode.AppointmentRevokedValidity);
 
         if (validUntil < ValidFrom)
-            throw new DomainException("La validez del nombramiento no puede terminar antes de empezar.");
+            throw new DomainException(ErrorCode.AppointmentValidityOrder);
 
         ValidUntil = validUntil;
     }
@@ -111,7 +112,7 @@ public sealed class CoachAppointment : AggregateRoot
     public void RegenerateAccessCode()
     {
         if (IsRedeemed)
-            throw new DomainException("El código ya se ha canjeado: no se puede regenerar.");
+            throw new DomainException(ErrorCode.AppointmentCodeRegenerate);
 
         AccessCode = AccessCodes.Generate();
     }

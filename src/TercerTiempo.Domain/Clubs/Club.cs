@@ -1,4 +1,5 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Clubs;
 
@@ -47,7 +48,7 @@ public sealed class Club : AggregateRoot
     public ClubTeam AddTeam(Guid teamId, DateTimeOffset now)
     {
         if (Manages(teamId))
-            throw new DomainException("Ese equipo ya forma parte del club.");
+            throw new DomainException(ErrorCode.ClubTeamAlreadyInClub);
 
         var team = ClubTeam.Create(Id, teamId, now);
         _teams.Add(team);
@@ -57,7 +58,7 @@ public sealed class Club : AggregateRoot
     public void RemoveTeam(Guid teamId)
     {
         var team = _teams.FirstOrDefault(t => t.TeamId == teamId)
-            ?? throw new DomainException("Ese equipo no forma parte del club.");
+            ?? throw new DomainException(ErrorCode.ClubTeamNotInClub);
 
         _teams.Remove(team);
     }

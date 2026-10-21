@@ -1,4 +1,5 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Performances;
 
@@ -38,16 +39,16 @@ public sealed record PerformanceStats(
         Guard.InRange(YellowCards, 0, 2, "amarillas");
 
         if (ShotsOnTarget > Shots)
-            throw new DomainException("Los tiros a puerta no pueden superar los tiros totales.");
+            throw new DomainException(ErrorCode.SheetShotsOnTarget);
 
         if (YellowCards == 2 && !RedCard)
-            throw new DomainException("Dos amarillas implican expulsión: marca la tarjeta roja.");
+            throw new DomainException(ErrorCode.SheetTwoYellows);
 
         if (MinutesPlayed == 0 && (Started || Goals > 0 || Assists > 0 || Shots > 0 || KeyPasses > 0
                                    || Tackles > 0 || Interceptions > 0 || Saves > 0 || YellowCards > 0 || RedCard))
-            throw new DomainException("Sin minutos jugados no se pueden registrar acciones de juego.");
+            throw new DomainException(ErrorCode.SheetNoMinutes);
 
         if (Notes is { Length: > MaxNotesLength })
-            throw new DomainException($"Las notas no pueden superar {MaxNotesLength} caracteres.");
+            throw new DomainException(ErrorCode.SheetNotesTooLong, MaxNotesLength);
     }
 }

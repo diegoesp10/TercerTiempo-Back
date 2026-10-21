@@ -4,6 +4,7 @@ using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Common;
 
@@ -17,7 +18,7 @@ internal static class Resolvers
             throw new UnauthenticatedException();
 
         return await players.GetByUserIdAsync(userId, cancellationToken)
-            ?? throw new ForbiddenException("Esta acción requiere una cuenta de jugador.");
+            ?? throw new ForbiddenException(ErrorCode.AuthPlayerAccountRequired);
     }
 
     public static async Task<Coach> CurrentCoachAsync(
@@ -27,7 +28,7 @@ internal static class Resolvers
             throw new UnauthenticatedException();
 
         return await coaches.GetByUserIdAsync(userId, cancellationToken)
-            ?? throw new ForbiddenException("Esta acción requiere una cuenta del cuerpo técnico.");
+            ?? throw new ForbiddenException(ErrorCode.AuthCoachAccountRequired);
     }
 
     public static async Task<Club> CurrentClubAsync(
@@ -37,7 +38,7 @@ internal static class Resolvers
             throw new UnauthenticatedException();
 
         return await clubs.GetByUserIdAsync(userId, cancellationToken)
-            ?? throw new ForbiddenException("Esta acción requiere una cuenta de club.");
+            ?? throw new ForbiddenException(ErrorCode.AuthClubAccountRequired);
     }
 
     /// <summary>Plantilla por id, comprobando que el usuario actual pertenece a su cuerpo técnico vigente.</summary>
@@ -45,7 +46,7 @@ internal static class Resolvers
         ISquadStore squads, ICurrentUser currentUser, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(squadId, cancellationToken)
-            ?? throw new NotFoundException("Plantilla", squadId);
+            ?? throw new NotFoundException(ErrorCode.SquadNotFound, squadId);
 
         SquadAccess.EnsureStaff(squad, currentUser, clock);
         return squad;
@@ -56,10 +57,10 @@ internal static class Resolvers
         ICompetitionStore competitions, Guid teamId, CancellationToken cancellationToken)
     {
         var competition = await competitions.GetByTeamAsync(teamId, cancellationToken)
-            ?? throw new NotFoundException("Temporada activa del equipo", teamId);
+            ?? throw new NotFoundException(ErrorCode.TeamActiveSeasonNotFound, teamId);
 
         var season = competition.CurrentSeason
-            ?? throw new ConflictException("La competición del equipo no tiene una temporada marcada como actual.");
+            ?? throw new ConflictException(ErrorCode.TeamNoCurrentSeason);
 
         return (competition, season);
     }
@@ -74,7 +75,7 @@ internal static class Resolvers
         ICompetitionStore competitions, Guid seasonId, CancellationToken cancellationToken)
     {
         var competition = await competitions.GetBySeasonAsync(seasonId, cancellationToken)
-            ?? throw new NotFoundException("Competición", seasonId);
+            ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, seasonId);
 
         var season = competition.Seasons.First(s => s.Id == seasonId);
         return (competition, season);
