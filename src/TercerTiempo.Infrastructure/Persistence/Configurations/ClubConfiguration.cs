@@ -19,6 +19,9 @@ internal sealed class ClubConfiguration : IEntityTypeConfiguration<Club>
 
         builder.HasIndex(c => c.UserId).IsUnique();
 
+        // Una sola cuenta por club.
+        builder.HasIndex(c => c.NormalizedName).IsUnique();
+
         builder.HasMany(c => c.Teams).WithOne().HasForeignKey(t => t.ClubId).OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(c => c.Teams).UsePropertyAccessMode(PropertyAccessMode.Field).AutoInclude();
     }

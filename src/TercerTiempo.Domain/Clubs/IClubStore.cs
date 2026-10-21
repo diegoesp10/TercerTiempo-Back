@@ -5,6 +5,12 @@ public interface IClubStore
     Task<Club?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Club?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Club registrado con ese nombre normalizado (solo puede haber uno por club).</summary>
+    Task<Club?> GetByNormalizedNameAsync(string normalizedName, CancellationToken cancellationToken = default);
+
+    /// <summary>Nombres normalizados de todos los clubes con cuenta.</summary>
+    Task<IReadOnlyList<string>> GetRegisteredNamesAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Club que gestiona el equipo, si alguno lo ha vinculado.</summary>
     Task<Club?> GetByTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
 

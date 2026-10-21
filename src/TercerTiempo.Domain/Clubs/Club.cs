@@ -5,7 +5,8 @@ namespace TercerTiempo.Domain.Clubs;
 /// <summary>
 /// Club con cuenta en la plataforma. Es quien da de alta a los entrenadores de sus equipos: por cada equipo y temporada
 /// emite un nombramiento (<see cref="CoachAppointment"/>) con un código de acceso, y es el único que puede renovarlo o
-/// revocarlo. Los equipos que gestiona se vinculan a mano a partir de los que publica el proveedor de datos.
+/// revocarlo. Solo puede haber una cuenta por club (nombre normalizado único): al darse de alta elige su club entre los
+/// que publica el proveedor de datos y quedan vinculados todos sus equipos (primero, filiales...).
 /// </summary>
 public sealed class Club : AggregateRoot
 {

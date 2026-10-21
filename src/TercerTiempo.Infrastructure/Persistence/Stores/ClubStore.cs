@@ -11,6 +11,12 @@ internal sealed class ClubStore(AppDbContext db) : IClubStore
     public Task<Club?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
         db.Clubs.FirstOrDefaultAsync(c => c.UserId == userId, cancellationToken);
 
+    public Task<Club?> GetByNormalizedNameAsync(string normalizedName, CancellationToken cancellationToken = default) =>
+        db.Clubs.FirstOrDefaultAsync(c => c.NormalizedName == normalizedName, cancellationToken);
+
+    public async Task<IReadOnlyList<string>> GetRegisteredNamesAsync(CancellationToken cancellationToken = default) =>
+        await db.Clubs.Select(c => c.NormalizedName).ToListAsync(cancellationToken);
+
     public Task<Club?> GetByTeamAsync(Guid teamId, CancellationToken cancellationToken = default) =>
         db.Clubs.FirstOrDefaultAsync(c => c.Teams.Any(t => t.TeamId == teamId), cancellationToken);
 

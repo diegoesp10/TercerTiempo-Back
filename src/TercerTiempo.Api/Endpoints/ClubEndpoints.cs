@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Clubs.ManageTeams;
 using TercerTiempo.Repository.Clubs;
 
 namespace TercerTiempo.Api.Endpoints;
@@ -6,6 +7,12 @@ internal static class ClubEndpoints
 {
     public static IEndpointRouteBuilder MapClubEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/clubs/catalog", (string? search, IClubsRepository clubs, CancellationToken ct) => clubs.GetCatalogAsync(search, ct))
+            .WithTags("Clubes")
+            .WithName("GetClubCatalog")
+            .WithSummary("Catálogo de clubes")
+            .WithDescription("Clubes deducidos de los equipos que publica el proveedor (el primer equipo y sus filiales agrupados), con sus equipos, la competición en curso de cada uno y si el club ya tiene cuenta. Es la lista de la que se elige el nombre al darse de alta como club. Público.");
+
         var group = app.MapGroup("/api/clubs/me").WithTags("Clubes").RequireAuthorization();
 
         group.MapGet("/", (IClubsRepository clubs, CancellationToken ct) => clubs.GetMineAsync(ct))
@@ -16,8 +23,8 @@ internal static class ClubEndpoints
 
         group.MapPost("/teams", (ClubTeamRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.AddTeamAsync(request.TeamId, ct))
             .WithName("AddClubTeam")
-            .WithSummary("Vincular un equipo al club")
-            .WithDescription("Uno de los equipos publicados por el proveedor (GET /api/teams). Un equipo solo puede pertenecer a un club.")
+            .WithSummary("Vincular otro equipo al club")
+            .WithDescription("Los equipos del club quedan vinculados al darse de alta; esto es para los que no se reconocieron por el nombre. Uno de los equipos publicados por el proveedor (GET /api/teams), cuyo nombre se corresponda con el del club. Un equipo solo puede pertenecer a un club.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -29,6 +36,20 @@ internal static class ClubEndpoints
             .WithSummary("Desvincular un equipo del club")
             .WithDescription("Los nombramientos ya emitidos para ese equipo no cambian.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPut("/teams/{teamId:guid}/crest", async (Guid teamId, IFormFile file, IClubsRepository clubs, CancellationToken ct) =>
+            {
+                await using var content = file.OpenReadStream();
+                return await clubs.UploadTeamCrestAsync(teamId, new CrestUpload(file.FileName, file.ContentType, file.Length, content), ct);
+            })
+            .DisableAntiforgery()
+            .WithName("UploadClubTeamCrest")
+            .WithSummary("Cambiar el escudo de un equipo del club")
+            .WithDescription("Solo cuentas de club y solo para sus equipos vinculados. multipart/form-data con el campo file (PNG, JPG, WebP, SVG o GIF hasta 2 MB). Sustituye el escudo guardado; crestUrl cambia de versión para que los clientes recarguen la imagen.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/appointments", (CreateAppointmentRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.CreateAppointmentAsync(request, ct))

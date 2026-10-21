@@ -1,16 +1,21 @@
 using System.ComponentModel;
 using TercerTiempo.Application.Clubs;
 using TercerTiempo.Application.Clubs.Appointments;
+using TercerTiempo.Application.Clubs.Catalog;
+using TercerTiempo.Application.Clubs.ManageTeams;
+using TercerTiempo.Application.Teams.ImportCrest;
 using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Repository.Clubs;
 
-/// <summary>Lo que hace un club: vincular sus equipos y nombrar, prorrogar o revocar a sus técnicos.</summary>
+/// <summary>Lo que hace un club: elegirse del catálogo al darse de alta, ajustar sus equipos y nombrar, prorrogar o revocar a sus técnicos.</summary>
 public interface IClubsRepository
 {
+    Task<IReadOnlyList<ClubCatalogDto>> GetCatalogAsync(string? search, CancellationToken cancellationToken = default);
     Task<ClubDto> GetMineAsync(CancellationToken cancellationToken = default);
     Task<ClubDto> AddTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
     Task<ClubDto> RemoveTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
+    Task<TeamCrestImportDto> UploadTeamCrestAsync(Guid teamId, CrestUpload file, CancellationToken cancellationToken = default);
     Task<AppointmentDto> CreateAppointmentAsync(CreateAppointmentRequest request, CancellationToken cancellationToken = default);
     Task<AppointmentDto> UpdateAppointmentAsync(Guid appointmentId, UpdateAppointmentRequest request, CancellationToken cancellationToken = default);
     Task<AppointmentDto> RevokeAppointmentAsync(Guid appointmentId, CancellationToken cancellationToken = default);

@@ -15,6 +15,9 @@ internal static class TeamNameSimilarity
         "deportivo", "deportiva", "futbol", "ff",
     ];
 
+    /// <summary>Comillas con las que las fuentes escriben la letra del filial: 'B', "B", «B», “B”, ‘B’.</summary>
+    public static readonly HashSet<char> Quotes = ['\'', '"', '«', '»', '“', '”', '‘', '’'];
+
     /// <summary>Entre 0 (nada que ver) y 1 (mismo equipo).</summary>
     public static double Score(string a, string b)
     {
@@ -39,17 +42,26 @@ internal static class TeamNameSimilarity
         return Math.Round(core * suffixFactor, 3);
     }
 
-    /// <summary>Palabras significativas (sin siglas ni artículos) y letra del filial ("A", "B", "C"...), si la hay.</summary>
+    /// <summary>
+    /// Palabras significativas (sin siglas ni artículos) y letra del filial ("A", "B", "C"...), si la hay. La letra
+    /// cuenta como filial si va entrecomillada ("Barcia CF 'B'") o si no viene detrás de otra letra suelta: la "F" de
+    /// "Berrón C.F." no es un filial.
+    /// </summary>
     public static (HashSet<string> Core, string? Suffix) Split(string name)
     {
-        var cleaned = new string(NameNormalizer.Normalize(name).Select(ch => char.IsLetterOrDigit(ch) ? ch : ' ').ToArray());
+        var normalized = NameNormalizer.Normalize(name);
+        var cleaned = new string(normalized.Select(ch => char.IsLetterOrDigit(ch) ? ch : ' ').ToArray());
         var words = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
 
         string? suffix = null;
         if (words.Count > 1 && words[^1].Length == 1 && char.IsLetter(words[^1][0]))
         {
-            suffix = words[^1];
-            words.RemoveAt(words.Count - 1);
+            var quoted = normalized.Length > 1 && Quotes.Contains(normalized[^1]);
+            if (quoted || words[^2].Length > 1)
+            {
+                suffix = words[^1];
+                words.RemoveAt(words.Count - 1);
+            }
         }
 
         var core = words.Where(w => !Fillers.Contains(w) && (w.Length > 1 || char.IsDigit(w[0]))).ToHashSet();
