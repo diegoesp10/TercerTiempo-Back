@@ -2,7 +2,10 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Performances;
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 
@@ -31,13 +34,24 @@ internal sealed class UpdateSquadPlayerHandler(
     ICurrentUser currentUser,
     ISquadStore squads,
     IPlayerStore players,
+    IMatchStore matches,
+    IPerformanceStore performances,
     IUnitOfWork unitOfWork) : ICommandHandler<UpdateSquadPlayerCommand, SquadPlayerDto>
 {
     public async Task<SquadPlayerDto> Handle(UpdateSquadPlayerCommand command, CancellationToken cancellationToken)
     {
         var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, cancellationToken);
 
+        var previousPosition = squad.GetPlayer(command.SquadPlayerId).Position;
         squad.UpdatePlayer(command.SquadPlayerId, command.FullName, command.Position, command.ShirtNumber);
+
+        // La nota depende de la posición: si cambia, se recalculan sus actas.
+        if (previousPosition != command.Position)
+        {
+            var lines = await performances.GetBySquadPlayerAsync(command.SquadPlayerId, cancellationToken);
+            await RatingRecalculator.RecalculateAsync(lines, [squad], matches, cancellationToken);
+        }
+
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var player = squad.GetPlayer(command.SquadPlayerId);

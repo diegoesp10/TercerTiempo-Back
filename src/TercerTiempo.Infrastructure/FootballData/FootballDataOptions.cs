@@ -46,6 +46,21 @@ public sealed class FutbolAsturianoOptions
 
     public int PageSize { get; set; } = 100;
 
+    /// <summary>Zona horaria en la que el sitio guarda la fecha y hora de los partidos (campo <c>date</c>).</summary>
+    public string TimeZone { get; set; } = "Europe/Madrid";
+
+    /// <summary>
+    /// Recuperar los partidos que la API oculta por estar "programados" en WordPress (la jornada en curso y parte del
+    /// calendario futuro) leyendo su página pública.
+    /// </summary>
+    public bool RecoverHiddenEvents { get; set; } = true;
+
+    /// <summary>Máximo de páginas de partido que se descargan por liga en cada sincronización (cada una tarda segundos).</summary>
+    public int HiddenEventPagesPerLeague { get; set; } = 30;
+
+    /// <summary>Los partidos ocultos ya conocidos que se juegan en los próximos N días se vuelven a leer (hora definitiva, resultado).</summary>
+    public int HiddenEventRefreshDays { get; set; } = 7;
+
     // Niveles que se sincronizan. Por defecto, la pirámide amateur asturiana: 1ª/2ª/3ª RFEF y 1ª/2ª/3ª AsturFútbol.
     public bool IncludeProfessional { get; set; }
     public bool IncludeNational { get; set; } = true;

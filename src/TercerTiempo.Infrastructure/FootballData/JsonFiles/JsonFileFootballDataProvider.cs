@@ -33,7 +33,7 @@ internal sealed class JsonFileFootballDataProvider(IOptions<FootballDataOptions>
     public async Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(string competitionExternalId, CancellationToken cancellationToken) =>
         await ReadAsync<List<TeamSnapshot>>(Path.Combine("competitions", competitionExternalId, "teams.json"), cancellationToken) ?? [];
 
-    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, CancellationToken cancellationToken) =>
+    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, IReadOnlyCollection<MatchSnapshot> known, CancellationToken cancellationToken) =>
         await ReadAsync<List<MatchSnapshot>>(Path.Combine("competitions", competitionExternalId, "matches.json"), cancellationToken) ?? [];
 
     public async Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken) =>

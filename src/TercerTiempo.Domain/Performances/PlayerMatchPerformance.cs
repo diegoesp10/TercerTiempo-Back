@@ -1,5 +1,6 @@
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Domain.Performances;
@@ -29,8 +30,8 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     public int YellowCards { get; private set; }
     public bool RedCard { get; private set; }
 
-    /// <summary>Valoración del cuerpo técnico, de 1 a 10.</summary>
-    public int Rating { get; private set; }
+    /// <summary>Nota calculada con los datos del acta y el resultado (3,0-10,0); null si no llegó a jugar.</summary>
+    public double? Rating { get; private set; }
 
     public string? Notes { get; private set; }
 
@@ -65,20 +66,40 @@ public sealed class PlayerMatchPerformance : AggregateRoot
             UpdatedAt = now,
         };
         performance.Apply(stats);
+        performance.Recalculate(player, match);
         return performance;
     }
 
-    public void Update(PerformanceStats stats, Guid coachId, DateTimeOffset now)
+    public void Update(PerformanceStats stats, SquadPlayer player, Match match, Guid coachId, DateTimeOffset now)
     {
         stats.EnsureValid();
         Apply(stats);
+        Recalculate(player, match);
         RecordedByCoachId = Guard.NotEmpty(coachId, nameof(coachId));
         UpdatedAt = now;
     }
 
+    /// <summary>
+    /// Vuelve a calcular la nota con los datos actuales: al registrar o corregir la línea, al cambiar la posición del
+    /// jugador o si cambia el resultado del partido.
+    /// </summary>
+    public RatingBreakdown? Recalculate(SquadPlayer player, Match match)
+    {
+        if (player.Id != SquadPlayerId || match.Id != MatchId)
+            throw new DomainException("La línea del acta no corresponde a ese jugador o partido.");
+
+        var breakdown = Breakdown(player.Position, match);
+        Rating = breakdown?.Total;
+        return breakdown;
+    }
+
+    /// <summary>Desglose de la nota según los datos registrados y el resultado del partido.</summary>
+    public RatingBreakdown? Breakdown(Position? position, Match match) =>
+        PerformanceRating.Calculate(ToStats(), position, match.GoalsFor(TeamId) ?? 0, match.GoalsAgainst(TeamId) ?? 0);
+
     public PerformanceStats ToStats() => new(
         Started, MinutesPlayed, Goals, Assists, Shots, ShotsOnTarget, KeyPasses,
-        Tackles, Interceptions, Saves, YellowCards, RedCard, Rating, Notes);
+        Tackles, Interceptions, Saves, YellowCards, RedCard, Notes);
 
     private void Apply(PerformanceStats stats)
     {
@@ -94,7 +115,6 @@ public sealed class PlayerMatchPerformance : AggregateRoot
         Saves = stats.Saves;
         YellowCards = stats.YellowCards;
         RedCard = stats.RedCard;
-        Rating = stats.Rating;
         Notes = string.IsNullOrWhiteSpace(stats.Notes) ? null : stats.Notes.Trim();
     }
 }

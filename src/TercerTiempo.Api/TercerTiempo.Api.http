@@ -49,6 +49,12 @@ Authorization: Bearer {{token}}
 ### Ligas disponibles (nivel, categoría, grupo y temporada)
 GET {{baseUrl}}/api/competitions
 
+### Jornada en curso (o la próxima) de una liga
+GET {{baseUrl}}/api/competitions/{{competitionId}}/matchdays/current
+
+### Una jornada concreta
+GET {{baseUrl}}/api/competitions/{{competitionId}}/matchdays/6
+
 ### Equipos de una liga
 GET {{baseUrl}}/api/teams?competitionId={{competitionId}}
 

@@ -34,17 +34,18 @@ public sealed record MatchSheetEntryInput(
     [property: Description("0-2; con 2 amarillas hay que marcar la roja.")]
     int YellowCards,
     bool RedCard,
-    [property: Description("Valoración del cuerpo técnico, 1-10.")]
-    int Rating,
     [property: Description("Opcional, máximo 1000 caracteres.")]
     string? Notes)
 {
     public PerformanceStats ToStats() => new(
         Started, MinutesPlayed, Goals, Assists, Shots, ShotsOnTarget, KeyPasses,
-        Tackles, Interceptions, Saves, YellowCards, RedCard, Rating, Notes);
+        Tackles, Interceptions, Saves, YellowCards, RedCard, Notes);
 }
 
-/// <summary>El cuerpo técnico registra (o corrige) el acta completa de un partido: una línea por jugador.</summary>
+/// <summary>
+/// El cuerpo técnico registra (o corrige) el acta completa de un partido: una línea por jugador. La nota de cada línea
+/// no se introduce: se calcula con los datos registrados y el resultado (<see cref="PerformanceRating"/>).
+/// </summary>
 public sealed record RecordMatchSheetCommand(Guid SquadId, Guid MatchId, IReadOnlyList<MatchSheetEntryInput> Entries) : ICommand<MatchSheetDto>;
 
 internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchSheetCommand>
@@ -70,7 +71,6 @@ internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchS
                 entry.RuleFor(e => e.Interceptions).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.Saves).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.YellowCards).InclusiveBetween(0, 2);
-                entry.RuleFor(e => e.Rating).InclusiveBetween(1, 10);
                 entry.RuleFor(e => e.Notes).MaximumLength(PerformanceStats.MaxNotesLength);
             });
         });
@@ -121,7 +121,7 @@ internal sealed class RecordMatchSheetHandler(
             if (current is null)
                 performances.Add(PlayerMatchPerformance.Record(squad, player, match, coach.Id, stats, now));
             else
-                current.Update(stats, coach.Id, now);
+                current.Update(stats, player, match, coach.Id, now);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

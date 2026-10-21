@@ -33,6 +33,11 @@ internal sealed class PerformanceStore(AppDbContext db) : IPerformanceStore
             .Where(p => p.SeasonId == seasonId)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<PlayerMatchPerformance>> GetWithoutRatingAsync(CancellationToken cancellationToken = default) =>
+        await db.Performances
+            .Where(p => p.Rating == null && p.MinutesPlayed > 0)
+            .ToListAsync(cancellationToken);
+
     public void Add(PlayerMatchPerformance performance) => db.Performances.Add(performance);
 
     public void Remove(PlayerMatchPerformance performance) => db.Performances.Remove(performance);

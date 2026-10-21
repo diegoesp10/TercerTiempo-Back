@@ -23,7 +23,8 @@ public class PerformancePolicyTests
         Assert.Equal(TestData.SeasonId, line.SeasonId);
         Assert.Equal(coachId, line.RecordedByCoachId);
         Assert.Equal(1, line.GoalContributions);
-        Assert.Equal(7, line.Rating);
+        // Delantero que marca en una victoria 2-1: 6,0 + 1,2 ataque + 0,15 creación + 0,28 defensa + 0,4 resultado.
+        Assert.Equal(8.0, line.Rating);
         Assert.Equal(TestData.Now, line.LoggedAt);
     }
 
@@ -111,13 +112,14 @@ public class PerformancePolicyTests
         var assistant = Guid.NewGuid();
         squad.AddStaff(assistant, Domain.Squads.StaffRole.AssistantCoach, TestData.Now);
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
-        var line = PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), coachId, TestData.ValidStats(), TestData.Now);
+        var match = TestData.PlayedMatch();
+        var line = PlayerMatchPerformance.Record(squad, entry, match, coachId, TestData.ValidStats(), TestData.Now);
 
-        line.Update(TestData.ValidStats(goals: 2, assists: 1, rating: 9), assistant, TestData.Now.AddHours(1));
+        line.Update(TestData.ValidStats(goals: 2, assists: 1), entry, match, assistant, TestData.Now.AddHours(1));
 
         Assert.Equal(2, line.Goals);
         Assert.Equal(1, line.Assists);
-        Assert.Equal(9, line.Rating);
+        Assert.Equal(9.6, line.Rating);
         Assert.Equal(assistant, line.RecordedByCoachId);
         Assert.Equal(TestData.Now, line.LoggedAt);
         Assert.Equal(TestData.Now.AddHours(1), line.UpdatedAt);
@@ -128,7 +130,7 @@ public class PerformancePolicyTests
     {
         var (squad, coachId) = TestData.NewSquad();
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
-        var stats = TestData.ValidStats(minutes: 75, goals: 0, assists: 2, rating: 8) with { Notes = "  Gran partido  " };
+        var stats = TestData.ValidStats(minutes: 75, goals: 0, assists: 2) with { Notes = "  Gran partido  " };
 
         var line = PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), coachId, stats, TestData.Now);
 

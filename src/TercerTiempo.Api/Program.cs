@@ -17,6 +17,9 @@ var app = builder.Build();
 // Aplica migraciones pendientes antes de aceptar tráfico (el worker de sincronización arranca después).
 await app.Services.MigrateDatabaseAsync();
 
+// Las actas antiguas (o sin nota) reciben la nota calculada con sus datos.
+await app.Services.RecalculateMissingRatingsAsync();
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 

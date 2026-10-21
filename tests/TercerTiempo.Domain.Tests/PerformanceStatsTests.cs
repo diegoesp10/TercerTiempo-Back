@@ -34,21 +34,11 @@ public class PerformanceStatsTests
     [Fact]
     public void Unused_substitute_with_zero_minutes_is_valid()
     {
-        var stats = new PerformanceStats(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, 5, "No jugué");
+        var stats = new PerformanceStats(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, "No jugué");
 
         var exception = Record.Exception(stats.EnsureValid);
 
         Assert.Null(exception);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(11)]
-    public void Self_rating_must_be_between_1_and_10(int rating)
-    {
-        var stats = TestData.ValidStats(rating: rating);
-
-        Assert.Throws<DomainException>(stats.EnsureValid);
     }
 
     [Fact]

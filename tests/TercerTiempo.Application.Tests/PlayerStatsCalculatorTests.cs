@@ -28,7 +28,8 @@ public class PlayerStatsCalculatorTests
         Assert.Equal(1, stats.Assists);
         Assert.Equal(4, stats.GoalContributions);
         Assert.Equal(1.2, stats.GoalsPer90);
-        Assert.Equal(7.0, stats.AverageRating);
+        // Notas calculadas con los datos: 8,9 (doblete en victoria), 8,5-8,6 (gol y asistencia) y 6,4-6,5 (45' en empate).
+        Assert.InRange(stats.AverageRating!.Value, 7.9, 8.05);
         Assert.All(performances, p => Assert.Equal(me.Id, p.SquadPlayerId));
     }
 
@@ -71,7 +72,7 @@ public class PlayerStatsCalculatorTests
         var other = rivalSquad.AddPlayer("Rival Goleador", Position.Forward, 10, null, Now);
         var otherPerformances = played.Take(2)
             .Select(m => PlayerMatchPerformance.Record(rivalSquad, other, m, rivalCoach,
-                new PerformanceStats(true, 90, 0, 0, 1, 0, 0, 2, 2, 0, 0, false, 5, null), Now))
+                new PerformanceStats(true, 90, 0, 0, 1, 0, 0, 2, 2, 0, 0, false, null), Now))
             .ToList();
 
         var standings = new List<Standing>
@@ -136,9 +137,9 @@ public class PlayerStatsCalculatorTests
 
         var performances = new List<PlayerMatchPerformance>
         {
-            PlayerMatchPerformance.Record(squad, me, matches[0], coachId, Stats(90, 2, 0, 8, started: true), Now),
-            PlayerMatchPerformance.Record(squad, me, matches[1], coachId, Stats(90, 1, 1, 7, started: true), Now),
-            PlayerMatchPerformance.Record(squad, me, matches[2], coachId, Stats(45, 0, 0, 6, started: false), Now),
+            PlayerMatchPerformance.Record(squad, me, matches[0], coachId, Stats(90, 2, 0, started: true), Now),
+            PlayerMatchPerformance.Record(squad, me, matches[1], coachId, Stats(90, 1, 1, started: true), Now),
+            PlayerMatchPerformance.Record(squad, me, matches[2], coachId, Stats(45, 0, 0, started: false), Now),
         };
 
         return (me, performances, matches);
@@ -151,6 +152,6 @@ public class PlayerStatsCalculatorTests
         return match;
     }
 
-    private static PerformanceStats Stats(int minutes, int goals, int assists, int rating, bool started) =>
-        new(started, minutes, goals, assists, goals + 2, goals + 1, 1, 1, 0, 0, 0, false, rating, null);
+    private static PerformanceStats Stats(int minutes, int goals, int assists, bool started) =>
+        new(started, minutes, goals, assists, goals + 2, goals + 1, 1, 1, 0, 0, 0, false, null);
 }

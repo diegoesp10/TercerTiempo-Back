@@ -78,7 +78,7 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
             .Select(t => new TeamSnapshot(t.Id, t.Name, t.ShortName, null))
             .ToList());
 
-    public Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, CancellationToken cancellationToken) =>
+    public Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, IReadOnlyCollection<MatchSnapshot> known, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<MatchSnapshot>>(BuildMatches(competitionExternalId, clock.GetUtcNow()));
 
     public Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken)

@@ -67,6 +67,17 @@ public sealed class Match : AggregateRoot
         Status = MatchStatus.Scheduled;
     }
 
+    /// <summary>
+    /// Datos de calendario según el proveedor (jornada, fecha y hora, campo). Se pueden corregir en cualquier estado,
+    /// también con el partido ya disputado; el estado y el marcador no cambian.
+    /// </summary>
+    public void UpdateFixture(int matchday, DateTimeOffset kickoffAt, string? venue)
+    {
+        Matchday = Guard.InRange(matchday, 1, 60, "jornada");
+        KickoffAt = kickoffAt;
+        Venue = string.IsNullOrWhiteSpace(venue) ? Venue : venue.Trim();
+    }
+
     public void Postpone()
     {
         if (Status == MatchStatus.Played)

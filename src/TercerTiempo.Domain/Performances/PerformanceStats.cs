@@ -2,7 +2,10 @@ using TercerTiempo.Domain.Common;
 
 namespace TercerTiempo.Domain.Performances;
 
-/// <summary>Datos de rendimiento de un jugador en un partido, tal y como los registra el cuerpo técnico en el acta.</summary>
+/// <summary>
+/// Datos de rendimiento de un jugador en un partido, tal y como los registra el cuerpo técnico en el acta. La nota no
+/// forma parte de ellos: se calcula a partir de estos datos (<see cref="PerformanceRating"/>).
+/// </summary>
 public sealed record PerformanceStats(
     bool Started,
     int MinutesPlayed,
@@ -16,7 +19,6 @@ public sealed record PerformanceStats(
     int Saves,
     int YellowCards,
     bool RedCard,
-    int Rating,
     string? Notes)
 {
     public const int MaxMinutes = 120;
@@ -34,7 +36,6 @@ public sealed record PerformanceStats(
         Guard.NotNegative(Interceptions, "intercepciones");
         Guard.NotNegative(Saves, "paradas");
         Guard.InRange(YellowCards, 0, 2, "amarillas");
-        Guard.InRange(Rating, 1, 10, "valoración");
 
         if (ShotsOnTarget > Shots)
             throw new DomainException("Los tiros a puerta no pueden superar los tiros totales.");

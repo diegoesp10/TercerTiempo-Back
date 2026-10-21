@@ -16,6 +16,7 @@ internal static class PlayerStatsCalculator
         var assists = performances.Sum(p => p.Assists);
         var shots = performances.Sum(p => p.Shots);
         var shotsOnTarget = performances.Sum(p => p.ShotsOnTarget);
+        var ratings = performances.Where(p => p.Rating is not null).Select(p => p.Rating!.Value).ToList();
 
         return new IndividualStatsDto(
             MatchesLogged: performances.Count,
@@ -32,7 +33,7 @@ internal static class PlayerStatsCalculator
             Saves: performances.Sum(p => p.Saves),
             YellowCards: performances.Sum(p => p.YellowCards),
             RedCards: performances.Count(p => p.RedCard),
-            AverageRating: Round(performances.Average(p => (double)p.Rating)),
+            AverageRating: ratings.Count > 0 ? Round(ratings.Average()) : null,
             GoalsPer90: Per90(goals, minutes),
             AssistsPer90: Per90(assists, minutes),
             GoalContributionsPer90: Per90(goals + assists, minutes),
@@ -107,7 +108,7 @@ internal static class PlayerStatsCalculator
                 g.Sum(p => p.MinutesPlayed),
                 g.Sum(p => p.Goals),
                 g.Sum(p => p.Assists),
-                g.Average(p => (double)p.Rating)))
+                AverageRating(g)))
             .Where(l => l.Minutes > 0)
             .ToList();
 
@@ -124,7 +125,10 @@ internal static class PlayerStatsCalculator
             PlayersCompared: lines.Count,
             GoalsPer90Percentile: Percentile(lines, me, l => l.Goals * 90.0 / l.Minutes),
             AssistsPer90Percentile: Percentile(lines, me, l => l.Assists * 90.0 / l.Minutes),
-            RatingPercentile: Percentile(lines, me, l => l.AverageRating),
+            RatingPercentile: Percentile(
+                lines.Where(l => l.AverageRating is not null).ToList(),
+                me?.AverageRating is null ? null : me,
+                l => l.AverageRating!.Value),
             MinutesPercentile: Percentile(lines, me, l => l.Minutes));
     }
 
@@ -141,7 +145,13 @@ internal static class PlayerStatsCalculator
         return Round((below + 0.5 * equal) * 100.0 / lines.Count);
     }
 
-    internal sealed record PlayerSeasonLine(Guid SquadPlayerId, int Minutes, int Goals, int Assists, double AverageRating);
+    internal sealed record PlayerSeasonLine(Guid SquadPlayerId, int Minutes, int Goals, int Assists, double? AverageRating);
+
+    private static double? AverageRating(IEnumerable<PlayerMatchPerformance> performances)
+    {
+        var ratings = performances.Where(p => p.Rating is not null).Select(p => p.Rating!.Value).ToList();
+        return ratings.Count > 0 ? ratings.Average() : null;
+    }
 
     private static double? Per90(int value, int minutes) => minutes > 0 ? Round(value * 90.0 / minutes) : null;
 

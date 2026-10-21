@@ -112,7 +112,22 @@ internal sealed class SyncSeasonHandler(
             ?? competition.AddSeason(snapshot.SeasonLabel, snapshot.StartsOn, snapshot.EndsOn, seasonRef);
         competition.MarkCurrent(season.Id);
 
-        // 2. Equipos
+        // 2. Calendario según el proveedor. Se le pasan los partidos ya guardados de esta temporada para que pueda
+        //    reutilizarlos (futbolasturiano.es tiene que leer de una en una las páginas de los partidos que su API oculta).
+        //    Va antes que los equipos porque así el proveedor puede descubrir equipos que solo aparecen en esos partidos.
+        var matchesByExternalId = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
+            .Where(m => m.ExternalRef?.Provider == providerName)
+            .ToDictionary(m => m.ExternalRef!.ExternalId);
+
+        var externalIdByTeamId = teamsByExternalId.ToDictionary(kv => kv.Value.Id, kv => kv.Key);
+        var known = matchesByExternalId.Values
+            .Select(m => ToSnapshot(m, externalIdByTeamId))
+            .OfType<MatchSnapshot>()
+            .ToList();
+
+        var matchSnapshots = await provider.GetMatchesAsync(snapshot.ExternalId, known, cancellationToken);
+
+        // 3. Equipos
         var teamSnapshots = await provider.GetTeamsAsync(snapshot.ExternalId, cancellationToken);
 
         foreach (var ts in teamSnapshots)
@@ -128,12 +143,7 @@ internal sealed class SyncSeasonHandler(
             teamsByExternalId[ts.ExternalId] = team;
         }
 
-        // 3. Partidos
-        var matchSnapshots = await provider.GetMatchesAsync(snapshot.ExternalId, cancellationToken);
-        var matchesByExternalId = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
-            .Where(m => m.ExternalRef?.Provider == providerName)
-            .ToDictionary(m => m.ExternalRef!.ExternalId);
-
+        // 4. Partidos
         var syncedMatches = 0;
         foreach (var ms in matchSnapshots)
         {
@@ -157,7 +167,7 @@ internal sealed class SyncSeasonHandler(
             syncedMatches++;
         }
 
-        // 4. Clasificación
+        // 5. Clasificación
         var standingSnapshots = await provider.GetStandingsAsync(snapshot.ExternalId, cancellationToken);
         var standingsByTeam = (await standings.GetBySeasonAsync(season.Id, cancellationToken)).ToDictionary(s => s.TeamId);
 
@@ -176,7 +186,7 @@ internal sealed class SyncSeasonHandler(
             syncedStandings++;
         }
 
-        // 5. Plantillas
+        // 6. Plantillas
         var rosterByTeam = (await teams.GetSeasonRosterAsync(season.Id, cancellationToken)).ToLookup(r => r.TeamId);
 
         var syncedRoster = 0;
@@ -209,8 +219,24 @@ internal sealed class SyncSeasonHandler(
         return (teamSnapshots.Count, syncedMatches, syncedStandings, syncedRoster);
     }
 
+    private static MatchSnapshot? ToSnapshot(Match match, IReadOnlyDictionary<Guid, string> externalIdByTeamId)
+    {
+        if (match.ExternalRef is null
+            || !externalIdByTeamId.TryGetValue(match.HomeTeamId, out var home)
+            || !externalIdByTeamId.TryGetValue(match.AwayTeamId, out var away))
+            return null;
+
+        return new MatchSnapshot(
+            match.ExternalRef.ExternalId, match.Matchday, home, away, match.KickoffAt, match.Status,
+            match.Score?.Home, match.Score?.Away, match.Venue);
+    }
+
     private static void ApplyMatchSnapshot(Match match, MatchSnapshot snapshot, DateTimeOffset now)
     {
+        // Jornada, fecha y campo se corrigen siempre (también en partidos ya jugados: antes se guardaba la fecha
+        // provisional del calendario en lugar de la real).
+        match.UpdateFixture(snapshot.Matchday, snapshot.KickoffAt, snapshot.Venue);
+
         switch (snapshot.Status)
         {
             case MatchStatus.Played when snapshot.HomeGoals is { } home && snapshot.AwayGoals is { } away:
@@ -229,7 +255,7 @@ internal sealed class SyncSeasonHandler(
                 match.MarkInProgress();
                 break;
 
-            case MatchStatus.Scheduled when match.Status != MatchStatus.Played && match.KickoffAt != snapshot.KickoffAt:
+            case MatchStatus.Scheduled when match.Status is MatchStatus.Postponed or MatchStatus.InProgress:
                 match.Reschedule(snapshot.KickoffAt);
                 break;
         }

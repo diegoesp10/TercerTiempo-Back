@@ -3,7 +3,7 @@
 API de **Tercer Tiempo**, plataforma de actas y rendimiento para el fútbol amateur. El **cuerpo técnico** de cada
 equipo (entrenador, ayudante, delegado...) crea la plantilla de su equipo, importa las fichas que publica un proveedor
 externo (futbolasturiano.es) o las añade a mano y, tras cada partido, registra el **acta**: minutos, goles,
-asistencias, tiros, tarjetas y valoración de cada jugador. Cada **jugador** se vincula a su ficha con un código de
+asistencias, tiros, tarjetas... de cada jugador; la **nota** no la pone nadie: se calcula con esos datos. Cada **jugador** se vincula a su ficha con un código de
 invitación y ve cuánto aporta: a nivel individual, a su equipo (resultados con él y sin él, cuota de goles, minutos)
 y frente al resto de la liga. Los datos de cada plantilla son **privados** salvo que su cuerpo técnico la haga pública.
 
@@ -95,7 +95,22 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 - **PlayerMatchPerformance**: una línea del acta por ficha y partido, registrada por un miembro del cuerpo técnico
   (`RecordedByCoachId`). `PerformancePolicy` decide quién puede registrarla (staff de la plantilla, partido de su
   temporada en el que juega su equipo, ya disputado) y `PerformanceStats.EnsureValid()` las reglas de los datos
-  (minutos 0-120, coherencia tiros/tiros a puerta, dos amarillas ⇒ roja, sin minutos no hay acciones, valoración 1-10).
+  (minutos 0-120, coherencia tiros/tiros a puerta, dos amarillas ⇒ roja, sin minutos no hay acciones).
+- **PerformanceRating**: la **nota** de cada línea se calcula solo con datos y se guarda al registrar el acta (también
+  se recalcula si cambia la posición del jugador). Parte de 6,0 y suma o resta por bloques, con pesos según la posición
+  (un gol vale más a un defensa que a un delantero; la portería a cero, sobre todo a porteros y defensas):
+
+  | Bloque | Qué cuenta |
+  |---|---|
+  | Ataque | goles y tiros a puerta |
+  | Creación | asistencias y pases clave |
+  | Defensa | entradas, intercepciones; para defensas y medios, portería a cero (60' o más) y goles encajados |
+  | Portería | paradas; para porteros, portería a cero y goles encajados |
+  | Disciplina | −0,3 por amarilla; −1,5 si hay roja |
+  | Resultado | victoria +0,4, empate +0,1, derrota −0,3, proporcional a los minutos |
+
+  Escala 3,0-10,0 con un decimal; sin minutos no hay nota. Las notas manuales de versiones anteriores se vacían en la
+  migración `ResetManualRatings` y la API las recalcula al arrancar (`RecalculateMissingRatingsCommand`).
 
 ## Casos de uso (endpoints)
 
@@ -115,11 +130,14 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/squads/{id}/matches` | Partidos del equipo con el número de líneas registradas en cada acta |
 | GET / PUT | `/api/squads/{id}/matches/{matchId}/sheet` | Consultar / registrar el acta de un partido (idempotente; `played = false` borra la línea) |
 | GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
+| GET | `/api/squads/{id}/players/{squadPlayerId}/profile` | Ficha para gráficos: serie partido a partido con el desglose de la nota, perfil por 90' y media/máximo de la plantilla |
+| GET | `/api/squads/{id}/timeline` | Evolución del equipo: resultado, puntos acumulados, nota media y mejor nota de cada partido |
 | GET | `/api/players/me/invite/{code}` | Plantilla que hay detrás de un código y sus fichas sin vincular |
 | POST / DELETE | `/api/players/me/squad` | Vincularse a la ficha (por id o por nombre) / desvincularse |
 | GET | `/api/players/me/dashboard` | Panel del jugador: individual, impacto en el equipo, comparativa con la liga |
 | GET | `/api/players/me/performances` | Actas en las que aparece el jugador |
 | GET | `/api/competitions` | Ligas disponibles por nivel, categoría y grupo, con su temporada |
+| GET | `/api/competitions/{id}/matchdays/current`, `/api/competitions/{id}/matchdays/{n}` | Partidos de la jornada en curso (o la próxima) o de cualquier otra, con la lista de jornadas y sus fechas |
 | GET | `/api/teams?competitionId=`, `/api/teams/{id}`, `/api/teams/{id}/matches` | Equipos de una liga, ficha con plantilla publicada y estado de su plantilla en la plataforma, calendario |
 | GET | `/api/matches/{id}` | Detalle con las actas de ambas plantillas (cada una solo si es visible para el usuario) |
 | GET | `/api/league/table?competitionId=` | Clasificación de una liga (sin parámetro, la de la plantilla del usuario) |
@@ -160,14 +178,27 @@ no impide sincronizar las demás). Se elige en `appsettings.json` → `FootballD
   - ligas y grupos → taxonomía `sp_league` (clasificadas por nombre con `LeagueClassifier`); temporada → `sp_season`
     (`FootballData:FutbolAsturiano:Season`, vacío = la más reciente);
   - equipos → `sp_team` por liga/temporada, con escudo embebido, más los que aparezcan en el calendario sin etiquetar;
-  - partidos → `sp_event` (jornada `day`, goles en `results`; sin resultado = programado);
+  - partidos → `sp_event` (jornada `day`, goles en `results`; sin resultado = programado). La fecha real es `date`
+    (hora peninsular, `FootballData:FutbolAsturiano:TimeZone`); `date_gmt` se queda a menudo con la fecha provisional
+    del calendario (domingo a las 12:00) y no se usa;
+  - **partidos ocultos por la API**: WordPress marca como "programados" (`future`) los partidos cuya fecha de
+    publicación aún no ha llegado, y la API pública no los devuelve aunque la web los muestra. Afecta a la jornada en
+    curso (se publica el domingo a las 12:00) y, en algunas ligas como 3ª AsturFútbol, a casi todo el calendario
+    futuro. La cabecera `X-WP-Total` sí los cuenta, y cada liga ocupa un bloque de ids consecutivos, así que los
+    huecos del bloque son exactamente esos partidos: se leen de su página pública (`/?p={id}`, con AngleSharp) para
+    sacar jornada, fecha y hora, equipos, resultado y campo (`HiddenEventPlanner`, `EventPageParser`). Cada página
+    tarda segundos, así que los ya guardados se reutilizan, solo se releen los que se juegan en los próximos
+    `HiddenEventRefreshDays` días (hora definitiva, resultado) y las lecturas nuevas tienen un tope por liga
+    (`HiddenEventPagesPerLeague`); el resto llega en las siguientes sincronizaciones, empezando por las jornadas
+    más próximas. `RecoverHiddenEvents = false` lo desactiva;
   - clasificación → `sportspress/v2/sp_table` (`data` por id de equipo);
   - plantillas → catálogo completo de `sp_player` agrupado por `current_teams` (una descarga por sincronización).
     La web publica plantillas en 1ª/2ª/3ª RFEF y 1ª AsturFútbol; en 2ª y 3ª AsturFútbol no, por lo que ahí la
     plantilla nace vacía y el cuerpo técnico añade las fichas a mano.
   - Qué se sincroniza: `IncludeNational`, `IncludeRegional`, `IncludeProfessional`, `IncludeCups`, `IncludeYouth`
     y, para afinar, `IncludeLeagueIds` / `ExcludeLeagueIds` (ids de `sp_league`).
-  - Una sincronización completa (10 ligas) son ~110 peticiones y tarda alrededor de un minuto.
+  - Una sincronización completa (10 ligas) son ~110 peticiones a la API más las páginas de partidos ocultos: la
+    primera, con la base de datos vacía, tarda varios minutos; las siguientes, uno o dos.
 - `fake`: tres ligas ficticias generadas en memoria (sin red), con plantillas solo en dos de ellas.
 - `jsonfiles`: lee `competitions.json`, `competitions/{id}/{teams,matches,standings}.json` y
   `rosters/{teamId}.json` de `FootballData:JsonFiles:Directory`. Ideal para enchufar un scraper externo.
@@ -209,7 +240,8 @@ memoria (ver `SquadStore.GetByCoachAsync`). Al pasar a SQL Server deja de ser ne
   lo controla el propio cuerpo técnico (y puede regenerarlo).
 - **Roles del staff**: hoy todos los miembros del cuerpo técnico pueden registrar actas y gestionar la plantilla;
   queda por decidir si algunas acciones (visibilidad, bajas de staff) se reservan al primer entrenador.
-- **Estadísticas**: añadir evolución por jornada, comparativa por posición e importar las estadísticas oficiales por
-  jugador que publica SportsPress en los eventos jugados para precargar el acta.
+- **Estadísticas**: comparativa por posición e importar las estadísticas oficiales por jugador que publica SportsPress
+  en los eventos jugados para precargar el acta. Los pesos de la nota están en `PerformanceRating` y se pueden afinar
+  con datos reales (por ejemplo, contrastándolos con las puntuaciones que publica la web en las convocatorias).
 - **Infra**: refresh tokens, SQL Server en lugar de SQLite, despliegue en contenedores, eventos de dominio
   con outbox (ya hay punto de extensión en `AppDbContext.SaveChangesAsync`).

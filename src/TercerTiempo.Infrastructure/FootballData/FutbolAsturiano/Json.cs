@@ -65,6 +65,17 @@ internal static class Json
             : null;
     }
 
+    /// <summary>Fecha "yyyy-MM-ddTHH:mm:ss" (sin zona) tal cual, para interpretarla en la zona horaria del sitio.</summary>
+    public static DateTime? GetLocalDateTime(JsonElement element, string property)
+    {
+        var raw = GetString(element, property);
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        return DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? DateTime.SpecifyKind(date, DateTimeKind.Unspecified)
+            : null;
+    }
+
     /// <summary>Goles de un equipo en <c>results[teamId].goals</c>; null si el partido no tiene resultado.</summary>
     public static int? GetGoals(JsonElement eventElement, int teamId)
     {
@@ -78,6 +89,26 @@ internal static class Json
             return null;
 
         return ToInt(goals);
+    }
+
+    /// <summary>¿Tiene el equipo un desenlace (<c>results[teamId].outcome</c>: win/draw/loss)? Solo cuando el partido ha terminado.</summary>
+    public static bool HasOutcome(JsonElement eventElement, int teamId)
+    {
+        if (eventElement.ValueKind != JsonValueKind.Object || !eventElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (!results.TryGetProperty(teamId.ToString(CultureInfo.InvariantCulture), out var teamResult) || teamResult.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (!teamResult.TryGetProperty("outcome", out var outcome))
+            return false;
+
+        return outcome.ValueKind switch
+        {
+            JsonValueKind.String => !string.IsNullOrWhiteSpace(outcome.GetString()),
+            JsonValueKind.Array => outcome.GetArrayLength() > 0,
+            _ => false,
+        };
     }
 
     /// <summary>URL del escudo embebido (_embedded["wp:featuredmedia"][0].source_url).</summary>

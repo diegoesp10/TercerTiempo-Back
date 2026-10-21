@@ -51,7 +51,7 @@ internal sealed class BeSoccerFootballDataProvider(
             .ToList();
     }
 
-    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, IReadOnlyCollection<MatchSnapshot> known, CancellationToken cancellationToken)
     {
         using var document = await GetAsync("matchs", cancellationToken);
         if (!TryGetArray(document, "match", out var matches)) return [];

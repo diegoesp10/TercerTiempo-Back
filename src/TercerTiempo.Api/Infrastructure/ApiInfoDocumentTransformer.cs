@@ -12,7 +12,7 @@ internal sealed class ApiInfoDocumentTransformer : IOpenApiDocumentTransformer
         ("Auth", "Alta (jugador o cuerpo técnico) e inicio de sesión. Devuelven el JWT que hay que enviar como `Authorization: Bearer <token>`."),
         ("Plantillas", "Lo que hace el cuerpo técnico: crear la plantilla de su equipo, gestionar staff y jugadores, decidir la visibilidad, registrar el acta de cada partido y consultar las estadísticas del grupo."),
         ("Jugadores", "Lo que hace un jugador: vincularse a su ficha con el código de invitación y consultar sus estadísticas."),
-        ("Competiciones", "Ligas sincronizadas desde futbolasturiano.es: nivel (nacional/regional), categoría y grupo. Públicas."),
+        ("Competiciones", "Ligas sincronizadas desde futbolasturiano.es: nivel (nacional/regional), categoría y grupo, y sus jornadas (la jornada en curso y cualquier otra). Públicas."),
         ("Equipos", "Equipos de cada competición, su plantilla publicada por el proveedor y su calendario. Públicos."),
         ("Partidos", "Detalle de partidos con las actas visibles."),
         ("Liga", "Clasificación de cada liga. Pública."),

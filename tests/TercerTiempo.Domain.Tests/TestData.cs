@@ -36,8 +36,8 @@ internal static class TestData
     public static Match ScheduledMatch() =>
         Match.Schedule(SeasonId, 2, HomeTeamId, AwayTeamId, Now.AddDays(4), null, null);
 
-    public static PerformanceStats ValidStats(int minutes = 90, int goals = 1, int assists = 0, int rating = 7) =>
+    public static PerformanceStats ValidStats(int minutes = 90, int goals = 1, int assists = 0) =>
         new(Started: true, MinutesPlayed: minutes, Goals: goals, Assists: assists, Shots: 3, ShotsOnTarget: 2,
             KeyPasses: 1, Tackles: 2, Interceptions: 1, Saves: 0, YellowCards: 0, RedCard: false,
-            Rating: rating, Notes: null);
+            Notes: null);
 }

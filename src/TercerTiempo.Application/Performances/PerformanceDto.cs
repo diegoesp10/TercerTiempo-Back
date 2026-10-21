@@ -27,7 +27,7 @@ public sealed record PerformanceDto(
     int Saves,
     int YellowCards,
     bool RedCard,
-    int Rating,
+    double? Rating,
     string? Notes,
     DateTimeOffset UpdatedAt);
 

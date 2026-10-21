@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Squads;
+using TercerTiempo.Application.Squads.Charts;
 using TercerTiempo.Application.Squads.ClaimTeam;
 using TercerTiempo.Application.Squads.GetSquad;
 using TercerTiempo.Application.Squads.JoinStaff;
@@ -26,7 +27,9 @@ internal sealed class SquadsRepository(
     IQueryHandler<ListSquadMatchesQuery, IReadOnlyList<SquadMatchDto>> listMatches,
     IQueryHandler<GetMatchSheetQuery, MatchSheetDto> getMatchSheet,
     ICommandHandler<RecordMatchSheetCommand, MatchSheetDto> recordMatchSheet,
-    IQueryHandler<GetSquadStatsQuery, SquadStatsDto> getStats) : ISquadsRepository
+    IQueryHandler<GetSquadStatsQuery, SquadStatsDto> getStats,
+    IQueryHandler<GetSquadPlayerProfileQuery, SquadPlayerProfileDto> getPlayerProfile,
+    IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto> getTimeline) : ISquadsRepository
 {
     public Task<SquadDetailDto> ClaimTeamAsync(Guid teamId, CancellationToken cancellationToken = default) =>
         claimTeam.Handle(new ClaimTeamCommand(teamId), cancellationToken);
@@ -69,4 +72,10 @@ internal sealed class SquadsRepository(
 
     public Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         getStats.Handle(new GetSquadStatsQuery(squadId), cancellationToken);
+
+    public Task<SquadPlayerProfileDto> GetPlayerProfileAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default) =>
+        getPlayerProfile.Handle(new GetSquadPlayerProfileQuery(squadId, squadPlayerId), cancellationToken);
+
+    public Task<SquadTimelineDto> GetTimelineAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        getTimeline.Handle(new GetSquadTimelineQuery(squadId), cancellationToken);
 }

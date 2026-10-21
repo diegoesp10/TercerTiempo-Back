@@ -1,4 +1,5 @@
 using TercerTiempo.Application.Squads;
+using TercerTiempo.Application.Squads.Charts;
 
 namespace TercerTiempo.Repository.Squads;
 
@@ -22,4 +23,7 @@ public interface ISquadsRepository
     Task<MatchSheetDto> GetMatchSheetAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
     Task<MatchSheetDto> RecordMatchSheetAsync(Guid squadId, Guid matchId, MatchSheetRequest request, CancellationToken cancellationToken = default);
     Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default);
+
+    Task<SquadPlayerProfileDto> GetPlayerProfileAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
+    Task<SquadTimelineDto> GetTimelineAsync(Guid squadId, CancellationToken cancellationToken = default);
 }

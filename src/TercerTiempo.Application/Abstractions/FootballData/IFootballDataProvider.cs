@@ -12,7 +12,15 @@ public interface IFootballDataProvider
     Task<IReadOnlyList<CompetitionSnapshot>> GetCompetitionsAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(string competitionExternalId, CancellationToken cancellationToken);
-    Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, CancellationToken cancellationToken);
+    /// <summary>
+    /// Calendario y resultados de la liga. <paramref name="known"/> son los partidos de esa liga que ya están guardados
+    /// (como instantáneas del mismo proveedor): un proveedor caro de consultar puede reutilizarlos en lugar de volver a
+    /// descargarlos. Los demás pueden ignorarlos.
+    /// </summary>
+    Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(
+        string competitionExternalId,
+        IReadOnlyCollection<MatchSnapshot> known,
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken);
 
     /// <summary>Plantilla publicada de un equipo; lista vacía si el proveedor no la publica.</summary>

@@ -328,8 +328,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Rating")
-                        .HasColumnType("INTEGER");
+                    b.Property<double?>("Rating")
+                        .HasColumnType("REAL");
 
                     b.Property<Guid>("RecordedByCoachId")
                         .HasColumnType("TEXT");

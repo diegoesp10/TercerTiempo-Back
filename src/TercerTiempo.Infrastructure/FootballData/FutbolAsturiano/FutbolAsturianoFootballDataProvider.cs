@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,7 +16,10 @@ namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 ///  - Ligas y grupos: taxonomía <c>sp_league</c>; temporadas: <c>sp_season</c>.
 ///  - Equipos: <c>sp_team</c> filtrado por liga y temporada (con escudo embebido), más los que aparezcan
 ///    en el calendario sin estar etiquetados en la liga.
-///  - Partidos: <c>sp_event</c> filtrado por liga y temporada (jornada en <c>day</c>, goles en <c>results</c>).
+///  - Partidos: <c>sp_event</c> filtrado por liga y temporada (jornada en <c>day</c>, goles en <c>results</c>,
+///    fecha real en <c>date</c>, hora peninsular). Los que WordPress mantiene como "programados" (estado
+///    <c>future</c>: la jornada en curso y buena parte del calendario de algunas ligas) no salen en la API aunque la web
+///    los muestra; se recuperan de su página pública (ver <see cref="HiddenEventPlanner"/>).
 ///  - Clasificación: <c>sportspress/v2/sp_table</c> (datos por id de equipo).
 ///  - Plantillas: catálogo completo de <c>sp_player</c> agrupado por <c>current_teams</c>
 ///    (la API no permite filtrarlos por equipo; se descarga una vez por sincronización).
@@ -24,16 +28,30 @@ namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 internal sealed class FutbolAsturianoFootballDataProvider(
     HttpClient http,
     IOptions<FootballDataOptions> options,
+    TimeProvider clock,
     ILogger<FutbolAsturianoFootballDataProvider> logger) : IFootballDataProvider
 {
     private const int MaxRetries = 3;
-    private const string TeamFields = "_fields=id,title,abbreviation,featured_media,_embedded,_links&_embed=wp:featuredmedia";
+    private const int MaxBlockExtensions = 20;
+    private const string TeamFields = "_fields=id,slug,title,abbreviation,featured_media,_embedded,_links&_embed=wp:featuredmedia";
+
+    private static readonly TimeSpan RefreshBehind = TimeSpan.FromDays(2);
+
+    /// <summary>Tiempo tras el saque durante el que un marcador sin desenlace se considera en directo.</summary>
+    private static readonly TimeSpan LiveWindow = TimeSpan.FromHours(3);
 
     private readonly FutbolAsturianoOptions _settings = options.Value.FutbolAsturiano;
-    private readonly Dictionary<string, List<JsonElement>> _eventsByLeague = [];
+    private readonly Dictionary<string, Paged> _eventsByLeague = [];
+    private readonly Dictionary<string, List<JsonElement>> _teamsByLeague = [];
+    private readonly Dictionary<string, List<TeamSnapshot>> _extraTeamsByLeague = [];
+    private readonly Dictionary<string, int> _teamIdBySlug = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _unknownSlugs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<int, EventPage?> _eventPages = [];
+    private readonly Dictionary<string, string> _leagueNames = [];
     private DateTimeOffset _lastRequestAt = DateTimeOffset.MinValue;
 
     private (int Id, string Label)? _season;
+    private TimeZoneInfo? _timeZone;
     private Dictionary<int, string>? _venues;
     private Dictionary<int, Position?>? _positions;
     private List<JsonElement>? _tables;
@@ -41,12 +59,14 @@ internal sealed class FutbolAsturianoFootballDataProvider(
 
     public string ProviderName => FootballDataOptions.FutbolAsturianoProvider;
 
+    private TimeZoneInfo SiteTimeZone => _timeZone ??= SiteClock.Resolve(_settings.TimeZone);
+
     public async Task<IReadOnlyList<CompetitionSnapshot>> GetCompetitionsAsync(CancellationToken cancellationToken)
     {
         var season = await ResolveSeasonAsync(cancellationToken);
         var (startsOn, endsOn) = SeasonDates(season.Label);
 
-        var leagues = await GetPagedAsync("wp/v2/sp_league?_fields=id,name,slug", cancellationToken);
+        var leagues = (await GetPagedAsync("wp/v2/sp_league?_fields=id,name,slug", cancellationToken)).Items;
         var result = new List<CompetitionSnapshot>();
 
         foreach (var league in leagues)
@@ -55,11 +75,14 @@ internal sealed class FutbolAsturianoFootballDataProvider(
             var name = Json.GetString(league, "name") ?? string.Empty;
             if (id == 0 || name.Length == 0) continue;
 
+            var externalId = id.ToString(CultureInfo.InvariantCulture);
+            _leagueNames[externalId] = WebUtility.HtmlDecode(name);
+
             var info = LeagueClassifier.Classify(name);
             if (!IsIncluded(id, info.Level)) continue;
 
             result.Add(new CompetitionSnapshot(
-                id.ToString(CultureInfo.InvariantCulture), info.DisplayName, info.Category, info.Level, info.Tier, info.Group,
+                externalId, info.DisplayName, info.Category, info.Level, info.Tier, info.Group,
                 _settings.Region, season.Id.ToString(CultureInfo.InvariantCulture), season.Label, startsOn, endsOn));
         }
 
@@ -71,16 +94,12 @@ internal sealed class FutbolAsturianoFootballDataProvider(
 
     public async Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(string competitionExternalId, CancellationToken cancellationToken)
     {
-        var season = await ResolveSeasonAsync(cancellationToken);
-        var items = await GetPagedAsync(
-            $"wp/v2/sp_team?sp_league={competitionExternalId}&sp_season={season.Id}&{TeamFields}",
-            cancellationToken);
-
-        var teams = items.Select(ToTeam).OfType<TeamSnapshot>().ToList();
+        var teams = (await GetLeagueTeamItemsAsync(competitionExternalId, cancellationToken))
+            .Select(ToTeam).OfType<TeamSnapshot>().ToList();
 
         // Equipos que juegan partidos de la liga pero que la web no ha etiquetado en ella: se recuperan por id.
         var known = teams.Select(t => t.ExternalId).ToHashSet();
-        var missing = (await GetEventsAsync(competitionExternalId, cancellationToken))
+        var missing = (await GetEventsAsync(competitionExternalId, cancellationToken)).Items
             .SelectMany(e => Json.GetIntArray(e, "teams"))
             .Select(id => id.ToString(CultureInfo.InvariantCulture))
             .Where(id => !known.Contains(id))
@@ -94,27 +113,41 @@ internal sealed class FutbolAsturianoFootballDataProvider(
 
             foreach (var chunk in missing.Chunk(_settings.PageSize))
             {
-                var extra = await GetPagedAsync($"wp/v2/sp_team?include={string.Join(',', chunk)}&{TeamFields}", cancellationToken);
+                var extra = (await GetPagedAsync($"wp/v2/sp_team?include={string.Join(',', chunk)}&{TeamFields}", cancellationToken)).Items;
+                RegisterSlugs(extra);
                 teams.AddRange(extra.Select(ToTeam).OfType<TeamSnapshot>());
             }
+        }
+
+        // Equipos que solo aparecen en partidos ocultos por la API (leídos de su página): se localizaron por su slug.
+        if (_extraTeamsByLeague.TryGetValue(competitionExternalId, out var hiddenOnly))
+        {
+            known = teams.Select(t => t.ExternalId).ToHashSet();
+            teams.AddRange(hiddenOnly.Where(t => known.Add(t.ExternalId)));
         }
 
         return teams;
     }
 
-    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(
+        string competitionExternalId,
+        IReadOnlyCollection<MatchSnapshot> known,
+        CancellationToken cancellationToken)
     {
         var venues = await GetVenuesAsync(cancellationToken);
-        var items = await GetEventsAsync(competitionExternalId, cancellationToken);
+        var events = await GetEventsAsync(competitionExternalId, cancellationToken);
 
-        var matches = new List<MatchSnapshot>(items.Count);
+        var matches = new List<MatchSnapshot>(events.Total);
+        var visible = new List<VisibleEvent>(events.Items.Count);
 
-        foreach (var item in items)
+        foreach (var item in events.Items)
         {
             var id = Json.GetInt(item, "id");
             var teams = Json.GetIntArray(item, "teams");
             var matchday = Json.GetInt(item, "day");
-            var kickoff = Json.GetUtcDate(item, "date_gmt");
+            var kickoff = KickoffOf(item);
+
+            if (id is not null) visible.Add(new VisibleEvent(id.Value, kickoff ?? DateTimeOffset.MaxValue));
 
             if (id is null || teams.Count < 2 || matchday is null or < 1 || kickoff is null)
             {
@@ -126,7 +159,11 @@ internal sealed class FutbolAsturianoFootballDataProvider(
             var away = teams[1];
             var homeGoals = Json.GetGoals(item, home);
             var awayGoals = Json.GetGoals(item, away);
-            var played = homeGoals is not null && awayGoals is not null;
+            var hasScore = homeGoals is not null && awayGoals is not null;
+
+            // Con marcador pero sin desenlace (win/draw/loss) y recién empezado: es el marcador en directo.
+            var live = hasScore && !Json.HasOutcome(item, home) && kickoff.Value > clock.GetUtcNow() - LiveWindow;
+            var played = hasScore && !live;
 
             var venueIds = Json.GetIntArray(item, "sp_venue");
             var venue = venueIds.Count > 0 && venues.TryGetValue(venueIds[0], out var venueName) ? venueName : null;
@@ -137,11 +174,14 @@ internal sealed class FutbolAsturianoFootballDataProvider(
                 home.ToString(CultureInfo.InvariantCulture),
                 away.ToString(CultureInfo.InvariantCulture),
                 kickoff.Value,
-                played ? MatchStatus.Played : MatchStatus.Scheduled,
+                live ? MatchStatus.InProgress : played ? MatchStatus.Played : MatchStatus.Scheduled,
                 played ? homeGoals : null,
                 played ? awayGoals : null,
                 venue));
         }
+
+        if (_settings.RecoverHiddenEvents)
+            matches.AddRange(await RecoverHiddenEventsAsync(competitionExternalId, visible, events.Total, known, cancellationToken));
 
         return matches;
     }
@@ -151,7 +191,7 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         var season = await ResolveSeasonAsync(cancellationToken);
         var leagueId = int.Parse(competitionExternalId, CultureInfo.InvariantCulture);
 
-        _tables ??= await GetPagedAsync("sportspress/v2/sp_table?_fields=id,title,modified,sp_league,sp_season,data", cancellationToken);
+        _tables ??= (await GetPagedAsync("sportspress/v2/sp_table?_fields=id,title,modified,sp_league,sp_season,data", cancellationToken)).Items;
 
         var table = _tables
             .Where(t => Json.GetIntArray(t, "sp_league").Contains(leagueId) && Json.GetIntArray(t, "sp_season").Contains(season.Id))
@@ -219,8 +259,195 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Partidos ocultos por la API: se leen de su página pública
+    // ---------------------------------------------------------------------------------------------
+
+    private async Task<List<MatchSnapshot>> RecoverHiddenEventsAsync(
+        string competitionExternalId,
+        IReadOnlyCollection<VisibleEvent> visible,
+        int total,
+        IReadOnlyCollection<MatchSnapshot> known,
+        CancellationToken cancellationToken)
+    {
+        var plan = HiddenEventPlanner.Plan(
+            visible, total, known, clock.GetUtcNow(),
+            TimeSpan.FromDays(Math.Max(0, _settings.HiddenEventRefreshDays)), RefreshBehind);
+
+        if (plan.Hidden <= 0) return [];
+
+        var league = await GetLeagueNameAsync(competitionExternalId, cancellationToken);
+        var season = await ResolveSeasonAsync(cancellationToken);
+        var knownById = known.GroupBy(k => k.ExternalId).ToDictionary(g => g.Key, g => g.First());
+
+        var recovered = new List<MatchSnapshot>(plan.Reused);
+        var budget = Math.Max(0, _settings.HiddenEventPagesPerLeague);
+        var downloaded = 0;
+        var refreshed = 0;
+        var foreign = 0;
+        var nextId = plan.NextId;
+        var extensions = 0;
+
+        var queue = new Queue<int>(plan.Refresh.Concat(plan.Unknown));
+
+        while (queue.Count > 0 && recovered.Count < plan.Hidden)
+        {
+            var id = queue.Dequeue();
+            var externalId = id.ToString(CultureInfo.InvariantCulture);
+            knownById.TryGetValue(externalId, out var previous);
+
+            if (!_eventPages.TryGetValue(id, out var page))
+            {
+                if (downloaded >= budget)
+                {
+                    // Sin presupuesto: lo ya conocido se mantiene tal cual; lo nuevo queda para la próxima sincronización.
+                    if (previous is not null) recovered.Add(previous);
+                    continue;
+                }
+
+                var fetch = await FetchEventPageAsync(id, cancellationToken);
+                downloaded++;
+
+                if (fetch.Failed)
+                {
+                    if (previous is not null) recovered.Add(previous);
+                    continue;
+                }
+
+                page = fetch.Page;
+                _eventPages[id] = page;
+            }
+
+            if (page is null || !page.IsMatch || !page.BelongsTo(league, season.Label))
+            {
+                // No es un partido de esta liga (otro contenido u otra competición): el bloque se alarga un id.
+                foreign++;
+                if (extensions < MaxBlockExtensions)
+                {
+                    queue.Enqueue(nextId++);
+                    extensions++;
+                }
+
+                continue;
+            }
+
+            var snapshot = await ToSnapshotAsync(id, page, competitionExternalId, cancellationToken);
+            if (snapshot is null)
+            {
+                if (previous is not null) recovered.Add(previous);
+                continue;
+            }
+
+            if (previous is not null) refreshed++;
+            recovered.Add(snapshot);
+        }
+
+        var pending = plan.Hidden - recovered.Count;
+        logger.LogInformation(
+            "futbolasturiano.es: liga {League} ({Name}): {Hidden} partidos ocultos por la API; {Recovered} recuperados " +
+            "({Downloaded} páginas leídas, {Refreshed} actualizados, {Reused} reutilizados, {Foreign} ajenos); {Pending} pendientes para la próxima sincronización",
+            competitionExternalId, league, plan.Hidden, recovered.Count, downloaded, refreshed, plan.Reused.Count, foreign, Math.Max(0, pending));
+
+        return recovered;
+    }
+
+    private async Task<MatchSnapshot?> ToSnapshotAsync(int id, EventPage page, string competitionExternalId, CancellationToken cancellationToken)
+    {
+        var home = await TeamIdBySlugAsync(page.HomeTeamSlug!, competitionExternalId, cancellationToken);
+        var away = await TeamIdBySlugAsync(page.AwayTeamSlug!, competitionExternalId, cancellationToken);
+
+        if (home is null || away is null || home == away)
+        {
+            logger.LogWarning("futbolasturiano.es: partido oculto {Id} ignorado: equipos no identificados ({Home} vs {Away})",
+                id, page.HomeTeamSlug, page.AwayTeamSlug);
+            return null;
+        }
+
+        return new MatchSnapshot(
+            id.ToString(CultureInfo.InvariantCulture),
+            page.Matchday!.Value,
+            home.Value.ToString(CultureInfo.InvariantCulture),
+            away.Value.ToString(CultureInfo.InvariantCulture),
+            SiteClock.ToUtc(page.LocalKickoff!.Value, SiteTimeZone),
+            page.Live ? MatchStatus.InProgress : page.Played ? MatchStatus.Played : MatchStatus.Scheduled,
+            page.Played ? page.HomeGoals : null,
+            page.Played ? page.AwayGoals : null,
+            page.Venue);
+    }
+
+    private async Task<(EventPage? Page, bool Failed)> FetchEventPageAsync(int id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await SendAsync($"/?p={id}", "text/html", allowNotFound: true, cancellationToken);
+            if (response is null) return (null, false);
+
+            var html = await response.Content.ReadAsStringAsync(cancellationToken);
+            return (EventPageParser.Parse(html), false);
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "futbolasturiano.es: no se pudo leer la página del partido {Id}", id);
+            return (null, true);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("futbolasturiano.es: timeout leyendo la página del partido {Id}", id);
+            return (null, true);
+        }
+    }
+
+    private async Task<int?> TeamIdBySlugAsync(string slug, string competitionExternalId, CancellationToken cancellationToken)
+    {
+        await GetLeagueTeamItemsAsync(competitionExternalId, cancellationToken);
+        if (_teamIdBySlug.TryGetValue(slug, out var id)) return id;
+        if (_unknownSlugs.Contains(slug)) return null;
+
+        var found = (await GetPagedAsync($"wp/v2/sp_team?slug={Uri.EscapeDataString(slug)}&{TeamFields}", cancellationToken)).Items;
+        RegisterSlugs(found);
+
+        var extra = _extraTeamsByLeague.TryGetValue(competitionExternalId, out var list) ? list : _extraTeamsByLeague[competitionExternalId] = [];
+        extra.AddRange(found.Select(ToTeam).OfType<TeamSnapshot>());
+
+        if (_teamIdBySlug.TryGetValue(slug, out id)) return id;
+
+        _unknownSlugs.Add(slug);
+        return null;
+    }
+
+    private void RegisterSlugs(IEnumerable<JsonElement> teams)
+    {
+        foreach (var team in teams)
+        {
+            var id = Json.GetInt(team, "id");
+            var slug = Json.GetString(team, "slug");
+            if (id is > 0 && !string.IsNullOrWhiteSpace(slug))
+                _teamIdBySlug[slug] = id.Value;
+        }
+    }
+
+    private async Task<string> GetLeagueNameAsync(string competitionExternalId, CancellationToken cancellationToken)
+    {
+        if (_leagueNames.TryGetValue(competitionExternalId, out var name)) return name;
+
+        using var response = await SendAsync($"wp/v2/sp_league/{competitionExternalId}?_fields=id,name", "application/json", allowNotFound: false, cancellationToken);
+        await using var stream = await response!.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        name = WebUtility.HtmlDecode(Json.GetString(document.RootElement, "name") ?? string.Empty);
+        _leagueNames[competitionExternalId] = name;
+        return name;
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Catálogos cacheados por sincronización
     // ---------------------------------------------------------------------------------------------
+
+    private DateTimeOffset? KickoffOf(JsonElement item)
+    {
+        // "date" es la fecha real (hora peninsular); "date_gmt" se queda a veces con la fecha provisional del calendario.
+        var local = Json.GetLocalDateTime(item, "date");
+        return local is not null ? SiteClock.ToUtc(local.Value, SiteTimeZone) : Json.GetUtcDate(item, "date_gmt");
+    }
 
     private static TeamSnapshot? ToTeam(JsonElement item)
     {
@@ -235,24 +462,51 @@ internal sealed class FutbolAsturianoFootballDataProvider(
             Json.GetCrestUrl(item));
     }
 
-    private async Task<List<JsonElement>> GetEventsAsync(string competitionExternalId, CancellationToken cancellationToken)
+    private async Task<List<JsonElement>> GetLeagueTeamItemsAsync(string competitionExternalId, CancellationToken cancellationToken)
+    {
+        if (_teamsByLeague.TryGetValue(competitionExternalId, out var cached)) return cached;
+
+        var season = await ResolveSeasonAsync(cancellationToken);
+        var items = (await GetPagedAsync(
+            $"wp/v2/sp_team?sp_league={competitionExternalId}&sp_season={season.Id}&{TeamFields}",
+            cancellationToken)).Items;
+
+        RegisterSlugs(items);
+        _teamsByLeague[competitionExternalId] = items;
+        return items;
+    }
+
+    private async Task<Paged> GetEventsAsync(string competitionExternalId, CancellationToken cancellationToken)
     {
         if (_eventsByLeague.TryGetValue(competitionExternalId, out var cached)) return cached;
 
         var season = await ResolveSeasonAsync(cancellationToken);
+
+        // Orden por id (único y estable): con orderby=date los partidos que comparten fecha cambian de página entre
+        // peticiones y la paginación devuelve algunos repetidos y se salta otros.
         var events = await GetPagedAsync(
-            $"wp/v2/sp_event?sp_league={competitionExternalId}&sp_season={season.Id}&orderby=date&order=asc&_fields=id,date_gmt,day,teams,results,sp_venue",
+            $"wp/v2/sp_event?sp_league={competitionExternalId}&sp_season={season.Id}&orderby=id&order=asc&_fields=id,date,date_gmt,day,teams,results,sp_venue",
             cancellationToken);
 
-        _eventsByLeague[competitionExternalId] = events;
-        return events;
+        var distinct = events.Items
+            .GroupBy(e => Json.GetInt(e, "id") ?? 0)
+            .Select(g => g.First())
+            .ToList();
+
+        if (distinct.Count < events.Items.Count)
+            logger.LogWarning("futbolasturiano.es: la API devolvió {Duplicates} partidos repetidos en la liga {League}; se descartan",
+                events.Items.Count - distinct.Count, competitionExternalId);
+
+        var result = events with { Items = distinct };
+        _eventsByLeague[competitionExternalId] = result;
+        return result;
     }
 
     private async Task<(int Id, string Label)> ResolveSeasonAsync(CancellationToken cancellationToken)
     {
         if (_season is { } cached) return cached;
 
-        var seasons = await GetPagedAsync("wp/v2/sp_season?hide_empty=false&_fields=id,name", cancellationToken);
+        var seasons = (await GetPagedAsync("wp/v2/sp_season?hide_empty=false&_fields=id,name", cancellationToken)).Items;
         var candidates = seasons
             .Select(s => (Id: Json.GetInt(s, "id") ?? 0, Label: Json.GetString(s, "name") ?? string.Empty))
             .Where(s => s.Id > 0 && s.Label.Length > 0)
@@ -277,7 +531,7 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     {
         if (_venues is not null) return _venues;
 
-        var venues = await GetPagedAsync("wp/v2/sp_venue?hide_empty=false&_fields=id,name", cancellationToken);
+        var venues = (await GetPagedAsync("wp/v2/sp_venue?hide_empty=false&_fields=id,name", cancellationToken)).Items;
         _venues = venues
             .Select(v => (Id: Json.GetInt(v, "id") ?? 0, Name: WebUtility.HtmlDecode(Json.GetString(v, "name") ?? string.Empty)))
             .Where(v => v.Id > 0 && v.Name.Length > 0)
@@ -290,7 +544,7 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     {
         if (_positions is not null) return _positions;
 
-        var positions = await GetPagedAsync("wp/v2/sp_position?hide_empty=false&_fields=id,name", cancellationToken);
+        var positions = (await GetPagedAsync("wp/v2/sp_position?hide_empty=false&_fields=id,name", cancellationToken)).Items;
         _positions = positions
             .Select(p => (Id: Json.GetInt(p, "id") ?? 0, Name: Json.GetString(p, "name") ?? string.Empty))
             .Where(p => p.Id > 0)
@@ -303,7 +557,7 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     {
         if (_playersByTeam is not null) return _playersByTeam;
 
-        var players = await GetPagedAsync("wp/v2/sp_player?_fields=id,title,number,sp_position,current_teams", cancellationToken);
+        var players = (await GetPagedAsync("wp/v2/sp_player?_fields=id,title,number,sp_position,current_teams", cancellationToken)).Items;
 
         _playersByTeam = players
             .SelectMany(p => Json.GetIntArray(p, "current_teams").Select(teamId => (TeamId: teamId, Player: p)))
@@ -354,26 +608,28 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     }
 
     // ---------------------------------------------------------------------------------------------
-    // HTTP: paginación de la API REST de WordPress (cabeceras X-WP-TotalPages), ritmo y reintentos
+    // HTTP: paginación de la API REST de WordPress (cabeceras X-WP-Total / X-WP-TotalPages), ritmo y reintentos
     // ---------------------------------------------------------------------------------------------
 
-    private async Task<List<JsonElement>> GetPagedAsync(string pathAndQuery, CancellationToken cancellationToken)
+    /// <summary>Elementos devueltos y total que declara WordPress (incluye los que no devuelve por no estar publicados).</summary>
+    private sealed record Paged(List<JsonElement> Items, int Total);
+
+    private async Task<Paged> GetPagedAsync(string pathAndQuery, CancellationToken cancellationToken)
     {
         var items = new List<JsonElement>();
         var separator = pathAndQuery.Contains('?') ? '&' : '?';
         var page = 1;
+        var total = 0;
         int totalPages;
 
         do
         {
-            using var response = await SendAsync($"{pathAndQuery}{separator}per_page={_settings.PageSize}&page={page}", cancellationToken);
+            using var response = await SendAsync($"{pathAndQuery}{separator}per_page={_settings.PageSize}&page={page}", "application/json", allowNotFound: false, cancellationToken);
 
-            totalPages = response.Headers.TryGetValues("X-WP-TotalPages", out var values)
-                && int.TryParse(values.FirstOrDefault(), out var parsed)
-                ? parsed
-                : 1;
+            totalPages = HeaderInt(response!, "X-WP-TotalPages") ?? 1;
+            if (page == 1) total = HeaderInt(response!, "X-WP-Total") ?? 0;
 
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            await using var stream = await response!.Content.ReadAsStreamAsync(cancellationToken);
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
 
             if (document.RootElement.ValueKind == JsonValueKind.Array)
@@ -383,10 +639,14 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         }
         while (page <= totalPages);
 
-        return items;
+        return new Paged(items, Math.Max(total, items.Count));
     }
 
-    private async Task<HttpResponseMessage> SendAsync(string pathAndQuery, CancellationToken cancellationToken)
+    private static int? HeaderInt(HttpResponseMessage response, string name) =>
+        response.Headers.TryGetValues(name, out var values) && int.TryParse(values.FirstOrDefault(), out var parsed) ? parsed : null;
+
+    /// <summary>GET con ritmo y reintentos. Con <paramref name="allowNotFound"/> un 404 devuelve null en lugar de fallar.</summary>
+    private async Task<HttpResponseMessage?> SendAsync(string pathAndQuery, string accept, bool allowNotFound, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -395,7 +655,10 @@ internal sealed class FutbolAsturianoFootballDataProvider(
             HttpResponseMessage? response = null;
             try
             {
-                response = await http.GetAsync(pathAndQuery, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                using var request = new HttpRequestMessage(HttpMethod.Get, pathAndQuery);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(accept));
+
+                response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
                 if (response.IsSuccessStatusCode)
                     return response;
@@ -403,14 +666,16 @@ internal sealed class FutbolAsturianoFootballDataProvider(
                 var status = (int)response.StatusCode;
                 response.Dispose();
 
+                if (allowNotFound && status == 404)
+                    return null;
+
                 if (attempt >= MaxRetries || status is >= 400 and < 500 and not 429)
                     throw new HttpRequestException($"futbolasturiano.es respondió {status} a {pathAndQuery}");
 
                 logger.LogWarning("futbolasturiano.es respondió {Status} a {Path}; reintento {Attempt}/{Max}", status, pathAndQuery, attempt, MaxRetries);
             }
-            catch (HttpRequestException) when (attempt < MaxRetries)
+            catch (HttpRequestException) when (attempt < MaxRetries && response is null)
             {
-                response?.Dispose();
                 logger.LogWarning("Error de red con futbolasturiano.es en {Path}; reintento {Attempt}/{Max}", pathAndQuery, attempt, MaxRetries);
             }
             catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < MaxRetries)
