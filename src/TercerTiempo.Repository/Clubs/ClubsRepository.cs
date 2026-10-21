@@ -4,6 +4,8 @@ using TercerTiempo.Application.Clubs.Appointments;
 using TercerTiempo.Application.Clubs.Catalog;
 using TercerTiempo.Application.Clubs.GetMyClub;
 using TercerTiempo.Application.Clubs.ManageTeams;
+using TercerTiempo.Application.Clubs.Roster;
+using TercerTiempo.Application.Teams;
 using TercerTiempo.Application.Teams.ImportCrest;
 
 namespace TercerTiempo.Repository.Clubs;
@@ -14,6 +16,9 @@ internal sealed class ClubsRepository(
     ICommandHandler<AddClubTeamCommand, ClubDto> addTeam,
     ICommandHandler<RemoveClubTeamCommand, ClubDto> removeTeam,
     ICommandHandler<UploadTeamCrestCommand, TeamCrestImportDto> uploadCrest,
+    ICommandHandler<AddClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>> addRosterEntry,
+    ICommandHandler<UpdateClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>> updateRosterEntry,
+    ICommandHandler<RemoveClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>> removeRosterEntry,
     ICommandHandler<CreateAppointmentCommand, AppointmentDto> createAppointment,
     ICommandHandler<UpdateAppointmentCommand, AppointmentDto> updateAppointment,
     ICommandHandler<RevokeAppointmentCommand, AppointmentDto> revokeAppointment) : IClubsRepository
@@ -32,6 +37,15 @@ internal sealed class ClubsRepository(
 
     public Task<TeamCrestImportDto> UploadTeamCrestAsync(Guid teamId, CrestUpload file, CancellationToken cancellationToken = default) =>
         uploadCrest.Handle(new UploadTeamCrestCommand(teamId, file), cancellationToken);
+
+    public Task<IReadOnlyList<RosterEntryDto>> AddRosterEntryAsync(Guid teamId, RosterEntryRequest request, CancellationToken cancellationToken = default) =>
+        addRosterEntry.Handle(new AddClubRosterEntryCommand(teamId, request.FullName, request.Position, request.ShirtNumber), cancellationToken);
+
+    public Task<IReadOnlyList<RosterEntryDto>> UpdateRosterEntryAsync(Guid teamId, Guid entryId, RosterEntryRequest request, CancellationToken cancellationToken = default) =>
+        updateRosterEntry.Handle(new UpdateClubRosterEntryCommand(teamId, entryId, request.FullName, request.Position, request.ShirtNumber), cancellationToken);
+
+    public Task<IReadOnlyList<RosterEntryDto>> RemoveRosterEntryAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default) =>
+        removeRosterEntry.Handle(new RemoveClubRosterEntryCommand(teamId, entryId), cancellationToken);
 
     public Task<AppointmentDto> CreateAppointmentAsync(CreateAppointmentRequest request, CancellationToken cancellationToken = default) =>
         createAppointment.Handle(request.ToCommand(), cancellationToken);

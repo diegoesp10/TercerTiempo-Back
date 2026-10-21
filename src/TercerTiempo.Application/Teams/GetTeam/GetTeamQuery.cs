@@ -36,7 +36,7 @@ internal sealed class GetTeamHandler(
         var roster = (await teams.GetRosterAsync(team.Id, season.Id, cancellationToken))
             .OrderBy(r => r.ShirtNumber ?? int.MaxValue)
             .ThenBy(r => r.FullName)
-            .Select(r => new RosterEntryDto(r.Id, r.FullName, r.Position, r.ShirtNumber))
+            .Select(RosterEntryDto.From)
             .ToList();
 
         var squad = await squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);

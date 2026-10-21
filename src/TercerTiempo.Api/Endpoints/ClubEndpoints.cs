@@ -52,6 +52,29 @@ internal static class ClubEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        group.MapPost("/teams/{teamId:guid}/roster", (Guid teamId, RosterEntryRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.AddRosterEntryAsync(teamId, request, ct))
+            .WithName("AddClubRosterEntry")
+            .WithSummary("Añadir una ficha a la plantilla de un equipo del club")
+            .WithDescription("Solo cuentas de club y solo para sus equipos. La ficha se añade a la plantilla de la temporada en curso (la que se importa al crear la plantilla interna) y no la toca la sincronización con el proveedor. Devuelve la plantilla completa.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPut("/teams/{teamId:guid}/roster/{entryId:guid}", (Guid teamId, Guid entryId, RosterEntryRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.UpdateRosterEntryAsync(teamId, entryId, request, ct))
+            .WithName("UpdateClubRosterEntry")
+            .WithSummary("Corregir una ficha de la plantilla")
+            .WithDescription("Nombre, posición y dorsal. A partir de la corrección manda el club: el proveedor ya no sobrescribe esa ficha.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapDelete("/teams/{teamId:guid}/roster/{entryId:guid}", (Guid teamId, Guid entryId, IClubsRepository clubs, CancellationToken ct) => clubs.RemoveRosterEntryAsync(teamId, entryId, ct))
+            .WithName("RemoveClubRosterEntry")
+            .WithSummary("Retirar una ficha de la plantilla")
+            .WithDescription("Las fichas del proveedor se ocultan (así no vuelven al sincronizar); las creadas por el club se borran.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapPost("/appointments", (CreateAppointmentRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.CreateAppointmentAsync(request, ct))
             .WithName("CreateAppointment")
             .WithSummary("Nombrar a un técnico")

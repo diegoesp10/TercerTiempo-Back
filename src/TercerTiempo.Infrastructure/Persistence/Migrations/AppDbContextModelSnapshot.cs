@@ -645,6 +645,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("SeasonId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("ShirtNumber")
+                        .HasColumnType("int");
+
                     b.Property<int>("Shots")
                         .HasColumnType("int");
 
@@ -915,6 +918,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
+
+                    b.Property<bool>("Hidden")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ManagedByClub")
+                        .HasColumnType("bit");
 
                     b.Property<string>("NormalizedName")
                         .IsRequired()

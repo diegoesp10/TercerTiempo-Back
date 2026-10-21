@@ -54,8 +54,11 @@ public sealed record TeamProfileDto(
             profile.ShirtColor, profile.ShortsColor, profile.SocksColor);
 }
 
-/// <summary>Jugador de la plantilla según el proveedor externo.</summary>
-public sealed record RosterEntryDto(Guid Id, string FullName, Position? Position, int? ShirtNumber);
+/// <summary>Jugador de la plantilla según el proveedor externo (o añadido/corregido por el club).</summary>
+public sealed record RosterEntryDto(Guid Id, string FullName, Position? Position, int? ShirtNumber, bool ManagedByClub)
+{
+    public static RosterEntryDto From(RosterEntry entry) => new(entry.Id, entry.FullName, entry.Position, entry.ShirtNumber, entry.ManagedByClub);
+}
 
 /// <summary>Plantilla gestionada en la plataforma para este equipo y temporada, si existe.</summary>
 public sealed record TeamSquadDto(Guid SquadId, SquadVisibility Visibility, int PlayersCount, int StaffCount, bool CanView, bool IsMine);

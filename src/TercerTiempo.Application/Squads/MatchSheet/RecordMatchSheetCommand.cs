@@ -35,7 +35,9 @@ public sealed record MatchSheetEntryInput(
     int YellowCards,
     bool RedCard,
     [property: Description("Opcional, máximo 1000 caracteres.")]
-    string? Notes)
+    string? Notes,
+    [property: Description("Dorsal con el que jugó este partido si fue distinto del de su ficha (1-99); vacío = el de la ficha.")]
+    int? ShirtNumber = null)
 {
     public PerformanceStats ToStats() => new(
         Started, MinutesPlayed, Goals, Assists, Shots, ShotsOnTarget, KeyPasses,
@@ -72,6 +74,7 @@ internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchS
                 entry.RuleFor(e => e.Saves).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.YellowCards).InclusiveBetween(0, 2);
                 entry.RuleFor(e => e.Notes).MaximumLength(PerformanceStats.MaxNotesLength);
+                entry.RuleFor(e => e.ShirtNumber).InclusiveBetween(1, 99).When(e => e.ShirtNumber.HasValue);
             });
         });
     }
@@ -119,9 +122,16 @@ internal sealed class RecordMatchSheetHandler(
             var stats = input.ToStats();
 
             if (current is null)
-                performances.Add(PlayerMatchPerformance.Record(squad, player, match, coach.Id, stats, now));
+            {
+                current = PlayerMatchPerformance.Record(squad, player, match, coach.Id, stats, now);
+                performances.Add(current);
+            }
             else
+            {
                 current.Update(stats, player, match, coach.Id, now);
+            }
+
+            current.SetShirtNumber(input.ShirtNumber);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

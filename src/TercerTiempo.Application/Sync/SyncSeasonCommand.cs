@@ -218,7 +218,7 @@ internal sealed class SyncSeasonHandler(
                     var externalRef = rs.ExternalId is null ? null : ExternalRef.Create(providerName, rs.ExternalId);
                     teams.AddRosterEntry(RosterEntry.Create(team.Id, season.Id, rs.FullName, rs.Position, rs.ShirtNumber, externalRef, now));
                 }
-                else
+                else if (!entry.ManagedByClub)
                 {
                     entry.Update(rs.FullName, rs.Position, rs.ShirtNumber, now);
                 }

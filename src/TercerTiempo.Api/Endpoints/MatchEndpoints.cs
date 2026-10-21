@@ -14,6 +14,14 @@ internal static class MatchEndpoints
             .WithDescription("Datos del partido y las actas de las plantillas de ambos equipos. Cada acta solo se incluye si el usuario puede verla (plantilla pública o propia); si no, llega vacía con visible = false. Público.")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{matchId:guid}/preview", (Guid matchId, IMatchesRepository matches, CancellationToken ct) => matches.GetPreviewAsync(matchId, ct))
+            .RequireAuthorization()
+            .WithName("GetMatchPreview")
+            .WithSummary("Previa del partido para el cuerpo técnico")
+            .WithDescription("Solo cuentas de cuerpo técnico. Probabilidad de victoria local, empate y victoria visitante (modelo de Poisson con los goles a favor y en contra de la liga, la fuerza de cada equipo y la ventaja de jugar en casa) con las razones en texto; clasificación, forma reciente y balance como local/visitante de cada equipo; y, de las actas oficiales ya descargadas, los jugadores en forma de cada equipo, penaltis, goles en propia y tarjetas. Córners y balón parado no constan en las fuentes.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapGet("/{matchId:guid}/official-sheet", (Guid matchId, bool? refresh, IMatchesRepository matches, CancellationToken ct) => matches.GetOfficialSheetAsync(matchId, refresh ?? false, ct))
             .WithName("GetOfficialSheet")
             .WithSummary("Acta oficial del partido (federación)")

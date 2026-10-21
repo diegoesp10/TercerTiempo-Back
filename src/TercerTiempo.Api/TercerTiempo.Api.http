@@ -52,6 +52,21 @@ Content-Type: image/png
 < ./escudo.png
 --escudo--
 
+### Club: plantilla del proveedor editable (añadir / corregir / retirar fichas)
+POST {{baseUrl}}/api/clubs/me/teams/{{teamId}}/roster
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fullName": "Jugador Nuevo",
+  "position": "Forward",
+  "shirtNumber": 23
+}
+
+### Previa del partido (cuerpo técnico)
+GET {{baseUrl}}/api/matches/{{matchId}}/preview
+Authorization: Bearer {{token}}
+
 ### Catálogo de clubes (público): de aquí sale el nombre con el que se da de alta un club
 GET {{baseUrl}}/api/clubs/catalog?search=lealtad
 

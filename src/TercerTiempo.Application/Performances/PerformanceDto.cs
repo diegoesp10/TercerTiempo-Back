@@ -13,7 +13,10 @@ public sealed record PerformanceDto(
     Guid SquadPlayerId,
     string PlayerName,
     Position? Position,
+    [property: System.ComponentModel.Description("Dorsal con el que jugó: el de este partido si se registró, si no el de su ficha.")]
     int? ShirtNumber,
+    [property: System.ComponentModel.Description("Dorsal registrado solo para este partido (null = el de la ficha).")]
+    int? MatchShirtNumber,
     Guid TeamId,
     bool Started,
     int MinutesPlayed,
@@ -37,7 +40,7 @@ internal static class PerformanceMapper
 {
     public static PerformanceDto ToDto(PlayerMatchPerformance p, SquadPlayer? player) =>
         new(p.Id, p.MatchId, p.SquadId, p.SquadPlayerId,
-            player?.FullName ?? "Jugador", player?.Position, player?.ShirtNumber,
+            player?.FullName ?? "Jugador", player?.Position, p.ShirtNumber ?? player?.ShirtNumber, p.ShirtNumber,
             p.TeamId, p.Started, p.MinutesPlayed, p.Goals, p.Assists, p.Shots, p.ShotsOnTarget,
             p.KeyPasses, p.Tackles, p.Interceptions, p.Saves, p.YellowCards, p.RedCard,
             p.Rating, p.Notes, p.UpdatedAt);

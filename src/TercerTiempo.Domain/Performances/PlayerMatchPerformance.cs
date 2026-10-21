@@ -39,7 +39,18 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     public DateTimeOffset LoggedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
+    /// <summary>Dorsal con el que jugó este partido si fue distinto del habitual de su ficha; null = el de la ficha.</summary>
+    public int? ShirtNumber { get; private set; }
+
     public int GoalContributions => Goals + Assists;
+
+    public void SetShirtNumber(int? shirtNumber)
+    {
+        if (shirtNumber is < 1 or > 99)
+            throw new DomainException("El dorsal tiene que estar entre 1 y 99.");
+
+        ShirtNumber = shirtNumber;
+    }
 
     private PlayerMatchPerformance() { }
 

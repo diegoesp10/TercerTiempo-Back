@@ -3,6 +3,9 @@ using TercerTiempo.Application.Clubs;
 using TercerTiempo.Application.Clubs.Appointments;
 using TercerTiempo.Application.Clubs.Catalog;
 using TercerTiempo.Application.Clubs.ManageTeams;
+using TercerTiempo.Application.Clubs.Roster;
+using TercerTiempo.Application.Teams;
+using TercerTiempo.Domain.Players;
 using TercerTiempo.Application.Teams.ImportCrest;
 using TercerTiempo.Domain.Squads;
 
@@ -16,10 +19,21 @@ public interface IClubsRepository
     Task<ClubDto> AddTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
     Task<ClubDto> RemoveTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
     Task<TeamCrestImportDto> UploadTeamCrestAsync(Guid teamId, CrestUpload file, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RosterEntryDto>> AddRosterEntryAsync(Guid teamId, RosterEntryRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RosterEntryDto>> UpdateRosterEntryAsync(Guid teamId, Guid entryId, RosterEntryRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RosterEntryDto>> RemoveRosterEntryAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default);
     Task<AppointmentDto> CreateAppointmentAsync(CreateAppointmentRequest request, CancellationToken cancellationToken = default);
     Task<AppointmentDto> UpdateAppointmentAsync(Guid appointmentId, UpdateAppointmentRequest request, CancellationToken cancellationToken = default);
     Task<AppointmentDto> RevokeAppointmentAsync(Guid appointmentId, CancellationToken cancellationToken = default);
 }
+
+public sealed record RosterEntryRequest(
+    [property: Description("Nombre y apellidos.")]
+    string FullName,
+    [property: Description("Goalkeeper, Defender, Midfielder, Forward o vacío.")]
+    Position? Position,
+    [property: Description("1-99, opcional.")]
+    int? ShirtNumber);
 
 public sealed record ClubTeamRequest(
     [property: Description("Id del equipo (GET /api/teams?competitionId=...).")]

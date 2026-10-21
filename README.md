@@ -162,6 +162,8 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/clubs/me` | El club: equipos vinculados y nombramientos (el código solo mientras está pendiente) |
 | POST / DELETE | `/api/clubs/me/teams[/{teamId}]` | Vincular otro equipo del proveedor (nombre acorde al club) / desvincular |
 | PUT | `/api/clubs/me/teams/{teamId}/crest` | El club cambia el escudo de uno de sus equipos (multipart `file`, hasta 2 MB) |
+| POST / PUT / DELETE | `/api/clubs/me/teams/{teamId}/roster[/{entryId}]` | El club añade, corrige o retira fichas de la plantilla publicada (lo que toca el club no lo sobrescribe el proveedor; las del proveedor retiradas se ocultan) |
+| GET | `/api/matches/{id}/preview` | Previa para el cuerpo técnico: probabilidades (Poisson sobre goles a favor/en contra, fuerza de cada equipo y ventaja local) con razones, forma, balance local/visitante, jugadores en forma y disciplina del rival según las actas oficiales |
 | POST | `/api/clubs/me/appointments` | Nombrar a un técnico para un equipo y la temporada en curso → código de acceso |
 | PUT / DELETE | `/api/clubs/me/appointments/{id}` | Acortar o prorrogar la validez / revocar (el técnico sale del staff) |
 | POST | `/api/coaches/me/appointments/redeem` | Técnico con cuenta: canjear otro código (nueva temporada, otro equipo) |
