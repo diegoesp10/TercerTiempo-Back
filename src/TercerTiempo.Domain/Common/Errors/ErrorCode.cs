@@ -17,6 +17,7 @@ public static class ErrorCode
     public const string TitleInvalidCredentials = "title.invalid_credentials";
     public const string TitleBadRequest = "title.bad_request";
     public const string TitleInternal = "title.internal";
+    public const string TitleTooManyRequests = "title.too_many_requests";
 
     // Comunes (Guard y errores no controlados)
     public const string CommonRequired = "common.required";
@@ -24,6 +25,10 @@ public static class ErrorCode
     public const string CommonOutOfRange = "common.out_of_range";
     public const string CommonNegative = "common.negative";
     public const string CommonUnexpected = "common.unexpected";
+
+    // Límite de llamadas (por IP y por endpoint) y bloqueos
+    public const string ThrottleTooManyRequests = "throttle.too_many_requests";
+    public const string ThrottleBanned = "throttle.banned";
 
     // Cuentas y acceso
     public const string AuthUnauthenticated = "auth.unauthenticated";

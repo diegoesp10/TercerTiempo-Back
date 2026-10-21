@@ -1,5 +1,6 @@
 using TercerTiempo.Api.Endpoints;
 using TercerTiempo.Api.Extensions;
+using TercerTiempo.Api.Infrastructure;
 using TercerTiempo.Application;
 using TercerTiempo.Infrastructure;
 using TercerTiempo.Repository;
@@ -38,6 +39,10 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 
 app.UseCors();
+
+// Límite de llamadas por IP y por endpoint (429 + Retry-After; bloqueos de 5 min, 30 min, 1 día... por reincidencia).
+app.UseClientThrottling();
+
 app.UseAuthentication();
 app.UseAuthorization();
 

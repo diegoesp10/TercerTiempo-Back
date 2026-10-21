@@ -386,6 +386,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "title.too_many_requests",
+                            Language = "es",
+                            Message = "Demasiadas peticiones"
+                        },
+                        new
+                        {
                             Code = "common.required",
                             Language = "es",
                             Message = "'{0}' no puede estar vacío."
@@ -413,6 +419,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "common.unexpected",
                             Language = "es",
                             Message = "Se ha producido un error inesperado."
+                        },
+                        new
+                        {
+                            Code = "throttle.too_many_requests",
+                            Language = "es",
+                            Message = "Has superado el límite de {0} llamadas en {1} segundos: esta dirección queda bloqueada {2} minutos."
+                        },
+                        new
+                        {
+                            Code = "throttle.banned",
+                            Language = "es",
+                            Message = "Esta dirección está bloqueada temporalmente por exceso de llamadas; vuelve a intentarlo en {0} minutos."
                         },
                         new
                         {

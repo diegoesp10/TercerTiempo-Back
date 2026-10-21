@@ -30,6 +30,7 @@ using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.FootballData.JsonFiles;
 using TercerTiempo.Infrastructure.Identity;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
+using TercerTiempo.Infrastructure.Security;
 using TercerTiempo.Infrastructure.Teams;
 using TercerTiempo.Infrastructure.Persistence;
 using TercerTiempo.Infrastructure.Persistence.Stores;
@@ -176,6 +177,10 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(CrestOptions.SectionName));
         services.AddSingleton<ICrestStorage, FileSystemCrestStorage>();
         services.AddScoped<IErrorMessageStore, ErrorMessageStore>();
+
+        // Límite de llamadas por IP y por endpoint con bloqueos crecientes (el middleware vive en la API).
+        services.AddOptions<ThrottlingOptions>().Bind(configuration.GetSection(ThrottlingOptions.SectionName));
+        services.AddSingleton<ClientThrottle>();
         services.AddHttpClient<ICrestDownloader, HttpCrestDownloader>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);

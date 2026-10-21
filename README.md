@@ -366,6 +366,17 @@ mensaje ya traducido. Para añadir un idioma: filas nuevas en `ErrorCatalog` (o 
 código y `Language` = "en", y la cultura en `UseRequestLocalization` (Program.cs). El test `ErrorCatalogTests`
 comprueba que todo `ErrorCode` tiene mensaje.
 
+## Límite de llamadas y bloqueos
+
+`ClientThrottlingMiddleware` (API) con `ClientThrottle` (Infrastructure/Security) cuenta en memoria las llamadas a
+`/api` por IP y por IP + endpoint (método + patrón de ruta) en ventanas de `Throttling:WindowSeconds`. Al superar
+`RequestsPerWindow` o `RequestsPerEndpointPerWindow` la IP queda bloqueada `BanMinutes[n]` minutos según su
+reincidencia reciente (5 min, 30 min, 1 día) y, pasado el último escalón, el doble cada vez hasta `MaxBanMinutes`;
+tras `StrikeMemoryHours` sin incidencias vuelve al primer escalón. Mientras dura el bloqueo responde **429** con
+`Retry-After` y ProblemDetails (`throttle.too_many_requests` / `throttle.banned`). Las rutas de `ExemptRoutes` (los
+escudos) no cuentan para el límite por endpoint; `TrustForwardedHeaders` solo detrás de un proxy de confianza.
+Es por proceso: con varias instancias haría falta compartir los contadores (Redis).
+
 ## Decisiones y siguientes pasos sugeridos
 
 - **Identidad separada del dominio**: Identity gestiona credenciales; `Player`, `Coach` y `Club` son los agregados de negocio.

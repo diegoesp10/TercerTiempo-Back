@@ -20,12 +20,15 @@ public static class ErrorCatalog
         (ErrorCode.TitleInvalidCredentials, "Credenciales incorrectas"),
         (ErrorCode.TitleBadRequest, "Petición no válida"),
         (ErrorCode.TitleInternal, "Error interno"),
+        (ErrorCode.TitleTooManyRequests, "Demasiadas peticiones"),
 
         (ErrorCode.CommonRequired, "'{0}' no puede estar vacío."),
         (ErrorCode.CommonTooLong, "'{0}' no puede superar {1} caracteres."),
         (ErrorCode.CommonOutOfRange, "'{0}' debe estar entre {1} y {2}."),
         (ErrorCode.CommonNegative, "'{0}' no puede ser negativo."),
         (ErrorCode.CommonUnexpected, "Se ha producido un error inesperado."),
+        (ErrorCode.ThrottleTooManyRequests, "Has superado el límite de {0} llamadas en {1} segundos: esta dirección queda bloqueada {2} minutos."),
+        (ErrorCode.ThrottleBanned, "Esta dirección está bloqueada temporalmente por exceso de llamadas; vuelve a intentarlo en {0} minutos."),
 
         (ErrorCode.AuthUnauthenticated, "Debes iniciar sesión para realizar esta acción."),
         (ErrorCode.AuthInvalidCredentials, "Email o contraseña incorrectos."),
