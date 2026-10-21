@@ -42,10 +42,10 @@ public class SheetComparisonTests
     public void Matchday_fixtures_are_paired_with_our_matches_by_team_names()
     {
         var seasonId = Guid.NewGuid();
-        var vallobin = Team.Create("CD Vallobín", "VAL", null, null);
-        var navarro = Team.Create("Navarro CF", "NAV", null, null);
-        var lenense = Team.Create("SD Lenense", "LEN", null, null);
-        var sportingC = Team.Create("Real Sporting 'C'", "SPO", null, null);
+        var vallobin = Team.Create("CD Vallobín", "VAL", null);
+        var navarro = Team.Create("Navarro CF", "NAV", null);
+        var lenense = Team.Create("SD Lenense", "LEN", null);
+        var sportingC = Team.Create("Real Sporting 'C'", "SPO", null);
         var teams = new[] { vallobin, navarro, lenense, sportingC }.ToDictionary(t => t.Id);
 
         var ours = new List<Match>

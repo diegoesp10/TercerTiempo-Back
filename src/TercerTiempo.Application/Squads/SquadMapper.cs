@@ -6,13 +6,15 @@ using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 
+using TercerTiempo.Application.Teams;
+
 namespace TercerTiempo.Application.Squads;
 
 internal static class SquadMapper
 {
     public static SquadSummaryDto ToSummary(Squad squad, Team team, Competition competition, Season season, Guid? coachId, DateOnly today) =>
         new(squad.Id,
-            team.Id, team.Name, team.ShortName, team.CrestUrl,
+            team.Id, team.Name, team.ShortName, team.CrestLink(),
             competition.Id, competition.Name, competition.Level,
             season.Id, season.Label,
             squad.Visibility,

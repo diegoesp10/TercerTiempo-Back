@@ -23,6 +23,15 @@ public interface IOfficialSheetProvider
     string SheetUrl(string sheetCode);
 }
 
+/// <summary>
+/// El proveedor ha dejado de responder (bloqueo temporal por exceso de peticiones): quien itere sobre muchas páginas
+/// debe parar y reintentar más tarde en lugar de seguir pidiendo.
+/// </summary>
+public sealed class ProviderThrottledException(string provider, string message) : HttpRequestException(message)
+{
+    public string Provider { get; } = provider;
+}
+
 /// <summary>Códigos de competición, grupo y temporada en el proveedor; se guardan como "competición/grupo/temporada".</summary>
 public sealed record OfficialCompetitionRef(string CompetitionCode, string GroupCode, string SeasonCode)
 {

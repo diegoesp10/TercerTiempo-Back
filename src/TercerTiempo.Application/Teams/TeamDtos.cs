@@ -2,6 +2,7 @@ using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Standings;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Teams;
 
@@ -25,7 +26,33 @@ public sealed record TeamDetailDto(
     StandingDto? Standing,
     bool RosterPublished,
     IReadOnlyList<RosterEntryDto> Roster,
-    TeamSquadDto? Squad);
+    TeamSquadDto? Squad,
+    TeamProfileDto? Profile,
+    string? OfficialUrl);
+
+/// <summary>Ficha del club según la federación: sede, web, equipación y campo donde juega de local.</summary>
+public sealed record TeamProfileDto(
+    string? OfficialName,
+    string? Locality,
+    string? Province,
+    string? Address,
+    string? PostalCode,
+    string? Website,
+    string? Ground,
+    string? GroundSurface,
+    string? GroundAddress,
+    string? GroundLocality,
+    string? ShirtColor,
+    string? ShortsColor,
+    string? SocksColor)
+{
+    public static TeamProfileDto? From(TeamProfile? profile) => profile is null || profile.IsEmpty
+        ? null
+        : new TeamProfileDto(
+            profile.OfficialName, profile.Locality, profile.Province, profile.Address, profile.PostalCode, profile.Website,
+            profile.Ground, profile.GroundSurface, profile.GroundAddress, profile.GroundLocality,
+            profile.ShirtColor, profile.ShortsColor, profile.SocksColor);
+}
 
 /// <summary>Jugador de la plantilla según el proveedor externo.</summary>
 public sealed record RosterEntryDto(Guid Id, string FullName, Position? Position, int? ShirtNumber);

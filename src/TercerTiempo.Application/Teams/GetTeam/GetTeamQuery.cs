@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Abstractions.Teams;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Standings;
@@ -19,6 +20,7 @@ internal sealed class GetTeamHandler(
     ITeamStore teams,
     IStandingStore standings,
     ISquadStore squads,
+    ITeamProfileProvider profiles,
     TimeProvider clock) : IQueryHandler<GetTeamQuery, TeamDetailDto>
 {
     public async Task<TeamDetailDto> Handle(GetTeamQuery query, CancellationToken cancellationToken)
@@ -46,11 +48,13 @@ internal sealed class GetTeamHandler(
                 SquadAccess.IsStaff(squad, currentUser, clock) || SquadAccess.IsMember(squad, currentUser));
 
         return new TeamDetailDto(
-            team.Id, team.Name, team.ShortName, team.CrestUrl,
+            team.Id, team.Name, team.ShortName, team.CrestLink(),
             SeasonDto.From(competition, season),
             standing is null ? null : StandingDto.From(standing, team),
             RosterPublished: roster.Count > 0,
             roster,
-            squadDto);
+            squadDto,
+            TeamProfileDto.From(team.Profile),
+            team.OfficialRef is { } official && official.Provider == profiles.ProviderName ? profiles.TeamUrl(official.ExternalId) : null);
     }
 }

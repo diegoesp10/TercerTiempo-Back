@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TercerTiempo.Application.Abstractions.OfficialSheets;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
@@ -55,6 +56,18 @@ internal sealed class AsturfutbolClient(HttpClient http, IOptions<OfficialSheetO
                     continue;
                 }
 
+                // Tras muchas peticiones seguidas la web responde 200 con el cuerpo vacío durante un rato: es un bloqueo
+                // temporal, no una página inexistente, así que se avisa para que quien llama no dé el dato por perdido.
+                if (string.IsNullOrWhiteSpace(html))
+                {
+                    if (attempt > MaxRetries)
+                        throw new ProviderThrottledException(AsturfutbolOfficialSheetProvider.Name, $"asturfutbol.es devolvió una página vacía para {pathAndQuery} (bloqueo temporal por exceso de peticiones; reintentar más tarde).");
+
+                    logger.LogWarning("asturfutbol.es devolvió una página vacía en {Path}; reintento {Attempt}", pathAndQuery, attempt);
+                    await Task.Delay(TimeSpan.FromSeconds(10 * attempt), cancellationToken);
+                    continue;
+                }
+
                 return html;
             }
             catch (HttpRequestException) when (attempt <= MaxRetries)
@@ -68,6 +81,20 @@ internal sealed class AsturfutbolClient(HttpClient http, IOptions<OfficialSheetO
 
             await Task.Delay(TimeSpan.FromSeconds(2 * attempt), cancellationToken);
         }
+    }
+
+    /// <summary>GET binario (imágenes); la ruta puede ser relativa a BaseUrl o absoluta en el mismo sitio. Null si 404.</summary>
+    public async Task<(byte[] Content, string ContentType)?> GetBytesAsync(string pathAndQuery, CancellationToken cancellationToken)
+    {
+        await ThrottleAsync(cancellationToken);
+
+        using var response = await http.GetAsync(pathAndQuery, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        return (content, response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
     }
 
     public string AbsoluteUrl(string pathAndQuery) => new Uri(http.BaseAddress!, pathAndQuery).ToString();

@@ -21,11 +21,14 @@ public sealed class AsturfutbolOptions
     public string UserAgent { get; set; } = "TercerTiempo/1.0 (+https://github.com/diegoesp10/TercerTiempo-Back)";
 
     /// <summary>Pausa mínima entre peticiones: es una web "clásica" sin API y no conviene castigarla.</summary>
-    public int RequestDelayMs { get; set; } = 1000;
+    public int RequestDelayMs { get; set; } = 2000;
 
     /// <summary>Parámetro cod_primaria de cada sección de la web.</summary>
     public string CalendarCode { get; set; } = "1000120";
     public string TeamsCode { get; set; } = "1000119";
+
+    /// <summary>Código de primaria de la página de campos (<c>NFG_VisCampos</c>).</summary>
+    public string GroundsCode { get; set; } = "1000122";
 
     /// <summary>Zona horaria de las fechas que publica la web.</summary>
     public string TimeZone { get; set; } = "Europe/Madrid";

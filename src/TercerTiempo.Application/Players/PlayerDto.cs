@@ -3,6 +3,8 @@ using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 
+using TercerTiempo.Application.Teams;
+
 namespace TercerTiempo.Application.Players;
 
 public sealed record PlayerDto(
@@ -39,7 +41,7 @@ internal static class PlayerMapper
         {
             squadDto = new PlayerSquadDto(
                 squad.Id, entry.Id,
-                team.Id, team.Name, team.ShortName, team.CrestUrl,
+                team.Id, team.Name, team.ShortName, team.CrestLink(),
                 competition.Id, competition.Name, competition.Level,
                 season.Id, season.Label,
                 entry.ShirtNumber, squad.Visibility);

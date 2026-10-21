@@ -176,6 +176,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("NormalizedName")
+                        .IsUnique();
+
                     b.HasIndex("UserId")
                         .IsUnique();
 
@@ -948,14 +951,17 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("CrestUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                    b.Property<string>("CrestKey")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateTimeOffset?>("ProfileSyncedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ShortName")
                         .IsRequired()
@@ -1647,9 +1653,89 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                                 .HasForeignKey("TeamId");
                         });
 
+                    b.OwnsOne("TercerTiempo.Domain.Teams.TeamProfile", "Profile", b1 =>
+                        {
+                            b1.Property<Guid>("TeamId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<string>("Address")
+                                .HasMaxLength(200)
+                                .HasColumnType("nvarchar(200)")
+                                .HasColumnName("Profile_Address");
+
+                            b1.Property<string>("Ground")
+                                .HasMaxLength(160)
+                                .HasColumnType("nvarchar(160)")
+                                .HasColumnName("Profile_Ground");
+
+                            b1.Property<string>("GroundAddress")
+                                .HasMaxLength(200)
+                                .HasColumnType("nvarchar(200)")
+                                .HasColumnName("Profile_GroundAddress");
+
+                            b1.Property<string>("GroundLocality")
+                                .HasMaxLength(120)
+                                .HasColumnType("nvarchar(120)")
+                                .HasColumnName("Profile_GroundLocality");
+
+                            b1.Property<string>("GroundSurface")
+                                .HasMaxLength(60)
+                                .HasColumnType("nvarchar(60)")
+                                .HasColumnName("Profile_GroundSurface");
+
+                            b1.Property<string>("Locality")
+                                .HasMaxLength(120)
+                                .HasColumnType("nvarchar(120)")
+                                .HasColumnName("Profile_Locality");
+
+                            b1.Property<string>("OfficialName")
+                                .HasMaxLength(160)
+                                .HasColumnType("nvarchar(160)")
+                                .HasColumnName("Profile_OfficialName");
+
+                            b1.Property<string>("PostalCode")
+                                .HasMaxLength(12)
+                                .HasColumnType("nvarchar(12)")
+                                .HasColumnName("Profile_PostalCode");
+
+                            b1.Property<string>("Province")
+                                .HasMaxLength(80)
+                                .HasColumnType("nvarchar(80)")
+                                .HasColumnName("Profile_Province");
+
+                            b1.Property<string>("ShirtColor")
+                                .HasMaxLength(60)
+                                .HasColumnType("nvarchar(60)")
+                                .HasColumnName("Profile_ShirtColor");
+
+                            b1.Property<string>("ShortsColor")
+                                .HasMaxLength(60)
+                                .HasColumnType("nvarchar(60)")
+                                .HasColumnName("Profile_ShortsColor");
+
+                            b1.Property<string>("SocksColor")
+                                .HasMaxLength(60)
+                                .HasColumnType("nvarchar(60)")
+                                .HasColumnName("Profile_SocksColor");
+
+                            b1.Property<string>("Website")
+                                .HasMaxLength(200)
+                                .HasColumnType("nvarchar(200)")
+                                .HasColumnName("Profile_Website");
+
+                            b1.HasKey("TeamId");
+
+                            b1.ToTable("Teams");
+
+                            b1.WithOwner()
+                                .HasForeignKey("TeamId");
+                        });
+
                     b.Navigation("ExternalRef");
 
                     b.Navigation("OfficialRef");
+
+                    b.Navigation("Profile");
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Videos.MatchVideo", b =>

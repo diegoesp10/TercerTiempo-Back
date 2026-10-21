@@ -3,6 +3,8 @@ using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 
+using TercerTiempo.Application.Teams;
+
 namespace TercerTiempo.Application.Matches;
 
 public sealed record TeamRefDto(Guid Id, string Name, string ShortName, string? CrestUrl);
@@ -39,6 +41,6 @@ internal static class MatchMapper
 
     public static TeamRefDto Ref(Guid teamId, IReadOnlyDictionary<Guid, Team> teams) =>
         teams.TryGetValue(teamId, out var team)
-            ? new TeamRefDto(team.Id, team.Name, team.ShortName, team.CrestUrl)
+            ? new TeamRefDto(team.Id, team.Name, team.ShortName, team.CrestLink())
             : new TeamRefDto(teamId, "Equipo desconocido", "???", null);
 }

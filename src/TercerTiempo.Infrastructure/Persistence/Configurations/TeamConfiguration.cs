@@ -14,10 +14,28 @@ internal sealed class TeamConfiguration : IEntityTypeConfiguration<Team>
 
         builder.Property(t => t.Name).HasMaxLength(120).IsRequired();
         builder.Property(t => t.ShortName).HasMaxLength(30).IsRequired();
-        builder.Property(t => t.CrestUrl).HasMaxLength(500);
+        builder.Property(t => t.CrestKey).HasMaxLength(80);
 
         builder.OwnsExternalRef(t => t.ExternalRef);
         builder.OwnsExternalRef(t => t.OfficialRef, "Official");
+
+        // Ficha de la federación en la misma tabla, con prefijo Profile_.
+        builder.OwnsOne(t => t.Profile, profile =>
+        {
+            profile.Property(p => p.OfficialName).HasColumnName("Profile_OfficialName").HasMaxLength(160);
+            profile.Property(p => p.Locality).HasColumnName("Profile_Locality").HasMaxLength(120);
+            profile.Property(p => p.Province).HasColumnName("Profile_Province").HasMaxLength(80);
+            profile.Property(p => p.Address).HasColumnName("Profile_Address").HasMaxLength(200);
+            profile.Property(p => p.PostalCode).HasColumnName("Profile_PostalCode").HasMaxLength(12);
+            profile.Property(p => p.Website).HasColumnName("Profile_Website").HasMaxLength(200);
+            profile.Property(p => p.Ground).HasColumnName("Profile_Ground").HasMaxLength(160);
+            profile.Property(p => p.GroundSurface).HasColumnName("Profile_GroundSurface").HasMaxLength(60);
+            profile.Property(p => p.GroundAddress).HasColumnName("Profile_GroundAddress").HasMaxLength(200);
+            profile.Property(p => p.GroundLocality).HasColumnName("Profile_GroundLocality").HasMaxLength(120);
+            profile.Property(p => p.ShirtColor).HasColumnName("Profile_ShirtColor").HasMaxLength(60);
+            profile.Property(p => p.ShortsColor).HasColumnName("Profile_ShortsColor").HasMaxLength(60);
+            profile.Property(p => p.SocksColor).HasColumnName("Profile_SocksColor").HasMaxLength(60);
+        });
     }
 }
 

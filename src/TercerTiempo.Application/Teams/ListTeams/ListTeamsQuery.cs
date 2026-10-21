@@ -30,7 +30,7 @@ internal sealed class ListTeamsHandler(
             {
                 var standing = table.GetValueOrDefault(team.Id);
                 return new TeamSummaryDto(
-                    team.Id, team.Name, team.ShortName, team.CrestUrl,
+                    team.Id, team.Name, team.ShortName, team.CrestLink(),
                     competition.Id, competition.Name,
                     standing?.Position, standing?.Played, standing?.Points);
             })

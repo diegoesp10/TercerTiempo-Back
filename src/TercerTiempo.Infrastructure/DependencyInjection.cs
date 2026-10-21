@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
+using TercerTiempo.Application.Abstractions.Teams;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
@@ -28,6 +29,7 @@ using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.FootballData.JsonFiles;
 using TercerTiempo.Infrastructure.Identity;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
+using TercerTiempo.Infrastructure.Teams;
 using TercerTiempo.Infrastructure.Persistence;
 using TercerTiempo.Infrastructure.Persistence.Stores;
 using TercerTiempo.Infrastructure.Videos;
@@ -167,6 +169,17 @@ public static class DependencyInjection
             });
 
         services.AddScoped<IOfficialSheetProvider, AsturfutbolOfficialSheetProvider>();
+        services.AddScoped<ITeamProfileProvider, AsturfutbolTeamProfileProvider>();
+
+        services.AddOptions<CrestOptions>()
+            .Bind(configuration.GetSection(CrestOptions.SectionName));
+        services.AddSingleton<ICrestStorage, FileSystemCrestStorage>();
+        services.AddHttpClient<ICrestDownloader, HttpCrestDownloader>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("TercerTiempo/1.0 (+https://github.com/diegoesp10/TercerTiempo-Back)");
+            client.DefaultRequestHeaders.Accept.ParseAdd("image/*");
+        });
     }
 
     private static void AddVideos(IServiceCollection services, IConfiguration configuration)

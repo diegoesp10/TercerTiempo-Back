@@ -3,6 +3,8 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Squads;
 
+using TercerTiempo.Application.Teams;
+
 namespace TercerTiempo.Application.Clubs;
 
 /// <summary>Club con los equipos que gestiona y los nombramientos de técnicos que ha emitido.</summary>
@@ -63,7 +65,7 @@ internal static class ClubMapper
             var squad = season is null ? null : await stores.Squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
 
             teamsDto.Add(new ClubTeamDto(
-                team.Id, team.Name, team.ShortName, team.CrestUrl,
+                team.Id, team.Name, team.ShortName, team.CrestLink(),
                 competition?.Id, competition?.Name, season?.Id, season?.Label, season?.EndsOn,
                 squad?.Id,
                 appointments.Count(a => a.TeamId == team.Id && season is not null && a.SeasonId == season.Id && a.IsActiveOn(today))));

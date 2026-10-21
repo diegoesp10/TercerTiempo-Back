@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Abstractions.Teams;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
@@ -33,6 +34,8 @@ internal sealed class SyncSeasonHandler(
     IMatchStore matches,
     IStandingStore standings,
     IUnitOfWork unitOfWork,
+    ICrestDownloader crestDownloader,
+    ICrestStorage crests,
     TimeProvider clock,
     ILogger<SyncSeasonHandler> logger) : ICommandHandler<SyncSeasonCommand, SyncResultDto>
 {
@@ -134,13 +137,21 @@ internal sealed class SyncSeasonHandler(
         {
             if (teamsByExternalId.TryGetValue(ts.ExternalId, out var team))
             {
-                team.UpdateDetails(ts.Name, ts.ShortName, ts.CrestUrl);
-                continue;
+                team.UpdateDetails(ts.Name, ts.ShortName);
+            }
+            else
+            {
+                team = Team.Create(ts.Name, ts.ShortName, ExternalRef.Create(providerName, ts.ExternalId));
+                teams.Add(team);
+                teamsByExternalId[ts.ExternalId] = team;
             }
 
-            team = Team.Create(ts.Name, ts.ShortName, ts.CrestUrl, ExternalRef.Create(providerName, ts.ExternalId));
-            teams.Add(team);
-            teamsByExternalId[ts.ExternalId] = team;
+            // El escudo que publica el proveedor se descarga una vez y se sirve desde aquí; su URL no se guarda.
+            if (team.CrestKey is null && ts.CrestUrl is { } crestUrl
+                && await crestDownloader.DownloadAsync(crestUrl, cancellationToken) is { } crest)
+            {
+                team.SetCrest(await crests.SaveAsync(team.Id, crest, cancellationToken));
+            }
         }
 
         // 4. Partidos

@@ -24,7 +24,38 @@ Content-Type: application/json
   "accessCode": null
 }
 
-### Club: vincular un equipo
+### Fichas y escudos de la federación (tras la sincronización; force=true para repetir)
+POST {{baseUrl}}/api/admin/sync/team-profiles?force=false
+Authorization: Bearer {{token}}
+
+### Importar el escudo de un equipo desde una URL (equipos sin ficha en la federación)
+POST {{baseUrl}}/api/admin/teams/{{teamId}}/crest
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "url": "https://example.org/escudo.png"
+}
+
+### Escudo guardado de un equipo
+GET {{baseUrl}}/api/teams/{{teamId}}/crest
+
+### Club: cambiar el escudo de uno de sus equipos (multipart, campo file)
+PUT {{baseUrl}}/api/clubs/me/teams/{{teamId}}/crest
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=escudo
+
+--escudo
+Content-Disposition: form-data; name="file"; filename="escudo.png"
+Content-Type: image/png
+
+< ./escudo.png
+--escudo--
+
+### Catálogo de clubes (público): de aquí sale el nombre con el que se da de alta un club
+GET {{baseUrl}}/api/clubs/catalog?search=lealtad
+
+### Club: vincular otro equipo (los del catálogo ya quedan vinculados al darse de alta)
 POST {{baseUrl}}/api/clubs/me/teams
 Authorization: Bearer {{token}}
 Content-Type: application/json

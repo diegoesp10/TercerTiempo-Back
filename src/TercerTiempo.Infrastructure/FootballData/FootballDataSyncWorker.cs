@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Sync;
+using TercerTiempo.Application.Teams.SyncProfiles;
+using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
 namespace TercerTiempo.Infrastructure.FootballData;
 
@@ -11,6 +13,7 @@ namespace TercerTiempo.Infrastructure.FootballData;
 internal sealed class FootballDataSyncWorker(
     IServiceScopeFactory scopeFactory,
     IOptions<FootballDataOptions> options,
+    IOptions<OfficialSheetOptions> officialSheets,
     ILogger<FootballDataSyncWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,6 +44,16 @@ internal sealed class FootballDataSyncWorker(
             logger.LogInformation(
                 "Datos de fútbol sincronizados ({Provider}): {Competitions} competiciones, {Teams} equipos, {Matches} partidos, {Roster} fichas de plantilla, {Errors} errores",
                 result.Provider, result.Competitions, result.Teams, result.Matches, result.RosterEntries, result.Errors.Count);
+
+            // Después de los datos, las fichas y escudos de la federación (solo los que toca refrescar).
+            if (!officialSheets.Value.Enabled) return;
+
+            var profiles = scope.ServiceProvider.GetRequiredService<ICommandHandler<SyncTeamProfilesCommand, TeamProfileSyncResultDto>>();
+            var profileResult = await profiles.Handle(new SyncTeamProfilesCommand(), cancellationToken);
+
+            logger.LogInformation(
+                "Fichas de equipos sincronizadas ({Provider}): {Linked} equipos localizados, {Updated} fichas, {Crests} escudos, {Missing} sin ficha, {Errors} errores",
+                profileResult.Provider, profileResult.TeamsLinked, profileResult.ProfilesUpdated, profileResult.CrestsDownloaded, profileResult.TeamsWithoutProfile, profileResult.Errors.Count);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

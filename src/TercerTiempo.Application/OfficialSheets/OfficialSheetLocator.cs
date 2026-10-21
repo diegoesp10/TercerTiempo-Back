@@ -59,7 +59,8 @@ internal sealed class OfficialSheetLocator(
         return match.OfficialRef;
     }
 
-    private async Task<OfficialCompetitionRef?> ResolveCompetitionAsync(Competition competition, Season season, CancellationToken cancellationToken)
+    /// <summary>Competición en la federación (se guarda en la temporada la primera vez); null si no se encuentra.</summary>
+    public async Task<OfficialCompetitionRef?> ResolveCompetitionAsync(Competition competition, Season season, CancellationToken cancellationToken)
     {
         if (season.OfficialRef is { } saved && saved.Provider == provider.ProviderName && OfficialCompetitionRef.Parse(saved.ExternalId) is { } parsed)
             return parsed;

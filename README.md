@@ -1,6 +1,6 @@
 # Tercer Tiempo · Backend
 
-API de **Tercer Tiempo**, plataforma de actas y rendimiento para el fútbol amateur. Cada **club** da de alta a los
+API de **Tercer Tiempo**, plataforma de seguimiento del rendimiento de cada jugador, partido a partido. Cada **club** da de alta a los
 técnicos de sus equipos temporada a temporada mediante **nombramientos** con un código de acceso. El **cuerpo técnico**
 nombrado gestiona la plantilla de su equipo (fichas importadas de futbolasturiano.es o añadidas a mano) y, tras cada
 partido, registra el **acta interna**: minutos, goles, asistencias, tiros, tarjetas... de cada jugador; la **nota** no
@@ -84,7 +84,23 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 - **Cuentas**: una cuenta es de **jugador** (`Player`, con posición y fecha de nacimiento), de **cuerpo técnico**
   (`Coach`) o de **club** (`Club`). Identity guarda las credenciales; el JWT lleva el tipo de cuenta y el id del perfil
   (`account_type`, `player_id` / `coach_id` / `club_id`).
-- **Club**: vincula los equipos que gestiona (`ClubTeam`; un equipo solo puede pertenecer a un club) y emite
+- **Escudos siempre propios**: `Team` no guarda ninguna URL de terceros; solo `CrestKey`, el archivo
+  "{id}-{versión}.{ext}" de `Crests:Directory` que la API sirve en `GET /api/teams/{id}/crest?v=` (la versión cambia
+  con cada escudo nuevo e invalida la caché). La sincronización de datos descarga el escudo que publica el proveedor al
+  crear el equipo; la federación aporta el suyo; el club puede sustituir el de sus equipos; y para el resto está la
+  importación por URL de administración. Un equipo sin escudo muestra sus iniciales en el frontal.
+- **Ficha y escudo del equipo** (`Team.Profile`, `Team.CrestKey`): `SyncTeamProfilesCommand` localiza cada equipo de
+  la temporada en curso en asturfutbol.es (código del equipo por las primeras jornadas de su competición), descarga su
+  ficha (`ITeamProfileProvider`: nombre oficial, sede, web, equipación, campo donde juega de local con su dirección) y
+  su escudo, que se guarda en `Crests:Directory` (`ICrestStorage`) y se sirve desde la API para no enlazar imágenes de
+  terceros. Se ejecuta tras cada sincronización del worker y se refresca cada `Crests:RefreshDays` días. Los equipos sin
+  escudo en la federación (los de fuera de Asturias) lo descargan del proveedor de datos si lo publica, y para el resto
+  hay `POST /api/admin/teams/{id}/crest` con la URL de la imagen; en el frontal, un equipo sin escudo muestra una
+  insignia con sus iniciales.
+- **Club**: solo puede haber una cuenta por club (`NormalizedName` único). Al darse de alta elige su nombre del
+  **catálogo de clubes** (`GET /api/clubs/catalog`, `ClubCatalog`: los equipos del proveedor agrupados por las palabras
+  significativas del nombre, primer equipo + filiales) y quedan vinculados todos sus equipos (`ClubTeam`; un equipo solo
+  puede pertenecer a un club). Puede vincular a mano otro equipo si su nombre se corresponde con el del club. Emite
   **CoachAppointment** (nombramientos): para un equipo y una temporada, con rol, nombre del técnico, un **código de
   acceso** de un solo uso y un periodo de validez que nunca pasa del final de la temporada. Un técnico solo puede darse
   de alta con un código (`RegisterCommand.AccessCode`) o canjearlo desde su cuenta; al hacerlo entra en el cuerpo
@@ -140,8 +156,12 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST | `/api/auth/register` | Alta como jugador, cuerpo técnico (con el código de acceso del club: lo canjea y entra en su plantilla) o club |
 | POST | `/api/auth/login` | Login |
 | GET | `/api/auth/me` | Cuenta autenticada: jugador con su plantilla; técnico con sus plantillas y nombramientos; club con sus equipos y nombramientos |
+| POST | `/api/admin/sync/team-profiles?force=` | Localiza cada equipo en asturfutbol.es y descarga su ficha (sede, web, equipación, campo) y su escudo; sin ficha, el escudo del proveedor |
+| POST | `/api/admin/teams/{id}/crest` | Importar el escudo de un equipo desde una URL (`{ "url": ... }`) |
+| GET | `/api/clubs/catalog?search=` | Catálogo de clubes del proveedor (equipos agrupados, si ya tienen cuenta); de aquí sale el nombre del alta. Público |
 | GET | `/api/clubs/me` | El club: equipos vinculados y nombramientos (el código solo mientras está pendiente) |
-| POST / DELETE | `/api/clubs/me/teams[/{teamId}]` | Vincular / desvincular un equipo del proveedor |
+| POST / DELETE | `/api/clubs/me/teams[/{teamId}]` | Vincular otro equipo del proveedor (nombre acorde al club) / desvincular |
+| PUT | `/api/clubs/me/teams/{teamId}/crest` | El club cambia el escudo de uno de sus equipos (multipart `file`, hasta 2 MB) |
 | POST | `/api/clubs/me/appointments` | Nombrar a un técnico para un equipo y la temporada en curso → código de acceso |
 | PUT / DELETE | `/api/clubs/me/appointments/{id}` | Acortar o prorrogar la validez / revocar (el técnico sale del staff) |
 | POST | `/api/coaches/me/appointments/redeem` | Técnico con cuenta: canjear otro código (nueva temporada, otro equipo) |
@@ -165,6 +185,7 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/competitions` | Ligas disponibles por nivel, categoría y grupo, con su temporada |
 | GET | `/api/competitions/{id}/matchdays/current`, `/api/competitions/{id}/matchdays/{n}` | Partidos de la jornada en curso (o la próxima) o de cualquier otra, con la lista de jornadas y sus fechas |
 | GET | `/api/teams?competitionId=`, `/api/teams/{id}`, `/api/teams/{id}/matches` | Equipos de una liga, ficha con plantilla publicada y estado de su plantilla en la plataforma, calendario |
+| GET | `/api/teams/{id}/crest` | Escudo guardado (descargado de la federación); `crestUrl` apunta aquí cuando existe. Público |
 | GET | `/api/matches/{id}` | Detalle con las actas de ambas plantillas (cada una solo si es visible para el usuario) |
 | GET | `/api/matches/{id}/official-sheet` | Acta oficial de la federación (o `NotPlayed` / `Pending` / `Unavailable`); público |
 | GET | `/api/matches/{id}/videos` | Vídeos del partido con el acceso del usuario a cada uno |
@@ -242,8 +263,9 @@ El worker `FootballDataSyncWorker` sincroniza al arrancar y cada `SyncIntervalHo
 
 La web de la RFFPA ([asturfutbol.es](https://www.asturfutbol.es)) publica el acta de cada partido (alineaciones,
 sustituciones con minuto, goles y tarjetas). No tiene API: `AsturfutbolOfficialSheetProvider` lee sus páginas
-(`Infrastructure/OfficialSheets/Asturfutbol`, AngleSharp) con un ritmo de una petición por segundo
-(`OfficialSheets:Asturfutbol:RequestDelayMs`) y User-Agent propio. Particularidades:
+(`Infrastructure/OfficialSheets/Asturfutbol`, AngleSharp) con un ritmo de una petición cada dos segundos
+(`OfficialSheets:Asturfutbol:RequestDelayMs`; tras cientos de peticiones seguidas la web responde vacío un buen rato,
+que el cliente trata como fallo transitorio) y User-Agent propio. Particularidades:
 
 - Las páginas son públicas pero exigen una cookie de sesión: la primera petición redirige a `/pnfg/NLogin`, que la fija
   y devuelve a la página pedida (`AsturfutbolClient` usa un `HttpClientHandler` con cookies y redirecciones). Sin cookie
@@ -323,8 +345,9 @@ borrar la base de datos: al arrancar se vuelve a crear, migrar y sincronizar.
 
 - **Identidad separada del dominio**: Identity gestiona credenciales; `Player`, `Coach` y `Club` son los agregados de negocio.
 - **El acceso del cuerpo técnico lo da el club**: solo con un nombramiento vigente se crea o edita el acta de una
-  plantilla, y nunca más allá de la temporada. Queda pendiente verificar que quien se da de alta como club es el club
-  (hoy cualquiera puede registrar un club y vincular un equipo libre): aprobación manual o alta por invitación.
+  plantilla, y nunca más allá de la temporada. Solo hay una cuenta por club, pero queda pendiente verificar que quien
+  se da de alta como club es el club (hoy el primero que elige ese nombre se lo queda): aprobación manual o alta por
+  invitación.
 - **La plantilla es el límite de privacidad**: actas y estadísticas pertenecen a la `Squad`; nada sale de ella
   salvo que su cuerpo técnico la haga pública. El código de invitación (jugadores) lo controla el cuerpo técnico.
 - **Roles del staff**: hoy todos los miembros vigentes del cuerpo técnico pueden registrar actas y gestionar la plantilla;
