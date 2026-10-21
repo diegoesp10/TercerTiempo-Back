@@ -14,15 +14,11 @@ internal sealed class SquadStore(AppDbContext db) : ISquadStore
     public Task<Squad?> GetByInviteCodeAsync(string inviteCode, CancellationToken cancellationToken = default) =>
         db.Squads.FirstOrDefaultAsync(s => s.InviteCode == inviteCode, cancellationToken);
 
-    public async Task<IReadOnlyList<Squad>> GetByCoachAsync(Guid coachId, DateOnly today, CancellationToken cancellationToken = default)
-    {
-        var squads = await db.Squads
+    public async Task<IReadOnlyList<Squad>> GetByCoachAsync(Guid coachId, DateOnly today, CancellationToken cancellationToken = default) =>
+        await db.Squads
             .Where(s => s.Staff.Any(m => m.CoachId == coachId && m.LeftAt == null && (m.ValidUntil == null || m.ValidUntil >= today)))
+            .OrderByDescending(s => s.CreatedAt)
             .ToListAsync(cancellationToken);
-
-        // SQLite no admite ORDER BY sobre DateTimeOffset: se ordena en memoria (son pocas plantillas por técnico).
-        return squads.OrderByDescending(s => s.CreatedAt).ToList();
-    }
 
     public Task<Squad?> GetByPlayerAsync(Guid playerId, CancellationToken cancellationToken = default) =>
         db.Squads.FirstOrDefaultAsync(

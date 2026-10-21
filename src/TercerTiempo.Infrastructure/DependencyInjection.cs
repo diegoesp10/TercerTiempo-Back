@@ -51,12 +51,17 @@ public static class DependencyInjection
 
     private static void AddPersistence(IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Default") ?? "Data Source=tercertiempo.db";
+        var connectionString = configuration.GetConnectionString("Default")
+            ?? throw new InvalidOperationException("Falta la cadena de conexión ConnectionStrings:Default (SQL Server).");
 
-        // Varios agregados cargan dos colecciones a la vez (plantilla: staff y fichas; acta oficial: líneas y sucesos):
-        // en consultas separadas se evita el producto cartesiano de una sola JOIN.
+        // SQL Server. Varios agregados cargan dos colecciones a la vez (plantilla: staff y fichas; acta oficial: líneas y
+        // sucesos): en consultas separadas se evita el producto cartesiano de una sola JOIN. Reintentos ante errores
+        // transitorios (arranque del servidor, cortes breves de red).
         services.AddDbContext<AppDbContext>(options =>
-            options.UseSqlite(connectionString, sqlite => sqlite.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
+            options.UseSqlServer(connectionString, sql => sql
+                .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
+                .EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorNumbersToAdd: null)
+                .CommandTimeout(60)));
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
 
         services.AddScoped<IPlayerStore, PlayerStore>();

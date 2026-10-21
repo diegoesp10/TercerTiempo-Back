@@ -46,7 +46,7 @@ internal sealed class SquadStaffConfiguration : IEntityTypeConfiguration<SquadSt
         builder.Ignore(s => s.IsActive);
 
         builder.HasOne<Coach>().WithMany().HasForeignKey(s => s.CoachId).OnDelete(DeleteBehavior.Cascade);
-        builder.HasOne<CoachAppointment>().WithMany().HasForeignKey(s => s.AppointmentId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<CoachAppointment>().WithMany().HasForeignKey(s => s.AppointmentId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(s => new { s.SquadId, s.CoachId });
         builder.HasIndex(s => s.CoachId);
@@ -69,7 +69,7 @@ internal sealed class SquadPlayerConfiguration : IEntityTypeConfiguration<SquadP
         builder.Ignore(p => p.IsLinked);
 
         builder.HasOne<Player>().WithMany().HasForeignKey(p => p.PlayerId).OnDelete(DeleteBehavior.SetNull);
-        builder.HasOne<RosterEntry>().WithMany().HasForeignKey(p => p.RosterEntryId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<RosterEntry>().WithMany().HasForeignKey(p => p.RosterEntryId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(p => new { p.SquadId, p.NormalizedName });
         builder.HasIndex(p => p.PlayerId);

@@ -14,7 +14,7 @@ El frontend vive en su propio repositorio: [TercerTiempo-Front](https://github.c
 
 ## Arranque rápido
 
-Requisitos: .NET 10 SDK.
+Requisitos: .NET 10 SDK y una instancia de **SQL Server** (2019 o posterior; vale Express, Developer o LocalDB).
 
 ```bash
 dotnet run --project src/TercerTiempo.Api --launch-profile http
@@ -22,8 +22,12 @@ dotnet run --project src/TercerTiempo.Api --launch-profile http
 
 La API escucha en `http://localhost:5080`; la referencia OpenAPI en `http://localhost:5080/docs` y el documento en
 `http://localhost:5080/openapi/v1.json`.
-Al arrancar aplica las migraciones (SQLite, fichero `tercertiempo.db` junto al proyecto Api) y sincroniza las
-ligas con el proveedor configurado. Por defecto usa **futbolasturiano.es** (datos reales de las ligas asturianas,
+Al arrancar crea la base de datos si no existe, aplica las migraciones pendientes y sincroniza las ligas con el
+proveedor configurado: una base de datos vacía queda lista para usar con los datos reales en unos minutos. La cadena
+de conexión de desarrollo (`appsettings.Development.json`) apunta a la instancia local por defecto con autenticación de
+Windows: `Server=localhost;Database=TercerTiempo;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=True`.
+Para otra instancia (`localhost\SQLEXPRESS`, `(localdb)\MSSQLLocalDB`) o con usuario y contraseña, cámbiala ahí o en
+`ConnectionStrings__Default` (ver *Configuración y secretos*). Por defecto usa **futbolasturiano.es** (datos reales de las ligas asturianas,
 ver más abajo); sin red se puede cambiar a `FootballData:Provider = "fake"`, que genera tres ligas ficticias.
 
 En `src/TercerTiempo.Api/TercerTiempo.Api.http` hay peticiones de ejemplo para todo el flujo.
@@ -64,7 +68,7 @@ OpenApi__Enabled=true OpenApi__BasicAuth__Username=docs OpenApi__BasicAuth__Pass
 | `TercerTiempo.Domain` | Entidades, value objects, reglas de negocio, eventos de dominio y contratos de persistencia (`ISquadStore`, `IClubStore`, `ICoachAppointmentStore`, `IOfficialSheetStore`, `IMatchVideoStore`...). Sin frameworks. | — |
 | `TercerTiempo.Application` | Casos de uso (commands/queries con handlers), DTOs, validación (FluentValidation), cálculo de estadísticas, reglas de acceso a cada plantilla, comparador de actas y abstracciones que implementa la infraestructura (`IIdentityService`, `ITokenService`, `ICurrentUser`, `IFootballDataProvider`, `IOfficialSheetProvider`, `IVideoStorage`, `IPaymentGateway`, `IVideoTickets`). | Domain |
 | `TercerTiempo.Repository` | Fachada entre la API y la aplicación: una interfaz por recurso (`IAuthRepository`, `IClubsRepository`, `ICoachesRepository`, `ISquadsRepository`, `IPlayersRepository`, `ICompetitionsRepository`, `ITeamsRepository`, `IMatchesRepository`, `IVideosRepository`, `IStatsRepository`, `IAdminRepository`) que despacha el command/query correspondiente. Cada endpoint la llama en una línea. | Application |
-| `TercerTiempo.Infrastructure` | EF Core + SQLite (stores), ASP.NET Identity, emisión de JWT, proveedores de datos de fútbol y el worker de sincronización, lector de actas de asturfutbol.es, almacenamiento de vídeos en disco, tickets de reproducción y pasarela de pago simulada. | Application |
+| `TercerTiempo.Infrastructure` | EF Core + SQL Server (stores), ASP.NET Identity, emisión de JWT, proveedores de datos de fútbol y el worker de sincronización, lector de actas de asturfutbol.es, almacenamiento de vídeos en disco, tickets de reproducción y pasarela de pago simulada. | Application |
 | `TercerTiempo.Api` | Minimal APIs agrupadas por recurso, autenticación JWT, CORS, documento OpenAPI nativo + referencia Scalar, `ProblemDetails` global. | Repository, Infrastructure |
 
 Flujo de una petición:
@@ -290,6 +294,10 @@ retransmisión en directo queda para más adelante.
 dotnet user-secrets set "Jwt:Key" "una-clave-larga-y-aleatoria" --project src/TercerTiempo.Api
 ```
 
+- `ConnectionStrings:Default` (SQL Server) está vacía en `appsettings.json` a propósito: en desarrollo la da
+  `appsettings.Development.json`; en otros entornos, user-secrets o la variable `ConnectionStrings__Default`
+  (p. ej. `Server=mi-servidor;Database=TercerTiempo;User Id=tercertiempo;Password=...;Encrypt=True`). La conexión
+  reintenta ante errores transitorios y usa consultas divididas para las colecciones.
 - `Cors:AllowedOrigins` incluye el frontend de Vite (`http://localhost:5173`).
 - `OfficialSheets:*` (asturfutbol.es: URL base, ritmo, códigos de sección, minutos reglamentarios) y `Videos:*`
   (carpeta, tamaño máximo, precio por defecto, formatos, vida de los tickets): ver `appsettings.json`.
@@ -304,10 +312,12 @@ dotnet ef migrations add NombreDeLaMigracion --project src/TercerTiempo.Infrastr
 dotnet test
 ```
 
-(`dotnet-ef` está como herramienta local: `dotnet tool restore` si hace falta.)
+(`dotnet-ef` está como herramienta local: `dotnet tool restore` si hace falta.) Con la API en ejecución desde Visual
+Studio los DLL de `bin` quedan bloqueados: la configuración `Migrations` del proyecto compila a otra carpeta, por lo
+que se puede generar la migración sin parar el depurador (`--configuration Migrations`).
 
-Ojo con SQLite: no admite `ORDER BY` sobre columnas `DateTimeOffset`; si hay que ordenar por fecha se hace en
-memoria (ver `SquadStore.GetByCoachAsync`). Al pasar a SQL Server deja de ser necesario.
+Las migraciones son de SQL Server (`InitialCreate` recrea todo el esquema desde cero). Para empezar de cero basta con
+borrar la base de datos: al arrancar se vuelve a crear, migrar y sincronizar.
 
 ## Decisiones y siguientes pasos sugeridos
 
@@ -324,5 +334,5 @@ memoria (ver `SquadStore.GetByCoachAsync`). Al pasar a SQL Server deja de ser ne
 - **Estadísticas**: comparativa por posición e importar las estadísticas oficiales por jugador que publica SportsPress
   en los eventos jugados para precargar el acta. Los pesos de la nota están en `PerformanceRating` y se pueden afinar
   con datos reales (por ejemplo, contrastándolos con las puntuaciones que publica la web en las convocatorias).
-- **Infra**: refresh tokens, SQL Server en lugar de SQLite, despliegue en contenedores, eventos de dominio
+- **Infra**: refresh tokens, despliegue en contenedores, eventos de dominio
   con outbox (ya hay punto de extensión en `AppDbContext.SaveChangesAsync`).
