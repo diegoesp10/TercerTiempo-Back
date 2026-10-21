@@ -18,15 +18,16 @@ internal sealed class GetSquadHandler(
     ICoachStore coaches,
     IPlayerStore players,
     ITeamStore teams,
-    ICompetitionStore competitions) : IQueryHandler<GetSquadQuery, SquadDetailDto>
+    ICompetitionStore competitions,
+    TimeProvider clock) : IQueryHandler<GetSquadQuery, SquadDetailDto>
 {
     public async Task<SquadDetailDto> Handle(GetSquadQuery query, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
             ?? throw new NotFoundException("Plantilla", query.SquadId);
 
-        SquadAccess.EnsureCanView(squad, currentUser);
+        SquadAccess.EnsureCanView(squad, currentUser, clock);
 
-        return await SquadMapper.ToDetailAsync(squad, currentUser, coaches, players, teams, competitions, cancellationToken);
+        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, cancellationToken);
     }
 }

@@ -26,19 +26,28 @@ internal sealed class ApiInfoDocumentTransformer : IOpenApiDocumentTransformer
         document.Info.Version = "v1";
         document.Info.Description =
             """
-            API de **Tercer Tiempo** (versión entrenador): el cuerpo técnico de cada equipo registra el acta de cada
-            partido, jugador a jugador, y la plataforma convierte esas actas en estadísticas individuales y colectivas.
-            Cada plantilla es **privada** salvo que su cuerpo técnico la haga pública.
+            API de **Tercer Tiempo** (versión entrenador): el club nombra a su cuerpo técnico cada temporada, el cuerpo
+            técnico registra el acta de cada partido jugador a jugador, la plataforma la convierte en estadísticas y la
+            compara con el acta oficial de la federación (asturfutbol.es). Cada plantilla es **privada** salvo que su cuerpo
+            técnico la haga pública.
+
+            **Flujo del club**
+
+            1. `POST /api/auth/register` con `accountType = Club` (o `/login`) → JWT.
+            2. `GET /api/competitions`, `GET /api/teams?competitionId=` y `POST /api/clubs/me/teams` → vincula tus equipos.
+            3. `POST /api/clubs/me/appointments` → nombra a un técnico para un equipo y la temporada: obtienes su `accessCode`.
+            4. `PUT` / `DELETE /api/clubs/me/appointments/{id}` → prorroga, acorta o revoca el nombramiento.
 
             **Flujo del cuerpo técnico**
 
-            1. `POST /api/auth/register` con `accountType = Coach` (o `/login`) → JWT.
-            2. `GET /api/competitions` y `GET /api/teams?competitionId=` → localiza tu equipo.
-            3. `POST /api/squads` con `teamId` → se crea la plantilla (importando la publicada por futbolasturiano.es si existe)
-               y obtienes un `inviteCode` para el resto del staff y los jugadores.
-            4. `GET /api/squads/{squadId}/matches` → partidos disputados; `PUT .../matches/{matchId}/sheet` → acta.
-            5. `GET /api/squads/{squadId}/stats` → estadísticas de todos los jugadores.
-            6. `PUT /api/squads/{squadId}/visibility` → hazla pública cuando quieras compartirla.
+            1. `POST /api/auth/register` con `accountType = Coach` y el `accessCode` del club → JWT y plantilla del equipo
+               (se crea importando la publicada por futbolasturiano.es si existe; `inviteCode` para los jugadores).
+               Con cuenta ya creada: `POST /api/coaches/me/appointments/redeem`.
+            2. `GET /api/squads/{squadId}/matches` → partidos disputados; `PUT .../matches/{matchId}/sheet` → acta interna.
+            3. `GET .../matches/{matchId}/sheet/comparison` → comparador con el acta oficial de la federación.
+            4. `POST .../matches/{matchId}/video` → sube el vídeo del partido; `GET /api/matches/{matchId}/videos` para verlo
+               (los técnicos de otras plantillas lo compran con `POST /api/videos/{id}/purchase`).
+            5. `GET /api/squads/{squadId}/stats` → estadísticas; `PUT /api/squads/{squadId}/visibility` → hazla pública.
 
             **Flujo del jugador**
 

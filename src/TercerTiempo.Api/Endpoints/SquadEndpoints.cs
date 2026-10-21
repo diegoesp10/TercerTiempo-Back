@@ -1,4 +1,7 @@
-using TercerTiempo.Application.Squads.ClaimTeam;
+using Microsoft.AspNetCore.Http.Features;
+using TercerTiempo.Application.Abstractions.Videos;
+using TercerTiempo.Application.Videos;
+using Microsoft.Extensions.Options;
 using TercerTiempo.Repository.Squads;
 
 namespace TercerTiempo.Api.Endpoints;
@@ -9,28 +12,10 @@ internal static class SquadEndpoints
     {
         var group = app.MapGroup("/api/squads").WithTags("Plantillas").RequireAuthorization();
 
-        group.MapPost("/", (ClaimTeamCommand command, ISquadsRepository squads, CancellationToken ct) => squads.ClaimTeamAsync(command.TeamId, ct))
-            .WithName("ClaimTeam")
-            .WithSummary("Crear la plantilla de un equipo")
-            .WithDescription("Solo cuentas del cuerpo técnico. Crea la plantilla del equipo para la temporada en curso con el técnico como primer entrenador, importando la plantilla publicada por el proveedor si existe. Nace privada y con código de invitación. Solo puede haber una plantilla por equipo y temporada.")
-            .ProducesValidationProblem()
-            .ProducesProblem(StatusCodes.Status403Forbidden)
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status409Conflict);
-
-        group.MapPost("/join", (JoinSquadStaffRequest request, ISquadsRepository squads, CancellationToken ct) => squads.JoinStaffAsync(request, ct))
-            .WithName("JoinSquadStaff")
-            .WithSummary("Incorporarse al cuerpo técnico de una plantilla")
-            .WithDescription("Con el código de invitación que facilita el cuerpo técnico actual.")
-            .ProducesValidationProblem()
-            .ProducesProblem(StatusCodes.Status403Forbidden)
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
-
         group.MapGet("/mine", (ISquadsRepository squads, CancellationToken ct) => squads.ListMineAsync(ct))
             .WithName("ListMySquads")
             .WithSummary("Mis plantillas")
-            .WithDescription("Plantillas en cuyo cuerpo técnico está el técnico autenticado.")
+            .WithDescription("Plantillas en cuyo cuerpo técnico vigente está el técnico autenticado (nombramientos del club sin caducar).")
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
         group.MapGet("/{squadId:guid}", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetAsync(squadId, ct))
@@ -106,6 +91,33 @@ internal static class SquadEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapGet("/{squadId:guid}/matches/{matchId:guid}/sheet/comparison", (Guid squadId, Guid matchId, bool? refresh, ISquadsRepository squads, CancellationToken ct) => squads.CompareMatchSheetAsync(squadId, matchId, refresh ?? false, ct))
+            .AllowAnonymous()
+            .WithName("CompareMatchSheet")
+            .WithSummary("Comparador: acta interna frente al acta oficial")
+            .WithDescription("Para cada ficha de la plantilla, la línea registrada por el cuerpo técnico y la línea del acta de la federación (emparejadas por nombre y dorsal), con las discrepancias en played, started, minutes, goals, yellowCards y redCard; además, las líneas oficiales sin ficha en la plantilla. Consulta (y guarda) el acta oficial si toca; official.status explica si aún no está. Misma visibilidad que la plantilla.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video", async (Guid squadId, Guid matchId, IFormFile file, string? title, HttpContext http, ISquadsRepository squads, IOptions<VideoOptions> options, CancellationToken ct) =>
+            {
+                // El límite por defecto de Kestrel (30 MB) se queda corto para un partido entero.
+                if (http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+                    limit.MaxRequestBodySize = options.Value.MaxSizeBytes + 1024 * 1024;
+
+                await using var content = file.OpenReadStream();
+                return await squads.UploadVideoAsync(squadId, matchId, title, new VideoUpload(file.FileName, file.ContentType, file.Length, content), ct);
+            })
+            .DisableAntiforgery()
+            .WithName("UploadMatchVideo")
+            .WithSummary("Subir el vídeo de un partido")
+            .WithDescription("Solo el cuerpo técnico. multipart/form-data con el campo file (mp4, webm, mov o mkv hasta Videos:MaxSizeMb) y, opcionalmente, title. La plantilla que lo sube (staff y jugadores vinculados) lo ve gratis; los técnicos de otras plantillas pueden comprar el acceso al precio por defecto (Videos:DefaultPriceCents).")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapGet("/{squadId:guid}/stats", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetStatsAsync(squadId, ct))
             .AllowAnonymous()

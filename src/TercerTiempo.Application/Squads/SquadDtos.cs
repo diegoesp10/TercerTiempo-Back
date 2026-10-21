@@ -32,7 +32,8 @@ public sealed record SquadDetailDto(
     IReadOnlyList<SquadStaffDto> Staff,
     IReadOnlyList<SquadPlayerDto> Players);
 
-public sealed record SquadStaffDto(Guid CoachId, string DisplayName, StaffRole Role, DateTimeOffset JoinedAt);
+/// <summary>Miembro vigente del cuerpo técnico; ValidUntil es el último día de su nombramiento.</summary>
+public sealed record SquadStaffDto(Guid CoachId, string DisplayName, StaffRole Role, DateTimeOffset JoinedAt, DateOnly? ValidUntil);
 
 public sealed record SquadPlayerDto(
     Guid Id,

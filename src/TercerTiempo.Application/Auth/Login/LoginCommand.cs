@@ -3,11 +3,6 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
-using TercerTiempo.Domain.Coaches;
-using TercerTiempo.Domain.Competitions;
-using TercerTiempo.Domain.Players;
-using TercerTiempo.Domain.Squads;
-using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Auth.Login;
 
@@ -28,11 +23,7 @@ internal sealed class LoginValidator : AbstractValidator<LoginCommand>
 
 internal sealed class LoginHandler(
     IIdentityService identity,
-    IPlayerStore players,
-    ICoachStore coaches,
-    ISquadStore squads,
-    ITeamStore teams,
-    ICompetitionStore competitions,
+    AccountStores stores,
     ITokenService tokens) : ICommandHandler<LoginCommand, AuthResponse>
 {
     public async Task<AuthResponse> Handle(LoginCommand command, CancellationToken cancellationToken)
@@ -42,9 +33,9 @@ internal sealed class LoginHandler(
         var userId = await identity.ValidateCredentialsAsync(email, command.Password, cancellationToken)
             ?? throw new InvalidCredentialsException();
 
-        var (type, profileId) = await AccountResolver.IdentifyAsync(userId, players, coaches, cancellationToken);
+        var (type, profileId) = await AccountResolver.IdentifyAsync(userId, stores.Players, stores.Coaches, stores.Clubs, cancellationToken);
         var token = tokens.CreateToken(userId, email, type, profileId);
-        var account = await AccountResolver.ForUserAsync(userId, players, coaches, squads, teams, competitions, cancellationToken);
+        var account = await AccountResolver.ForUserAsync(userId, stores, cancellationToken);
 
         return new AuthResponse(token.AccessToken, token.ExpiresAt, account);
     }

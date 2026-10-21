@@ -17,7 +17,8 @@ internal sealed class GetMatchHandler(
     IMatchStore matches,
     ITeamStore teams,
     ISquadStore squads,
-    IPerformanceStore performances) : IQueryHandler<GetMatchQuery, MatchDetailDto>
+    IPerformanceStore performances,
+    TimeProvider clock) : IQueryHandler<GetMatchQuery, MatchDetailDto>
 {
     public async Task<MatchDetailDto> Handle(GetMatchQuery query, CancellationToken cancellationToken)
     {
@@ -32,7 +33,7 @@ internal sealed class GetMatchHandler(
 
         foreach (var squad in matchSquads.OrderBy(s => s.TeamId == match.HomeTeamId ? 0 : 1))
         {
-            var visible = SquadAccess.CanView(squad, currentUser);
+            var visible = SquadAccess.CanView(squad, currentUser, clock);
             var entries = new List<PerformanceDto>();
 
             if (visible)

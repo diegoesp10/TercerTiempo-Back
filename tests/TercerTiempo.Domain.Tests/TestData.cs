@@ -9,6 +9,7 @@ namespace TercerTiempo.Domain.Tests;
 internal static class TestData
 {
     public static readonly DateTimeOffset Now = new(2026, 10, 16, 12, 0, 0, TimeSpan.Zero);
+    public static readonly DateOnly Today = new(2026, 10, 16);
     public static readonly Guid SeasonId = Guid.NewGuid();
     public static readonly Guid HomeTeamId = Guid.NewGuid();
     public static readonly Guid AwayTeamId = Guid.NewGuid();

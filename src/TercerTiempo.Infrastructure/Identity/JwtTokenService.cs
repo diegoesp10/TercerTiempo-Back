@@ -24,7 +24,7 @@ internal sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider
             [JwtRegisteredClaimNames.Email] = email,
             [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
             [AuthClaims.AccountType] = accountType.ToString(),
-            [accountType == AccountType.Player ? AuthClaims.PlayerId : AuthClaims.CoachId] = profileId.ToString(),
+            [AuthClaims.ProfileClaimFor(accountType)] = profileId.ToString(),
         };
 
         var descriptor = new SecurityTokenDescriptor

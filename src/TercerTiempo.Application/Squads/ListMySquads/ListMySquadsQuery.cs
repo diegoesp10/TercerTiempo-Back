@@ -16,15 +16,16 @@ internal sealed class ListMySquadsHandler(
     ICoachStore coaches,
     ISquadStore squads,
     ITeamStore teams,
-    ICompetitionStore competitions) : IQueryHandler<ListMySquadsQuery, IReadOnlyList<SquadSummaryDto>>
+    ICompetitionStore competitions,
+    TimeProvider clock) : IQueryHandler<ListMySquadsQuery, IReadOnlyList<SquadSummaryDto>>
 {
     public async Task<IReadOnlyList<SquadSummaryDto>> Handle(ListMySquadsQuery query, CancellationToken cancellationToken)
     {
         var coach = await Resolvers.CurrentCoachAsync(currentUser, coaches, cancellationToken);
 
         var result = new List<SquadSummaryDto>();
-        foreach (var squad in await squads.GetByCoachAsync(coach.Id, cancellationToken))
-            result.Add(await SquadMapper.ToSummaryAsync(squad, coach.Id, teams, competitions, cancellationToken));
+        foreach (var squad in await squads.GetByCoachAsync(coach.Id, SquadAccess.Today(clock), cancellationToken))
+            result.Add(await SquadMapper.ToSummaryAsync(squad, coach.Id, clock, teams, competitions, cancellationToken));
 
         return result;
     }

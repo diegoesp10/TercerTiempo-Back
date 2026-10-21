@@ -18,6 +18,9 @@ public sealed class Match : AggregateRoot
     public string? Venue { get; private set; }
     public ExternalRef? ExternalRef { get; private set; }
 
+    /// <summary>Acta del partido en la federación (asturfutbol.es), cuando ya se ha localizado.</summary>
+    public ExternalRef? OfficialRef { get; private set; }
+
     public Score? Score => _homeGoals is { } home && _awayGoals is { } away ? Score.Create(home, away) : null;
 
     private Match() { }
@@ -103,6 +106,9 @@ public sealed class Match : AggregateRoot
 
         Status = MatchStatus.InProgress;
     }
+
+    /// <summary>Vincula el partido con su acta en la federación.</summary>
+    public void LinkOfficial(ExternalRef officialRef) => OfficialRef = officialRef;
 
     public bool Involves(Guid teamId) => HomeTeamId == teamId || AwayTeamId == teamId;
 

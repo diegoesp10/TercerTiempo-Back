@@ -13,7 +13,8 @@ internal static class AuthEndpoints
         group.MapPost("/register", (RegisterCommand command, IAuthRepository auth, CancellationToken ct) => auth.RegisterAsync(command, ct))
             .WithName("Register")
             .WithSummary("Alta en la plataforma")
-            .WithDescription("Crea el usuario y su perfil (jugador o cuerpo técnico según accountType) y devuelve el JWT ya iniciado. Los jugadores indican su posición.")
+            .WithDescription("Crea el usuario y su perfil según accountType y devuelve el JWT ya iniciado. Player: indica su posición. Coach: necesita el accessCode que le ha entregado su club; al crear la cuenta se canjea y entra en el cuerpo técnico de la plantilla del equipo. Club: solo el nombre del club.")
+            .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict);
 
@@ -28,7 +29,7 @@ internal static class AuthEndpoints
             .RequireAuthorization()
             .WithName("GetMyAccount")
             .WithSummary("Cuenta autenticada")
-            .WithDescription("Tipo de cuenta y perfil: el jugador con la plantilla a la que está vinculado; el técnico con las plantillas que gestiona.");
+            .WithDescription("Tipo de cuenta y perfil: el jugador con la plantilla a la que está vinculado; el técnico con las plantillas que gestiona y sus nombramientos; el club con sus equipos y nombramientos.");
 
         return app;
     }

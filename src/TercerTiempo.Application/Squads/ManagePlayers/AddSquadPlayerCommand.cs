@@ -38,7 +38,7 @@ internal sealed class AddSquadPlayerHandler(
 {
     public async Task<SquadPlayerDto> Handle(AddSquadPlayerCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, cancellationToken);
+        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
 
         var player = squad.AddPlayer(command.FullName, command.Position, command.ShirtNumber, null, clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);

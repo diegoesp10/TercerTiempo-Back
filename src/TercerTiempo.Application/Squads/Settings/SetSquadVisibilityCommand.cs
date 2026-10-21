@@ -34,15 +34,16 @@ internal sealed class SetSquadVisibilityHandler(
     IPlayerStore players,
     ITeamStore teams,
     ICompetitionStore competitions,
-    IUnitOfWork unitOfWork) : ICommandHandler<SetSquadVisibilityCommand, SquadDetailDto>
+    IUnitOfWork unitOfWork,
+    TimeProvider clock) : ICommandHandler<SetSquadVisibilityCommand, SquadDetailDto>
 {
     public async Task<SquadDetailDto> Handle(SetSquadVisibilityCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, cancellationToken);
+        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
 
         squad.SetVisibility(command.Visibility);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await SquadMapper.ToDetailAsync(squad, currentUser, coaches, players, teams, competitions, cancellationToken);
+        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, cancellationToken);
     }
 }

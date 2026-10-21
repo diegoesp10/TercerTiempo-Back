@@ -9,6 +9,9 @@ public sealed class Team : AggregateRoot
     public string? CrestUrl { get; private set; }
     public ExternalRef? ExternalRef { get; private set; }
 
+    /// <summary>Código del equipo en la federación (asturfutbol.es), cuando ya se ha localizado.</summary>
+    public ExternalRef? OfficialRef { get; private set; }
+
     private Team() { }
 
     public static Team Create(string name, string shortName, string? crestUrl, ExternalRef? externalRef) =>
@@ -20,6 +23,8 @@ public sealed class Team : AggregateRoot
             CrestUrl = crestUrl,
             ExternalRef = externalRef,
         };
+
+    public void LinkOfficial(ExternalRef officialRef) => OfficialRef = officialRef;
 
     public void UpdateDetails(string name, string shortName, string? crestUrl)
     {

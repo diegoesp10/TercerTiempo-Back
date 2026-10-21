@@ -20,14 +20,15 @@ internal sealed class GetMatchSheetHandler(
     ITeamStore teams,
     ICompetitionStore competitions,
     IPlayerStore players,
-    IPerformanceStore performances) : IQueryHandler<GetMatchSheetQuery, MatchSheetDto>
+    IPerformanceStore performances,
+    TimeProvider clock) : IQueryHandler<GetMatchSheetQuery, MatchSheetDto>
 {
     public async Task<MatchSheetDto> Handle(GetMatchSheetQuery query, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
             ?? throw new NotFoundException("Plantilla", query.SquadId);
 
-        SquadAccess.EnsureCanView(squad, currentUser);
+        SquadAccess.EnsureCanView(squad, currentUser, clock);
 
         var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
             ?? throw new NotFoundException("Partido", query.MatchId);
@@ -35,6 +36,6 @@ internal sealed class GetMatchSheetHandler(
         if (match.SeasonId != squad.SeasonId || !match.Involves(squad.TeamId))
             throw new ConflictException("El partido no es de esta plantilla.");
 
-        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, teams, competitions, players, performances, cancellationToken);
+        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, cancellationToken);
     }
 }

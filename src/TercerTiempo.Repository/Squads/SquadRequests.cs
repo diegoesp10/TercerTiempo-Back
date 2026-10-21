@@ -23,12 +23,6 @@ public sealed record SquadVisibilityRequest(
     [property: Description("Private (solo cuerpo técnico y jugadores vinculados) o Public (cualquiera).")]
     SquadVisibility Visibility);
 
-public sealed record JoinSquadStaffRequest(
-    [property: Description("Código de invitación de la plantilla.")]
-    string InviteCode,
-    [property: Description("Rol: HeadCoach, AssistantCoach, Delegate, Physio, Analyst u Other.")]
-    StaffRole Role);
-
 /// <summary>Acta completa de un partido: una línea por ficha (Played = false borra la línea si existía).</summary>
 public sealed record MatchSheetRequest(IReadOnlyList<MatchSheetEntryInput> Entries)
 {

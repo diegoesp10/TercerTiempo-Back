@@ -1,0 +1,91 @@
+using System.Security.Cryptography;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using TercerTiempo.Application.Abstractions.Videos;
+
+namespace TercerTiempo.Infrastructure.Videos;
+
+/// <summary>Guarda los vídeos en una carpeta local (Videos:Directory) con un nombre aleatorio y la extensión original.</summary>
+internal sealed class FileSystemVideoStorage(IOptions<VideoOptions> options) : IVideoStorage
+{
+    private string Root => Path.GetFullPath(options.Value.Directory);
+
+    public async Task<string> SaveAsync(Stream content, string fileName, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Root);
+
+        var extension = Path.GetExtension(fileName);
+        if (extension.Length > 10 || extension.Any(c => !char.IsLetterOrDigit(c) && c != '.')) extension = string.Empty;
+
+        var key = $"{Guid.CreateVersion7():N}{extension.ToLowerInvariant()}";
+        var path = Path.Combine(Root, key);
+
+        await using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
+        await content.CopyToAsync(file, cancellationToken);
+
+        return key;
+    }
+
+    public Task<Stream> OpenReadAsync(string storageKey, CancellationToken cancellationToken)
+    {
+        var path = Resolve(storageKey);
+        if (!File.Exists(path))
+            throw new FileNotFoundException("El archivo del vídeo no está en el almacenamiento.", storageKey);
+
+        Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
+        return Task.FromResult(stream);
+    }
+
+    public Task DeleteAsync(string storageKey, CancellationToken cancellationToken)
+    {
+        var path = Resolve(storageKey);
+        if (File.Exists(path)) File.Delete(path);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Solo se sirven archivos dentro de la carpeta de vídeos (la clave nunca lleva rutas).</summary>
+    private string Resolve(string storageKey)
+    {
+        var path = Path.GetFullPath(Path.Combine(Root, Path.GetFileName(storageKey)));
+        if (!path.StartsWith(Root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Clave de almacenamiento no válida.");
+        return path;
+    }
+}
+
+/// <summary>
+/// Pasarela simulada: aprueba todos los cobros y deja constancia en el log. Sustituir por Stripe (u otra) para cobrar
+/// de verdad; el resto de la aplicación solo depende de <see cref="IPaymentGateway"/>.
+/// </summary>
+internal sealed class FakePaymentGateway(ILogger<FakePaymentGateway> logger) : IPaymentGateway
+{
+    public string ProviderName => "fake";
+
+    public Task<PaymentResult> ChargeAsync(PaymentRequest request, CancellationToken cancellationToken)
+    {
+        var reference = $"fake_{Guid.CreateVersion7():N}";
+        logger.LogInformation("Pago simulado de {Amount} {Currency} por «{Description}» (usuario {User}): {Reference}",
+            request.AmountCents / 100m, request.Currency, request.Description, request.PayerUserId, reference);
+
+        return Task.FromResult(new PaymentResult(true, reference, null));
+    }
+}
+
+/// <summary>Tickets de reproducción en memoria (una sola instancia de la API). Caducan según Videos:TicketMinutes.</summary>
+internal sealed class MemoryVideoTickets(IMemoryCache cache, IOptions<VideoOptions> options, TimeProvider clock) : IVideoTickets
+{
+    public (string Ticket, DateTimeOffset ExpiresAt) Issue(Guid videoId, Guid userId)
+    {
+        var ticket = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
+        var expiresAt = clock.GetUtcNow().AddMinutes(options.Value.TicketMinutes);
+
+        cache.Set(Key(ticket), videoId, expiresAt);
+        return (ticket, expiresAt);
+    }
+
+    public Guid? Resolve(string ticket) =>
+        ticket.Length is > 16 and < 100 && cache.TryGetValue(Key(ticket), out Guid videoId) ? videoId : null;
+
+    private static string Key(string ticket) => $"video-ticket:{ticket}";
+}

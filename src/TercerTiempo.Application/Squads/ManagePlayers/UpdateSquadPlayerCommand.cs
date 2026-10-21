@@ -36,11 +36,12 @@ internal sealed class UpdateSquadPlayerHandler(
     IPlayerStore players,
     IMatchStore matches,
     IPerformanceStore performances,
-    IUnitOfWork unitOfWork) : ICommandHandler<UpdateSquadPlayerCommand, SquadPlayerDto>
+    IUnitOfWork unitOfWork,
+    TimeProvider clock) : ICommandHandler<UpdateSquadPlayerCommand, SquadPlayerDto>
 {
     public async Task<SquadPlayerDto> Handle(UpdateSquadPlayerCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, cancellationToken);
+        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
 
         var previousPosition = squad.GetPlayer(command.SquadPlayerId).Position;
         squad.UpdatePlayer(command.SquadPlayerId, command.FullName, command.Position, command.ShirtNumber);

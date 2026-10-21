@@ -46,7 +46,7 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     public static PlayerMatchPerformance Record(
         Squad squad, SquadPlayer player, Match match, Guid coachId, PerformanceStats stats, DateTimeOffset now)
     {
-        PerformancePolicy.EnsureCanRecord(squad, coachId, match);
+        PerformancePolicy.EnsureCanRecord(squad, coachId, match, Squad.Today(now));
 
         if (player.SquadId != squad.Id)
             throw new DomainException("El jugador no pertenece a esta plantilla.");

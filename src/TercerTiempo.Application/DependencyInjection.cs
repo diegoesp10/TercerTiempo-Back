@@ -1,6 +1,9 @@
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Auth;
+using TercerTiempo.Application.Coaches.Appointments;
+using TercerTiempo.Application.OfficialSheets;
 
 namespace TercerTiempo.Application;
 
@@ -15,6 +18,11 @@ public static class DependencyInjection
         var assembly = typeof(DependencyInjection).Assembly;
 
         services.AddValidatorsFromAssembly(assembly, includeInternalTypes: true);
+
+        // Servicios internos compartidos por varios handlers.
+        services.AddScoped<AccountStores>();
+        services.AddScoped<AppointmentRedemption>();
+        services.AddScoped<OfficialSheetLocator>();
 
         var handlerTypes = assembly.GetTypes()
             .Where(t => t is { IsClass: true, IsAbstract: false, IsGenericTypeDefinition: false });

@@ -21,5 +21,7 @@ internal sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : IC
 
     public Guid? CoachId => ParseGuid(Principal?.FindFirstValue(AuthClaims.CoachId));
 
+    public Guid? ClubId => ParseGuid(Principal?.FindFirstValue(AuthClaims.ClubId));
+
     private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var id) ? id : null;
 }

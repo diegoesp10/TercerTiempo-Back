@@ -17,14 +17,15 @@ internal sealed class ListSquadMatchesHandler(
     ISquadStore squads,
     IMatchStore matches,
     ITeamStore teams,
-    IPerformanceStore performances) : IQueryHandler<ListSquadMatchesQuery, IReadOnlyList<SquadMatchDto>>
+    IPerformanceStore performances,
+    TimeProvider clock) : IQueryHandler<ListSquadMatchesQuery, IReadOnlyList<SquadMatchDto>>
 {
     public async Task<IReadOnlyList<SquadMatchDto>> Handle(ListSquadMatchesQuery query, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
             ?? throw new NotFoundException("Plantilla", query.SquadId);
 
-        SquadAccess.EnsureCanView(squad, currentUser);
+        SquadAccess.EnsureCanView(squad, currentUser, clock);
 
         var list = await matches.GetTeamMatchesAsync(squad.SeasonId, squad.TeamId, cancellationToken);
 

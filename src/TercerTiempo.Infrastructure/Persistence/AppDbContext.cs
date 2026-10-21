@@ -1,15 +1,18 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Videos;
 using TercerTiempo.Infrastructure.Identity;
 
 namespace TercerTiempo.Infrastructure.Persistence;
@@ -19,6 +22,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
 {
     public DbSet<Player> Players => Set<Player>();
     public DbSet<Coach> Coaches => Set<Coach>();
+    public DbSet<Club> Clubs => Set<Club>();
+    public DbSet<ClubTeam> ClubTeams => Set<ClubTeam>();
+    public DbSet<CoachAppointment> CoachAppointments => Set<CoachAppointment>();
     public DbSet<Squad> Squads => Set<Squad>();
     public DbSet<SquadStaff> SquadStaff => Set<SquadStaff>();
     public DbSet<SquadPlayer> SquadPlayers => Set<SquadPlayer>();
@@ -29,6 +35,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Match> Matches => Set<Match>();
     public DbSet<Standing> Standings => Set<Standing>();
     public DbSet<PlayerMatchPerformance> Performances => Set<PlayerMatchPerformance>();
+    public DbSet<OfficialMatchSheet> OfficialSheets => Set<OfficialMatchSheet>();
+    public DbSet<OfficialSheetLine> OfficialSheetLines => Set<OfficialSheetLine>();
+    public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();
+    public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
+    public DbSet<VideoPurchase> VideoPurchases => Set<VideoPurchase>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

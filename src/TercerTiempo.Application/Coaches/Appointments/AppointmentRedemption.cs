@@ -1,0 +1,52 @@
+using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
+using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Teams;
+
+namespace TercerTiempo.Application.Coaches.Appointments;
+
+/// <summary>
+/// Canje de un nombramiento: el técnico queda vinculado a él y entra en el cuerpo técnico de la plantilla del equipo
+/// en esa temporada, que se crea (importando la plantilla publicada por el proveedor) si aún no existía.
+/// Lo usan el alta de técnicos y el canje desde una cuenta existente.
+/// </summary>
+internal sealed class AppointmentRedemption(ICoachAppointmentStore appointments, ISquadStore squads, ITeamStore teams)
+{
+    public async Task<CoachAppointment> FindRedeemableAsync(string accessCode, CancellationToken cancellationToken)
+    {
+        var appointment = await appointments.GetByAccessCodeAsync(AccessCodes.Normalize(accessCode), cancellationToken)
+            ?? throw new NotFoundException("Código de acceso", accessCode);
+
+        if (appointment.IsRevoked)
+            throw new ConflictException("El club ha revocado este código de acceso.");
+
+        if (appointment.IsRedeemed)
+            throw new ConflictException("Este código de acceso ya se ha utilizado.");
+
+        return appointment;
+    }
+
+    public async Task<Squad> RedeemAsync(CoachAppointment appointment, Coach coach, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        appointment.Redeem(coach.Id, now);
+
+        var squad = await squads.GetByTeamAndSeasonAsync(appointment.TeamId, appointment.SeasonId, cancellationToken);
+
+        if (squad is null)
+        {
+            squad = Squad.Create(appointment.TeamId, appointment.SeasonId, coach.Id, now, appointment.Role, appointment.ValidUntil, appointment.Id);
+
+            foreach (var entry in await teams.GetRosterAsync(appointment.TeamId, appointment.SeasonId, cancellationToken))
+                squad.AddPlayer(entry.FullName, entry.Position, entry.ShirtNumber, entry.Id, now);
+
+            squads.Add(squad);
+        }
+        else
+        {
+            squad.AddStaff(coach.Id, appointment.Role, now, appointment.ValidUntil, appointment.Id);
+        }
+
+        return squad;
+    }
+}

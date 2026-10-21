@@ -18,7 +18,8 @@ internal sealed class GetTeamHandler(
     ICompetitionStore competitions,
     ITeamStore teams,
     IStandingStore standings,
-    ISquadStore squads) : IQueryHandler<GetTeamQuery, TeamDetailDto>
+    ISquadStore squads,
+    TimeProvider clock) : IQueryHandler<GetTeamQuery, TeamDetailDto>
 {
     public async Task<TeamDetailDto> Handle(GetTeamQuery query, CancellationToken cancellationToken)
     {
@@ -40,9 +41,9 @@ internal sealed class GetTeamHandler(
         var squadDto = squad is null
             ? null
             : new TeamSquadDto(
-                squad.Id, squad.Visibility, squad.ActivePlayers.Count(), squad.ActiveStaff.Count(),
-                SquadAccess.CanView(squad, currentUser),
-                SquadAccess.IsStaff(squad, currentUser) || SquadAccess.IsMember(squad, currentUser));
+                squad.Id, squad.Visibility, squad.ActivePlayers.Count(), squad.StaffOn(SquadAccess.Today(clock)).Count(),
+                SquadAccess.CanView(squad, currentUser, clock),
+                SquadAccess.IsStaff(squad, currentUser, clock) || SquadAccess.IsMember(squad, currentUser));
 
         return new TeamDetailDto(
             team.Id, team.Name, team.ShortName, team.CrestUrl,

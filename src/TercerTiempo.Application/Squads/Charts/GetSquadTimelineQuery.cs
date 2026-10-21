@@ -19,16 +19,17 @@ internal sealed class GetSquadTimelineHandler(
     IMatchStore matches,
     ITeamStore teams,
     ICompetitionStore competitions,
-    IPerformanceStore performances) : IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto>
+    IPerformanceStore performances,
+    TimeProvider clock) : IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto>
 {
     public async Task<SquadTimelineDto> Handle(GetSquadTimelineQuery query, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
             ?? throw new NotFoundException("Plantilla", query.SquadId);
 
-        SquadAccess.EnsureCanView(squad, currentUser);
+        SquadAccess.EnsureCanView(squad, currentUser, clock);
 
-        var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, teams, competitions, cancellationToken);
+        var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
 
         var played = (await matches.GetTeamMatchesAsync(squad.SeasonId, squad.TeamId, cancellationToken))
             .Where(m => m.Status == MatchStatus.Played)

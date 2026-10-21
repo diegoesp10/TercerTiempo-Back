@@ -1,4 +1,5 @@
 using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
@@ -29,14 +30,24 @@ internal static class Resolvers
             ?? throw new ForbiddenException("Esta acción requiere una cuenta del cuerpo técnico.");
     }
 
-    /// <summary>Plantilla por id, comprobando que el usuario actual pertenece a su cuerpo técnico.</summary>
+    public static async Task<Club> CurrentClubAsync(
+        ICurrentUser currentUser, IClubStore clubs, CancellationToken cancellationToken)
+    {
+        if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId)
+            throw new UnauthenticatedException();
+
+        return await clubs.GetByUserIdAsync(userId, cancellationToken)
+            ?? throw new ForbiddenException("Esta acción requiere una cuenta de club.");
+    }
+
+    /// <summary>Plantilla por id, comprobando que el usuario actual pertenece a su cuerpo técnico vigente.</summary>
     public static async Task<Squad> SquadForStaffAsync(
-        ISquadStore squads, ICurrentUser currentUser, Guid squadId, CancellationToken cancellationToken)
+        ISquadStore squads, ICurrentUser currentUser, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(squadId, cancellationToken)
             ?? throw new NotFoundException("Plantilla", squadId);
 
-        SquadAccess.EnsureStaff(squad, currentUser);
+        SquadAccess.EnsureStaff(squad, currentUser, clock);
         return squad;
     }
 
@@ -55,12 +66,17 @@ internal static class Resolvers
 
     /// <summary>Competición y temporada de una plantilla.</summary>
     public static async Task<(Competition Competition, Season Season)> SeasonOfSquadAsync(
-        ICompetitionStore competitions, Squad squad, CancellationToken cancellationToken)
-    {
-        var competition = await competitions.GetBySeasonAsync(squad.SeasonId, cancellationToken)
-            ?? throw new NotFoundException("Competición", squad.SeasonId);
+        ICompetitionStore competitions, Squad squad, CancellationToken cancellationToken) =>
+        await SeasonByIdAsync(competitions, squad.SeasonId, cancellationToken);
 
-        var season = competition.Seasons.First(s => s.Id == squad.SeasonId);
+    /// <summary>Competición y temporada a partir del id de la temporada.</summary>
+    public static async Task<(Competition Competition, Season Season)> SeasonByIdAsync(
+        ICompetitionStore competitions, Guid seasonId, CancellationToken cancellationToken)
+    {
+        var competition = await competitions.GetBySeasonAsync(seasonId, cancellationToken)
+            ?? throw new NotFoundException("Competición", seasonId);
+
+        var season = competition.Seasons.First(s => s.Id == seasonId);
         return (competition, season);
     }
 }

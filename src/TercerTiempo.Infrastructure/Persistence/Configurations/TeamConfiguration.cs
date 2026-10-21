@@ -17,6 +17,7 @@ internal sealed class TeamConfiguration : IEntityTypeConfiguration<Team>
         builder.Property(t => t.CrestUrl).HasMaxLength(500);
 
         builder.OwnsExternalRef(t => t.ExternalRef);
+        builder.OwnsExternalRef(t => t.OfficialRef, "Official");
     }
 }
 

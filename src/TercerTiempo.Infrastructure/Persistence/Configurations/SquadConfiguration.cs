@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
@@ -30,7 +31,6 @@ internal sealed class SquadConfiguration : IEntityTypeConfiguration<Squad>
         builder.HasMany(s => s.Players).WithOne().HasForeignKey(p => p.SquadId).OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(s => s.Players).UsePropertyAccessMode(PropertyAccessMode.Field).AutoInclude();
 
-        builder.Ignore(s => s.ActiveStaff);
         builder.Ignore(s => s.ActivePlayers);
     }
 }
@@ -46,6 +46,7 @@ internal sealed class SquadStaffConfiguration : IEntityTypeConfiguration<SquadSt
         builder.Ignore(s => s.IsActive);
 
         builder.HasOne<Coach>().WithMany().HasForeignKey(s => s.CoachId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<CoachAppointment>().WithMany().HasForeignKey(s => s.AppointmentId).OnDelete(DeleteBehavior.SetNull);
 
         builder.HasIndex(s => new { s.SquadId, s.CoachId });
         builder.HasIndex(s => s.CoachId);

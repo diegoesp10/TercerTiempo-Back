@@ -6,8 +6,8 @@ public interface ISquadStore
     Task<Squad?> GetByTeamAndSeasonAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken = default);
     Task<Squad?> GetByInviteCodeAsync(string inviteCode, CancellationToken cancellationToken = default);
 
-    /// <summary>Plantillas en las que el técnico forma parte del cuerpo técnico activo.</summary>
-    Task<IReadOnlyList<Squad>> GetByCoachAsync(Guid coachId, CancellationToken cancellationToken = default);
+    /// <summary>Plantillas en las que el técnico forma parte del cuerpo técnico vigente en la fecha indicada.</summary>
+    Task<IReadOnlyList<Squad>> GetByCoachAsync(Guid coachId, DateOnly today, CancellationToken cancellationToken = default);
 
     /// <summary>Plantilla a la que está vinculado el jugador (ficha activa), si la hay.</summary>
     Task<Squad?> GetByPlayerAsync(Guid playerId, CancellationToken cancellationToken = default);

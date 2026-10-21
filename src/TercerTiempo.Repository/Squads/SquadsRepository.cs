@@ -1,21 +1,19 @@
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Squads.Charts;
-using TercerTiempo.Application.Squads.ClaimTeam;
 using TercerTiempo.Application.Squads.GetSquad;
-using TercerTiempo.Application.Squads.JoinStaff;
 using TercerTiempo.Application.Squads.ListMySquads;
 using TercerTiempo.Application.Squads.ManagePlayers;
 using TercerTiempo.Application.Squads.Matches;
 using TercerTiempo.Application.Squads.MatchSheet;
 using TercerTiempo.Application.Squads.Settings;
 using TercerTiempo.Application.Squads.Stats;
+using TercerTiempo.Application.Videos;
 
 namespace TercerTiempo.Repository.Squads;
 
 internal sealed class SquadsRepository(
-    ICommandHandler<ClaimTeamCommand, SquadDetailDto> claimTeam,
-    ICommandHandler<JoinSquadStaffCommand, SquadDetailDto> joinStaff,
     IQueryHandler<ListMySquadsQuery, IReadOnlyList<SquadSummaryDto>> listMine,
     IQueryHandler<GetSquadQuery, SquadDetailDto> getSquad,
     ICommandHandler<AddSquadPlayerCommand, SquadPlayerDto> addPlayer,
@@ -27,16 +25,12 @@ internal sealed class SquadsRepository(
     IQueryHandler<ListSquadMatchesQuery, IReadOnlyList<SquadMatchDto>> listMatches,
     IQueryHandler<GetMatchSheetQuery, MatchSheetDto> getMatchSheet,
     ICommandHandler<RecordMatchSheetCommand, MatchSheetDto> recordMatchSheet,
+    ICommandHandler<CompareMatchSheetCommand, SheetComparisonDto> compareMatchSheet,
+    ICommandHandler<UploadMatchVideoCommand, MatchVideoDto> uploadVideo,
     IQueryHandler<GetSquadStatsQuery, SquadStatsDto> getStats,
     IQueryHandler<GetSquadPlayerProfileQuery, SquadPlayerProfileDto> getPlayerProfile,
     IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto> getTimeline) : ISquadsRepository
 {
-    public Task<SquadDetailDto> ClaimTeamAsync(Guid teamId, CancellationToken cancellationToken = default) =>
-        claimTeam.Handle(new ClaimTeamCommand(teamId), cancellationToken);
-
-    public Task<SquadDetailDto> JoinStaffAsync(JoinSquadStaffRequest request, CancellationToken cancellationToken = default) =>
-        joinStaff.Handle(new JoinSquadStaffCommand(request.InviteCode, request.Role), cancellationToken);
-
     public Task<IReadOnlyList<SquadSummaryDto>> ListMineAsync(CancellationToken cancellationToken = default) =>
         listMine.Handle(new ListMySquadsQuery(), cancellationToken);
 
@@ -69,6 +63,12 @@ internal sealed class SquadsRepository(
 
     public Task<MatchSheetDto> RecordMatchSheetAsync(Guid squadId, Guid matchId, MatchSheetRequest request, CancellationToken cancellationToken = default) =>
         recordMatchSheet.Handle(request.ToCommand(squadId, matchId), cancellationToken);
+
+    public Task<SheetComparisonDto> CompareMatchSheetAsync(Guid squadId, Guid matchId, bool refresh, CancellationToken cancellationToken = default) =>
+        compareMatchSheet.Handle(new CompareMatchSheetCommand(squadId, matchId, refresh), cancellationToken);
+
+    public Task<MatchVideoDto> UploadVideoAsync(Guid squadId, Guid matchId, string? title, VideoUpload file, CancellationToken cancellationToken = default) =>
+        uploadVideo.Handle(new UploadMatchVideoCommand(squadId, matchId, title, file), cancellationToken);
 
     public Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         getStats.Handle(new GetSquadStatsQuery(squadId), cancellationToken);

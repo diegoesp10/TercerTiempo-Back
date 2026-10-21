@@ -12,4 +12,7 @@ public interface ICurrentUser
 
     /// <summary>Id del perfil de técnico, si la cuenta es del cuerpo técnico.</summary>
     Guid? CoachId { get; }
+
+    /// <summary>Id del club, si la cuenta es de club.</summary>
+    Guid? ClubId { get; }
 }

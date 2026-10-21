@@ -52,6 +52,18 @@ public class PerformancePolicyTests
     }
 
     [Fact]
+    public void Expired_staff_cannot_record_the_sheet()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var assistant = Guid.NewGuid();
+        squad.AddStaff(assistant, Domain.Squads.StaffRole.AssistantCoach, TestData.Now.AddDays(-30), TestData.Today.AddDays(-1), Guid.NewGuid());
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), assistant, TestData.ValidStats(), TestData.Now));
+    }
+
+    [Fact]
     public void Cannot_record_on_a_scheduled_match()
     {
         var (squad, coachId) = TestData.NewSquad();

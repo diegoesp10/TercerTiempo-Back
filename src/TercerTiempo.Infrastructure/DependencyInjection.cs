@@ -7,23 +7,30 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Application.Abstractions.OfficialSheets;
+using TercerTiempo.Application.Abstractions.Videos;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Videos;
 using TercerTiempo.Infrastructure.FootballData;
 using TercerTiempo.Infrastructure.FootballData.BeSoccer;
 using TercerTiempo.Infrastructure.FootballData.Fake;
 using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.FootballData.JsonFiles;
 using TercerTiempo.Infrastructure.Identity;
+using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
 using TercerTiempo.Infrastructure.Persistence.Stores;
+using TercerTiempo.Infrastructure.Videos;
 
 namespace TercerTiempo.Infrastructure;
 
@@ -36,6 +43,8 @@ public static class DependencyInjection
         AddPersistence(services, configuration);
         AddIdentity(services, configuration);
         AddFootballData(services, configuration);
+        AddOfficialSheets(services, configuration);
+        AddVideos(services, configuration);
 
         return services;
     }
@@ -44,7 +53,10 @@ public static class DependencyInjection
     {
         var connectionString = configuration.GetConnectionString("Default") ?? "Data Source=tercertiempo.db";
 
-        services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
+        // Varios agregados cargan dos colecciones a la vez (plantilla: staff y fichas; acta oficial: líneas y sucesos):
+        // en consultas separadas se evita el producto cartesiano de una sola JOIN.
+        services.AddDbContext<AppDbContext>(options =>
+            options.UseSqlite(connectionString, sqlite => sqlite.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
 
         services.AddScoped<IPlayerStore, PlayerStore>();
@@ -55,6 +67,11 @@ public static class DependencyInjection
         services.AddScoped<IMatchStore, MatchStore>();
         services.AddScoped<IStandingStore, StandingStore>();
         services.AddScoped<IPerformanceStore, PerformanceStore>();
+        services.AddScoped<IClubStore, ClubStore>();
+        services.AddScoped<ICoachAppointmentStore, CoachAppointmentStore>();
+        services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
+        services.AddScoped<IMatchVideoStore, MatchVideoStore>();
+        services.AddScoped<IVideoPurchaseStore, VideoPurchaseStore>();
     }
 
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)
@@ -119,6 +136,43 @@ public static class DependencyInjection
         }
 
         services.AddHostedService<FootballDataSyncWorker>();
+    }
+
+    private static void AddOfficialSheets(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<OfficialSheetOptions>()
+            .Bind(configuration.GetSection(OfficialSheetOptions.SectionName));
+
+        // La web exige cookie de sesión y redirige a NLogin en la primera petición: el handler las gestiona solo.
+        services.AddHttpClient<AsturfutbolClient>((sp, client) =>
+            {
+                var settings = sp.GetRequiredService<IOptions<OfficialSheetOptions>>().Value.Asturfutbol;
+                client.BaseAddress = new Uri(settings.BaseUrl.EndsWith('/') ? settings.BaseUrl : settings.BaseUrl + "/");
+                client.Timeout = TimeSpan.FromSeconds(40);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
+                client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                UseCookies = true,
+                CookieContainer = new System.Net.CookieContainer(),
+                AllowAutoRedirect = true,
+                MaxAutomaticRedirections = 5,
+                AutomaticDecompression = System.Net.DecompressionMethods.All,
+            });
+
+        services.AddScoped<IOfficialSheetProvider, AsturfutbolOfficialSheetProvider>();
+    }
+
+    private static void AddVideos(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<VideoOptions>()
+            .Bind(configuration.GetSection(VideoOptions.SectionName));
+
+        services.AddMemoryCache();
+        services.AddSingleton<IVideoStorage, FileSystemVideoStorage>();
+        services.AddSingleton<IVideoTickets, MemoryVideoTickets>();
+        services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
     }
 
     /// <summary>Aplica las migraciones pendientes. Se invoca desde la API al arrancar.</summary>

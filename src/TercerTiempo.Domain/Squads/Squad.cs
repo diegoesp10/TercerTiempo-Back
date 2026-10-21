@@ -4,8 +4,9 @@ using TercerTiempo.Domain.Players;
 namespace TercerTiempo.Domain.Squads;
 
 /// <summary>
-/// Plantilla de un equipo en una temporada, gestionada por su cuerpo técnico: quién forma el staff, qué jugadores
-/// la componen (y cuáles tienen cuenta vinculada), el código de invitación y la visibilidad de sus datos.
+/// Plantilla de un equipo en una temporada, gestionada por su cuerpo técnico: quién forma el staff (nombrado por el
+/// club y con validez limitada a la temporada), qué jugadores la componen (y cuáles tienen cuenta vinculada), el
+/// código de invitación para los jugadores y la visibilidad de sus datos.
 /// Es el límite de privacidad: las actas y estadísticas pertenecen a la plantilla.
 /// </summary>
 public sealed class Squad : AggregateRoot
@@ -22,13 +23,15 @@ public sealed class Squad : AggregateRoot
     public IReadOnlyCollection<SquadStaff> Staff => _staff.AsReadOnly();
     public IReadOnlyCollection<SquadPlayer> Players => _players.AsReadOnly();
 
-    public IEnumerable<SquadStaff> ActiveStaff => _staff.Where(s => s.IsActive);
     public IEnumerable<SquadPlayer> ActivePlayers => _players.Where(p => p.IsActive);
 
     private Squad() { }
 
-    /// <summary>Crea la plantilla con su primer entrenador. Nace privada y con un código de invitación nuevo.</summary>
-    public static Squad Create(Guid teamId, Guid seasonId, Guid headCoachId, DateTimeOffset now)
+    /// <summary>
+    /// Crea la plantilla con su primer técnico (nombrado por el club hasta <paramref name="validUntil"/>).
+    /// Nace privada y con un código de invitación nuevo para los jugadores.
+    /// </summary>
+    public static Squad Create(Guid teamId, Guid seasonId, Guid headCoachId, DateTimeOffset now, StaffRole role = StaffRole.HeadCoach, DateOnly? validUntil = null, Guid? appointmentId = null)
     {
         var squad = new Squad
         {
@@ -40,18 +43,33 @@ public sealed class Squad : AggregateRoot
             CreatedAt = now,
         };
 
-        squad.AddStaff(headCoachId, StaffRole.HeadCoach, now);
+        squad.AddStaff(headCoachId, role, now, validUntil, appointmentId);
         return squad;
     }
 
     // ---------------------------------------------------------------- Cuerpo técnico
 
-    public SquadStaff AddStaff(Guid coachId, StaffRole role, DateTimeOffset now)
-    {
-        if (IsStaff(coachId))
-            throw new DomainException("Ya formas parte del cuerpo técnico de esta plantilla.");
+    /// <summary>Miembros del staff vigentes en la fecha indicada (sin baja y sin caducar).</summary>
+    public IEnumerable<SquadStaff> StaffOn(DateOnly today) => _staff.Where(s => s.IsActiveOn(today));
 
-        var member = SquadStaff.Create(Id, coachId, role, now);
+    /// <summary>
+    /// Incorpora a un técnico. Si ya figuraba y su pertenencia había caducado, se renueva (nueva validez y
+    /// nombramiento); si sigue vigente, es un error.
+    /// </summary>
+    public SquadStaff AddStaff(Guid coachId, StaffRole role, DateTimeOffset now, DateOnly? validUntil = null, Guid? appointmentId = null)
+    {
+        var today = Today(now);
+
+        if (_staff.FirstOrDefault(s => s.CoachId == coachId && s.IsActive) is { } current)
+        {
+            if (current.IsActiveOn(today))
+                throw new DomainException("Ya formas parte del cuerpo técnico de esta plantilla.");
+
+            current.Renew(role, validUntil, appointmentId);
+            return current;
+        }
+
+        var member = SquadStaff.Create(Id, coachId, role, now, validUntil, appointmentId);
         _staff.Add(member);
         return member;
     }
@@ -61,15 +79,24 @@ public sealed class Squad : AggregateRoot
         var member = _staff.FirstOrDefault(s => s.CoachId == coachId && s.IsActive)
             ?? throw new DomainException("Ese técnico no forma parte de la plantilla.");
 
-        if (member.Role == StaffRole.HeadCoach && ActiveStaff.Count(s => s.Role == StaffRole.HeadCoach) == 1)
-            throw new DomainException("La plantilla debe conservar al menos un primer entrenador.");
-
         member.Leave(now);
     }
 
-    public bool IsStaff(Guid coachId) => _staff.Any(s => s.CoachId == coachId && s.IsActive);
+    /// <summary>Cambia la fecha de validez de un técnico (cuando el club acorta o prorroga su nombramiento).</summary>
+    public void SetStaffValidity(Guid coachId, DateOnly? validUntil)
+    {
+        var member = _staff.FirstOrDefault(s => s.CoachId == coachId && s.IsActive)
+            ?? throw new DomainException("Ese técnico no forma parte de la plantilla.");
 
-    public bool IsHeadCoach(Guid coachId) => _staff.Any(s => s.CoachId == coachId && s.IsActive && s.Role == StaffRole.HeadCoach);
+        member.SetValidity(validUntil);
+    }
+
+    public SquadStaff? StaffMemberOf(Guid coachId, DateOnly today) =>
+        _staff.FirstOrDefault(s => s.CoachId == coachId && s.IsActiveOn(today));
+
+    public bool IsStaff(Guid coachId, DateOnly today) => StaffMemberOf(coachId, today) is not null;
+
+    public bool IsHeadCoach(Guid coachId, DateOnly today) => StaffMemberOf(coachId, today)?.Role == StaffRole.HeadCoach;
 
     // ---------------------------------------------------------------- Jugadores
 
@@ -158,9 +185,11 @@ public sealed class Squad : AggregateRoot
 
     public void RotateInviteCode() => InviteCode = InviteCodes.Generate();
 
-    /// <summary>Un técnico de la plantilla o un jugador vinculado siempre pueden verla; el resto, solo si es pública.</summary>
-    public bool CanBeViewedBy(Guid? coachId, Guid? playerId) =>
+    /// <summary>Un técnico vigente de la plantilla o un jugador vinculado siempre pueden verla; el resto, solo si es pública.</summary>
+    public bool CanBeViewedBy(Guid? coachId, Guid? playerId, DateOnly today) =>
         Visibility == SquadVisibility.Public
-        || (coachId is { } c && IsStaff(c))
+        || (coachId is { } c && IsStaff(c, today))
         || (playerId is { } p && IsMember(p));
+
+    public static DateOnly Today(DateTimeOffset now) => DateOnly.FromDateTime(now.UtcDateTime);
 }

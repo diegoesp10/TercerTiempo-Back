@@ -26,15 +26,16 @@ internal sealed class RotateInviteCodeHandler(
     IPlayerStore players,
     ITeamStore teams,
     ICompetitionStore competitions,
-    IUnitOfWork unitOfWork) : ICommandHandler<RotateInviteCodeCommand, SquadDetailDto>
+    IUnitOfWork unitOfWork,
+    TimeProvider clock) : ICommandHandler<RotateInviteCodeCommand, SquadDetailDto>
 {
     public async Task<SquadDetailDto> Handle(RotateInviteCodeCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, cancellationToken);
+        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
 
         squad.RotateInviteCode();
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await SquadMapper.ToDetailAsync(squad, currentUser, coaches, players, teams, competitions, cancellationToken);
+        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, cancellationToken);
     }
 }

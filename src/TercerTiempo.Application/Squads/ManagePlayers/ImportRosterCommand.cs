@@ -31,7 +31,7 @@ internal sealed class ImportRosterHandler(
 {
     public async Task<SquadDetailDto> Handle(ImportRosterCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, cancellationToken);
+        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
         var now = clock.GetUtcNow();
 
         foreach (var entry in await teams.GetRosterAsync(squad.TeamId, squad.SeasonId, cancellationToken))
@@ -45,6 +45,6 @@ internal sealed class ImportRosterHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await SquadMapper.ToDetailAsync(squad, currentUser, coaches, players, teams, competitions, cancellationToken);
+        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, cancellationToken);
     }
 }

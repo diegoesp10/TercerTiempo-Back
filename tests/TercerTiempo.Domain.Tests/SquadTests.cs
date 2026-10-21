@@ -20,9 +20,9 @@ public class SquadTests
         Assert.Equal(SquadVisibility.Private, squad.Visibility);
         Assert.Equal(InviteCodes.Length, squad.InviteCode.Length);
         Assert.All(squad.InviteCode, c => Assert.Contains(c, Alphabet));
-        Assert.True(squad.IsStaff(coachId));
-        Assert.True(squad.IsHeadCoach(coachId));
-        Assert.Single(squad.ActiveStaff);
+        Assert.True(squad.IsStaff(coachId, TestData.Today));
+        Assert.True(squad.IsHeadCoach(coachId, TestData.Today));
+        Assert.Single(squad.StaffOn(TestData.Today));
         Assert.Empty(squad.Players);
     }
 
@@ -35,12 +35,59 @@ public class SquadTests
     }
 
     [Fact]
-    public void Last_head_coach_cannot_leave()
+    public void Staff_membership_expires_with_the_appointment()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var coachId = Guid.NewGuid();
+        var appointmentId = Guid.NewGuid();
+        var validUntil = TestData.Today.AddDays(10);
+
+        var member = squad.AddStaff(coachId, StaffRole.AssistantCoach, TestData.Now, validUntil, appointmentId);
+
+        Assert.Equal(validUntil, member.ValidUntil);
+        Assert.Equal(appointmentId, member.AppointmentId);
+        Assert.True(squad.IsStaff(coachId, validUntil));
+        Assert.False(squad.IsStaff(coachId, validUntil.AddDays(1)));
+        Assert.Single(squad.StaffOn(validUntil.AddDays(1)));
+        Assert.False(squad.CanBeViewedBy(coachId, null, validUntil.AddDays(1)));
+    }
+
+    [Fact]
+    public void Expired_member_is_renewed_instead_of_duplicated()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var coachId = Guid.NewGuid();
+        squad.AddStaff(coachId, StaffRole.AssistantCoach, TestData.Now.AddYears(-1), TestData.Today.AddDays(-1), Guid.NewGuid());
+        var renewal = Guid.NewGuid();
+
+        var member = squad.AddStaff(coachId, StaffRole.HeadCoach, TestData.Now, TestData.Today.AddMonths(6), renewal);
+
+        Assert.Equal(2, squad.Staff.Count);
+        Assert.Equal(renewal, member.AppointmentId);
+        Assert.True(squad.IsHeadCoach(coachId, TestData.Today));
+    }
+
+    [Fact]
+    public void SetStaffValidity_changes_when_the_membership_ends()
     {
         var (squad, coachId) = TestData.NewSquad();
-        squad.AddStaff(Guid.NewGuid(), StaffRole.AssistantCoach, TestData.Now);
 
-        Assert.Throws<DomainException>(() => squad.RemoveStaff(coachId, TestData.Now));
+        squad.SetStaffValidity(coachId, TestData.Today);
+
+        Assert.True(squad.IsStaff(coachId, TestData.Today));
+        Assert.False(squad.IsStaff(coachId, TestData.Today.AddDays(1)));
+        Assert.Throws<DomainException>(() => squad.SetStaffValidity(Guid.NewGuid(), TestData.Today));
+    }
+
+    [Fact]
+    public void Head_coach_can_leave_even_if_nobody_remains()
+    {
+        var (squad, coachId) = TestData.NewSquad();
+
+        squad.RemoveStaff(coachId, TestData.Now);
+
+        Assert.False(squad.IsStaff(coachId, TestData.Today));
+        Assert.Empty(squad.StaffOn(TestData.Today));
     }
 
     [Fact]
@@ -52,21 +99,10 @@ public class SquadTests
 
         squad.RemoveStaff(assistant, TestData.Now.AddDays(1));
 
-        Assert.False(squad.IsStaff(assistant));
+        Assert.False(squad.IsStaff(assistant, TestData.Today));
         Assert.Equal(2, squad.Staff.Count);
-        Assert.Single(squad.ActiveStaff);
+        Assert.Single(squad.StaffOn(TestData.Today));
         Assert.Throws<DomainException>(() => squad.RemoveStaff(assistant, TestData.Now.AddDays(2)));
-    }
-
-    [Fact]
-    public void Head_coach_can_leave_when_another_head_coach_remains()
-    {
-        var (squad, coachId) = TestData.NewSquad();
-        squad.AddStaff(Guid.NewGuid(), StaffRole.HeadCoach, TestData.Now);
-
-        squad.RemoveStaff(coachId, TestData.Now);
-
-        Assert.False(squad.IsStaff(coachId));
     }
 
     // ------------------------------------------------------------ fichas
@@ -219,11 +255,11 @@ public class SquadTests
         var playerId = Guid.NewGuid();
         squad.LinkPlayer(entry.Id, playerId);
 
-        Assert.False(squad.CanBeViewedBy(null, null));
-        Assert.False(squad.CanBeViewedBy(Guid.NewGuid(), null));
-        Assert.False(squad.CanBeViewedBy(null, Guid.NewGuid()));
-        Assert.True(squad.CanBeViewedBy(coachId, null));
-        Assert.True(squad.CanBeViewedBy(null, playerId));
+        Assert.False(squad.CanBeViewedBy(null, null, TestData.Today));
+        Assert.False(squad.CanBeViewedBy(Guid.NewGuid(), null, TestData.Today));
+        Assert.False(squad.CanBeViewedBy(null, Guid.NewGuid(), TestData.Today));
+        Assert.True(squad.CanBeViewedBy(coachId, null, TestData.Today));
+        Assert.True(squad.CanBeViewedBy(null, playerId, TestData.Today));
     }
 
     [Fact]
@@ -233,8 +269,8 @@ public class SquadTests
 
         squad.SetVisibility(SquadVisibility.Public);
 
-        Assert.True(squad.CanBeViewedBy(null, null));
-        Assert.True(squad.CanBeViewedBy(Guid.NewGuid(), Guid.NewGuid()));
+        Assert.True(squad.CanBeViewedBy(null, null, TestData.Today));
+        Assert.True(squad.CanBeViewedBy(Guid.NewGuid(), Guid.NewGuid(), TestData.Today));
     }
 
     [Fact]

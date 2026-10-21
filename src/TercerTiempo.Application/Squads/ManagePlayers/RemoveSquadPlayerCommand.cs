@@ -27,7 +27,7 @@ internal sealed class RemoveSquadPlayerHandler(
 {
     public async Task<SquadPlayerDto> Handle(RemoveSquadPlayerCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, cancellationToken);
+        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
 
         squad.RemovePlayer(command.SquadPlayerId, clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);

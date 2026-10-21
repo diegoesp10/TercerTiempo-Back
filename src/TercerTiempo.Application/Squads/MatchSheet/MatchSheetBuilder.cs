@@ -18,13 +18,14 @@ internal static class MatchSheetBuilder
         Squad squad,
         Match match,
         ICurrentUser currentUser,
+        TimeProvider clock,
         ITeamStore teams,
         ICompetitionStore competitions,
         IPlayerStore players,
         IPerformanceStore performances,
         CancellationToken cancellationToken)
     {
-        var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, teams, competitions, cancellationToken);
+        var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
 
         var teamMap = (await teams.GetByIdsAsync([match.HomeTeamId, match.AwayTeamId], cancellationToken)).ToDictionary(t => t.Id);
         var matchDto = MatchMapper.ToDto(match, teamMap);
@@ -41,7 +42,7 @@ internal static class MatchSheetBuilder
                 recorded.TryGetValue(p.Id, out var performance) ? PerformanceMapper.ToDto(performance, p) : null))
             .ToList();
 
-        var canEdit = SquadAccess.IsStaff(squad, currentUser) && match.Status == MatchStatus.Played;
+        var canEdit = SquadAccess.IsStaff(squad, currentUser, clock) && match.Status == MatchStatus.Played;
 
         return new MatchSheetDto(summary, matchDto, canEdit, entries);
     }

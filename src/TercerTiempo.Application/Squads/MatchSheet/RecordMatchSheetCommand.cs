@@ -92,12 +92,12 @@ internal sealed class RecordMatchSheetHandler(
     public async Task<MatchSheetDto> Handle(RecordMatchSheetCommand command, CancellationToken cancellationToken)
     {
         var coach = await Resolvers.CurrentCoachAsync(currentUser, coaches, cancellationToken);
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, cancellationToken);
+        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
 
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
             ?? throw new NotFoundException("Partido", command.MatchId);
 
-        PerformancePolicy.EnsureCanRecord(squad, coach.Id, match);
+        PerformancePolicy.EnsureCanRecord(squad, coach.Id, match, SquadAccess.Today(clock));
 
         var existing = (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken))
             .ToDictionary(p => p.SquadPlayerId);
@@ -126,6 +126,6 @@ internal sealed class RecordMatchSheetHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, teams, competitions, players, performances, cancellationToken);
+        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, cancellationToken);
     }
 }

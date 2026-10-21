@@ -6,8 +6,64 @@
 @squadPlayerId = PEGA_AQUI_EL_ID_DE_UNA_FICHA
 @matchId = PEGA_AQUI_UN_ID_DE_PARTIDO
 @inviteCode = PEGA_AQUI_EL_CODIGO_DE_INVITACION
+@accessCode = PEGA_AQUI_EL_CODIGO_DE_ACCESO_DEL_CLUB
+@appointmentId = PEGA_AQUI_EL_ID_DE_UN_NOMBRAMIENTO
+@videoId = PEGA_AQUI_EL_ID_DE_UN_VIDEO
 
-### Alta como cuerpo técnico
+### Alta como club
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "club@example.com",
+  "password": "Password123",
+  "displayName": "C.D. Vallobín",
+  "accountType": "Club",
+  "position": null,
+  "birthDate": null,
+  "accessCode": null
+}
+
+### Club: vincular un equipo
+POST {{baseUrl}}/api/clubs/me/teams
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "teamId": "{{teamId}}"
+}
+
+### Club: nombrar a un técnico (devuelve el código de acceso que hay que entregarle)
+POST {{baseUrl}}/api/clubs/me/appointments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "teamId": "{{teamId}}",
+  "coachName": "Óscar Cano",
+  "email": "mister@example.com",
+  "role": "HeadCoach",
+  "validUntil": null
+}
+
+### Club: mi club (equipos y nombramientos)
+GET {{baseUrl}}/api/clubs/me
+Authorization: Bearer {{token}}
+
+### Club: acortar o prorrogar un nombramiento
+PUT {{baseUrl}}/api/clubs/me/appointments/{{appointmentId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "validUntil": "2026-12-31"
+}
+
+### Club: revocar un nombramiento
+DELETE {{baseUrl}}/api/clubs/me/appointments/{{appointmentId}}
+Authorization: Bearer {{token}}
+
+### Alta como cuerpo técnico con el código de acceso del club (crea o une a la plantilla del equipo)
 POST {{baseUrl}}/api/auth/register
 Content-Type: application/json
 
@@ -17,7 +73,17 @@ Content-Type: application/json
   "displayName": "Óscar Cano",
   "accountType": "Coach",
   "position": null,
-  "birthDate": null
+  "birthDate": null,
+  "accessCode": "{{accessCode}}"
+}
+
+### Cuerpo técnico con cuenta: canjear otro código de acceso
+POST {{baseUrl}}/api/coaches/me/appointments/redeem
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "accessCode": "{{accessCode}}"
 }
 
 ### Alta como jugador (con el nombre con el que aparece en la plantilla)
@@ -30,7 +96,8 @@ Content-Type: application/json
   "displayName": "Pelayo Fernández",
   "accountType": "Player",
   "position": "Forward",
-  "birthDate": "1998-04-12"
+  "birthDate": "1998-04-12",
+  "accessCode": null
 }
 
 ### Login
@@ -60,15 +127,6 @@ GET {{baseUrl}}/api/teams?competitionId={{competitionId}}
 
 ### Ficha de un equipo (plantilla publicada por el proveedor + estado de su plantilla en la plataforma)
 GET {{baseUrl}}/api/teams/{{teamId}}
-
-### Cuerpo técnico: crear la plantilla de mi equipo (importa las fichas publicadas; nace privada)
-POST {{baseUrl}}/api/squads
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "teamId": "{{teamId}}"
-}
 
 ### Cuerpo técnico: mis plantillas
 GET {{baseUrl}}/api/squads/mine
@@ -123,11 +181,45 @@ Content-Type: application/json
       "saves": 0,
       "yellowCards": 0,
       "redCard": false,
-      "rating": 8,
       "notes": "Gol de cabeza en el 70'."
     }
   ]
 }
+
+### Comparador: acta interna frente al acta oficial de la federación (refresh=true la vuelve a descargar)
+GET {{baseUrl}}/api/squads/{{squadId}}/matches/{{matchId}}/sheet/comparison
+Authorization: Bearer {{token}}
+
+### Acta oficial de un partido (pública)
+GET {{baseUrl}}/api/matches/{{matchId}}/official-sheet
+
+### Cuerpo técnico: subir el vídeo del partido (multipart)
+POST {{baseUrl}}/api/squads/{{squadId}}/matches/{{matchId}}/video
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=tt
+
+--tt
+Content-Disposition: form-data; name="title"
+
+Partido completo
+--tt
+Content-Disposition: form-data; name="file"; filename="partido.mp4"
+Content-Type: video/mp4
+
+< ./partido.mp4
+--tt--
+
+### Vídeos del partido con el acceso del usuario
+GET {{baseUrl}}/api/matches/{{matchId}}/videos
+Authorization: Bearer {{token}}
+
+### Técnico de otra plantilla: comprar el acceso a un vídeo
+POST {{baseUrl}}/api/videos/{{videoId}}/purchase
+Authorization: Bearer {{token}}
+
+### Ticket de reproducción (después: GET /api/videos/{{videoId}}/stream?ticket=...)
+POST {{baseUrl}}/api/videos/{{videoId}}/ticket
+Authorization: Bearer {{token}}
 
 ### Estadísticas de la plantilla
 GET {{baseUrl}}/api/squads/{{squadId}}/stats
@@ -145,16 +237,6 @@ Content-Type: application/json
 ### Cuerpo técnico: generar un nuevo código de invitación
 POST {{baseUrl}}/api/squads/{{squadId}}/invite-code
 Authorization: Bearer {{token}}
-
-### Cuerpo técnico: incorporarse al staff de una plantilla con su código
-POST {{baseUrl}}/api/squads/join
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "inviteCode": "{{inviteCode}}",
-  "role": "AssistantCoach"
-}
 
 ### Jugador: consultar el código de invitación (fichas sin vincular)
 GET {{baseUrl}}/api/players/me/invite/{{inviteCode}}

@@ -18,7 +18,8 @@ internal sealed class GetLeagueTableHandler(
     ISquadStore squads,
     ICompetitionStore competitions,
     IStandingStore standings,
-    ITeamStore teams) : IQueryHandler<GetLeagueTableQuery, LeagueTableDto>
+    ITeamStore teams,
+    TimeProvider clock) : IQueryHandler<GetLeagueTableQuery, LeagueTableDto>
 {
     public async Task<LeagueTableDto> Handle(GetLeagueTableQuery query, CancellationToken cancellationToken)
     {
@@ -51,7 +52,7 @@ internal sealed class GetLeagueTableHandler(
         var squad = currentUser.PlayerId is { } playerId
             ? await squads.GetByPlayerAsync(playerId, cancellationToken)
             : currentUser.CoachId is { } coachId
-                ? (await squads.GetByCoachAsync(coachId, cancellationToken)).FirstOrDefault()
+                ? (await squads.GetByCoachAsync(coachId, SquadAccess.Today(clock), cancellationToken)).FirstOrDefault()
                 : null;
 
         if (squad is null)
