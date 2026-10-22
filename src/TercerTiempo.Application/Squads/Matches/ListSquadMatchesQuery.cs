@@ -2,6 +2,7 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Matches;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Squads;
@@ -18,6 +19,7 @@ internal sealed class ListSquadMatchesHandler(
     IMatchStore matches,
     ITeamStore teams,
     IPerformanceStore performances,
+    IClubStore clubs,
     TimeProvider clock) : IQueryHandler<ListSquadMatchesQuery, IReadOnlyList<SquadMatchDto>>
 {
     public async Task<IReadOnlyList<SquadMatchDto>> Handle(ListSquadMatchesQuery query, CancellationToken cancellationToken)
@@ -25,7 +27,7 @@ internal sealed class ListSquadMatchesHandler(
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.SquadNotFound, query.SquadId);
 
-        SquadAccess.EnsureCanView(squad, currentUser, clock);
+        await SquadAccess.EnsureCanViewAsync(squad, currentUser, clock, clubs, cancellationToken);
 
         var list = await matches.GetTeamMatchesAsync(squad.SeasonId, squad.TeamId, cancellationToken);
 

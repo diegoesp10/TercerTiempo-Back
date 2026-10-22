@@ -82,6 +82,8 @@ public static class DependencyInjection
         services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
         services.AddScoped<IMatchVideoStore, MatchVideoStore>();
         services.AddScoped<IVideoPurchaseStore, VideoPurchaseStore>();
+        services.AddScoped<IVideoUploadStore, VideoUploadStore>();
+        services.AddScoped<IVideoShareStore, VideoShareStore>();
     }
 
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)

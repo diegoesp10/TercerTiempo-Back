@@ -5,6 +5,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Standings;
 using TercerTiempo.Application.Teams.Roster;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Competitions;
@@ -26,6 +27,7 @@ internal sealed class GetTeamHandler(
     IOfficialSheetStore sheets,
     ISquadStore squads,
     ITeamProfileProvider profiles,
+    IClubStore clubs,
     TimeProvider clock) : IQueryHandler<GetTeamQuery, TeamDetailDto>
 {
     public async Task<TeamDetailDto> Handle(GetTeamQuery query, CancellationToken cancellationToken)
@@ -45,7 +47,7 @@ internal sealed class GetTeamHandler(
             ? null
             : new TeamSquadDto(
                 squad.Id, squad.Visibility, squad.ActivePlayers.Count(), squad.StaffOn(SquadAccess.Today(clock)).Count(),
-                SquadAccess.CanView(squad, currentUser, clock),
+                await SquadAccess.CanViewAsync(squad, currentUser, clock, clubs, cancellationToken),
                 SquadAccess.IsStaff(squad, currentUser, clock) || SquadAccess.IsMember(squad, currentUser));
 
         return new TeamDetailDto(

@@ -1,0 +1,214 @@
+using System.Reflection;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Players.GetInvite;
+using TercerTiempo.Application.Players.JoinSquad;
+using TercerTiempo.Application.Squads;
+using TercerTiempo.Application.Squads.Settings;
+using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
+using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
+using TercerTiempo.Domain.Competitions;
+using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Teams;
+using TercerTiempo.Infrastructure.Persistence;
+
+namespace TercerTiempo.Application.Tests;
+
+public class PlayerInvitationTests
+{
+    [Fact]
+    public async Task Preview_returns_only_the_invited_player_without_any_codes()
+    {
+        var f = new Fixture();
+        f.Squad.GeneratePlayerInviteCode(f.Target.Id);
+        f.Squad.GeneratePlayerInviteCode(f.Other.Id);
+        var dto = await f.Preview().Handle(new(f.Target.InviteCode!), default);
+        Assert.Equal(f.Target.Id, dto.Player.Id);
+        Assert.Equal(f.Target.FullName, dto.Player.FullName);
+        Assert.Null(dto.Player.InviteCode);
+        Assert.DoesNotContain(f.Other.FullName, JsonSerializer.Serialize(dto));
+    }
+
+    [Fact]
+    public async Task Preview_and_join_require_the_account_name_to_match()
+    {
+        var f = new Fixture();
+        f.Squad.GeneratePlayerInviteCode(f.Other.Id);
+        var code = f.Other.InviteCode!;
+        var preview = await Assert.ThrowsAsync<DomainException>(() => f.Preview().Handle(new(code), default));
+        var join = await Assert.ThrowsAsync<DomainException>(() => f.Join().Handle(new(code), default));
+        Assert.Equal(ErrorCode.PlayerInviteNameMismatch, preview.Code);
+        Assert.Equal(ErrorCode.PlayerInviteNameMismatch, join.Code);
+        Assert.False(f.Other.IsLinked);
+        Assert.Equal(0, f.Saves);
+    }
+
+    [Fact]
+    public async Task Forged_player_id_in_json_cannot_override_the_personal_code()
+    {
+        var f = new Fixture();
+        f.Squad.GeneratePlayerInviteCode(f.Target.Id);
+        var code = f.Target.InviteCode!;
+        var command = JsonSerializer.Deserialize<JoinSquadAsPlayerCommand>(
+            JsonSerializer.Serialize(new { inviteCode = code, squadPlayerId = f.Other.Id }),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        var result = await f.Join().Handle(command, default);
+        Assert.Equal(f.Target.Id, result.Squad!.SquadPlayerId);
+        Assert.Equal(f.Player.Id, f.Target.PlayerId);
+        Assert.False(f.Other.IsLinked);
+        Assert.Null(f.Target.InviteCode);
+        Assert.Equal(1, f.Saves);
+        f.Squad.UnlinkPlayer(f.Player.Id);
+        await Assert.ThrowsAsync<NotFoundException>(() => f.Join().Handle(new(code), default));
+    }
+
+    [Fact]
+    public async Task Missing_or_legacy_shared_codes_cannot_link_any_player()
+    {
+        var f = new Fixture();
+        await Assert.ThrowsAsync<NotFoundException>(() => f.Join().Handle(new("J9MEG589"), default));
+        Assert.False(f.Target.IsLinked);
+        Assert.Equal(0, f.Saves);
+    }
+
+    [Fact]
+    public async Task Non_player_accounts_cannot_preview_invites()
+    {
+        var f = new Fixture();
+        f.Squad.GeneratePlayerInviteCode(f.Target.Id);
+        await Assert.ThrowsAsync<ForbiddenException>(() => f.Preview(f.CoachUser).Handle(new(f.Target.InviteCode!), default));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Only_owning_club_or_current_staff_can_generate_codes(bool club)
+    {
+        var f = new Fixture();
+        var dto = await f.Generate(club ? f.ClubUser : f.CoachUser).Handle(new(f.Squad.Id, f.Target.Id), default);
+        Assert.True(dto.CanInvitePlayers);
+        Assert.NotNull(dto.Players.Single(p => p.Id == f.Target.Id).InviteCode);
+        Assert.Null(f.Other.InviteCode);
+        Assert.Equal(1, f.Saves);
+    }
+
+    [Theory]
+    [InlineData("player")]
+    [InlineData("other-club")]
+    [InlineData("other-coach")]
+    [InlineData("expired")]
+    public async Task Unauthorized_accounts_cannot_generate_codes(string kind)
+    {
+        var f = new Fixture();
+        var user = kind switch
+        {
+            "player" => f.PlayerUser,
+            "other-club" => new User(ClubId: Guid.NewGuid()),
+            "other-coach" => new User(CoachId: Guid.NewGuid()),
+            _ => f.CoachUser,
+        };
+        if (kind == "expired") f.Squad.SetStaffValidity(f.Coach.Id, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1));
+        await Assert.ThrowsAsync<ForbiddenException>(() => f.Generate(user).Handle(new(f.Squad.Id, f.Target.Id), default));
+        Assert.Null(f.Target.InviteCode);
+        Assert.Equal(0, f.Saves);
+    }
+
+    [Fact]
+    public async Task Public_visitors_and_players_never_receive_pending_codes()
+    {
+        var f = new Fixture();
+        f.Squad.GeneratePlayerInviteCode(f.Target.Id);
+        f.Squad.SetVisibility(SquadVisibility.Public);
+        foreach (var user in new[] { new User(), f.PlayerUser, new User(ClubId: Guid.NewGuid()) })
+        {
+            var dto = await f.Detail(user);
+            Assert.False(dto.CanInvitePlayers);
+            Assert.All(dto.Players, p => Assert.Null(p.InviteCode));
+        }
+    }
+
+    [Fact]
+    public void Persistence_enforces_single_use_and_one_active_squad_per_account()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlServer("Server=localhost;Database=ModelOnly;Integrated Security=True;TrustServerCertificate=True").Options);
+        var entity = db.Model.FindEntityType(typeof(SquadPlayer))!;
+        Assert.True(entity.FindProperty(nameof(SquadPlayer.InviteCode))!.IsConcurrencyToken);
+        Assert.Contains(entity.GetIndexes(), i => i.IsUnique && i.Properties.Single().Name == nameof(SquadPlayer.InviteCode));
+        Assert.Contains(entity.GetIndexes(), i => i.IsUnique && i.Properties.Single().Name == nameof(SquadPlayer.PlayerId)
+            && i.GetFilter()!.Contains("'Active'"));
+    }
+
+    private sealed record User(Guid? PlayerId = null, Guid? CoachId = null, Guid? ClubId = null, Guid? UserId = null) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public AccountType? AccountType => PlayerId != null ? TercerTiempo.Application.Abstractions.Identity.AccountType.Player : CoachId != null ? TercerTiempo.Application.Abstractions.Identity.AccountType.Coach : TercerTiempo.Application.Abstractions.Identity.AccountType.Club;
+    }
+
+    private sealed class Fixture
+    {
+        public Player Player { get; } = Player.Register(Guid.NewGuid(), " pelayo fernandez ", Position.Forward, null, DateTimeOffset.UtcNow);
+        public Coach Coach { get; } = Coach.Register(Guid.NewGuid(), "Entrenador", DateTimeOffset.UtcNow);
+        public Club Club { get; } = Club.Register(Guid.NewGuid(), "Club", DateTimeOffset.UtcNow);
+        public Team Team { get; } = Team.Create("Equipo", "EQ", null);
+        public Competition Competition { get; } = Competition.Create("Liga", "Primera", CompetitionLevel.Regional, 1, null, "Asturias", null);
+        public Squad Squad { get; }
+        public SquadPlayer Target { get; }
+        public SquadPlayer Other { get; }
+        public User PlayerUser => new(PlayerId: Player.Id, UserId: Player.UserId);
+        public User CoachUser => new(CoachId: Coach.Id, UserId: Coach.UserId);
+        public User ClubUser => new(ClubId: Club.Id, UserId: Club.UserId);
+        public int Saves { get; private set; }
+
+        public Fixture()
+        {
+            var season = Competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
+            Squad = Squad.Create(Team.Id, season.Id, Coach.Id, DateTimeOffset.UtcNow);
+            Target = Squad.AddPlayer("Pelayo Fernández", Position.Forward, 9, null, DateTimeOffset.UtcNow);
+            Other = Squad.AddPlayer("Nel Suárez", Position.Defender, 4, null, DateTimeOffset.UtcNow);
+            Club.AddTeam(Team.Id, DateTimeOffset.UtcNow);
+        }
+
+        private ISquadStore Squads => Stub<ISquadStore>((method, args) => method switch
+        {
+            nameof(ISquadStore.GetByIdAsync) => Task.FromResult<Squad?>((Guid)args![0]! == Squad.Id ? Squad : null),
+            nameof(ISquadStore.GetByInviteCodeAsync) => Task.FromResult<Squad?>(Squad.ActivePlayers.Any(p => !p.IsLinked && p.InviteCode != null && p.InviteCode == (string)args![0]!) ? Squad : null),
+            nameof(ISquadStore.GetByPlayerAsync) => Task.FromResult<Squad?>(Squad.IsMember((Guid)args![0]!) ? Squad : null),
+            _ => throw new NotSupportedException(method),
+        });
+        private IPlayerStore Players => Stub<IPlayerStore>((method, args) => method switch
+        {
+            nameof(IPlayerStore.GetByUserIdAsync) => Task.FromResult<Player?>((Guid)args![0]! == Player.UserId ? Player : null),
+            nameof(IPlayerStore.GetByIdsAsync) => Task.FromResult<IReadOnlyList<Player>>([Player]),
+            _ => throw new NotSupportedException(method),
+        });
+        private IClubStore Clubs => Stub<IClubStore>((_, args) => Task.FromResult<Club?>((Guid)args![0]! == Club.Id ? Club : null));
+        private ICoachStore Coaches => Stub<ICoachStore>((_, _) => Task.FromResult<IReadOnlyList<Coach>>([Coach]));
+        private ITeamStore Teams => Stub<ITeamStore>((_, _) => Task.FromResult<Team?>(Team));
+        private ICompetitionStore Competitions => Stub<ICompetitionStore>((_, _) => Task.FromResult<Competition?>(Competition));
+        private IInjuryStore Injuries => Stub<IInjuryStore>((_, _) => Task.FromResult<IReadOnlyList<PlayerInjury>>([]));
+        private IUnitOfWork Unit => Stub<IUnitOfWork>((_, _) => Task.FromResult(++Saves));
+        public GetSquadInviteHandler Preview(ICurrentUser? user = null) => new(user ?? PlayerUser, Players, Squads, Teams, Competitions);
+        public JoinSquadAsPlayerHandler Join() => new(PlayerUser, Players, Squads, Teams, Competitions, Unit);
+        public GeneratePlayerInviteCodeHandler Generate(ICurrentUser user) => new(user, Squads, Coaches, Players, Teams, Competitions, Injuries, Clubs, Unit, TimeProvider.System);
+        public Task<SquadDetailDto> Detail(ICurrentUser user) => SquadMapper.ToDetailAsync(Squad, user, TimeProvider.System, Coaches, Players, Teams, Competitions, Injuries, Clubs, default);
+    }
+
+    private static T Stub<T>(Func<string, object?[]?, object?> call) where T : class
+    {
+        var stub = DispatchProxy.Create<T, StoreProxy>();
+        ((StoreProxy)(object)stub).Call = call;
+        return stub;
+    }
+
+    public class StoreProxy : DispatchProxy
+    {
+        public Func<string, object?[]?, object?> Call { get; set; } = null!;
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => Call(targetMethod!.Name, args);
+    }
+}

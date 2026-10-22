@@ -62,6 +62,18 @@ internal static class Resolvers
         return (competition, season);
     }
 
+    public static async Task<Squad> SquadForManagerAsync(
+        ISquadStore squads, ICurrentUser currentUser, IClubStore clubs, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        if (!currentUser.IsAuthenticated) throw new UnauthenticatedException();
+        var squad = await squads.GetByIdAsync(squadId, cancellationToken)
+            ?? throw new NotFoundException(ErrorCode.SquadNotFound, squadId);
+        if (!SquadAccess.IsStaff(squad, currentUser, clock)
+            && !await SquadAccess.IsClubOfAsync(squad, currentUser, clubs, cancellationToken))
+            throw new ForbiddenException(ErrorCode.SquadManagersOnly);
+        return squad;
+    }
+
     public static async Task<(Competition Competition, Season Season)> SeasonOfSquadAsync(
         ICompetitionStore competitions, Squad squad, CancellationToken cancellationToken) =>
         await SeasonByIdAsync(competitions, squad.SeasonId, cancellationToken);

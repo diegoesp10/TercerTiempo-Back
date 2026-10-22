@@ -1,6 +1,7 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Squads.Injuries;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
@@ -55,11 +56,13 @@ internal static class SquadMapper
         ITeamStore teams,
         ICompetitionStore competitions,
         IInjuryStore injuries,
+        IClubStore clubs,
         CancellationToken cancellationToken)
     {
         var today = SquadAccess.Today(clock);
         var summary = await ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
         var canManage = SquadAccess.IsStaff(squad, currentUser, clock);
+        var canInvitePlayers = canManage || await SquadAccess.IsClubOfAsync(squad, currentUser, clubs, cancellationToken);
 
         var activeStaff = squad.StaffOn(today).ToList();
         var coachMap = (await coaches.GetByIdsAsync(activeStaff.Select(s => s.CoachId), cancellationToken))
@@ -74,14 +77,14 @@ internal static class SquadMapper
             .ThenBy(s => s.JoinedAt)
             .ToList();
 
-        var activeInjuries = InjuryAccess.CanSee(squad, currentUser, clock)
+        var activeInjuries = await SquadAccess.IsInsiderAsync(squad, currentUser, clock, clubs, cancellationToken)
             ? InjuryMapper.ActiveByPlayer(await injuries.GetBySquadAsync(squad.Id, cancellationToken), squad, today)
             : null;
 
         var squadPlayers = Ordered(squad.ActivePlayers)
-            .Select(p => ToPlayerDto(p, linkedMap, activeInjuries))
+            .Select(p => ToPlayerDto(p, linkedMap, activeInjuries) with { InviteCode = canInvitePlayers ? p.InviteCode : null })
             .ToList();
 
-        return new SquadDetailDto(summary, canManage ? squad.InviteCode : null, canManage, staff, squadPlayers);
+        return new SquadDetailDto(summary, canInvitePlayers, canManage, staff, squadPlayers);
     }
 }

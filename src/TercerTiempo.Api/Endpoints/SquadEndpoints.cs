@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.Features;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Videos;
+using TercerTiempo.Domain.Videos;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Repository.Squads;
 
@@ -22,7 +23,7 @@ internal static class SquadEndpoints
             .AllowAnonymous()
             .WithName("GetSquad")
             .WithSummary("Detalle de una plantilla")
-            .WithDescription("Staff y jugadores. Visible para su cuerpo técnico, sus jugadores vinculados y, si es pública, para cualquiera. El código de invitación solo se devuelve al cuerpo técnico.")
+            .WithDescription("Staff y jugadores. Visible para su club, cuerpo técnico, jugadores vinculados y, si es pública, para cualquiera. Los códigos personales solo se devuelven al club y al cuerpo técnico vigente.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
@@ -60,11 +61,14 @@ internal static class SquadEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
-        group.MapPost("/{squadId:guid}/invite-code", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.RotateInviteCodeAsync(squadId, ct))
-            .WithName("RotateSquadInviteCode")
-            .WithSummary("Generar un nuevo código de invitación")
-            .WithDescription("El código anterior deja de valer.")
-            .ProducesProblem(StatusCodes.Status403Forbidden);
+        group.MapPost("/{squadId:guid}/players/{squadPlayerId:guid}/invite-code", (Guid squadId, Guid squadPlayerId, ISquadsRepository squads, CancellationToken ct) => squads.GeneratePlayerInviteCodeAsync(squadId, squadPlayerId, ct))
+            .WithName("GeneratePlayerInviteCode")
+            .WithSummary("Generar un código personal para un jugador")
+            .WithDescription("Solo el club propietario o el cuerpo técnico vigente. La ficha debe estar activa y sin vincular. El código es de un solo uso, exige el mismo nombre y apellidos e invalida el anterior de ese jugador.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapGet("/{squadId:guid}/matches", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.ListMatchesAsync(squadId, ct))
             .AllowAnonymous()
@@ -101,23 +105,64 @@ internal static class SquadEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video", async (Guid squadId, Guid matchId, IFormFile file, string? title, HttpContext http, ISquadsRepository squads, IOptions<VideoOptions> options, CancellationToken ct) =>
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video", async (Guid squadId, Guid matchId, IFormFile file, string? title, VideoPart? part, HttpContext http, ISquadsRepository squads, IOptions<VideoOptions> options, CancellationToken ct) =>
             {
                 // El límite por defecto de Kestrel (30 MB) se queda corto para un partido entero.
                 if (http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
                     limit.MaxRequestBodySize = options.Value.MaxSizeBytes + 1024 * 1024;
 
                 await using var content = file.OpenReadStream();
-                return await squads.UploadVideoAsync(squadId, matchId, title, new VideoUpload(file.FileName, file.ContentType, file.Length, content), ct);
+                return await squads.UploadVideoAsync(squadId, matchId, part ?? VideoPart.Full, title, new VideoUpload(file.FileName, file.ContentType, file.Length, content), ct);
             })
             .DisableAntiforgery()
             .WithName("UploadMatchVideo")
-            .WithSummary("Subir el vídeo de un partido")
-            .WithDescription("Solo el cuerpo técnico. multipart/form-data con el campo file (mp4, webm, mov o mkv hasta Videos:MaxSizeMb) y, opcionalmente, title. La plantilla que lo sube (staff y jugadores vinculados) lo ve gratis; los técnicos de otras plantillas pueden comprar el acceso al precio por defecto (Videos:DefaultPriceCents).")
+            .WithSummary("Subir el vídeo de un partido de una sola vez")
+            .WithDescription("Solo el cuerpo técnico. multipart/form-data con el campo file (mp4 o webm hasta Videos:MaxSizeMb), part (Full, FirstHalf o SecondHalf; Full por defecto) y title opcional. Para archivos grandes usa la subida por trozos (…/video/uploads). La plantilla que lo sube lo ve gratis; los técnicos de otras plantillas compran el acceso al partido (todas sus partes) al precio por defecto (Videos:DefaultPriceCents).")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video/uploads", (Guid squadId, Guid matchId, BeginVideoUploadRequest request, ISquadsRepository squads, CancellationToken ct) => squads.BeginVideoUploadAsync(squadId, matchId, request, ct))
+            .WithName("BeginVideoUpload")
+            .WithSummary("Empezar una subida de vídeo por trozos")
+            .WithDescription("Solo el cuerpo técnico. Declara parte, archivo, tipo (mp4 o webm) y tamaño (hasta Videos:MaxSizeMb). Devuelve el id de la subida y el tamaño de trozo (Videos:ChunkSizeMb); los trozos se envían en orden a PUT …/video-uploads/{uploadId}/chunks/{index} y al final se llama a …/complete. La sesión caduca a las Videos:UploadExpiryHours horas.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapGet("/{squadId:guid}/video-uploads/{uploadId:guid}", (Guid squadId, Guid uploadId, ISquadsRepository squads, CancellationToken ct) => squads.GetVideoUploadAsync(squadId, uploadId, ct))
+            .WithName("GetVideoUpload")
+            .WithSummary("Estado de una subida por trozos (para reanudarla)")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPut("/{squadId:guid}/video-uploads/{uploadId:guid}/chunks/{index:int}", async (Guid squadId, Guid uploadId, int index, HttpContext http, ISquadsRepository squads, IOptions<VideoOptions> options, CancellationToken ct) =>
+            {
+                if (http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+                    limit.MaxRequestBodySize = options.Value.ChunkSizeBytes + 1024 * 1024;
+
+                var length = http.Request.ContentLength ?? 0;
+                return await squads.AppendVideoChunkAsync(squadId, uploadId, index, length, http.Request.Body, ct);
+            })
+            .Accepts<byte[]>("application/octet-stream")
+            .WithName("AppendVideoChunk")
+            .WithSummary("Enviar un trozo del vídeo")
+            .WithDescription("Cuerpo binario (application/octet-stream) con Content-Length. Los trozos van en orden y todos miden Videos:ChunkSizeMb salvo el último. Devuelve los bytes recibidos y el siguiente índice esperado.")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPost("/{squadId:guid}/video-uploads/{uploadId:guid}/complete", (Guid squadId, Guid uploadId, ISquadsRepository squads, CancellationToken ct) => squads.CompleteVideoUploadAsync(squadId, uploadId, ct))
+            .WithName("CompleteVideoUpload")
+            .WithSummary("Cerrar la subida y publicar el vídeo")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapDelete("/{squadId:guid}/video-uploads/{uploadId:guid}", (Guid squadId, Guid uploadId, ISquadsRepository squads, CancellationToken ct) => squads.CancelVideoUploadAsync(squadId, uploadId, ct))
+            .WithName("CancelVideoUpload")
+            .WithSummary("Cancelar una subida y borrar el temporal")
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapGet("/injury-types", (ISquadsRepository squads, CancellationToken ct) => squads.ListInjuryTypesAsync(ct))
             .WithName("ListInjuryTypes")

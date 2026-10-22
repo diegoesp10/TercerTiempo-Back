@@ -17,13 +17,11 @@ internal sealed class SquadConfiguration : IEntityTypeConfiguration<Squad>
         builder.ConfigureAggregate();
 
         builder.Property(s => s.Visibility).HasConversion<string>().HasMaxLength(20);
-        builder.Property(s => s.InviteCode).HasMaxLength(20).IsRequired();
 
         builder.HasOne<Team>().WithMany().HasForeignKey(s => s.TeamId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Season>().WithMany().HasForeignKey(s => s.SeasonId).OnDelete(DeleteBehavior.Cascade);
 
         builder.HasIndex(s => new { s.TeamId, s.SeasonId }).IsUnique();
-        builder.HasIndex(s => s.InviteCode).IsUnique();
 
         builder.HasMany(s => s.Staff).WithOne().HasForeignKey(m => m.SquadId).OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(s => s.Staff).UsePropertyAccessMode(PropertyAccessMode.Field).AutoInclude();
@@ -63,6 +61,8 @@ internal sealed class SquadPlayerConfiguration : IEntityTypeConfiguration<SquadP
 
         builder.Property(p => p.FullName).HasMaxLength(150).IsRequired();
         builder.Property(p => p.NormalizedName).HasMaxLength(150).IsRequired();
+        builder.Property(p => p.InviteCode).HasMaxLength(20).IsConcurrencyToken();
+        builder.HasIndex(p => p.InviteCode).IsUnique().HasFilter("[InviteCode] IS NOT NULL");
         builder.Property(p => p.Position).HasConversion<string>().HasMaxLength(20);
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
         builder.Ignore(p => p.IsActive);
@@ -72,6 +72,6 @@ internal sealed class SquadPlayerConfiguration : IEntityTypeConfiguration<SquadP
         builder.HasOne<RosterEntry>().WithMany().HasForeignKey(p => p.RosterEntryId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(p => new { p.SquadId, p.NormalizedName });
-        builder.HasIndex(p => p.PlayerId);
+        builder.HasIndex(p => p.PlayerId).IsUnique().HasFilter("[PlayerId] IS NOT NULL AND [Status] = 'Active'");
     }
 }

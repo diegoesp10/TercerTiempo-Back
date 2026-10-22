@@ -72,4 +72,9 @@ public sealed record LeagueComparisonDto(
     double? RatingPercentile,
     double? MinutesPercentile);
 
-public sealed record LeagueTableDto(SeasonDto Season, IReadOnlyList<Standings.StandingDto> Standings);
+public sealed record LeagueTableDto(
+    [property: System.ComponentModel.Description("null si la competición aún no tiene temporada en curso.")]
+    SeasonDto? Season,
+    IReadOnlyList<Standings.StandingDto> Standings,
+    [property: System.ComponentModel.Description("Explicación cuando no hay clasificación (temporada nueva o sin partidos).")]
+    string? Notice);

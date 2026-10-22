@@ -13,10 +13,8 @@ using TercerTiempo.Domain.Common.Errors;
 namespace TercerTiempo.Application.Players.JoinSquad;
 
 public sealed record JoinSquadAsPlayerCommand(
-    [property: Description("Código de invitación de la plantilla (lo facilita el cuerpo técnico).")]
-    string InviteCode,
-    [property: Description("Opcional: id de tu ficha en la plantilla (GET /api/players/me/invite/{code} devuelve las fichas sin vincular).")]
-    Guid? SquadPlayerId) : ICommand<PlayerDto>;
+    [property: Description("Código personal de un solo uso generado para tu ficha por el club o entrenador. El nombre de la cuenta debe coincidir con la ficha.")]
+    string InviteCode) : ICommand<PlayerDto>;
 
 internal sealed class JoinSquadAsPlayerValidator : AbstractValidator<JoinSquadAsPlayerCommand>
 {
@@ -41,10 +39,7 @@ internal sealed class JoinSquadAsPlayerHandler(
         var squad = await squads.GetByInviteCodeAsync(InviteCodes.Normalize(command.InviteCode), cancellationToken)
             ?? throw new NotFoundException(ErrorCode.InviteCodeNotFound, command.InviteCode);
 
-        var entry = command.SquadPlayerId is { } squadPlayerId
-            ? squad.GetPlayer(squadPlayerId)
-            : squad.ActivePlayers.FirstOrDefault(p => !p.IsLinked && p.Matches(player.DisplayName))
-                ?? throw new ConflictException(ErrorCode.PlayerNoMatchingEntry);
+        var entry = squad.InvitedPlayer(command.InviteCode, player.DisplayName);
 
         squad.LinkPlayer(entry.Id, player.Id);
         await unitOfWork.SaveChangesAsync(cancellationToken);

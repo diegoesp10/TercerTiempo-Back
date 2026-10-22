@@ -13,11 +13,14 @@ public sealed record GetCompetitionMatchdayQuery(Guid CompetitionId, int? Matchd
 public sealed record CompetitionMatchdayDto(
     Guid CompetitionId,
     string CompetitionName,
-    SeasonDto Season,
+    [property: System.ComponentModel.Description("null si la competición aún no tiene temporada en curso.")]
+    SeasonDto? Season,
     int? Matchday,
     int? CurrentMatchday,
     IReadOnlyList<MatchdaySummaryDto> Matchdays,
-    IReadOnlyList<MatchDto> Matches);
+    IReadOnlyList<MatchDto> Matches,
+    [property: System.ComponentModel.Description("Explicación cuando no hay partidos (temporada nueva o sin calendario).")]
+    string? Notice);
 
 public sealed record MatchdaySummaryDto(
     int Number,
@@ -38,10 +41,14 @@ internal sealed class GetCompetitionMatchdayHandler(
         var competition = await competitions.GetByIdAsync(query.CompetitionId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, query.CompetitionId);
 
-        var season = competition.CurrentSeason
-            ?? throw new ConflictException(ErrorCode.CompetitionNoCurrentSeasonNamed, competition.Name);
+        // Temporada nueva o aún sin calendario: no es un error, solo no hay datos todavía.
+        if (competition.CurrentSeason is not { } season)
+            return new CompetitionMatchdayDto(competition.Id, competition.Name, null, null, null, [], [], "Todavía no hay temporada en curso: los partidos aparecerán cuando la federación publique el calendario.");
 
         var all = await matches.GetBySeasonAsync(season.Id, cancellationToken);
+        if (all.Count == 0)
+            return new CompetitionMatchdayDto(competition.Id, competition.Name, SeasonDto.From(competition, season), null, null, [], [], "Todavía no hay partidos de esta temporada: aparecerán cuando la federación publique el calendario.");
+
         var summaries = MatchdayCalculator.Summaries(all);
         var current = MatchdayCalculator.Current(all, clock.GetUtcNow());
 
@@ -65,6 +72,7 @@ internal sealed class GetCompetitionMatchdayHandler(
             matchday,
             current,
             summaries,
-            selected.Select(m => MatchMapper.ToDto(m, teamMap)).ToList());
+            selected.Select(m => MatchMapper.ToDto(m, teamMap)).ToList(),
+            null);
     }
 }

@@ -24,8 +24,13 @@ internal sealed class GetLeagueTableHandler(
     public async Task<LeagueTableDto> Handle(GetLeagueTableQuery query, CancellationToken cancellationToken)
     {
         var (competition, season) = await ResolveAsync(query.CompetitionId, cancellationToken);
+        if (season is null)
+            return new LeagueTableDto(null, [], "Todavía no hay temporada en curso: la clasificación aparecerá cuando empiecen los partidos.");
 
         var table = await standings.GetBySeasonAsync(season.Id, cancellationToken);
+        if (table.Count == 0)
+            return new LeagueTableDto(SeasonDto.From(competition, season), [], "Todavía no hay partidos jugados esta temporada: la clasificación aparecerá con la primera jornada.");
+
         var teamMap = (await teams.GetByIdsAsync(table.Select(s => s.TeamId), cancellationToken)).ToDictionary(t => t.Id);
 
         var rows = table
@@ -33,20 +38,17 @@ internal sealed class GetLeagueTableHandler(
             .Select(s => StandingDto.From(s, teamMap.GetValueOrDefault(s.TeamId)))
             .ToList();
 
-        return new LeagueTableDto(SeasonDto.From(competition, season), rows);
+        return new LeagueTableDto(SeasonDto.From(competition, season), rows, null);
     }
 
-    private async Task<(Competition, Season)> ResolveAsync(Guid? competitionId, CancellationToken cancellationToken)
+    private async Task<(Competition, Season?)> ResolveAsync(Guid? competitionId, CancellationToken cancellationToken)
     {
         if (competitionId is { } id)
         {
             var competition = await competitions.GetByIdAsync(id, cancellationToken)
                 ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, id);
 
-            var season = competition.CurrentSeason
-                ?? throw new ConflictException(ErrorCode.CompetitionNoCurrentSeason);
-
-            return (competition, season);
+            return (competition, competition.CurrentSeason);
         }
 
         var squad = currentUser.PlayerId is { } playerId

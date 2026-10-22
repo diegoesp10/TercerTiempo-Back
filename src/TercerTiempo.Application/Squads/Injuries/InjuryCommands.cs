@@ -3,6 +3,7 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Squads;
@@ -76,7 +77,7 @@ internal sealed class ListInjuryTypesHandler : IQueryHandler<ListInjuryTypesQuer
 // Las lesiones las ve el cuerpo técnico y los jugadores vinculados a la plantilla, nunca el público.
 internal static class InjuryAccess
 {
-    public static async Task<Squad> SquadForViewerAsync(ISquadStore squads, ICurrentUser currentUser, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
+    public static async Task<Squad> SquadForViewerAsync(ISquadStore squads, IClubStore clubs, ICurrentUser currentUser, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByIdAsync(squadId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.SquadNotFound, squadId);
@@ -84,14 +85,11 @@ internal static class InjuryAccess
         if (!currentUser.IsAuthenticated)
             throw new UnauthenticatedException();
 
-        if (!SquadAccess.IsStaff(squad, currentUser, clock) && !SquadAccess.IsMember(squad, currentUser))
+        if (!await SquadAccess.IsInsiderAsync(squad, currentUser, clock, clubs, cancellationToken))
             throw new ForbiddenException(ErrorCode.SquadPrivate);
 
         return squad;
     }
-
-    public static bool CanSee(Squad squad, ICurrentUser currentUser, TimeProvider clock) =>
-        SquadAccess.IsStaff(squad, currentUser, clock) || SquadAccess.IsMember(squad, currentUser);
 
     public static async Task<PlayerInjury> InjuryOfAsync(Squad squad, Guid injuryId, IInjuryStore injuries, CancellationToken cancellationToken)
     {
@@ -105,12 +103,12 @@ internal static class InjuryAccess
         InjuryMapper.ToList(await injuries.GetBySquadAsync(squad.Id, cancellationToken), squad, SquadAccess.Today(clock));
 }
 
-internal sealed class ListSquadInjuriesHandler(ICurrentUser currentUser, ISquadStore squads, IInjuryStore injuries, TimeProvider clock)
+internal sealed class ListSquadInjuriesHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, TimeProvider clock)
     : IQueryHandler<ListSquadInjuriesQuery, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(ListSquadInjuriesQuery query, CancellationToken cancellationToken)
     {
-        var squad = await InjuryAccess.SquadForViewerAsync(squads, currentUser, query.SquadId, clock, cancellationToken);
+        var squad = await InjuryAccess.SquadForViewerAsync(squads, clubs, currentUser, query.SquadId, clock, cancellationToken);
         return await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken);
     }
 }

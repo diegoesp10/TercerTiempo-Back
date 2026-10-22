@@ -12,7 +12,6 @@ public sealed class Squad : AggregateRoot
     public Guid TeamId { get; private set; }
     public Guid SeasonId { get; private set; }
     public SquadVisibility Visibility { get; private set; }
-    public string InviteCode { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; private set; }
 
     public IReadOnlyCollection<SquadStaff> Staff => _staff.AsReadOnly();
@@ -30,7 +29,6 @@ public sealed class Squad : AggregateRoot
             TeamId = Guard.NotEmpty(teamId, nameof(teamId)),
             SeasonId = Guard.NotEmpty(seasonId, nameof(seasonId)),
             Visibility = SquadVisibility.Private,
-            InviteCode = InviteCodes.Generate(),
             CreatedAt = now,
         };
 
@@ -168,7 +166,17 @@ public sealed class Squad : AggregateRoot
         Visibility = visibility;
     }
 
-    public void RotateInviteCode() => InviteCode = InviteCodes.Generate();
+    public void GeneratePlayerInviteCode(Guid squadPlayerId) => GetPlayer(squadPlayerId).GenerateInviteCode();
+
+    public SquadPlayer InvitedPlayer(string code, string playerName)
+    {
+        var normalized = InviteCodes.Normalize(code);
+        var entry = ActivePlayers.FirstOrDefault(p => !p.IsLinked && p.InviteCode != null && p.InviteCode == normalized)
+            ?? throw new DomainException(ErrorCode.InviteCodeNotFound, code);
+        if (!entry.Matches(playerName))
+            throw new DomainException(ErrorCode.PlayerInviteNameMismatch);
+        return entry;
+    }
 
     public bool CanBeViewedBy(Guid? coachId, Guid? playerId, DateOnly today) =>
         Visibility == SquadVisibility.Public

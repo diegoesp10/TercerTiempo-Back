@@ -4,6 +4,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Application.Performances;
 using TercerTiempo.Application.Stats;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
@@ -24,6 +25,7 @@ internal sealed class GetSquadPlayerProfileHandler(
     ICompetitionStore competitions,
     IPlayerStore players,
     IPerformanceStore performances,
+    IClubStore clubs,
     TimeProvider clock) : IQueryHandler<GetSquadPlayerProfileQuery, SquadPlayerProfileDto>
 {
     public async Task<SquadPlayerProfileDto> Handle(GetSquadPlayerProfileQuery query, CancellationToken cancellationToken)
@@ -31,7 +33,7 @@ internal sealed class GetSquadPlayerProfileHandler(
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.SquadNotFound, query.SquadId);
 
-        SquadAccess.EnsureCanView(squad, currentUser, clock);
+        await SquadAccess.EnsureCanViewAsync(squad, currentUser, clock, clubs, cancellationToken);
 
         var entry = squad.Players.FirstOrDefault(p => p.Id == query.SquadPlayerId)
             ?? throw new NotFoundException(ErrorCode.SquadPlayerNotFound, query.SquadPlayerId);

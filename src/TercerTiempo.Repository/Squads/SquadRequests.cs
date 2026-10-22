@@ -3,7 +3,9 @@ using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Application.Squads.ManagePlayers;
 using TercerTiempo.Application.Squads.MatchSheet;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Application.Videos;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Repository.Squads;
 
@@ -36,6 +38,19 @@ public sealed record InjuryRequest(
 public sealed record CloseInjuryRequest(
     [property: Description("Fecha del alta; por defecto hoy.")]
     DateOnly? ReturnedOn);
+
+public sealed record BeginVideoUploadRequest(
+    [property: Description("Full (partido completo), FirstHalf o SecondHalf.")]
+    VideoPart Part,
+    [property: Description("Título opcional; si falta se usa el nombre del archivo.")]
+    string? Title,
+    string FileName,
+    [property: Description("video/mp4 o video/webm.")]
+    string ContentType,
+    long SizeBytes)
+{
+    internal BeginVideoUploadCommand ToCommand(Guid squadId, Guid matchId) => new(squadId, matchId, Part, Title, FileName, ContentType, SizeBytes);
+}
 
 public sealed record SquadVisibilityRequest(
     [property: Description("Private (solo cuerpo técnico y jugadores vinculados) o Public (cualquiera).")]

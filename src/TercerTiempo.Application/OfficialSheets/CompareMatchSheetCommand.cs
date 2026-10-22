@@ -5,6 +5,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Application.Performances;
 using TercerTiempo.Application.Squads;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
@@ -37,6 +38,7 @@ internal sealed class CompareMatchSheetHandler(
     IPerformanceStore performances,
     IOfficialSheetStore sheets,
     ICommandHandler<SyncOfficialSheetCommand, OfficialSheetDto> syncOfficialSheet,
+    IClubStore clubs,
     TimeProvider clock) : ICommandHandler<CompareMatchSheetCommand, SheetComparisonDto>
 {
     public async Task<SheetComparisonDto> Handle(CompareMatchSheetCommand command, CancellationToken cancellationToken)
@@ -44,7 +46,7 @@ internal sealed class CompareMatchSheetHandler(
         var squad = await squads.GetByIdAsync(command.SquadId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.SquadNotFound, command.SquadId);
 
-        SquadAccess.EnsureCanView(squad, currentUser, clock);
+        await SquadAccess.EnsureCanViewAsync(squad, currentUser, clock, clubs, cancellationToken);
 
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);

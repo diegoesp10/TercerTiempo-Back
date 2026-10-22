@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
+using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
@@ -42,6 +44,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();
     public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
     public DbSet<VideoPurchase> VideoPurchases => Set<VideoPurchase>();
+    public DbSet<VideoUploadSession> VideoUploads => Set<VideoUploadSession>();
+    public DbSet<VideoShareLink> VideoShareLinks => Set<VideoShareLink>();
     public DbSet<ErrorMessage> ErrorMessages => Set<ErrorMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -58,7 +62,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             .Where(a => a.DomainEvents.Count > 0)
             .ToList();
 
-        var result = await base.SaveChangesAsync(cancellationToken);
+        int result;
+        try
+        {
+            result = await base.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is SquadPlayer))
+        {
+            throw new ConflictException(ErrorCode.PlayerInviteChanged);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 }
+            && ex.Entries.Any(e => e.Entity is SquadPlayer { PlayerId: not null }))
+        {
+            throw new ConflictException(ErrorCode.PlayerAlreadyInSquad);
+        }
 
         foreach (var aggregate in aggregates)
             aggregate.ClearDomainEvents();

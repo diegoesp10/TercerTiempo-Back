@@ -142,6 +142,10 @@ public static class ErrorCode
     public const string PlayerNoMatchingEntry = "player.no_matching_entry";
     public const string PlayerNotInSquad = "player.not_in_squad";
     public const string InviteCodeNotFound = "invite_code.not_found";
+    public const string PlayerInviteNameMismatch = "player.invite_name_mismatch";
+    public const string PlayerInviteChanged = "player.invite_changed";
+    public const string SquadManagersOnly = "squad.managers_only";
+    public const string VideoManagerRequired = "video.manager_required";
 
     // Acta interna
     public const string SheetStaffOnly = "sheet.staff_only";
@@ -165,6 +169,18 @@ public static class ErrorCode
     public const string VideoPaymentFailed = "video.payment_failed";
     public const string VideoPaymentRejected = "video.payment_rejected";
     public const string VideoTicketInvalid = "video.ticket_invalid";
+    public const string VideoPartInvalid = "video.part_invalid";
+    public const string VideoVisibilityInvalid = "video.visibility_invalid";
+    public const string VideoShareInvalid = "video.share_invalid";
+    public const string VideoShareNotFound = "video.share_not_found";
+    public const string VideoShareHoursRange = "video.share_hours_range";
+    public const string VideoPartTaken = "video.part_taken";
+    public const string VideoPartMix = "video.part_mix";
+    public const string VideoUploadNotFound = "video_upload.not_found";
+    public const string VideoUploadExpired = "video_upload.expired";
+    public const string VideoUploadChunkOutOfOrder = "video_upload.chunk_out_of_order";
+    public const string VideoUploadChunkSize = "video_upload.chunk_size";
+    public const string VideoUploadIncomplete = "video_upload.incomplete";
     public const string VideoLocked = "video.locked";
     public const string VideoNotAllowed = "video.not_allowed";
 }

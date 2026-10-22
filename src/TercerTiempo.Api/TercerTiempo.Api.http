@@ -284,22 +284,21 @@ Content-Type: application/json
   "visibility": "Public"
 }
 
-### Cuerpo técnico: generar un nuevo código de invitación
-POST {{baseUrl}}/api/squads/{{squadId}}/invite-code
+### Club propietario o cuerpo técnico: generar un código personal para este jugador
+POST {{baseUrl}}/api/squads/{{squadId}}/players/{{squadPlayerId}}/invite-code
 Authorization: Bearer {{token}}
 
-### Jugador: consultar el código de invitación (fichas sin vincular)
+### Jugador: consultar su código personal (solo su ficha; el nombre debe coincidir)
 GET {{baseUrl}}/api/players/me/invite/{{inviteCode}}
 Authorization: Bearer {{token}}
 
-### Jugador: vincularse a su ficha (squadPlayerId null = buscar por nombre)
+### Jugador: vincularse a la ficha del código (un solo uso; no se puede elegir otra)
 POST {{baseUrl}}/api/players/me/squad
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "inviteCode": "{{inviteCode}}",
-  "squadPlayerId": "{{squadPlayerId}}"
+  "inviteCode": "{{inviteCode}}"
 }
 
 ### Jugador: panel (individual, impacto en el equipo, comparativa con la liga)

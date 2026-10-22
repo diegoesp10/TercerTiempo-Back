@@ -12,7 +12,7 @@ internal sealed class SquadStore(AppDbContext db) : ISquadStore
         db.Squads.FirstOrDefaultAsync(s => s.TeamId == teamId && s.SeasonId == seasonId, cancellationToken);
 
     public Task<Squad?> GetByInviteCodeAsync(string inviteCode, CancellationToken cancellationToken = default) =>
-        db.Squads.FirstOrDefaultAsync(s => s.InviteCode == inviteCode, cancellationToken);
+        db.Squads.FirstOrDefaultAsync(s => s.Players.Any(p => p.InviteCode == inviteCode && p.Status == SquadPlayerStatus.Active && p.PlayerId == null), cancellationToken);
 
     public async Task<IReadOnlyList<Squad>> GetByCoachAsync(Guid coachId, DateOnly today, CancellationToken cancellationToken = default) =>
         await db.Squads

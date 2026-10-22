@@ -1,6 +1,7 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
@@ -21,6 +22,7 @@ internal sealed class GetMatchSheetHandler(
     ICompetitionStore competitions,
     IPlayerStore players,
     IPerformanceStore performances,
+    IClubStore clubs,
     TimeProvider clock) : IQueryHandler<GetMatchSheetQuery, MatchSheetDto>
 {
     public async Task<MatchSheetDto> Handle(GetMatchSheetQuery query, CancellationToken cancellationToken)
@@ -28,7 +30,7 @@ internal sealed class GetMatchSheetHandler(
         var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.SquadNotFound, query.SquadId);
 
-        SquadAccess.EnsureCanView(squad, currentUser, clock);
+        await SquadAccess.EnsureCanViewAsync(squad, currentUser, clock, clubs, cancellationToken);
 
         var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);

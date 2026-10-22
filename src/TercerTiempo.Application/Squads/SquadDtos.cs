@@ -26,7 +26,7 @@ public sealed record SquadSummaryDto(
 
 public sealed record SquadDetailDto(
     SquadSummaryDto Summary,
-    string? InviteCode,
+    bool CanInvitePlayers,
     bool CanManage,
     IReadOnlyList<SquadStaffDto> Staff,
     IReadOnlyList<SquadPlayerDto> Players);
@@ -43,7 +43,8 @@ public sealed record SquadPlayerDto(
     string? LinkedPlayerName,
     SquadPlayerStatus Status,
     [property: System.ComponentModel.Description("Lesión abierta; solo la ven el cuerpo técnico y los jugadores vinculados.")]
-    InjuryDto? Injury = null);
+    InjuryDto? Injury = null,
+    string? InviteCode = null);
 
 public sealed record SquadMatchDto(MatchDto Match, int EntriesRecorded);
 
@@ -68,4 +69,4 @@ public sealed record SquadInviteDto(
     string TeamName,
     string CompetitionName,
     string SeasonLabel,
-    IReadOnlyList<SquadPlayerDto> UnlinkedPlayers);
+    SquadPlayerDto Player);

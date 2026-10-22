@@ -11,15 +11,13 @@ public class SquadTests
     // ------------------------------------------------------------ creación y cuerpo técnico
 
     [Fact]
-    public void Create_starts_private_with_invite_code_and_head_coach()
+    public void Create_starts_private_with_head_coach()
     {
         var (squad, coachId) = TestData.NewSquad();
 
         Assert.Equal(TestData.HomeTeamId, squad.TeamId);
         Assert.Equal(TestData.SeasonId, squad.SeasonId);
         Assert.Equal(SquadVisibility.Private, squad.Visibility);
-        Assert.Equal(InviteCodes.Length, squad.InviteCode.Length);
-        Assert.All(squad.InviteCode, c => Assert.Contains(c, Alphabet));
         Assert.True(squad.IsStaff(coachId, TestData.Today));
         Assert.True(squad.IsHeadCoach(coachId, TestData.Today));
         Assert.Single(squad.StaffOn(TestData.Today));
@@ -282,15 +280,79 @@ public class SquadTests
     }
 
     [Fact]
-    public void RotateInviteCode_replaces_the_code()
+    public void Personal_codes_require_explicit_generation_and_only_rotate_the_target_player()
     {
         var (squad, _) = TestData.NewSquad();
-        var before = squad.InviteCode;
+        var first = squad.AddPlayer("Pelayo Fernández", null, 9, null, TestData.Now);
+        var second = squad.AddPlayer("Nel Suárez", null, 4, null, TestData.Now);
+        Assert.Null(first.InviteCode);
+        Assert.Null(second.InviteCode);
 
-        squad.RotateInviteCode();
+        squad.GeneratePlayerInviteCode(first.Id);
+        squad.GeneratePlayerInviteCode(second.Id);
+        var before = first.InviteCode;
+        var otherCode = second.InviteCode;
+        squad.GeneratePlayerInviteCode(first.Id);
 
-        Assert.NotEqual(before, squad.InviteCode);
-        Assert.Equal(InviteCodes.Length, squad.InviteCode.Length);
+        Assert.NotEqual(before, first.InviteCode);
+        Assert.Equal(otherCode, second.InviteCode);
+        Assert.Equal(12, first.InviteCode!.Length);
+        Assert.All(first.InviteCode, c => Assert.Contains(c, Alphabet));
+        Assert.Throws<DomainException>(() => squad.InvitedPlayer(before!, first.FullName));
+        Assert.Same(first, squad.InvitedPlayer(first.InviteCode.ToLowerInvariant(), " pelayo fernandez "));
+    }
+
+    [Fact]
+    public void Code_cannot_select_another_player_even_with_a_valid_name()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var first = squad.AddPlayer("Pelayo Fernández", null, 9, null, TestData.Now);
+        var second = squad.AddPlayer("Nel Suárez", null, 4, null, TestData.Now);
+        squad.GeneratePlayerInviteCode(first.Id);
+        Assert.Throws<DomainException>(() => squad.InvitedPlayer(first.InviteCode!, second.FullName));
+        Assert.Throws<DomainException>(() => squad.InvitedPlayer("", second.FullName));
+    }
+
+    [Fact]
+    public void Redeemed_code_cannot_be_reused_even_after_unlinking()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Pelayo", null, null, null, TestData.Now);
+        squad.GeneratePlayerInviteCode(entry.Id);
+        var code = entry.InviteCode!;
+        var playerId = Guid.NewGuid();
+        squad.LinkPlayer(squad.InvitedPlayer(code, entry.FullName).Id, playerId);
+        Assert.Null(entry.InviteCode);
+        Assert.Throws<DomainException>(() => squad.GeneratePlayerInviteCode(entry.Id));
+        squad.UnlinkPlayer(playerId);
+        Assert.Throws<DomainException>(() => squad.InvitedPlayer(code, entry.FullName));
+        squad.GeneratePlayerInviteCode(entry.Id);
+        Assert.Same(entry, squad.InvitedPlayer(entry.InviteCode!, entry.FullName));
+    }
+
+    [Fact]
+    public void Leaving_and_reimporting_does_not_restore_an_old_invitation()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var rosterId = Guid.NewGuid();
+        var entry = squad.AddPlayer("Pelayo", null, null, rosterId, TestData.Now);
+        squad.GeneratePlayerInviteCode(entry.Id);
+        var code = entry.InviteCode!;
+        squad.RemovePlayer(entry.Id, TestData.Now);
+        Assert.Null(entry.InviteCode);
+        Assert.Throws<DomainException>(() => squad.GeneratePlayerInviteCode(entry.Id));
+        squad.AddPlayer("Pelayo", null, null, rosterId, TestData.Now);
+        Assert.Throws<DomainException>(() => squad.InvitedPlayer(code, entry.FullName));
+    }
+
+    [Fact]
+    public void Renaming_a_player_invalidates_their_invitation()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Pelayo", null, null, null, TestData.Now);
+        squad.GeneratePlayerInviteCode(entry.Id);
+        squad.UpdatePlayer(entry.Id, "Nel", null, null);
+        Assert.Null(entry.InviteCode);
     }
 
     [Theory]

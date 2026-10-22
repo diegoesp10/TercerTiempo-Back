@@ -2,6 +2,7 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
@@ -26,6 +27,7 @@ internal sealed class ImportRosterHandler(
     ITeamStore teams,
     ICompetitionStore competitions,
     IInjuryStore injuries,
+    IClubStore clubs,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<ImportRosterCommand, SquadDetailDto>
 {
@@ -45,6 +47,6 @@ internal sealed class ImportRosterHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, injuries, cancellationToken);
+        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, injuries, clubs, cancellationToken);
     }
 }

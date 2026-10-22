@@ -116,8 +116,9 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
     cuenta de jugador (`PlayerId`); un jugador solo está vinculado a una plantilla a la vez.
   - `Visibility`: nace **Private** (solo el cuerpo técnico y los jugadores vinculados ven actas y estadísticas);
     el cuerpo técnico puede hacerla **Public**.
-  - `InviteCode`: código corto sin caracteres ambiguos con el que los jugadores se vinculan a su ficha; se puede
-    regenerar. El cuerpo técnico ya no entra por aquí, sino con el código de acceso de su club.
+  - Cada `SquadPlayer` tiene un `InviteCode` personal de 12 caracteres, inicialmente vacío. Lo genera el club propietario
+    o un técnico vigente para esa ficha. Exige el mismo nombre y apellidos de la cuenta (ignorando tildes, mayúsculas y separadores),
+    se consume al vincular y se invalida al regenerarlo, dar de baja o cambiar el nombre de la ficha. No hay código compartido de plantilla.
 - **Competition** (liga = categoría + grupo, con `Level`, `Tier`, `Group` y `SortOrder`) → **Season**;
   **Team**, **RosterEntry** (plantilla scrapeada), **Standing**.
 - **Match**: partido sincronizado del proveedor, con resultado y estado. Sabe calcular resultado y
@@ -169,11 +170,11 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | PUT / DELETE | `/api/clubs/me/appointments/{id}` | Acortar o prorrogar la validez / revocar (el técnico sale del staff) |
 | POST | `/api/coaches/me/appointments/redeem` | Técnico con cuenta: canjear otro código (nueva temporada, otro equipo) |
 | GET | `/api/squads/mine` | Plantillas con nombramiento vigente del técnico autenticado |
-| GET | `/api/squads/{id}` | Detalle: staff y fichas (el código solo lo ve el cuerpo técnico) |
+| GET | `/api/squads/{id}` | Detalle: staff y fichas; `canInvitePlayers` y códigos personales solo para club propietario y técnicos vigentes |
 | POST / PUT / DELETE | `/api/squads/{id}/players[/{squadPlayerId}]` | Añadir, modificar y dar de baja fichas |
 | POST | `/api/squads/{id}/players/import` | Importar las fichas publicadas por el proveedor que falten |
 | PUT | `/api/squads/{id}/visibility` | Hacer la plantilla pública o privada |
-| POST | `/api/squads/{id}/invite-code` | Generar un nuevo código de invitación |
+| POST | `/api/squads/{id}/players/{squadPlayerId}/invite-code` | Club propietario o técnico vigente: generar o renovar el código personal de esa ficha |
 | GET | `/api/squads/{id}/matches` | Partidos del equipo con el número de líneas registradas en cada acta |
 | GET / PUT | `/api/squads/{id}/matches/{matchId}/sheet` | Consultar / registrar el acta interna de un partido (idempotente; `played = false` borra la línea) |
 | GET | `/api/squads/{id}/matches/{matchId}/sheet/comparison` | **Comparador**: acta interna frente a la oficial, jugador a jugador, con las discrepancias (`?refresh=true` vuelve a pedirla a la federación) |
@@ -181,8 +182,8 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
 | GET | `/api/squads/{id}/players/{squadPlayerId}/profile` | Ficha para gráficos: serie partido a partido con el desglose de la nota, perfil por 90' y media/máximo de la plantilla |
 | GET | `/api/squads/{id}/timeline` | Evolución del equipo: resultado, puntos acumulados, nota media y mejor nota de cada partido |
-| GET | `/api/players/me/invite/{code}` | Plantilla que hay detrás de un código y sus fichas sin vincular |
-| POST / DELETE | `/api/players/me/squad` | Vincularse a la ficha (por id o por nombre) / desvincularse |
+| GET | `/api/players/me/invite/{code}` | Solo la ficha asociada al código personal, si coincide el nombre de la cuenta; nunca devuelve la plantilla completa |
+| POST / DELETE | `/api/players/me/squad` | Vincularse con `{ "inviteCode": "..." }` (un solo uso, sin elegir id de ficha) / desvincularse |
 | GET | `/api/players/me/dashboard` | Panel del jugador: individual, impacto en el equipo, comparativa con la liga |
 | GET | `/api/players/me/performances` | Actas en las que aparece el jugador |
 | GET | `/api/competitions` | Ligas disponibles por nivel, categoría y grupo, con su temporada |
@@ -300,10 +301,18 @@ que el cliente trata como fallo transitorio) y User-Agent propio. Particularidad
 
 ## Vídeos de partido
 
-El cuerpo técnico sube el vídeo (`POST /api/squads/{id}/matches/{matchId}/video`, multipart; mp4, webm, mov o mkv hasta
-`Videos:MaxSizeMb`). Se guarda en disco (`Videos:Directory`, nombre aleatorio) con `IVideoStorage`. Acceso
+El cuerpo técnico sube el vídeo del partido entero o en dos partes (`VideoPart`: `Full`, `FirstHalf`, `SecondHalf`;
+nunca mezcladas y cada parte una sola vez por plantilla). Solo mp4 y webm (los demás formatos no se reproducen en el
+navegador) hasta `Videos:MaxSizeMb` (4 GB). La subida va **por trozos y es reanudable**: `POST
+/api/squads/{id}/matches/{matchId}/video/uploads` abre una sesión (`VideoUploadSession`, tabla `VideoUploads`, caduca a las
+`Videos:UploadExpiryHours`), los trozos de `Videos:ChunkSizeMb` se envían en orden a `PUT
+/api/squads/{id}/video-uploads/{uploadId}/chunks/{index}` (cuerpo binario; cada trozo se escribe desde el offset ya
+confirmado, así un reintento nunca corrompe el temporal) y `…/complete` publica el vídeo; `GET …/video-uploads/{uploadId}`
+dice por dónde va para reanudar. El `POST …/video` multipart de una sola vez sigue existiendo para archivos pequeños. Se
+guarda en disco (`Videos:Directory`, nombre aleatorio; temporales en `uploads/`) con `IVideoStorage`. Acceso
 (`VideoAccess`): la plantilla que lo subió (staff vigente y jugadores vinculados) lo ve gratis (`Owner`); los técnicos de
-otras plantillas lo ven **previo pago** del precio del vídeo (`Videos:DefaultPriceCents`, `Locked` → `Purchased`); nadie
+otras plantillas lo ven **previo pago** del precio del vídeo (`Videos:DefaultPriceCents`, `Locked` → `Purchased`; comprar
+cualquier parte da acceso a todas las partes del partido de esa plantilla); nadie
 más. Como el reproductor del navegador no puede enviar el JWT, `POST /api/videos/{id}/ticket` emite un ticket de corta
 vida (`Videos:TicketMinutes`, en memoria) y `GET /api/videos/{id}/stream?ticket=` sirve el archivo con soporte de rangos.
 La pasarela de pago es una abstracción (`IPaymentGateway`); la única implementación, `FakePaymentGateway`, aprueba todos
@@ -386,7 +395,7 @@ Es por proceso: con varias instancias haría falta compartir los contadores (Red
   se da de alta como club es el club (hoy el primero que elige ese nombre se lo queda): aprobación manual o alta por
   invitación.
 - **La plantilla es el límite de privacidad**: actas y estadísticas pertenecen a la `Squad`; nada sale de ella
-  salvo que su cuerpo técnico la haga pública. El código de invitación (jugadores) lo controla el cuerpo técnico.
+  salvo que su cuerpo técnico la haga pública. El club propietario y los técnicos vigentes generan las invitaciones personales.
 - **Roles del staff**: hoy todos los miembros vigentes del cuerpo técnico pueden registrar actas y gestionar la plantilla;
   queda por decidir si algunas acciones (visibilidad, precio de los vídeos) se reservan al primer entrenador.
 - **Pagos y vídeo**: pasarela real (Stripe), precio por vídeo o por temporada, reparto con el club que lo sube,

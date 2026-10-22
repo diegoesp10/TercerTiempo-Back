@@ -13,6 +13,7 @@ public sealed class SquadPlayer : Entity
     public int? ShirtNumber { get; private set; }
     public Guid? RosterEntryId { get; private set; }
     public Guid? PlayerId { get; private set; }
+    public string? InviteCode { get; private set; }
     public SquadPlayerStatus Status { get; private set; }
     public DateTimeOffset AddedAt { get; private set; }
     public DateTimeOffset? LeftAt { get; private set; }
@@ -45,19 +46,32 @@ public sealed class SquadPlayer : Entity
             throw new DomainException(ErrorCode.PlayerShirtNumberRange);
 
         var name = Guard.NotEmpty(fullName, "nombre", 150);
+        if (NormalizedName != NameNormalizer.Normalize(name)) InviteCode = null;
         FullName = name;
         NormalizedName = NameNormalizer.Normalize(name);
         Position = position;
         ShirtNumber = shirtNumber;
     }
 
-    internal void Link(Guid playerId) => PlayerId = Guard.NotEmpty(playerId, nameof(playerId));
+    internal void GenerateInviteCode()
+    {
+        if (!IsActive) throw new DomainException(ErrorCode.SquadEntryInactive);
+        if (IsLinked) throw new DomainException(ErrorCode.SquadEntryLinked);
+        InviteCode = InviteCodes.Generate(12);
+    }
+
+    internal void Link(Guid playerId)
+    {
+        PlayerId = Guard.NotEmpty(playerId, nameof(playerId));
+        InviteCode = null;
+    }
 
     internal void Unlink() => PlayerId = null;
 
     internal void Leave(DateTimeOffset now)
     {
         Status = SquadPlayerStatus.Left;
+        InviteCode = null;
         LeftAt = now;
     }
 

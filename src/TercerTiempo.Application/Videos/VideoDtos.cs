@@ -19,6 +19,8 @@ public sealed record MatchVideoDto(
     Guid SquadId,
     Guid TeamId,
     string TeamName,
+    VideoPart Part,
+    VideoVisibility Visibility,
     string Title,
     string FileName,
     string ContentType,
@@ -40,7 +42,7 @@ public sealed record VideoUpload(string FileName, string ContentType, long Lengt
 internal static class VideoMapper
 {
     public static MatchVideoDto ToDto(MatchVideo video, string teamName, string uploadedBy, VideoAccessLevel access, bool canDelete) =>
-        new(video.Id, video.MatchId, video.SquadId, video.TeamId, teamName, video.Title, video.FileName, video.ContentType,
+        new(video.Id, video.MatchId, video.SquadId, video.TeamId, teamName, video.Part, video.Visibility, video.Title, video.FileName, video.ContentType,
             video.SizeBytes, video.PriceCents, video.Currency, video.UploadedAt, uploadedBy, access,
             access is VideoAccessLevel.Owner or VideoAccessLevel.Purchased or VideoAccessLevel.Free, canDelete);
 }

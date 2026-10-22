@@ -3,6 +3,7 @@ using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Squads.Charts;
 using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Application.Videos;
+using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Repository.Squads;
 
@@ -17,13 +18,18 @@ public interface ISquadsRepository
     Task<SquadDetailDto> ImportRosterAsync(Guid squadId, CancellationToken cancellationToken = default);
 
     Task<SquadDetailDto> SetVisibilityAsync(Guid squadId, SquadVisibilityRequest request, CancellationToken cancellationToken = default);
-    Task<SquadDetailDto> RotateInviteCodeAsync(Guid squadId, CancellationToken cancellationToken = default);
+    Task<SquadDetailDto> GeneratePlayerInviteCodeAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<SquadMatchDto>> ListMatchesAsync(Guid squadId, CancellationToken cancellationToken = default);
     Task<MatchSheetDto> GetMatchSheetAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
     Task<MatchSheetDto> RecordMatchSheetAsync(Guid squadId, Guid matchId, MatchSheetRequest request, CancellationToken cancellationToken = default);
     Task<SheetComparisonDto> CompareMatchSheetAsync(Guid squadId, Guid matchId, bool refresh, CancellationToken cancellationToken = default);
-    Task<MatchVideoDto> UploadVideoAsync(Guid squadId, Guid matchId, string? title, VideoUpload file, CancellationToken cancellationToken = default);
+    Task<MatchVideoDto> UploadVideoAsync(Guid squadId, Guid matchId, VideoPart part, string? title, VideoUpload file, CancellationToken cancellationToken = default);
+    Task<VideoUploadDto> BeginVideoUploadAsync(Guid squadId, Guid matchId, BeginVideoUploadRequest request, CancellationToken cancellationToken = default);
+    Task<VideoUploadDto> GetVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default);
+    Task<VideoUploadDto> AppendVideoChunkAsync(Guid squadId, Guid uploadId, int chunkIndex, long length, Stream content, CancellationToken cancellationToken = default);
+    Task<MatchVideoDto> CompleteVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default);
+    Task<bool> CancelVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default);
     Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default);
 
     Task<SquadPlayerProfileDto> GetPlayerProfileAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
