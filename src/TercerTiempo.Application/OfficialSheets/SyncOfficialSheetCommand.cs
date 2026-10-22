@@ -11,7 +11,9 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
-public sealed record SyncOfficialSheetCommand(Guid MatchId, bool Force = false) : ICommand<OfficialSheetDto>;
+// Va a la web de la federación. La lanzan el proceso en segundo plano (Background = true) y el botón «Actualizar»;
+// la consulta normal del partido usa GetOfficialSheetQuery, que solo lee la base de datos.
+public sealed record SyncOfficialSheetCommand(Guid MatchId, bool Force = false, bool Background = false) : ICommand<OfficialSheetDto>;
 
 internal sealed class SyncOfficialSheetValidator : AbstractValidator<SyncOfficialSheetCommand>
 {
@@ -25,15 +27,10 @@ internal sealed class SyncOfficialSheetHandler(
     ICompetitionStore competitions,
     IOfficialSheetStore sheets,
     IUnitOfWork unitOfWork,
+    OfficialSheetSyncMemory memory,
     TimeProvider clock,
     ILogger<SyncOfficialSheetHandler> logger) : ICommandHandler<SyncOfficialSheetCommand, OfficialSheetDto>
 {
-    private static readonly TimeSpan PendingRecheck = TimeSpan.FromMinutes(10);
-
-    private static readonly TimeSpan AvailableRefresh = TimeSpan.FromHours(24);
-
-    private static readonly TimeSpan CorrectionWindow = TimeSpan.FromDays(7);
-
     private static readonly TimeSpan NotBefore = TimeSpan.Zero;
 
     public async Task<OfficialSheetDto> Handle(SyncOfficialSheetCommand command, CancellationToken cancellationToken)
@@ -50,12 +47,17 @@ internal sealed class SyncOfficialSheetHandler(
         if (match.Status is MatchStatus.Scheduled or MatchStatus.Postponed && match.KickoffAt - NotBefore > now)
             return Result(sheet, match, OfficialSheetAvailability.NotPlayed, "El partido todavía no se ha jugado.");
 
-        if (!command.Force && sheet is not null && !ShouldRefresh(sheet, match, now))
+        if (!command.Force && sheet is not null && !OfficialSheetRefresh.IsDue(sheet, match, now))
             return Result(sheet, match, sheet.IsAvailable ? OfficialSheetAvailability.Available : OfficialSheetAvailability.Pending, null);
 
         try
         {
             sheet = await FetchAsync(match, sheet, now, cancellationToken);
+        }
+        catch (ProviderThrottledException) when (command.Background)
+        {
+            // El proceso en segundo plano se pausa unos minutos en vez de seguir insistiendo.
+            throw;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
@@ -70,21 +72,15 @@ internal sealed class SyncOfficialSheetHandler(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         if (sheet is null)
+        {
+            memory.MatchNotFound(match.Id, now);
             return OfficialSheetMapper.Empty(match.Id, OfficialSheetAvailability.Unavailable, provider.ProviderName,
                 "No se ha encontrado este partido en la federación.");
+        }
 
         return Result(sheet, match,
             sheet.IsAvailable ? OfficialSheetAvailability.Available : OfficialSheetAvailability.Pending,
             sheet.IsAvailable ? null : "La federación todavía no ha publicado el acta.");
-    }
-
-    private static bool ShouldRefresh(OfficialMatchSheet sheet, Match match, DateTimeOffset now)
-    {
-        if (!sheet.IsAvailable)
-            return now - sheet.CheckedAt >= PendingRecheck;
-
-        var fetchedAt = sheet.FetchedAt ?? sheet.CheckedAt;
-        return now - match.KickoffAt <= CorrectionWindow && now - fetchedAt >= AvailableRefresh;
     }
 
     private async Task<OfficialMatchSheet?> FetchAsync(Match match, OfficialMatchSheet? sheet, DateTimeOffset now, CancellationToken cancellationToken)

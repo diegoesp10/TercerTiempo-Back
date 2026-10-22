@@ -11,6 +11,7 @@ internal sealed class MatchesRepository(
     IQueryHandler<GetMatchPreviewQuery, MatchPreviewDto> getPreview,
     IQueryHandler<GetMatchQuery, MatchDetailDto> getMatch,
     ICommandHandler<SyncOfficialSheetCommand, OfficialSheetDto> syncOfficialSheet,
+    IQueryHandler<GetOfficialSheetQuery, OfficialSheetDto> getOfficialSheet,
     IQueryHandler<ListMatchVideosQuery, IReadOnlyList<MatchVideoDto>> listVideos) : IMatchesRepository
 {
     public Task<MatchPreviewDto> GetPreviewAsync(Guid matchId, CancellationToken cancellationToken = default) =>
@@ -20,7 +21,9 @@ internal sealed class MatchesRepository(
         getMatch.Handle(new GetMatchQuery(matchId), cancellationToken);
 
     public Task<OfficialSheetDto> GetOfficialSheetAsync(Guid matchId, bool refresh, CancellationToken cancellationToken = default) =>
-        syncOfficialSheet.Handle(new SyncOfficialSheetCommand(matchId, refresh), cancellationToken);
+        refresh
+            ? syncOfficialSheet.Handle(new SyncOfficialSheetCommand(matchId, Force: true), cancellationToken)
+            : getOfficialSheet.Handle(new GetOfficialSheetQuery(matchId), cancellationToken);
 
     public Task<IReadOnlyList<MatchVideoDto>> ListVideosAsync(Guid matchId, CancellationToken cancellationToken = default) =>
         listVideos.Handle(new ListMatchVideosQuery(matchId), cancellationToken);

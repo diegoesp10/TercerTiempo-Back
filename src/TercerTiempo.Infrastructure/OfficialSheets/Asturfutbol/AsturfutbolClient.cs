@@ -13,7 +13,8 @@ internal sealed class AsturfutbolClient(HttpClient http, IOptions<OfficialSheetO
     private static readonly Encoding Latin1 = Encoding.Latin1;
 
     private readonly AsturfutbolOptions _settings = options.Value.Asturfutbol;
-    private DateTimeOffset _lastRequestAt = DateTimeOffset.MinValue;
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static DateTimeOffset _lastRequestAt = DateTimeOffset.MinValue;
 
     public async Task<string?> GetHtmlAsync(string pathAndQuery, CancellationToken cancellationToken)
     {
@@ -113,10 +114,18 @@ internal sealed class AsturfutbolClient(HttpClient http, IOptions<OfficialSheetO
 
     private async Task ThrottleAsync(CancellationToken cancellationToken)
     {
-        var wait = TimeSpan.FromMilliseconds(_settings.RequestDelayMs) - (DateTimeOffset.UtcNow - _lastRequestAt);
-        if (wait > TimeSpan.Zero)
-            await Task.Delay(wait, cancellationToken);
+        await Gate.WaitAsync(cancellationToken);
+        try
+        {
+            var wait = TimeSpan.FromMilliseconds(_settings.RequestDelayMs) - (DateTimeOffset.UtcNow - _lastRequestAt);
+            if (wait > TimeSpan.Zero)
+                await Task.Delay(wait, cancellationToken);
 
-        _lastRequestAt = DateTimeOffset.UtcNow;
+            _lastRequestAt = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            Gate.Release();
+        }
     }
 }

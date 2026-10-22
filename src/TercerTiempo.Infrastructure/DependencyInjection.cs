@@ -153,6 +153,11 @@ public static class DependencyInjection
         }
 
         services.AddHostedService<FootballDataSyncWorker>();
+
+        // Actas oficiales: cola en memoria y proceso en segundo plano que las descarga y guarda.
+        services.AddSingleton<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>();
+        services.AddSingleton<TercerTiempo.Application.OfficialSheets.IOfficialSheetQueue>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
+        services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetSyncWorker>();
     }
 
     private static void AddOfficialSheets(IServiceCollection services, IConfiguration configuration)

@@ -14,6 +14,9 @@ public enum OfficialSheetAvailability
     Available,
 
     Unavailable,
+
+    // En cola para descargarse de la federación en segundo plano; el frontal vuelve a preguntar en unos segundos.
+    Fetching,
 }
 
 public sealed record OfficialSheetDto(

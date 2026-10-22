@@ -6,6 +6,14 @@ public sealed class OfficialSheetOptions
 
     public bool Enabled { get; set; } = true;
 
+    // Descarga en segundo plano: cada cuántos minutos se buscan actas que falten o toque refrescar, cuántas como
+    // máximo por pasada y cuánto se espera tras arrancar antes de la primera.
+    public int BackgroundScanMinutes { get; set; } = 30;
+
+    public int BackgroundBatch { get; set; } = 400;
+
+    public int BackgroundStartDelaySeconds { get; set; } = 20;
+
     public AsturfutbolOptions Asturfutbol { get; set; } = new();
 }
 

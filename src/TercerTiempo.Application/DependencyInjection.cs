@@ -25,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<AppointmentRedemption>();
         services.AddScoped<Licensing.ILicenseGate, Licensing.LicenseGate>();
         services.AddScoped<OfficialSheetLocator>();
+        services.AddSingleton<OfficialSheets.OfficialSheetSyncMemory>();
 
         var handlerTypes = assembly.GetTypes()
             .Where(t => t is { IsClass: true, IsAbstract: false, IsGenericTypeDefinition: false });
