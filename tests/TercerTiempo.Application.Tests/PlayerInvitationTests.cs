@@ -2,6 +2,10 @@ using System.Reflection;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Application.Auth;
+using TercerTiempo.Application.Auth.Invite;
+using TercerTiempo.Application.Auth.Register;
+using TercerTiempo.Application.Coaches.Appointments;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Players.GetInvite;
 using TercerTiempo.Application.Players.JoinSquad;
@@ -35,16 +39,49 @@ public class PlayerInvitationTests
     }
 
     [Fact]
-    public async Task Preview_and_join_require_the_account_name_to_match()
+    public async Task Join_ignores_the_account_name_and_renames_it_after_the_entry()
     {
         var f = new Fixture();
         f.Squad.GeneratePlayerInviteCode(f.Other.Id);
         var code = f.Other.InviteCode!;
-        var preview = await Assert.ThrowsAsync<DomainException>(() => f.Preview().Handle(new(code), default));
-        var join = await Assert.ThrowsAsync<DomainException>(() => f.Join().Handle(new(code), default));
-        Assert.Equal(ErrorCode.PlayerInviteNameMismatch, preview.Code);
-        Assert.Equal(ErrorCode.PlayerInviteNameMismatch, join.Code);
-        Assert.False(f.Other.IsLinked);
+        var preview = await f.Preview().Handle(new(code), default);
+        Assert.Equal(f.Other.FullName, preview.Player.FullName);
+        var result = await f.Join().Handle(new(code), default);
+        Assert.Equal(f.Other.Id, result.Squad!.SquadPlayerId);
+        Assert.Equal("Nel Suárez", f.Player.DisplayName);
+        Assert.True(f.Other.IsLinked);
+        Assert.Equal(1, f.Saves);
+    }
+
+    [Fact]
+    public async Task Register_as_player_needs_only_the_personal_code_and_takes_the_entry_name()
+    {
+        var f = new Fixture();
+        f.Squad.GeneratePlayerInviteCode(f.Target.Id);
+        var code = f.Target.InviteCode!;
+        var anonymous = await f.AnonymousInvite().Handle(new(code), default);
+        Assert.Equal(f.Target.FullName, anonymous.Player.FullName);
+        Assert.Null(anonymous.Player.InviteCode);
+
+        var response = await f.Register().Handle(new("nuevo@example.com", "Prueba1234", null, AccountType.Player, null, null, code), default);
+        var registered = f.Registered.Single();
+        Assert.Equal(AccountType.Player, response.Account.Type);
+        Assert.Equal("Pelayo Fernández", registered.DisplayName);
+        Assert.Equal(Position.Forward, registered.Position);
+        Assert.Equal(registered.Id, f.Target.PlayerId);
+        Assert.Null(f.Target.InviteCode);
+        Assert.Equal(1, f.Saves);
+    }
+
+    [Fact]
+    public async Task Register_as_player_rejects_missing_or_unknown_codes_before_creating_the_user()
+    {
+        var f = new Fixture();
+        RegisterCommand withoutCode = new("nuevo@example.com", "Prueba1234", "Alguien", AccountType.Player, null, null, null);
+        var validation = new RegisterValidator().Validate(withoutCode);
+        Assert.Contains(validation.Errors, e => e.ErrorCode == ErrorCode.AuthInviteCodeRequired);
+        await Assert.ThrowsAsync<NotFoundException>(() => f.Register().Handle(new("nuevo@example.com", "Prueba1234", "Alguien", AccountType.Player, Position.Forward, null, "J9MEG589"), default));
+        Assert.Empty(f.Registered);
         Assert.Equal(0, f.Saves);
     }
 
@@ -164,6 +201,7 @@ public class PlayerInvitationTests
         public User CoachUser => new(CoachId: Coach.Id, UserId: Coach.UserId);
         public User ClubUser => new(ClubId: Club.Id, UserId: Club.UserId);
         public int Saves { get; private set; }
+        public List<Player> Registered { get; } = [];
 
         public Fixture()
         {
@@ -183,10 +221,12 @@ public class PlayerInvitationTests
         });
         private IPlayerStore Players => Stub<IPlayerStore>((method, args) => method switch
         {
-            nameof(IPlayerStore.GetByUserIdAsync) => Task.FromResult<Player?>((Guid)args![0]! == Player.UserId ? Player : null),
+            nameof(IPlayerStore.GetByUserIdAsync) => Task.FromResult<Player?>(Registered.Concat([Player]).FirstOrDefault(p => p.UserId == (Guid)args![0]!)),
             nameof(IPlayerStore.GetByIdsAsync) => Task.FromResult<IReadOnlyList<Player>>([Player]),
+            nameof(IPlayerStore.Add) => Run(() => Registered.Add((Player)args![0]!)),
             _ => throw new NotSupportedException(method),
         });
+        private static object? Run(Action action) { action(); return null; }
         private IClubStore Clubs => Stub<IClubStore>((_, args) => Task.FromResult<Club?>((Guid)args![0]! == Club.Id ? Club : null));
         private ICoachStore Coaches => Stub<ICoachStore>((_, _) => Task.FromResult<IReadOnlyList<Coach>>([Coach]));
         private ITeamStore Teams => Stub<ITeamStore>((_, _) => Task.FromResult<Team?>(Team));
@@ -194,6 +234,15 @@ public class PlayerInvitationTests
         private IInjuryStore Injuries => Stub<IInjuryStore>((_, _) => Task.FromResult<IReadOnlyList<PlayerInjury>>([]));
         private IUnitOfWork Unit => Stub<IUnitOfWork>((_, _) => Task.FromResult(++Saves));
         public GetSquadInviteHandler Preview(ICurrentUser? user = null) => new(user ?? PlayerUser, Players, Squads, Teams, Competitions);
+        public GetInviteHandler AnonymousInvite() => new(Squads, Teams, Competitions);
+        public RegisterHandler Register()
+        {
+            var identity = Stub<IIdentityService>((_, _) => Task.FromResult(Guid.NewGuid()));
+            var tokens = Stub<ITokenService>((_, args) => new AuthToken("token", DateTimeOffset.UtcNow.AddHours(1)));
+            var appointments = Stub<ICoachAppointmentStore>((method, _) => throw new NotSupportedException(method));
+            var stores = new AccountStores(Players, Coaches, Clubs, appointments, Squads, Teams, Competitions, TimeProvider.System);
+            return new RegisterHandler(identity, stores, new AppointmentRedemption(appointments, Squads, Teams), Unit, tokens);
+        }
         public JoinSquadAsPlayerHandler Join() => new(PlayerUser, Players, Squads, Teams, Competitions, Unit);
         public GeneratePlayerInviteCodeHandler Generate(ICurrentUser user) => new(user, Squads, Coaches, Players, Teams, Competitions, Injuries, Clubs, Unit, TimeProvider.System);
         public Task<SquadDetailDto> Detail(ICurrentUser user) => SquadMapper.ToDetailAsync(Squad, user, TimeProvider.System, Coaches, Players, Teams, Competitions, Injuries, Clubs, default);

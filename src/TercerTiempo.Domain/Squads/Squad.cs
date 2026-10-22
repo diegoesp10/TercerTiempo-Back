@@ -168,14 +168,11 @@ public sealed class Squad : AggregateRoot
 
     public void GeneratePlayerInviteCode(Guid squadPlayerId) => GetPlayer(squadPlayerId).GenerateInviteCode();
 
-    public SquadPlayer InvitedPlayer(string code, string playerName)
+    public SquadPlayer InvitedPlayer(string code)
     {
         var normalized = InviteCodes.Normalize(code);
-        var entry = ActivePlayers.FirstOrDefault(p => !p.IsLinked && p.InviteCode != null && p.InviteCode == normalized)
+        return ActivePlayers.FirstOrDefault(p => !p.IsLinked && p.InviteCode != null && p.InviteCode == normalized)
             ?? throw new DomainException(ErrorCode.InviteCodeNotFound, code);
-        if (!entry.Matches(playerName))
-            throw new DomainException(ErrorCode.PlayerInviteNameMismatch);
-        return entry;
     }
 
     public bool CanBeViewedBy(Guid? coachId, Guid? playerId, DateOnly today) =>

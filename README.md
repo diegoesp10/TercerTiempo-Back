@@ -6,7 +6,7 @@ nombrado gestiona la plantilla de su equipo (fichas importadas de futbolasturian
 partido, registra el **acta interna**: minutos, goles, asistencias, tiros, tarjetas... de cada jugador; la **nota** no
 la pone nadie: se calcula con esos datos. Esa acta se **compara con el acta oficial** que publica la federación
 (asturfutbol.es) y, si el equipo graba el partido, el cuerpo técnico puede **subir el vídeo**, que su plantilla ve
-gratis y el resto de técnicos previo pago. Cada **jugador** se vincula a su ficha con un código de invitación y ve
+gratis y el resto de técnicos previo pago. Cada **jugador** se da de alta con el código personal de su ficha y ve
 cuánto aporta: a nivel individual, a su equipo y frente al resto de la liga. Los datos de cada plantilla son
 **privados** salvo que su cuerpo técnico la haga pública.
 
@@ -117,8 +117,9 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
   - `Visibility`: nace **Private** (solo el cuerpo técnico y los jugadores vinculados ven actas y estadísticas);
     el cuerpo técnico puede hacerla **Public**.
   - Cada `SquadPlayer` tiene un `InviteCode` personal de 12 caracteres, inicialmente vacío. Lo genera el club propietario
-    o un técnico vigente para esa ficha. Exige el mismo nombre y apellidos de la cuenta (ignorando tildes, mayúsculas y separadores),
-    se consume al vincular y se invalida al regenerarlo, dar de baja o cambiar el nombre de la ficha. No hay código compartido de plantilla.
+    o un técnico vigente para esa ficha. El jugador se da de alta solo con ese código (no escribe su nombre: la cuenta se
+    llama como la ficha), se consume al vincular y se invalida al regenerarlo, dar de baja o cambiar el nombre de la ficha.
+    No hay código compartido de plantilla.
 - **Competition** (liga = categoría + grupo, con `Level`, `Tier`, `Group` y `SortOrder`) → **Season**;
   **Team**, **RosterEntry** (plantilla scrapeada), **Standing**.
 - **Match**: partido sincronizado del proveedor, con resultado y estado. Sabe calcular resultado y
@@ -154,7 +155,8 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 
 | Método | Ruta | Caso de uso |
 |---|---|---|
-| POST | `/api/auth/register` | Alta como jugador, cuerpo técnico (con el código de acceso del club: lo canjea y entra en su plantilla) o club |
+| GET | `/api/auth/invite/{code}` | Sin sesión: la ficha y la plantilla que hay detrás de un código personal vigente |
+| POST | `/api/auth/register` | Alta como jugador (solo con su código personal: queda vinculado a su ficha), cuerpo técnico (con el código de acceso del club: lo canjea y entra en su plantilla) o club |
 | POST | `/api/auth/login` | Login |
 | GET | `/api/auth/me` | Cuenta autenticada: jugador con su plantilla; técnico con sus plantillas y nombramientos; club con sus equipos y nombramientos |
 | GET | `/api/sync/status` | Estado de la sincronización (fase, liga en curso, progreso, última ejecución, siguiente); el frontal lo sondea. Público |
@@ -182,8 +184,8 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
 | GET | `/api/squads/{id}/players/{squadPlayerId}/profile` | Ficha para gráficos: serie partido a partido con el desglose de la nota, perfil por 90' y media/máximo de la plantilla |
 | GET | `/api/squads/{id}/timeline` | Evolución del equipo: resultado, puntos acumulados, nota media y mejor nota de cada partido |
-| GET | `/api/players/me/invite/{code}` | Solo la ficha asociada al código personal, si coincide el nombre de la cuenta; nunca devuelve la plantilla completa |
-| POST / DELETE | `/api/players/me/squad` | Vincularse con `{ "inviteCode": "..." }` (un solo uso, sin elegir id de ficha) / desvincularse |
+| GET | `/api/players/me/invite/{code}` | Cuenta de jugador sin plantilla: solo la ficha asociada al código personal; nunca la plantilla completa |
+| POST / DELETE | `/api/players/me/squad` | Cuenta ya existente: vincularse con `{ "inviteCode": "..." }` (un solo uso, sin elegir ficha; la cuenta toma el nombre de la ficha) / desvincularse |
 | GET | `/api/players/me/dashboard` | Panel del jugador: individual, impacto en el equipo, comparativa con la liga |
 | GET | `/api/players/me/performances` | Actas en las que aparece el jugador |
 | GET | `/api/competitions` | Ligas disponibles por nivel, categoría y grupo, con su temporada |

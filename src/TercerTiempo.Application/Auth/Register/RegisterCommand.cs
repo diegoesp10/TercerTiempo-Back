@@ -9,6 +9,7 @@ using TercerTiempo.Application.Coaches;
 using TercerTiempo.Application.Coaches.Appointments;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Players;
+using TercerTiempo.Application.Players.Invites;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
@@ -22,15 +23,15 @@ public sealed record RegisterCommand(
     string Email,
     [property: Description("Mínimo 8 caracteres y al menos un número.")]
     string Password,
-    [property: Description("Nombre y apellidos (jugadores: tal y como aparecen en la plantilla de su equipo) o nombre del club, tal y como figura en GET /api/clubs/catalog.")]
-    string DisplayName,
+    [property: Description("Cuerpo técnico: nombre y apellidos. Club: nombre tal y como figura en GET /api/clubs/catalog. Jugadores: se ignora, el nombre es el de la ficha del código.")]
+    string? DisplayName,
     [property: Description("Player (jugador), Coach (cuerpo técnico) o Club.")]
     AccountType AccountType,
-    [property: Description("Solo jugadores: Goalkeeper, Defender, Midfielder o Forward.")]
+    [property: Description("Solo jugadores, opcional: Goalkeeper, Defender, Midfielder o Forward. Si falta se toma la posición de la ficha.")]
     Position? Position,
     [property: Description("Opcional, formato yyyy-MM-dd. Jugadores: mínimo 14 años.")]
     DateOnly? BirthDate,
-    [property: Description("Solo cuerpo técnico: código de acceso que te ha entregado tu club.")]
+    [property: Description("Cuerpo técnico: código de acceso que te ha entregado tu club. Jugadores: código personal de tu ficha, generado por tu club o entrenador; al crear la cuenta quedas vinculado a ella.")]
     string? AccessCode) : ICommand<AuthResponse>;
 
 internal sealed class RegisterValidator : AbstractValidator<RegisterCommand>
@@ -39,13 +40,14 @@ internal sealed class RegisterValidator : AbstractValidator<RegisterCommand>
     {
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
         RuleFor(x => x.Password).NotEmpty().MinimumLength(8).WithCatalogMessage(ErrorCode.AuthPasswordTooShort, 8).MaximumLength(100);
-        RuleFor(x => x.DisplayName).NotEmpty().MaximumLength(120);
+        RuleFor(x => x.DisplayName).NotEmpty().When(x => x.AccountType != AccountType.Player);
+        RuleFor(x => x.DisplayName).MaximumLength(120);
         RuleFor(x => x.AccountType).IsInEnum();
-        RuleFor(x => x.Position).NotNull().When(x => x.AccountType == AccountType.Player)
-            .WithCatalogMessage(ErrorCode.AuthPositionRequired);
         RuleFor(x => x.Position).IsInEnum().When(x => x.Position.HasValue);
         RuleFor(x => x.AccessCode).NotEmpty().When(x => x.AccountType == AccountType.Coach)
             .WithCatalogMessage(ErrorCode.AuthAccessCodeRequired);
+        RuleFor(x => x.AccessCode).NotEmpty().When(x => x.AccountType == AccountType.Player)
+            .WithCatalogMessage(ErrorCode.AuthInviteCodeRequired);
         RuleFor(x => x.AccessCode).MaximumLength(20);
     }
 }
@@ -67,9 +69,13 @@ internal sealed class RegisterHandler(
         if (command.AccountType == AccountType.Coach)
             appointment = await redemption.FindRedeemableAsync(command.AccessCode!, cancellationToken);
 
+        InviteMatch? invite = null;
+        if (command.AccountType == AccountType.Player)
+            invite = await InviteLookup.FindAsync(command.AccessCode!, stores.Squads, cancellationToken);
+
         ClubCatalogEntry? clubEntry = null;
         if (command.AccountType == AccountType.Club)
-            clubEntry = await FindClubAsync(command.DisplayName, cancellationToken);
+            clubEntry = await FindClubAsync(command.DisplayName!, cancellationToken);
 
         var userId = await identity.CreateUserAsync(email, command.Password, cancellationToken);
 
@@ -78,13 +84,15 @@ internal sealed class RegisterHandler(
         switch (command.AccountType)
         {
             case AccountType.Player:
-                var player = Player.Register(userId, command.DisplayName, command.Position!.Value, command.BirthDate, now);
+                var (squad, entry) = invite!;
+                var player = Player.Register(userId, entry.FullName, command.Position ?? entry.Position ?? Position.Midfielder, command.BirthDate, now);
                 stores.Players.Add(player);
+                squad.LinkPlayer(entry.Id, player.Id);
                 profileId = player.Id;
                 break;
 
             case AccountType.Coach:
-                var coach = Coach.Register(userId, command.DisplayName, now);
+                var coach = Coach.Register(userId, command.DisplayName!, now);
                 stores.Coaches.Add(coach);
                 await redemption.RedeemAsync(appointment!, coach, now, cancellationToken);
                 profileId = coach.Id;

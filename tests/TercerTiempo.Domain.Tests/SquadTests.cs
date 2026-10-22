@@ -298,19 +298,20 @@ public class SquadTests
         Assert.Equal(otherCode, second.InviteCode);
         Assert.Equal(12, first.InviteCode!.Length);
         Assert.All(first.InviteCode, c => Assert.Contains(c, Alphabet));
-        Assert.Throws<DomainException>(() => squad.InvitedPlayer(before!, first.FullName));
-        Assert.Same(first, squad.InvitedPlayer(first.InviteCode.ToLowerInvariant(), " pelayo fernandez "));
+        Assert.Throws<DomainException>(() => squad.InvitedPlayer(before!));
+        Assert.Same(first, squad.InvitedPlayer(" " + first.InviteCode.ToLowerInvariant() + " "));
     }
 
     [Fact]
-    public void Code_cannot_select_another_player_even_with_a_valid_name()
+    public void Code_resolves_only_its_own_entry()
     {
         var (squad, _) = TestData.NewSquad();
         var first = squad.AddPlayer("Pelayo Fernández", null, 9, null, TestData.Now);
         var second = squad.AddPlayer("Nel Suárez", null, 4, null, TestData.Now);
         squad.GeneratePlayerInviteCode(first.Id);
-        Assert.Throws<DomainException>(() => squad.InvitedPlayer(first.InviteCode!, second.FullName));
-        Assert.Throws<DomainException>(() => squad.InvitedPlayer("", second.FullName));
+        Assert.Same(first, squad.InvitedPlayer(first.InviteCode!));
+        Assert.NotSame(second, squad.InvitedPlayer(first.InviteCode!));
+        Assert.Throws<DomainException>(() => squad.InvitedPlayer(""));
     }
 
     [Fact]
@@ -321,13 +322,13 @@ public class SquadTests
         squad.GeneratePlayerInviteCode(entry.Id);
         var code = entry.InviteCode!;
         var playerId = Guid.NewGuid();
-        squad.LinkPlayer(squad.InvitedPlayer(code, entry.FullName).Id, playerId);
+        squad.LinkPlayer(squad.InvitedPlayer(code).Id, playerId);
         Assert.Null(entry.InviteCode);
         Assert.Throws<DomainException>(() => squad.GeneratePlayerInviteCode(entry.Id));
         squad.UnlinkPlayer(playerId);
-        Assert.Throws<DomainException>(() => squad.InvitedPlayer(code, entry.FullName));
+        Assert.Throws<DomainException>(() => squad.InvitedPlayer(code));
         squad.GeneratePlayerInviteCode(entry.Id);
-        Assert.Same(entry, squad.InvitedPlayer(entry.InviteCode!, entry.FullName));
+        Assert.Same(entry, squad.InvitedPlayer(entry.InviteCode!));
     }
 
     [Fact]
@@ -342,7 +343,7 @@ public class SquadTests
         Assert.Null(entry.InviteCode);
         Assert.Throws<DomainException>(() => squad.GeneratePlayerInviteCode(entry.Id));
         squad.AddPlayer("Pelayo", null, null, rosterId, TestData.Now);
-        Assert.Throws<DomainException>(() => squad.InvitedPlayer(code, entry.FullName));
+        Assert.Throws<DomainException>(() => squad.InvitedPlayer(code));
     }
 
     [Fact]

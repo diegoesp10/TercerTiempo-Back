@@ -3,6 +3,7 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Players.Invites;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
@@ -13,7 +14,7 @@ using TercerTiempo.Domain.Common.Errors;
 namespace TercerTiempo.Application.Players.JoinSquad;
 
 public sealed record JoinSquadAsPlayerCommand(
-    [property: Description("Código personal de un solo uso generado para tu ficha por el club o entrenador. El nombre de la cuenta debe coincidir con la ficha.")]
+    [property: Description("Código personal de un solo uso generado para una ficha por el club o entrenador. La cuenta pasa a llamarse como esa ficha.")]
     string InviteCode) : ICommand<PlayerDto>;
 
 internal sealed class JoinSquadAsPlayerValidator : AbstractValidator<JoinSquadAsPlayerCommand>
@@ -36,12 +37,11 @@ internal sealed class JoinSquadAsPlayerHandler(
         if (await squads.GetByPlayerAsync(player.Id, cancellationToken) is not null)
             throw new ConflictException(ErrorCode.PlayerAlreadyInSquad);
 
-        var squad = await squads.GetByInviteCodeAsync(InviteCodes.Normalize(command.InviteCode), cancellationToken)
-            ?? throw new NotFoundException(ErrorCode.InviteCodeNotFound, command.InviteCode);
+        var (squad, entry) = await InviteLookup.FindAsync(command.InviteCode, squads, cancellationToken);
 
-        var entry = squad.InvitedPlayer(command.InviteCode, player.DisplayName);
-
+        // El nombre de la cuenta es siempre el de la ficha: el jugador nunca lo escribe.
         squad.LinkPlayer(entry.Id, player.Id);
+        player.UpdateProfile(entry.FullName, player.Position, player.BirthDate);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return await PlayerMapper.ToDtoAsync(player, squads, teams, competitions, cancellationToken);

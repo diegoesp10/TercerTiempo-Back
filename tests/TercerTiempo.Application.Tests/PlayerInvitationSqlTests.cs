@@ -46,8 +46,8 @@ public class PlayerInvitationSqlTests
             var one = await first.Squads.SingleAsync(s => s.Id == squads[0].Id);
             var two = await second.Squads.SingleAsync(s => s.Id == squads[0].Id);
             var code = one.Players.Single().InviteCode!;
-            one.LinkPlayer(one.InvitedPlayer(code, player.DisplayName).Id, player.Id);
-            two.LinkPlayer(two.InvitedPlayer(code, otherAccount.DisplayName).Id, otherAccount.Id);
+            one.LinkPlayer(one.InvitedPlayer(code).Id, player.Id);
+            two.LinkPlayer(two.InvitedPlayer(code).Id, otherAccount.Id);
             await first.SaveChangesAsync();
             var reused = await Assert.ThrowsAsync<ConflictException>(() => second.SaveChangesAsync());
             Assert.Equal(ErrorCode.PlayerInviteChanged, reused.Code);

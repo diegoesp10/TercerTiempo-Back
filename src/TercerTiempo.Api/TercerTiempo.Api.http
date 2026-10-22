@@ -136,18 +136,18 @@ Content-Type: application/json
   "accessCode": "{{accessCode}}"
 }
 
-### Alta como jugador (con el nombre con el que aparece en la plantilla)
+### Alta como jugador (solo con el código personal de su ficha; el nombre es el de la ficha y queda vinculado al crearse)
 POST {{baseUrl}}/api/auth/register
 Content-Type: application/json
 
 {
   "email": "pelayo@example.com",
   "password": "Password123",
-  "displayName": "Pelayo Fernández",
+  "displayName": null,
   "accountType": "Player",
   "position": "Forward",
   "birthDate": "1998-04-12",
-  "accessCode": null
+  "accessCode": "{{inviteCode}}"
 }
 
 ### Login
@@ -288,11 +288,14 @@ Content-Type: application/json
 POST {{baseUrl}}/api/squads/{{squadId}}/players/{{squadPlayerId}}/invite-code
 Authorization: Bearer {{token}}
 
-### Jugador: consultar su código personal (solo su ficha; el nombre debe coincidir)
+### Jugador: consultar su código personal antes del alta (sin sesión)
+GET {{baseUrl}}/api/auth/invite/{{inviteCode}}
+
+### Jugador con cuenta y sin plantilla: consultar su código personal (solo su ficha)
 GET {{baseUrl}}/api/players/me/invite/{{inviteCode}}
 Authorization: Bearer {{token}}
 
-### Jugador: vincularse a la ficha del código (un solo uso; no se puede elegir otra)
+### Jugador con cuenta y sin plantilla: vincularse a la ficha del código (un solo uso; no se puede elegir otra; la cuenta toma el nombre de la ficha)
 POST {{baseUrl}}/api/players/me/squad
 Authorization: Bearer {{token}}
 Content-Type: application/json

@@ -12,13 +12,13 @@ internal static class PlayerEndpoints
         group.MapGet("/invite/{inviteCode}", (string inviteCode, IPlayersRepository players, CancellationToken ct) => players.GetInviteAsync(inviteCode, ct))
             .WithName("GetSquadInvite")
             .WithSummary("Consultar un código de invitación")
-            .WithDescription("Solo cuentas de jugador. Devuelve únicamente la ficha asociada al código personal, si el nombre y apellidos coinciden con la cuenta. Nunca devuelve la lista de fichas libres.")
+            .WithDescription("Cuentas de jugador sin plantilla (por ejemplo tras desvincularse). Devuelve únicamente la ficha asociada al código personal; nunca la lista de fichas libres. Antes del alta se usa GET /api/auth/invite/{code}.")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapPost("/squad", (JoinSquadAsPlayerCommand command, IPlayersRepository players, CancellationToken ct) => players.JoinSquadAsync(command, ct))
             .WithName("JoinSquadAsPlayer")
             .WithSummary("Vincularse a la ficha de una plantilla")
-            .WithDescription("Con el código personal de un solo uso generado por su club o entrenador. La API determina la ficha a partir del código y exige que coincida el nombre de la cuenta; no admite elegir jugador. Un jugador solo puede estar vinculado a una plantilla.")
+            .WithDescription("Cuentas de jugador ya existentes: con el código personal de un solo uso generado por su club o entrenador. La API determina la ficha a partir del código (no admite elegir jugador) y la cuenta pasa a llamarse como la ficha. Un jugador solo puede estar vinculado a una plantilla. Las cuentas nuevas se vinculan ya en POST /api/auth/register.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)

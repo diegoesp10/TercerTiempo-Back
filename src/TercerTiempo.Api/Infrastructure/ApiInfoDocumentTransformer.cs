@@ -52,7 +52,7 @@ internal sealed class ApiInfoDocumentTransformer : IOpenApiDocumentTransformer
             **Flujo del jugador**
 
             1. `POST /api/auth/register` con `accountType = Player`.
-            2. `GET /api/players/me/invite/{code}` → ve únicamente su ficha si el nombre coincide; `POST /api/players/me/squad` con `inviteCode` → la vincula y consume el código.
+            2. `GET /api/auth/invite/{code}` → ve únicamente su ficha; `POST /api/auth/register` (Player, `accessCode` = ese código, sin nombre) → crea la cuenta con el nombre de la ficha y la vincula. Si ya tenía cuenta sin plantilla: `POST /api/players/me/squad` con `inviteCode`.
             3. `GET /api/players/me/dashboard` → tus estadísticas, tu impacto en el equipo y tu posición en la liga.
 
             **Autenticación**: en *Authentication* elige `Bearer` y pega el `accessToken` (sin el prefijo `Bearer`).

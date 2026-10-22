@@ -10,10 +10,16 @@ internal static class AuthEndpoints
     {
         var group = app.MapGroup("/api/auth").WithTags("Auth");
 
+        group.MapGet("/invite/{inviteCode}", (string inviteCode, IAuthRepository auth, CancellationToken ct) => auth.GetInviteAsync(inviteCode, ct))
+            .WithName("GetInvite")
+            .WithSummary("Consultar un código personal antes del alta")
+            .WithDescription("Sin sesión. Devuelve la ficha (nombre, dorsal, posición) y la plantilla que hay detrás de un código personal vigente, para que el jugador confirme que es la suya antes de crear la cuenta. Nunca devuelve otras fichas.")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapPost("/register", (RegisterCommand command, IAuthRepository auth, CancellationToken ct) => auth.RegisterAsync(command, ct))
             .WithName("Register")
             .WithSummary("Alta en la plataforma")
-            .WithDescription("Crea el usuario y su perfil según accountType y devuelve el JWT ya iniciado. Player: indica su posición. Coach: necesita el accessCode que le ha entregado su club; al crear la cuenta se canjea y entra en el cuerpo técnico de la plantilla del equipo. Club: el nombre del club tal y como figura en GET /api/clubs/catalog; solo puede haber una cuenta por club y al crearla quedan vinculados sus equipos.")
+            .WithDescription("Crea el usuario y su perfil según accountType y devuelve el JWT ya iniciado. Player: solo necesita el accessCode personal que le ha entregado su club o entrenador; el nombre es el de la ficha y la cuenta queda vinculada a ella al crearse (posición y fecha de nacimiento opcionales). Coach: necesita el accessCode que le ha entregado su club; al crear la cuenta se canjea y entra en el cuerpo técnico de la plantilla del equipo. Club: el nombre del club tal y como figura en GET /api/clubs/catalog; solo puede haber una cuenta por club y al crearla quedan vinculados sus equipos.")
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict);

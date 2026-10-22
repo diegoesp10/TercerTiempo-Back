@@ -1,6 +1,7 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Players.Invites;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
@@ -25,15 +26,7 @@ internal sealed class GetSquadInviteHandler(
         if (await squads.GetByPlayerAsync(player.Id, cancellationToken) is not null)
             throw new ConflictException(ErrorCode.PlayerAlreadyInSquad);
 
-        var squad = await squads.GetByInviteCodeAsync(InviteCodes.Normalize(query.InviteCode), cancellationToken)
-            ?? throw new NotFoundException(ErrorCode.InviteCodeNotFound, query.InviteCode);
-        var entry = squad.InvitedPlayer(query.InviteCode, player.DisplayName);
-
-        var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken)
-            ?? throw new NotFoundException(ErrorCode.TeamNotFound, squad.TeamId);
-
-        var (competition, season) = await Resolvers.SeasonOfSquadAsync(competitions, squad, cancellationToken);
-
-        return new SquadInviteDto(squad.Id, team.Name, competition.Name, season.Label, SquadMapper.ToPlayerDto(entry, null));
+        var match = await InviteLookup.FindAsync(query.InviteCode, squads, cancellationToken);
+        return await InviteLookup.DescribeAsync(match, teams, competitions, cancellationToken);
     }
 }

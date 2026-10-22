@@ -31,6 +31,7 @@ public static class ErrorCode
     public const string AuthEmailTaken = "auth.email_taken";
     public const string AuthPositionRequired = "auth.position_required";
     public const string AuthAccessCodeRequired = "auth.access_code_required";
+    public const string AuthInviteCodeRequired = "auth.invite_code_required";
     public const string AuthPasswordTooShort = "auth.password_too_short";
     public const string AuthClubNotInCatalog = "auth.club_not_in_catalog";
     public const string AuthClubAlreadyRegistered = "auth.club_already_registered";
@@ -142,7 +143,6 @@ public static class ErrorCode
     public const string PlayerNoMatchingEntry = "player.no_matching_entry";
     public const string PlayerNotInSquad = "player.not_in_squad";
     public const string InviteCodeNotFound = "invite_code.not_found";
-    public const string PlayerInviteNameMismatch = "player.invite_name_mismatch";
     public const string PlayerInviteChanged = "player.invite_changed";
     public const string SquadManagersOnly = "squad.managers_only";
     public const string VideoManagerRequired = "video.manager_required";

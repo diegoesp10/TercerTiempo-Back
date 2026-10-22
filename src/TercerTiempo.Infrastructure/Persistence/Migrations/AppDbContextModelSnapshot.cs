@@ -464,6 +464,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "auth.invite_code_required",
+                            Language = "es",
+                            Message = "Introduce el código personal que te ha entregado tu club o entrenador."
+                        },
+                        new
+                        {
                             Code = "auth.password_too_short",
                             Language = "es",
                             Message = "La contraseña debe tener al menos {0} caracteres."
@@ -1055,12 +1061,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "invite_code.not_found",
                             Language = "es",
                             Message = "El código de invitación no es válido o ya se ha utilizado. Pide un código personal a tu club o entrenador."
-                        },
-                        new
-                        {
-                            Code = "player.invite_name_mismatch",
-                            Language = "es",
-                            Message = "El nombre y apellidos de tu cuenta deben coincidir con los de la ficha del jugador. Contacta con tu club o entrenador para revisarlos."
                         },
                         new
                         {
