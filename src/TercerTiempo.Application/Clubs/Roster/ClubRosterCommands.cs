@@ -5,6 +5,9 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Teams;
+using TercerTiempo.Application.Teams.Roster;
+using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Teams;
@@ -73,12 +76,8 @@ internal static class ClubRoster
         return (season.Id, stores.Clock.GetUtcNow());
     }
 
-    public static async Task<IReadOnlyList<RosterEntryDto>> ListAsync(Guid teamId, Guid seasonId, ITeamStore teams, CancellationToken cancellationToken) =>
-        (await teams.GetRosterAsync(teamId, seasonId, cancellationToken))
-            .OrderBy(r => r.ShirtNumber ?? int.MaxValue)
-            .ThenBy(r => r.FullName)
-            .Select(RosterEntryDto.From)
-            .ToList();
+    public static Task<IReadOnlyList<RosterEntryDto>> ListAsync(Guid teamId, Guid seasonId, RosterStores stores, CancellationToken cancellationToken) =>
+        RosterSummary.ListAsync(teamId, seasonId, stores.Teams, stores.Matches, stores.Sheets, cancellationToken);
 
     public static async Task<RosterEntry> EntryAsync(Guid teamId, Guid seasonId, Guid entryId, ITeamStore teams, CancellationToken cancellationToken)
     {
@@ -89,25 +88,27 @@ internal static class ClubRoster
     }
 }
 
-internal sealed class AddClubRosterEntryHandler(ICurrentUser currentUser, AccountStores stores, IUnitOfWork unitOfWork)
+internal sealed record RosterStores(ITeamStore Teams, IMatchStore Matches, IOfficialSheetStore Sheets);
+
+internal sealed class AddClubRosterEntryHandler(ICurrentUser currentUser, AccountStores stores, RosterStores roster, IUnitOfWork unitOfWork)
     : ICommandHandler<AddClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>>
 {
     public async Task<IReadOnlyList<RosterEntryDto>> Handle(AddClubRosterEntryCommand command, CancellationToken cancellationToken)
     {
         var (seasonId, now) = await ClubRoster.ContextAsync(command.TeamId, currentUser, stores, cancellationToken);
 
-        var roster = await stores.Teams.GetRosterAsync(command.TeamId, seasonId, cancellationToken);
-        if (roster.Any(r => r.Matches(command.FullName)))
+        var current = await stores.Teams.GetRosterAsync(command.TeamId, seasonId, cancellationToken);
+        if (current.Any(r => r.Matches(command.FullName)))
             throw new ConflictException(ErrorCode.RosterEntryDuplicateName);
 
         stores.Teams.AddRosterEntry(RosterEntry.CreateByClub(command.TeamId, seasonId, command.FullName.Trim(), command.Position, command.ShirtNumber, now));
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await ClubRoster.ListAsync(command.TeamId, seasonId, stores.Teams, cancellationToken);
+        return await ClubRoster.ListAsync(command.TeamId, seasonId, roster, cancellationToken);
     }
 }
 
-internal sealed class UpdateClubRosterEntryHandler(ICurrentUser currentUser, AccountStores stores, IUnitOfWork unitOfWork)
+internal sealed class UpdateClubRosterEntryHandler(ICurrentUser currentUser, AccountStores stores, RosterStores roster, IUnitOfWork unitOfWork)
     : ICommandHandler<UpdateClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>>
 {
     public async Task<IReadOnlyList<RosterEntryDto>> Handle(UpdateClubRosterEntryCommand command, CancellationToken cancellationToken)
@@ -118,11 +119,11 @@ internal sealed class UpdateClubRosterEntryHandler(ICurrentUser currentUser, Acc
         entry.UpdateByClub(command.FullName.Trim(), command.Position, command.ShirtNumber, now);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await ClubRoster.ListAsync(command.TeamId, seasonId, stores.Teams, cancellationToken);
+        return await ClubRoster.ListAsync(command.TeamId, seasonId, roster, cancellationToken);
     }
 }
 
-internal sealed class RemoveClubRosterEntryHandler(ICurrentUser currentUser, AccountStores stores, IUnitOfWork unitOfWork)
+internal sealed class RemoveClubRosterEntryHandler(ICurrentUser currentUser, AccountStores stores, RosterStores roster, IUnitOfWork unitOfWork)
     : ICommandHandler<RemoveClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>>
 {
     public async Task<IReadOnlyList<RosterEntryDto>> Handle(RemoveClubRosterEntryCommand command, CancellationToken cancellationToken)
@@ -138,6 +139,6 @@ internal sealed class RemoveClubRosterEntryHandler(ICurrentUser currentUser, Acc
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await ClubRoster.ListAsync(command.TeamId, seasonId, stores.Teams, cancellationToken);
+        return await ClubRoster.ListAsync(command.TeamId, seasonId, roster, cancellationToken);
     }
 }

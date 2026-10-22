@@ -21,6 +21,8 @@ public interface IClubsRepository
     Task<IReadOnlyList<RosterEntryDto>> AddRosterEntryAsync(Guid teamId, RosterEntryRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RosterEntryDto>> UpdateRosterEntryAsync(Guid teamId, Guid entryId, RosterEntryRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RosterEntryDto>> RemoveRosterEntryAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default);
+    Task<RosterEntryDetailDto> GetRosterEntryAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RosterEntryDto>> UploadRosterPhotoAsync(Guid teamId, Guid entryId, CrestUpload file, CancellationToken cancellationToken = default);
     Task<AppointmentDto> CreateAppointmentAsync(CreateAppointmentRequest request, CancellationToken cancellationToken = default);
     Task<AppointmentDto> UpdateAppointmentAsync(Guid appointmentId, UpdateAppointmentRequest request, CancellationToken cancellationToken = default);
     Task<AppointmentDto> RevokeAppointmentAsync(Guid appointmentId, CancellationToken cancellationToken = default);

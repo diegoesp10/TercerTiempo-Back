@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Standings;
+using TercerTiempo.Application.Teams.Roster;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
@@ -53,9 +54,18 @@ public sealed record TeamProfileDto(
             profile.ShirtColor, profile.ShortsColor, profile.SocksColor);
 }
 
-public sealed record RosterEntryDto(Guid Id, string FullName, Position? Position, int? ShirtNumber, bool ManagedByClub)
+public sealed record RosterEntryDto(
+    Guid Id,
+    string FullName,
+    Position? Position,
+    int? ShirtNumber,
+    bool ManagedByClub,
+    string? PhotoUrl,
+    [property: System.ComponentModel.Description("Totales de la temporada según las actas oficiales; null si aún no aparece en ninguna.")]
+    RosterEntryStatsDto? Stats)
 {
-    public static RosterEntryDto From(RosterEntry entry) => new(entry.Id, entry.FullName, entry.Position, entry.ShirtNumber, entry.ManagedByClub);
+    public static RosterEntryDto From(RosterEntry entry, RosterEntryStatsDto? stats = null) =>
+        new(entry.Id, entry.FullName, entry.Position, entry.ShirtNumber, entry.ManagedByClub, entry.PhotoLink(), stats);
 }
 
 public sealed record TeamSquadDto(Guid SquadId, SquadVisibility Visibility, int PlayersCount, int StaffCount, bool CanView, bool IsMine);

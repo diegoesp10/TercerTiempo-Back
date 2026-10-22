@@ -90,6 +90,9 @@ public static class ErrorCode
     public const string ClubRosterOwnTeamsOnly = "club.roster_own_teams_only";
     public const string RosterEntryNotFound = "roster_entry.not_found";
     public const string RosterEntryDuplicateName = "roster_entry.duplicate_name";
+    public const string RosterPhotoInvalid = "roster_entry.photo_invalid";
+    public const string RosterPhotoTooLarge = "roster_entry.photo_too_large";
+    public const string RosterPhotoFormat = "roster_entry.photo_format";
     public const string CrestDownloadFailed = "crest.download_failed";
     public const string CrestInvalidUrl = "crest.invalid_url";
     public const string FileEmpty = "file.empty";
@@ -124,6 +127,12 @@ public static class ErrorCode
     public const string SquadNotLinked = "squad.not_linked";
     public const string SquadInvalidVisibility = "squad.invalid_visibility";
     public const string SquadPlayerNotFound = "squad_player.not_found";
+    public const string InjuryNotFound = "injury.not_found";
+    public const string InjuryAlreadyActive = "injury.already_active";
+    public const string InjuryAlreadyClosed = "injury.already_closed";
+    public const string InjuryDatesInvalid = "injury.dates_invalid";
+    public const string InjuryReturnInvalid = "injury.return_invalid";
+    public const string InjuryInvalidType = "injury.invalid_type";
 
     // Jugadores
     public const string PlayerInvalidPosition = "player.invalid_position";

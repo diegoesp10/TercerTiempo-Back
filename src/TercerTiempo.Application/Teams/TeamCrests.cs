@@ -9,6 +9,11 @@ public static class TeamCrests
 
     public static string? CrestLink(this Team team) => team.CrestKey is null ? null : Route(team.Id, team.CrestKey);
 
+    public static string PhotoRoute(Guid teamId, Guid entryId, string photoKey) =>
+        $"/api/teams/{teamId}/roster/{entryId}/photo?v={Version(photoKey)}";
+
+    public static string? PhotoLink(this RosterEntry entry) => entry.PhotoKey is null ? null : PhotoRoute(entry.TeamId, entry.Id, entry.PhotoKey);
+
     private static string Version(string crestKey)
     {
         var name = Path.GetFileNameWithoutExtension(crestKey);

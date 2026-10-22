@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Application.Squads.ManagePlayers;
 using TercerTiempo.Application.Squads.MatchSheet;
 using TercerTiempo.Domain.Players;
@@ -17,6 +18,24 @@ public sealed record SquadPlayerRequest(
     internal AddSquadPlayerCommand ToAdd(Guid squadId) => new(squadId, FullName, Position, ShirtNumber);
     internal UpdateSquadPlayerCommand ToUpdate(Guid squadId, Guid squadPlayerId) => new(squadId, squadPlayerId, FullName, Position, ShirtNumber);
 }
+
+public sealed record InjuryRequest(
+    [property: Description("Jugador de la plantilla (solo al registrar; al editar se ignora).")]
+    Guid? SquadPlayerId,
+    InjuryType Type,
+    [property: Description("Motivo o detalle, opcional.")]
+    string? Reason,
+    DateOnly StartedOn,
+    [property: Description("Vuelta prevista; si falta se propone con la duración media del tipo.")]
+    DateOnly? ExpectedReturnOn)
+{
+    internal RecordInjuryCommand ToRecord(Guid squadId) => new(squadId, SquadPlayerId ?? Guid.Empty, Type, Reason, StartedOn, ExpectedReturnOn);
+    internal UpdateInjuryCommand ToUpdate(Guid squadId, Guid injuryId) => new(squadId, injuryId, Type, Reason, StartedOn, ExpectedReturnOn);
+}
+
+public sealed record CloseInjuryRequest(
+    [property: Description("Fecha del alta; por defecto hoy.")]
+    DateOnly? ReturnedOn);
 
 public sealed record SquadVisibilityRequest(
     [property: Description("Private (solo cuerpo técnico y jugadores vinculados) o Public (cualquiera).")]

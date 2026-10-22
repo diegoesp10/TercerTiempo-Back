@@ -19,6 +19,7 @@ internal sealed class GetSquadHandler(
     IPlayerStore players,
     ITeamStore teams,
     ICompetitionStore competitions,
+    IInjuryStore injuries,
     TimeProvider clock) : IQueryHandler<GetSquadQuery, SquadDetailDto>
 {
     public async Task<SquadDetailDto> Handle(GetSquadQuery query, CancellationToken cancellationToken)
@@ -28,6 +29,6 @@ internal sealed class GetSquadHandler(
 
         SquadAccess.EnsureCanView(squad, currentUser, clock);
 
-        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, cancellationToken);
+        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, injuries, cancellationToken);
     }
 }

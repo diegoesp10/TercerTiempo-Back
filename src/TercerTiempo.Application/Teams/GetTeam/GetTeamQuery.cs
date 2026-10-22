@@ -4,6 +4,9 @@ using TercerTiempo.Application.Abstractions.Teams;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Standings;
+using TercerTiempo.Application.Teams.Roster;
+using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
@@ -19,6 +22,8 @@ internal sealed class GetTeamHandler(
     ICompetitionStore competitions,
     ITeamStore teams,
     IStandingStore standings,
+    IMatchStore matches,
+    IOfficialSheetStore sheets,
     ISquadStore squads,
     ITeamProfileProvider profiles,
     TimeProvider clock) : IQueryHandler<GetTeamQuery, TeamDetailDto>
@@ -33,11 +38,7 @@ internal sealed class GetTeamHandler(
         var standing = (await standings.GetBySeasonAsync(season.Id, cancellationToken))
             .FirstOrDefault(s => s.TeamId == team.Id);
 
-        var roster = (await teams.GetRosterAsync(team.Id, season.Id, cancellationToken))
-            .OrderBy(r => r.ShirtNumber ?? int.MaxValue)
-            .ThenBy(r => r.FullName)
-            .Select(RosterEntryDto.From)
-            .ToList();
+        var roster = await RosterSummary.ListAsync(team.Id, season.Id, teams, matches, sheets, cancellationToken);
 
         var squad = await squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
         var squadDto = squad is null

@@ -3,6 +3,7 @@ using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Squads.Charts;
 using TercerTiempo.Application.Squads.GetSquad;
+using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Application.Squads.ListMySquads;
 using TercerTiempo.Application.Squads.ManagePlayers;
 using TercerTiempo.Application.Squads.Matches;
@@ -29,7 +30,14 @@ internal sealed class SquadsRepository(
     ICommandHandler<UploadMatchVideoCommand, MatchVideoDto> uploadVideo,
     IQueryHandler<GetSquadStatsQuery, SquadStatsDto> getStats,
     IQueryHandler<GetSquadPlayerProfileQuery, SquadPlayerProfileDto> getPlayerProfile,
-    IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto> getTimeline) : ISquadsRepository
+    IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto> getTimeline,
+    IQueryHandler<ListInjuryTypesQuery, IReadOnlyList<InjuryTypeDto>> listInjuryTypes,
+    IQueryHandler<ListSquadInjuriesQuery, IReadOnlyList<InjuryDto>> listInjuries,
+    ICommandHandler<RecordInjuryCommand, IReadOnlyList<InjuryDto>> recordInjury,
+    ICommandHandler<UpdateInjuryCommand, IReadOnlyList<InjuryDto>> updateInjury,
+    ICommandHandler<CloseInjuryCommand, IReadOnlyList<InjuryDto>> closeInjury,
+    ICommandHandler<ReopenInjuryCommand, IReadOnlyList<InjuryDto>> reopenInjury,
+    ICommandHandler<DeleteInjuryCommand, IReadOnlyList<InjuryDto>> deleteInjury) : ISquadsRepository
 {
     public Task<IReadOnlyList<SquadSummaryDto>> ListMineAsync(CancellationToken cancellationToken = default) =>
         listMine.Handle(new ListMySquadsQuery(), cancellationToken);
@@ -78,4 +86,25 @@ internal sealed class SquadsRepository(
 
     public Task<SquadTimelineDto> GetTimelineAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         getTimeline.Handle(new GetSquadTimelineQuery(squadId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryTypeDto>> ListInjuryTypesAsync(CancellationToken cancellationToken = default) =>
+        listInjuryTypes.Handle(new ListInjuryTypesQuery(), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryDto>> ListInjuriesAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        listInjuries.Handle(new ListSquadInjuriesQuery(squadId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryDto>> RecordInjuryAsync(Guid squadId, InjuryRequest request, CancellationToken cancellationToken = default) =>
+        recordInjury.Handle(request.ToRecord(squadId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryDto>> UpdateInjuryAsync(Guid squadId, Guid injuryId, InjuryRequest request, CancellationToken cancellationToken = default) =>
+        updateInjury.Handle(request.ToUpdate(squadId, injuryId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryDto>> CloseInjuryAsync(Guid squadId, Guid injuryId, CloseInjuryRequest request, CancellationToken cancellationToken = default) =>
+        closeInjury.Handle(new CloseInjuryCommand(squadId, injuryId, request.ReturnedOn), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryDto>> ReopenInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default) =>
+        reopenInjury.Handle(new ReopenInjuryCommand(squadId, injuryId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryDto>> DeleteInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default) =>
+        deleteInjury.Handle(new DeleteInjuryCommand(squadId, injuryId), cancellationToken);
 }

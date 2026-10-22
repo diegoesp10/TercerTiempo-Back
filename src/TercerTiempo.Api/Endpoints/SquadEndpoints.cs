@@ -119,6 +119,54 @@ internal static class SquadEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        group.MapGet("/injury-types", (ISquadsRepository squads, CancellationToken ct) => squads.ListInjuryTypesAsync(ct))
+            .WithName("ListInjuryTypes")
+            .WithSummary("Tipos de lesión con su duración media orientativa")
+            .WithDescription("Catálogo fijo: el frontal propone la vuelta prevista sumando averageDays a la fecha de inicio.");
+
+        group.MapGet("/{squadId:guid}/injuries", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.ListInjuriesAsync(squadId, ct))
+            .WithName("ListSquadInjuries")
+            .WithSummary("Lesiones de la plantilla (abiertas primero)")
+            .WithDescription("Cuerpo técnico y jugadores vinculados; el público no las ve aunque la plantilla sea pública.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{squadId:guid}/injuries", (Guid squadId, InjuryRequest request, ISquadsRepository squads, CancellationToken ct) => squads.RecordInjuryAsync(squadId, request, ct))
+            .WithName("RecordInjury")
+            .WithSummary("Poner a un jugador en estado de lesionado")
+            .WithDescription("Solo cuerpo técnico. Un jugador solo puede tener una lesión abierta. Si no se indica la vuelta prevista se calcula con la duración media del tipo. Devuelve todas las lesiones de la plantilla.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPut("/{squadId:guid}/injuries/{injuryId:guid}", (Guid squadId, Guid injuryId, InjuryRequest request, ISquadsRepository squads, CancellationToken ct) => squads.UpdateInjuryAsync(squadId, injuryId, request, ct))
+            .WithName("UpdateInjury")
+            .WithSummary("Corregir una lesión")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{squadId:guid}/injuries/{injuryId:guid}/close", (Guid squadId, Guid injuryId, CloseInjuryRequest request, ISquadsRepository squads, CancellationToken ct) => squads.CloseInjuryAsync(squadId, injuryId, request, ct))
+            .WithName("CloseInjury")
+            .WithSummary("Dar el alta")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPost("/{squadId:guid}/injuries/{injuryId:guid}/reopen", (Guid squadId, Guid injuryId, ISquadsRepository squads, CancellationToken ct) => squads.ReopenInjuryAsync(squadId, injuryId, ct))
+            .WithName("ReopenInjury")
+            .WithSummary("Anular el alta (recaída)")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapDelete("/{squadId:guid}/injuries/{injuryId:guid}", (Guid squadId, Guid injuryId, ISquadsRepository squads, CancellationToken ct) => squads.DeleteInjuryAsync(squadId, injuryId, ct))
+            .WithName("DeleteInjury")
+            .WithSummary("Borrar una lesión registrada por error")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapGet("/{squadId:guid}/stats", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetStatsAsync(squadId, ct))
             .AllowAnonymous()
             .WithName("GetSquadStats")

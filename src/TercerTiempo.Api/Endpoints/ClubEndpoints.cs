@@ -75,6 +75,27 @@ internal static class ClubEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapGet("/teams/{teamId:guid}/roster/{entryId:guid}", (Guid teamId, Guid entryId, IClubsRepository clubs, CancellationToken ct) => clubs.GetRosterEntryAsync(teamId, entryId, ct))
+            .WithName("GetClubRosterEntry")
+            .WithSummary("Ficha de un jugador de la plantilla con sus actas")
+            .WithDescription("Solo cuentas de club y solo para sus equipos. Devuelve la ficha con sus totales oficiales, partido a partido según las actas de la federación y, si el cuerpo técnico lleva la plantilla en Tercer Tiempo, también sus actas internas.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPut("/teams/{teamId:guid}/roster/{entryId:guid}/photo", async (Guid teamId, Guid entryId, IFormFile file, IClubsRepository clubs, CancellationToken ct) =>
+            {
+                await using var content = file.OpenReadStream();
+                return await clubs.UploadRosterPhotoAsync(teamId, entryId, new CrestUpload(file.FileName, file.ContentType, file.Length, content), ct);
+            })
+            .DisableAntiforgery()
+            .WithName("UploadClubRosterPhoto")
+            .WithSummary("Cambiar la foto de un jugador de la plantilla")
+            .WithDescription("Solo cuentas de club y solo para sus equipos. multipart/form-data con el campo file (PNG, JPG o WebP hasta 2 MB). Sustituye la foto guardada y devuelve la plantilla completa.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
         group.MapPost("/appointments", (CreateAppointmentRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.CreateAppointmentAsync(request, ct))
             .WithName("CreateAppointment")
             .WithSummary("Nombrar a un técnico")

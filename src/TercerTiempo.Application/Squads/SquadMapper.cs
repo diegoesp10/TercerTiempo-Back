@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
@@ -34,12 +35,13 @@ internal static class SquadMapper
         return ToSummary(squad, team, competition, season, coachId, SquadAccess.Today(clock));
     }
 
-    public static SquadPlayerDto ToPlayerDto(SquadPlayer player, IReadOnlyDictionary<Guid, Player>? linkedPlayers) =>
+    public static SquadPlayerDto ToPlayerDto(SquadPlayer player, IReadOnlyDictionary<Guid, Player>? linkedPlayers, IReadOnlyDictionary<Guid, InjuryDto>? injuries = null) =>
         new(player.Id, player.FullName, player.Position, player.ShirtNumber,
             player.RosterEntryId is not null,
             player.IsLinked,
             player.PlayerId is { } id && linkedPlayers is not null && linkedPlayers.TryGetValue(id, out var linked) ? linked.DisplayName : null,
-            player.Status);
+            player.Status,
+            injuries?.GetValueOrDefault(player.Id));
 
     public static IEnumerable<SquadPlayer> Ordered(IEnumerable<SquadPlayer> players) =>
         players.OrderBy(p => p.ShirtNumber ?? int.MaxValue).ThenBy(p => p.FullName);
@@ -52,6 +54,7 @@ internal static class SquadMapper
         IPlayerStore players,
         ITeamStore teams,
         ICompetitionStore competitions,
+        IInjuryStore injuries,
         CancellationToken cancellationToken)
     {
         var today = SquadAccess.Today(clock);
@@ -71,8 +74,12 @@ internal static class SquadMapper
             .ThenBy(s => s.JoinedAt)
             .ToList();
 
+        var activeInjuries = InjuryAccess.CanSee(squad, currentUser, clock)
+            ? InjuryMapper.ActiveByPlayer(await injuries.GetBySquadAsync(squad.Id, cancellationToken), squad, today)
+            : null;
+
         var squadPlayers = Ordered(squad.ActivePlayers)
-            .Select(p => ToPlayerDto(p, linkedMap))
+            .Select(p => ToPlayerDto(p, linkedMap, activeInjuries))
             .ToList();
 
         return new SquadDetailDto(summary, canManage ? squad.InviteCode : null, canManage, staff, squadPlayers);

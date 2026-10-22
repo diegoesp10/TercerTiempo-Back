@@ -782,6 +782,24 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "roster_entry.photo_invalid",
+                            Language = "es",
+                            Message = "La foto tiene que ser una imagen de hasta 2 MB."
+                        },
+                        new
+                        {
+                            Code = "roster_entry.photo_too_large",
+                            Language = "es",
+                            Message = "La foto no puede superar los 2 MB."
+                        },
+                        new
+                        {
+                            Code = "roster_entry.photo_format",
+                            Language = "es",
+                            Message = "Formato no admitido: usa PNG, JPG o WebP."
+                        },
+                        new
+                        {
                             Code = "crest.download_failed",
                             Language = "es",
                             Message = "No se ha podido descargar una imagen de esa URL."
@@ -959,6 +977,42 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "squad_player.not_found",
                             Language = "es",
                             Message = "El jugador '{0}' no existe en la plantilla."
+                        },
+                        new
+                        {
+                            Code = "injury.not_found",
+                            Language = "es",
+                            Message = "La lesión '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "injury.already_active",
+                            Language = "es",
+                            Message = "{0} ya tiene una lesión abierta: dale el alta antes de registrar otra."
+                        },
+                        new
+                        {
+                            Code = "injury.already_closed",
+                            Language = "es",
+                            Message = "Esa lesión ya tiene el alta."
+                        },
+                        new
+                        {
+                            Code = "injury.dates_invalid",
+                            Language = "es",
+                            Message = "La vuelta prevista no puede ser anterior al inicio de la lesión."
+                        },
+                        new
+                        {
+                            Code = "injury.return_invalid",
+                            Language = "es",
+                            Message = "El alta no puede ser anterior al inicio de la lesión."
+                        },
+                        new
+                        {
+                            Code = "injury.invalid_type",
+                            Language = "es",
+                            Message = "Tipo de lesión no válido."
                         },
                         new
                         {
@@ -1552,6 +1606,52 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("Players", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("ExpectedReturnOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid>("RecordedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("ReturnedOn")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SquadPlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("StartedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecordedByCoachId");
+
+                    b.HasIndex("SquadPlayerId");
+
+                    b.HasIndex("SquadId", "SquadPlayerId");
+
+                    b.ToTable("PlayerInjuries", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Squads.Squad", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1749,6 +1849,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("PhotoKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Position")
                         .HasMaxLength(20)
@@ -2313,6 +2417,27 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("RecordedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.SquadPlayer", null)
+                        .WithMany()
+                        .HasForeignKey("SquadPlayerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Squads.Squad", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
@@ -2564,7 +2689,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Navigation("OfficialRef");
 
-                    b.Navigation("Profile");
+                    b.Navigation("Profile")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Videos.MatchVideo", b =>

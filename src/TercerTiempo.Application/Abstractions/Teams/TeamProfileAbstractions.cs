@@ -26,6 +26,13 @@ public interface ICrestStorage
 
 public sealed record CrestFile(Stream Content, string ContentType);
 
+public interface IPlayerPhotoStorage
+{
+    Task<string> SaveAsync(Guid rosterEntryId, CrestImage image, CancellationToken cancellationToken);
+
+    Task<CrestFile?> OpenReadAsync(string photoKey, CancellationToken cancellationToken);
+}
+
 public interface ICrestDownloader
 {
     Task<CrestImage?> DownloadAsync(string url, CancellationToken cancellationToken);
@@ -36,6 +43,8 @@ public sealed class CrestOptions
     public const string SectionName = "Crests";
 
     public string Directory { get; set; } = "data/crests";
+
+    public string PhotosDirectory { get; set; } = "data/photos";
 
     public int RefreshDays { get; set; } = 30;
 }

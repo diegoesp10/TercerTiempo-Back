@@ -19,6 +19,7 @@ public static class DependencyInjection
 
         // Servicios internos compartidos por varios handlers.
         services.AddScoped<AccountStores>();
+        services.AddScoped<Clubs.Roster.RosterStores>();
         services.AddScoped<IErrorMessageResolver, ErrorMessageResolver>();
         services.AddSingleton<ISyncProgress, SyncProgress>();
         services.AddScoped<AppointmentRedemption>();

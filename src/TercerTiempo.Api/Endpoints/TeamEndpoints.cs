@@ -34,6 +34,20 @@ internal static class TeamEndpoints
             .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{teamId:guid}/roster/{entryId:guid}/photo", async (Guid teamId, Guid entryId, HttpContext context, ITeamsRepository teams, CancellationToken ct) =>
+            {
+                var photo = await teams.OpenRosterPhotoAsync(teamId, entryId, ct);
+                if (photo is null) return Results.NotFound();
+
+                context.Response.Headers.CacheControl = "public, max-age=86400";
+                return Results.Stream(photo.Content, photo.ContentType);
+            })
+            .WithName("GetRosterPhoto")
+            .WithSummary("Foto de un jugador de la plantilla")
+            .WithDescription("Foto subida por el club (photoUrl de las fichas apunta aquí cuando existe). 404 si no hay foto. Público.")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapGet("/{teamId:guid}/matches", (Guid teamId, ITeamsRepository teams, CancellationToken ct) => teams.GetMatchesAsync(teamId, ct))
             .WithName("ListTeamMatches")
             .WithSummary("Calendario y resultados del equipo")

@@ -19,6 +19,8 @@ public sealed class RosterEntry : AggregateRoot
 
     public bool Hidden { get; private set; }
 
+    public string? PhotoKey { get; private set; }
+
     private RosterEntry() { }
 
     public static RosterEntry CreateByClub(Guid teamId, Guid seasonId, string fullName, Position? position, int? shirtNumber, DateTimeOffset now)
@@ -36,6 +38,8 @@ public sealed class RosterEntry : AggregateRoot
     }
 
     public void Hide() => Hidden = true;
+
+    public void SetPhoto(string photoKey) => PhotoKey = Guard.NotEmpty(photoKey, nameof(photoKey), 100);
 
     public static RosterEntry Create(
         Guid teamId, Guid seasonId, string fullName, Position? position, int? shirtNumber, ExternalRef? externalRef, DateTimeOffset now)

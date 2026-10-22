@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Application.Performances;
+using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Application.Stats;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
@@ -40,7 +41,9 @@ public sealed record SquadPlayerDto(
     bool FromRoster,
     bool Linked,
     string? LinkedPlayerName,
-    SquadPlayerStatus Status);
+    SquadPlayerStatus Status,
+    [property: System.ComponentModel.Description("Lesión abierta; solo la ven el cuerpo técnico y los jugadores vinculados.")]
+    InjuryDto? Injury = null);
 
 public sealed record SquadMatchDto(MatchDto Match, int EntriesRecorded);
 

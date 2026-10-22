@@ -33,6 +33,7 @@ internal sealed class SetSquadVisibilityHandler(
     IPlayerStore players,
     ITeamStore teams,
     ICompetitionStore competitions,
+    IInjuryStore injuries,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<SetSquadVisibilityCommand, SquadDetailDto>
 {
@@ -43,6 +44,6 @@ internal sealed class SetSquadVisibilityHandler(
         squad.SetVisibility(command.Visibility);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, cancellationToken);
+        return await SquadMapper.ToDetailAsync(squad, currentUser, clock, coaches, players, teams, competitions, injuries, cancellationToken);
     }
 }

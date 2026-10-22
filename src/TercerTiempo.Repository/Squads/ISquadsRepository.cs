@@ -1,6 +1,7 @@
 using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Squads.Charts;
+using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Application.Videos;
 
 namespace TercerTiempo.Repository.Squads;
@@ -27,4 +28,12 @@ public interface ISquadsRepository
 
     Task<SquadPlayerProfileDto> GetPlayerProfileAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
     Task<SquadTimelineDto> GetTimelineAsync(Guid squadId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<InjuryTypeDto>> ListInjuryTypesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InjuryDto>> ListInjuriesAsync(Guid squadId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InjuryDto>> RecordInjuryAsync(Guid squadId, InjuryRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InjuryDto>> UpdateInjuryAsync(Guid squadId, Guid injuryId, InjuryRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InjuryDto>> CloseInjuryAsync(Guid squadId, Guid injuryId, CloseInjuryRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InjuryDto>> ReopenInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InjuryDto>> DeleteInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default);
 }

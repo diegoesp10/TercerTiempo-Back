@@ -19,6 +19,8 @@ internal sealed class ClubsRepository(
     ICommandHandler<AddClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>> addRosterEntry,
     ICommandHandler<UpdateClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>> updateRosterEntry,
     ICommandHandler<RemoveClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>> removeRosterEntry,
+    IQueryHandler<GetClubRosterEntryQuery, RosterEntryDetailDto> getRosterEntry,
+    ICommandHandler<UploadRosterPhotoCommand, IReadOnlyList<RosterEntryDto>> uploadRosterPhoto,
     ICommandHandler<CreateAppointmentCommand, AppointmentDto> createAppointment,
     ICommandHandler<UpdateAppointmentCommand, AppointmentDto> updateAppointment,
     ICommandHandler<RevokeAppointmentCommand, AppointmentDto> revokeAppointment) : IClubsRepository
@@ -46,6 +48,12 @@ internal sealed class ClubsRepository(
 
     public Task<IReadOnlyList<RosterEntryDto>> RemoveRosterEntryAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default) =>
         removeRosterEntry.Handle(new RemoveClubRosterEntryCommand(teamId, entryId), cancellationToken);
+
+    public Task<RosterEntryDetailDto> GetRosterEntryAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default) =>
+        getRosterEntry.Handle(new GetClubRosterEntryQuery(teamId, entryId), cancellationToken);
+
+    public Task<IReadOnlyList<RosterEntryDto>> UploadRosterPhotoAsync(Guid teamId, Guid entryId, CrestUpload file, CancellationToken cancellationToken = default) =>
+        uploadRosterPhoto.Handle(new UploadRosterPhotoCommand(teamId, entryId, file), cancellationToken);
 
     public Task<AppointmentDto> CreateAppointmentAsync(CreateAppointmentRequest request, CancellationToken cancellationToken = default) =>
         createAppointment.Handle(request.ToCommand(), cancellationToken);

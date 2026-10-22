@@ -71,6 +71,7 @@ public static class DependencyInjection
         services.AddScoped<IPlayerStore, PlayerStore>();
         services.AddScoped<ICoachStore, CoachStore>();
         services.AddScoped<ISquadStore, SquadStore>();
+        services.AddScoped<IInjuryStore, InjuryStore>();
         services.AddScoped<ITeamStore, TeamStore>();
         services.AddScoped<ICompetitionStore, CompetitionStore>();
         services.AddScoped<IMatchStore, MatchStore>();
@@ -176,6 +177,7 @@ public static class DependencyInjection
         services.AddOptions<CrestOptions>()
             .Bind(configuration.GetSection(CrestOptions.SectionName));
         services.AddSingleton<ICrestStorage, FileSystemCrestStorage>();
+        services.AddSingleton<IPlayerPhotoStorage, FileSystemPlayerPhotoStorage>();
         services.AddScoped<IErrorMessageStore, ErrorMessageStore>();
 
         // Límite de llamadas por IP y por endpoint con bloqueos crecientes (el middleware vive en la API).

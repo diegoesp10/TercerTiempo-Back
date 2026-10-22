@@ -9,12 +9,17 @@ internal static class SheetMatcher
 {
     private const double MinScore = 0.6;
 
-    public static IReadOnlyDictionary<Guid, OfficialSheetLine> Match(IEnumerable<SquadPlayer> players, IEnumerable<OfficialSheetLine> lines)
+    public sealed record Candidate(Guid Id, string NormalizedName, int? ShirtNumber);
+
+    public static IReadOnlyDictionary<Guid, OfficialSheetLine> Match(IEnumerable<SquadPlayer> players, IEnumerable<OfficialSheetLine> lines) =>
+        Match(players.Select(p => new Candidate(p.Id, p.NormalizedName, p.ShirtNumber)), lines);
+
+    public static IReadOnlyDictionary<Guid, OfficialSheetLine> Match(IEnumerable<Candidate> players, IEnumerable<OfficialSheetLine> lines)
     {
         var playerTokens = players.Select(p => (Player: p, Tokens: Tokens(p.NormalizedName))).ToList();
         var lineTokens = lines.Select(l => (Line: l, Tokens: Tokens(l.NormalizedName))).ToList();
 
-        var candidates = new List<(double Score, SquadPlayer Player, OfficialSheetLine Line)>();
+        var candidates = new List<(double Score, Candidate Player, OfficialSheetLine Line)>();
 
         foreach (var (player, pTokens) in playerTokens)
         {
@@ -34,6 +39,33 @@ internal static class SheetMatcher
             if (result.ContainsKey(player.Id) || usedLines.Contains(line.Id)) continue;
             result[player.Id] = line;
             usedLines.Add(line.Id);
+        }
+
+        return result;
+    }
+
+    public static IReadOnlyDictionary<Guid, SquadPlayer> MatchPlayers(IEnumerable<Candidate> entries, IEnumerable<SquadPlayer> players)
+    {
+        var entryTokens = entries.Select(e => (Entry: e, Tokens: Tokens(e.NormalizedName))).ToList();
+        var playerTokens = players.Select(p => (Player: p, Tokens: Tokens(p.NormalizedName))).ToList();
+
+        var candidates = new List<(double Score, Candidate Entry, SquadPlayer Player)>();
+        foreach (var (entry, eTokens) in entryTokens)
+        {
+            foreach (var (player, pTokens) in playerTokens)
+            {
+                var score = Score(eTokens, pTokens, entry.ShirtNumber, player.ShirtNumber);
+                if (score >= MinScore) candidates.Add((score, entry, player));
+            }
+        }
+
+        var result = new Dictionary<Guid, SquadPlayer>();
+        var used = new HashSet<Guid>();
+        foreach (var (_, entry, player) in candidates.OrderByDescending(c => c.Score))
+        {
+            if (result.ContainsKey(entry.Id) || used.Contains(player.Id)) continue;
+            result[entry.Id] = player;
+            used.Add(player.Id);
         }
 
         return result;
