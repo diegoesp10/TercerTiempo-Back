@@ -162,10 +162,12 @@ public static class DependencyInjection
 
     private static void AddOfficialSheets(IServiceCollection services, IConfiguration configuration)
     {
+        services.AddSingleton<IAsturfutbolRequestStore, SqlAsturfutbolRequestStore>();
+        services.AddSingleton<AsturfutbolRequestGate>();
         services.AddOptions<OfficialSheetOptions>()
             .Bind(configuration.GetSection(OfficialSheetOptions.SectionName));
 
-        // La web exige cookie de sesión y redirige a NLogin en la primera petición: el handler las gestiona solo.
+        // Cookie compartida; los saltos de sesión también pasan por el control persistente de peticiones.
         services.AddHttpClient<AsturfutbolClient>((sp, client) =>
             {
                 var settings = sp.GetRequiredService<IOptions<OfficialSheetOptions>>().Value.Asturfutbol;
@@ -178,10 +180,10 @@ public static class DependencyInjection
             {
                 UseCookies = true,
                 CookieContainer = new System.Net.CookieContainer(),
-                AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 5,
+                AllowAutoRedirect = false,
                 AutomaticDecompression = System.Net.DecompressionMethods.All,
-            });
+            })
+            .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 
         services.AddScoped<IOfficialSheetProvider, AsturfutbolOfficialSheetProvider>();
         services.AddScoped<ITeamProfileProvider, AsturfutbolTeamProfileProvider>();

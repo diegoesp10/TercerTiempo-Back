@@ -37,7 +37,6 @@ internal sealed class CompareMatchSheetHandler(
     IPlayerStore players,
     IPerformanceStore performances,
     IOfficialSheetStore sheets,
-    ICommandHandler<SyncOfficialSheetCommand, OfficialSheetDto> syncOfficialSheet,
     IQueryHandler<GetOfficialSheetQuery, OfficialSheetDto> getOfficialSheet,
     IClubStore clubs,
     TimeProvider clock) : ICommandHandler<CompareMatchSheetCommand, SheetComparisonDto>
@@ -55,9 +54,7 @@ internal sealed class CompareMatchSheetHandler(
         if (match.SeasonId != squad.SeasonId || !match.Involves(squad.TeamId))
             throw new ConflictException(ErrorCode.MatchNotOfSquad);
 
-        var official = command.Refresh
-            ? await syncOfficialSheet.Handle(new SyncOfficialSheetCommand(match.Id, Force: true), cancellationToken)
-            : await getOfficialSheet.Handle(new GetOfficialSheetQuery(match.Id), cancellationToken);
+        var official = await getOfficialSheet.Handle(new GetOfficialSheetQuery(match.Id), cancellationToken);
 
         var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
         var teamMap = (await teams.GetByIdsAsync([match.HomeTeamId, match.AwayTeamId], cancellationToken)).ToDictionary(t => t.Id);

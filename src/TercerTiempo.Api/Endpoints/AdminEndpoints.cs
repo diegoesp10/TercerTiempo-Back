@@ -23,7 +23,7 @@ internal static class AdminEndpoints
         group.MapPost("/sync/team-profiles", (bool? force, IAdminRepository admin, CancellationToken ct) => admin.SyncTeamProfilesAsync(force ?? false, ct))
             .WithName("SyncTeamProfiles")
             .WithSummary("Descargar fichas y escudos de la federación")
-            .WithDescription("Para cada equipo de la temporada en curso localiza su código en asturfutbol.es (por las primeras jornadas de su competición) y descarga su ficha (sede, web, equipación, campo donde juega de local) y su escudo, que se guarda en Crests:Directory y se sirve en GET /api/teams/{teamId}/crest. Las fichas consultadas hace menos de Crests:RefreshDays días se saltan salvo con force=true. Los equipos de fuera de Asturias no están en la federación y conservan el escudo del proveedor de datos. El worker lo ejecuta tras cada sincronización. A una petición por segundo, la primera vez tarda varios minutos.");
+            .WithDescription("Completa únicamente las fichas y escudos que faltan en SQL. Reutiliza las páginas guardadas y respeta los límites y pausas persistidos de OfficialSheets:Asturfutbol. Los equipos de fuera de Asturias conservan el escudo del proveedor de datos. force se mantiene por compatibilidad, pero no vuelve a descargar los datos ya guardados.");
 
         group.MapPost("/teams/{teamId:guid}/crest", (Guid teamId, ImportCrestRequest request, IAdminRepository admin, CancellationToken ct) => admin.ImportTeamCrestAsync(teamId, request.Url, ct))
             .WithName("ImportTeamCrest")

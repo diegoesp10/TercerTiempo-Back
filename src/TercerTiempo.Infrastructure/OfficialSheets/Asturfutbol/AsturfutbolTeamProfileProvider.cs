@@ -53,6 +53,7 @@ internal sealed class AsturfutbolTeamProfileProvider(
                 };
             }
         }
+        catch (TercerTiempo.Application.Abstractions.OfficialSheets.ProviderThrottledException) { throw; }
         catch (HttpRequestException ex)
         {
             logger.LogWarning(ex, "asturfutbol.es: no se pudo leer el campo {Ground} del equipo {Team}", groundCode, teamCode);

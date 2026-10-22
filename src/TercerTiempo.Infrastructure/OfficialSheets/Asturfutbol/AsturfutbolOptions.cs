@@ -8,9 +8,9 @@ public sealed class OfficialSheetOptions
 
     // Descarga en segundo plano: cada cuántos minutos se buscan actas que falten o toque refrescar, cuántas como
     // máximo por pasada y cuánto se espera tras arrancar antes de la primera.
-    public int BackgroundScanMinutes { get; set; } = 30;
+    public int BackgroundScanMinutes { get; set; } = 60;
 
-    public int BackgroundBatch { get; set; } = 400;
+    public int BackgroundBatch { get; set; } = 20;
 
     public int BackgroundStartDelaySeconds { get; set; } = 20;
 
@@ -23,7 +23,12 @@ public sealed class AsturfutbolOptions
 
     public string UserAgent { get; set; } = "TercerTiempo/1.0 (+https://github.com/diegoesp10/TercerTiempo-Back)";
 
-    public int RequestDelayMs { get; set; } = 2000;
+    public int RequestDelayMs { get; set; } = 10000;
+    public int MaxRequestsPerHour { get; set; } = 60;
+    public int MaxRequestsPerDay { get; set; } = 200;
+    public int CacheHours { get; set; } = 24;
+    public int FailureRetryMinutes { get; set; } = 60;
+    public int BlockedPauseHours { get; set; } = 24;
 
     public string CalendarCode { get; set; } = "1000120";
     public string TeamsCode { get; set; } = "1000119";

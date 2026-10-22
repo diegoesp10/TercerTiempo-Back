@@ -74,9 +74,11 @@ internal sealed class OfficialSheetSyncWorker(
             }
             catch (ProviderThrottledException ex)
             {
-                logger.LogWarning("La federación está limitando las peticiones ({Message}); pausa de 5 minutos", ex.Message);
-                queue.PausedUntil = clock.GetUtcNow() + TimeSpan.FromMinutes(5);
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                var until = ex.RetryAt ?? clock.GetUtcNow().AddHours(24);
+                logger.LogWarning("Descargas de la federación aplazadas hasta {Until}: {Message}", until, ex.Message);
+                queue.PausedUntil = until;
+                var delay = until - clock.GetUtcNow();
+                if (delay > TimeSpan.Zero) await Task.Delay(delay, clock, stoppingToken);
                 queue.PausedUntil = null;
             }
             catch (Exception ex)

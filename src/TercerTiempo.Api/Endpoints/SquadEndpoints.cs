@@ -102,7 +102,7 @@ internal static class SquadEndpoints
             .AllowAnonymous()
             .WithName("CompareMatchSheet")
             .WithSummary("Comparador: acta interna frente al acta oficial")
-            .WithDescription("Para cada ficha de la plantilla, la línea registrada por el cuerpo técnico y la línea del acta de la federación (emparejadas por nombre y dorsal), con las discrepancias en played, started, minutes, goals, yellowCards y redCard; además, las líneas oficiales sin ficha en la plantilla. Consulta (y guarda) el acta oficial si toca; official.status explica si aún no está. Misma visibilidad que la plantilla.")
+            .WithDescription("Para cada ficha de la plantilla, la línea registrada por el cuerpo técnico y la línea del acta oficial guardada en SQL (emparejadas por nombre y dorsal), con las discrepancias en played, started, minutes, goals, yellowCards y redCard; además, las líneas oficiales sin ficha en la plantilla. Si faltan datos, encola su descarga con los límites configurados. refresh se conserva por compatibilidad y no fuerza llamadas a la federación. Misma visibilidad que la plantilla.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);

@@ -13,7 +13,7 @@ using TercerTiempo.Domain.Teams;
 namespace TercerTiempo.Application.Teams.SyncProfiles;
 
 public sealed record SyncTeamProfilesCommand(
-    [property: Description("Volver a descargar fichas y escudos aunque se hayan consultado hace poco.")]
+    [property: Description("Compatibilidad: no se fuerzan descargas de datos ya guardados.")]
     bool Force = false) : ICommand<TeamProfileSyncResultDto>;
 
 public sealed record TeamProfileSyncResultDto(
@@ -73,7 +73,8 @@ internal sealed class SyncTeamProfilesHandler(
                     }
 
                     var fresh = team.ProfileSyncedAt is { } at && at > staleBefore;
-                    if (!command.Force && fresh) continue;
+                    var hasProfile = !team.Profile.IsEmpty;
+                    if (hasProfile && team.CrestKey is not null || fresh && !hasProfile) continue;
 
                     var profile = await profiles.GetProfileAsync(official.ExternalId, cancellationToken);
                     if (profile is null)
@@ -83,10 +84,14 @@ internal sealed class SyncTeamProfilesHandler(
                         continue;
                     }
 
-                    team.UpdateProfile(profile.Profile, now);
-                    updated++;
+                    if (!hasProfile)
+                    {
+                        team.UpdateProfile(profile.Profile, now);
+                        updated++;
+                    }
+                    else team.MarkProfileChecked(now);
 
-                    if (profile.CrestUrl is { } crestUrl && (command.Force || team.CrestKey is null)
+                    if (profile.CrestUrl is { } crestUrl && team.CrestKey is null
                         && await profiles.DownloadCrestAsync(crestUrl, cancellationToken) is { } image)
                     {
                         team.SetCrest(await crests.SaveAsync(team.Id, image, cancellationToken));
@@ -98,6 +103,7 @@ internal sealed class SyncTeamProfilesHandler(
             }
             catch (ProviderThrottledException ex)
             {
+                await unitOfWork.SaveChangesAsync(cancellationToken);
                 // Bloqueo temporal: seguir pidiendo solo lo alarga. Lo hecho hasta aquí queda guardado; el resto, en la próxima pasada.
                 logger.LogWarning("{Provider}: bloqueo temporal, se interrumpe la descarga de fichas ({Message})", profiles.ProviderName, ex.Message);
                 errors.Add($"{competition.Name}: {ex.Message} La descarga se reanuda en la siguiente sincronización.");
@@ -117,7 +123,8 @@ internal sealed class SyncTeamProfilesHandler(
 
     private async Task<int> LinkTeamsAsync(Competition competition, Season season, IReadOnlyList<Team> seasonTeams, CancellationToken cancellationToken)
     {
-        var pending = seasonTeams.Where(t => t.OfficialRef?.Provider != profiles.ProviderName).ToList();
+        var pending = seasonTeams.Where(t => t.OfficialRef?.Provider != profiles.ProviderName
+            && (t.Profile.IsEmpty || t.CrestKey is null)).ToList();
         if (pending.Count == 0) return 0;
 
         var competitionRef = await locator.ResolveCompetitionAsync(competition, season, cancellationToken);

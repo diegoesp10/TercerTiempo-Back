@@ -22,13 +22,10 @@ public interface IOfficialSheetQueue
     DateTimeOffset? PausedUntil { get; }
 }
 
-// Cuándo toca volver a pedir un acta: pendiente cada 10 minutos; publicada, una vez al día durante la semana siguiente
-// al partido (la federación corrige actas unos días después).
+// Las actas completas son definitivas para la descarga automática. Solo se buscan datos que aún falten.
 internal static class OfficialSheetRefresh
 {
-    private static readonly TimeSpan PendingRecheck = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan AvailableRefresh = TimeSpan.FromHours(24);
-    private static readonly TimeSpan CorrectionWindow = TimeSpan.FromDays(7);
+    private static readonly TimeSpan PendingRecheck = TimeSpan.FromHours(24);
 
     public static bool IsPlayed(Match match, DateTimeOffset now) =>
         match.Status == MatchStatus.Played
@@ -36,11 +33,7 @@ internal static class OfficialSheetRefresh
 
     public static bool IsDue(OfficialMatchSheet sheet, Match match, DateTimeOffset now)
     {
-        if (!sheet.IsAvailable)
-            return now - sheet.CheckedAt >= PendingRecheck;
-
-        var fetchedAt = sheet.FetchedAt ?? sheet.CheckedAt;
-        return now - match.KickoffAt <= CorrectionWindow && now - fetchedAt >= AvailableRefresh;
+        return !sheet.IsAvailable && now - sheet.CheckedAt >= PendingRecheck;
     }
 }
 
@@ -97,7 +90,7 @@ internal sealed class GetOfficialSheetHandler(
             queue.Enqueue(match.Id);
             var message = queue.PausedUntil is { } until && until > now
                 ? $"La federación está limitando las consultas; el acta se descargará en cuanto lo permita (hacia las {until.ToLocalTime():HH:mm})."
-                : "Descargando el acta de la federación; aparecerá en unos segundos.";
+                : "El acta aún no está guardada. Se descargará en segundo plano respetando los límites de la federación.";
             return OfficialSheetMapper.Empty(match.Id, OfficialSheetAvailability.Fetching, provider.ProviderName, message);
         }
 
@@ -106,7 +99,7 @@ internal sealed class GetOfficialSheetHandler(
 
         return sheet.IsAvailable
             ? Result(sheet, match, OfficialSheetAvailability.Available, null)
-            : Result(sheet, match, OfficialSheetAvailability.Pending, "La federación todavía no ha publicado el acta.");
+            : Result(sheet, match, OfficialSheetAvailability.Pending, "El acta guardada aún está pendiente. La descarga de datos nuevos se comprueba como máximo una vez al día.");
     }
 
     private static OfficialSheetDto Result(OfficialMatchSheet? sheet, Match match, OfficialSheetAvailability status, string? message) =>
@@ -117,18 +110,14 @@ internal sealed class GetOfficialSheetHandler(
 
 public sealed record PlanOfficialSheetSyncCommand(int Max) : ICommand<IReadOnlyList<Guid>>;
 
-// Qué actas toca descargar en esta pasada: partidos jugados de las temporadas en curso sin acta guardada o con el
-// acta por refrescar, de los más recientes a los más antiguos. Resuelve de paso la competición de cada temporada en
-// la federación (una petición por temporada, una sola vez) y salta las que la federación no tiene.
+// Planificar solo lee SQL: partidos jugados sin acta o pendientes desde hace al menos un día,
+// de los más recientes a los más antiguos. La resolución de la federación se hace al descargar lo que falta.
 internal sealed class PlanOfficialSheetSyncHandler(
     ICompetitionStore competitions,
     IMatchStore matches,
     IOfficialSheetStore sheets,
-    OfficialSheetLocator locator,
     OfficialSheetSyncMemory memory,
-    IUnitOfWork unitOfWork,
-    TimeProvider clock,
-    ILogger<PlanOfficialSheetSyncHandler> logger) : ICommandHandler<PlanOfficialSheetSyncCommand, IReadOnlyList<Guid>>
+    TimeProvider clock) : ICommandHandler<PlanOfficialSheetSyncCommand, IReadOnlyList<Guid>>
 {
     public async Task<IReadOnlyList<Guid>> Handle(PlanOfficialSheetSyncCommand command, CancellationToken cancellationToken)
     {
@@ -151,24 +140,8 @@ internal sealed class PlanOfficialSheetSyncHandler(
             if (pending.Count == 0)
                 continue;
 
-            try
-            {
-                if (await locator.ResolveCompetitionAsync(competition, season, cancellationToken) is null)
-                {
-                    memory.SeasonNotFound(season.Id, now);
-                    continue;
-                }
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
-            {
-                logger.LogWarning(ex, "No se pudo localizar {Competition} en la federación; se reintentará en la próxima pasada", competition.Name);
-                continue;
-            }
-
             due.AddRange(pending);
         }
-
-        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return due
             .OrderByDescending(m => m.KickoffAt)

@@ -179,7 +179,7 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST | `/api/squads/{id}/players/{squadPlayerId}/invite-code` | Club propietario o técnico vigente: generar o renovar el código personal de esa ficha |
 | GET | `/api/squads/{id}/matches` | Partidos del equipo con el número de líneas registradas en cada acta |
 | GET / PUT | `/api/squads/{id}/matches/{matchId}/sheet` | Consultar / registrar el acta interna de un partido (idempotente; `played = false` borra la línea) |
-| GET | `/api/squads/{id}/matches/{matchId}/sheet/comparison` | **Comparador**: acta interna frente a la oficial, jugador a jugador, con las discrepancias (`?refresh=true` vuelve a pedirla a la federación) |
+| GET | `/api/squads/{id}/matches/{matchId}/sheet/comparison` | **Comparador**: acta interna frente a la oficial guardada en SQL, jugador a jugador, con las discrepancias. `refresh` no fuerza descargas |
 | POST | `/api/squads/{id}/matches/{matchId}/video` | Subir el vídeo del partido (multipart `file` + `title`) |
 | GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
 | GET | `/api/squads/{id}/players/{squadPlayerId}/profile` | Ficha para gráficos: serie partido a partido con el desglose de la nota, perfil por 90' y media/máximo de la plantilla |
@@ -269,15 +269,23 @@ El worker `FootballDataSyncWorker` sincroniza al arrancar y cada `SyncIntervalHo
 
 La web de la RFFPA ([asturfutbol.es](https://www.asturfutbol.es)) publica el acta de cada partido (alineaciones,
 sustituciones con minuto, goles y tarjetas). No tiene API: `AsturfutbolOfficialSheetProvider` lee sus páginas
-(`Infrastructure/OfficialSheets/Asturfutbol`, AngleSharp) con un ritmo de una petición cada dos segundos
-(`OfficialSheets:Asturfutbol:RequestDelayMs`; tras cientos de peticiones seguidas la web responde vacío un buen rato,
-que el cliente trata como fallo transitorio) y User-Agent propio. Particularidades:
+(`Infrastructure/OfficialSheets/Asturfutbol`, AngleSharp). Antes de acceder a la web se consulta SQL: las actas completas,
+fichas y escudos ya guardados no se vuelven a descargar automáticamente. Solo se completan los datos que faltan.
+El frontal consulta nuestra API y su botón «Consultar datos guardados» no fuerza el scraper. Particularidades:
 
 - Las páginas son públicas pero exigen una cookie de sesión: la primera petición redirige a `/pnfg/NLogin`, que la fija
-  y devuelve a la página pedida (`AsturfutbolClient` usa un `HttpClientHandler` con cookies y redirecciones). Sin cookie
+  y devuelve a la página pedida (`AsturfutbolClient` conserva las cookies y controla cada redirección). Sin cookie
   responde una página vacía ("No se ha aceptado el cookie"). Las páginas no declaran charset (ISO-8859-1).
-- Su `robots.txt` prohíbe el rastreo a los bots genéricos; aquí no se rastrea: solo se leen, bajo demanda y con caché,
-  las páginas de los partidos que alguien consulta.
+- Todas las lecturas de la federación (calendarios, jornadas, actas, fichas, campos y escudos) pasan por el mismo
+  control. `FederationHttpCache` guarda páginas y respuestas 404 durante 24 horas y los fallos durante 60 minutos;
+  también reserva la URL para impedir descargas simultáneas entre procesos. `FederationRequestStates` guarda los
+  contadores y la pausa global. Sobreviven a reinicios y se comparten entre instancias conectadas a la misma SQL.
+- Valores iniciales en `OfficialSheets:Asturfutbol`: `RequestDelayMs=10000`, `MaxRequestsPerHour=60`,
+  `MaxRequestsPerDay=200`, `CacheHours=24`, `FailureRetryMinutes=60`, `BlockedPauseHours=24`. Los contadores usan
+  horas y días UTC. Cada redirección cuenta como una petición. No hay reintentos HTTP inmediatos. Una respuesta
+  403/429 o una página vacía/de bloqueo pausa todo al menos 24 horas; un error 5xx pausa al menos 60 minutos.
+  Se respeta un `Retry-After` superior. Estos límites son configurables, no un umbral garantizado por la federación.
+  `OfficialSheets:Enabled=false` desactiva las descargas y permite seguir consultando los datos guardados.
 - Los marcadores llevan dígitos ofuscados (clases `fa-N` y `<span>` ocultos con cifras señuelo): no se usan; el
   resultado del partido viene de futbolasturiano.es y los goles se cuentan por goleador.
 - Localización de un acta (`OfficialSheetLocator`): la competición se busca por nombre en los desplegables del
@@ -292,10 +300,11 @@ que el cliente trata como fallo transitorio) y User-Agent propio. Particularidad
   titular desde el 0, suplente desde su entrada, hasta la sustitución, la expulsión o el final
   (`OfficialSheets:Asturfutbol:MatchLength`). Los nombres vienen como "APELLIDOS, NOMBRE" y, en menores, a veces solo
   el nombre de pila.
-- Cuándo se consulta (`SyncOfficialSheetCommand`): nunca antes del saque; mientras no haya alineaciones (partido en
-  juego o recién terminado) como mucho cada 10 minutos (`Pending`, el frontal lo reintenta solo); publicada, una vez
-  al día durante la semana siguiente por si la corrigen; `?refresh=true` fuerza la descarga. `Unavailable` si no se
-  localiza el partido (liga sin correspondencia, nombres muy distintos).
+- Cuándo se consulta (`SyncOfficialSheetCommand`): solo si faltan datos de un partido jugado; las actas pendientes
+  se comprueban como máximo una vez al día. Una vez completa, se conserva sin volver a buscar correcciones externas.
+  `refresh` y `force` se aceptan por compatibilidad, pero no saltan SQL ni los límites. El worker planifica leyendo
+  SQL cada 60 minutos, con lotes de hasta 20 partidos, y descarga progresivamente dentro del presupuesto disponible.
+  `Unavailable` indica que no se localiza el partido (liga sin correspondencia, nombres muy distintos).
 - Comparador (`CompareMatchSheetCommand`, `SheetMatcher`): cada línea oficial del equipo de la plantilla se empareja
   con una ficha por las palabras del nombre (sin orden ni tildes) y, en caso de duda, por el dorsal; se comparan
   presencia, titularidad, minutos, goles y tarjetas (el acta oficial no recoge asistencias, tiros ni paradas) y se

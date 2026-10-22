@@ -11,8 +11,8 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
-// Va a la web de la federación. La lanzan el proceso en segundo plano (Background = true) y el botón «Actualizar»;
-// la consulta normal del partido usa GetOfficialSheetQuery, que solo lee la base de datos.
+// Completa datos que falten desde el proceso en segundo plano (Background = true).
+// Force se conserva por compatibilidad; nunca evita la lectura previa de SQL ni los límites de descarga.
 public sealed record SyncOfficialSheetCommand(Guid MatchId, bool Force = false, bool Background = false) : ICommand<OfficialSheetDto>;
 
 internal sealed class SyncOfficialSheetValidator : AbstractValidator<SyncOfficialSheetCommand>
@@ -41,13 +41,17 @@ internal sealed class SyncOfficialSheetHandler(
         var now = clock.GetUtcNow();
         var sheet = await sheets.GetByMatchAsync(match.Id, cancellationToken);
 
+        // Ni Force ni una petición manual deben volver a descargar un acta completa ya almacenada.
+        if (sheet is { IsAvailable: true })
+            return Result(sheet, match, OfficialSheetAvailability.Available, null);
+
         if (match.Status is MatchStatus.Cancelled)
             return Result(sheet, match, OfficialSheetAvailability.Unavailable, "El partido está cancelado.");
 
         if (match.Status is MatchStatus.Scheduled or MatchStatus.Postponed && match.KickoffAt - NotBefore > now)
             return Result(sheet, match, OfficialSheetAvailability.NotPlayed, "El partido todavía no se ha jugado.");
 
-        if (!command.Force && sheet is not null && !OfficialSheetRefresh.IsDue(sheet, match, now))
+        if (sheet is not null && !OfficialSheetRefresh.IsDue(sheet, match, now))
             return Result(sheet, match, sheet.IsAvailable ? OfficialSheetAvailability.Available : OfficialSheetAvailability.Pending, null);
 
         try
@@ -56,7 +60,8 @@ internal sealed class SyncOfficialSheetHandler(
         }
         catch (ProviderThrottledException) when (command.Background)
         {
-            // El proceso en segundo plano se pausa unos minutos en vez de seguir insistiendo.
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            // Conserva las referencias ya resueltas antes de pausar el proceso hasta RetryAt.
             throw;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
@@ -88,6 +93,12 @@ internal sealed class SyncOfficialSheetHandler(
         if (sheet is null)
         {
             var (competition, season) = await Resolvers.SeasonByIdAsync(competitions, match.SeasonId, cancellationToken);
+            if (memory.SkipSeason(season.Id, now)) return null;
+            if (await locator.ResolveCompetitionAsync(competition, season, cancellationToken) is null)
+            {
+                memory.SeasonNotFound(season.Id, now);
+                return null;
+            }
             var officialRef = await locator.LocateAsync(match, competition, season, cancellationToken);
             if (officialRef is null)
                 return null;

@@ -15,9 +15,10 @@ public interface IOfficialSheetProvider
     string SheetUrl(string sheetCode);
 }
 
-public sealed class ProviderThrottledException(string provider, string message) : HttpRequestException(message)
+public sealed class ProviderThrottledException(string provider, string message, DateTimeOffset? retryAt = null) : HttpRequestException(message)
 {
     public string Provider { get; } = provider;
+    public DateTimeOffset? RetryAt { get; } = retryAt;
 }
 
 public sealed record OfficialCompetitionRef(string CompetitionCode, string GroupCode, string SeasonCode)

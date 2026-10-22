@@ -1,10 +1,12 @@
 using System.Net;
 using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.Teams;
+using TercerTiempo.Application.Abstractions.OfficialSheets;
+using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
 namespace TercerTiempo.Infrastructure.Teams;
 
-internal sealed class HttpCrestDownloader(HttpClient http, ILogger<HttpCrestDownloader> logger) : ICrestDownloader
+internal sealed class HttpCrestDownloader(HttpClient http, ILogger<HttpCrestDownloader> logger, AsturfutbolClient federation) : ICrestDownloader
 {
     private const int MaxBytes = 2 * 1024 * 1024;
 
@@ -17,6 +19,12 @@ internal sealed class HttpCrestDownloader(HttpClient http, ILogger<HttpCrestDown
     {
         try
         {
+            if (new Uri(url).Host is "asturfutbol.es" or "www.asturfutbol.es")
+            {
+                var saved = await federation.GetBytesAsync(url, cancellationToken);
+                if (saved is not { } image || !ImageTypes.Contains(image.ContentType) || image.Content.Length is 0 or > MaxBytes) return null;
+                return new CrestImage(image.Content, image.ContentType);
+            }
             using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (response.StatusCode == HttpStatusCode.NotFound) return null;
             response.EnsureSuccessStatusCode();
@@ -32,6 +40,7 @@ internal sealed class HttpCrestDownloader(HttpClient http, ILogger<HttpCrestDown
             var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             return content.Length is 0 or > MaxBytes ? null : new CrestImage(content, contentType.ToLowerInvariant());
         }
+        catch (ProviderThrottledException) { throw; }
         catch (HttpRequestException ex)
         {
             logger.LogWarning(ex, "Escudo {Url}: no se pudo descargar", url);
