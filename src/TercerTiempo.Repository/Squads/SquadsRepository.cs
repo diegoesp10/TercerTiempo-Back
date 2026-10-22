@@ -10,6 +10,7 @@ using TercerTiempo.Application.Squads.Matches;
 using TercerTiempo.Application.Squads.MatchSheet;
 using TercerTiempo.Application.Squads.Settings;
 using TercerTiempo.Application.Squads.Stats;
+using TercerTiempo.Application.Squads.Suggestions;
 using TercerTiempo.Application.Videos;
 using TercerTiempo.Domain.Videos;
 
@@ -34,6 +35,8 @@ internal sealed class SquadsRepository(
     ICommandHandler<AppendVideoChunkCommand, VideoUploadDto> appendVideoChunk,
     ICommandHandler<CompleteVideoUploadCommand, MatchVideoDto> completeVideoUpload,
     ICommandHandler<CancelVideoUploadCommand, bool> cancelVideoUpload,
+    IQueryHandler<ListSquadSuggestionsQuery, IReadOnlyList<SuggestionDto>> listSuggestions,
+    ICommandHandler<ResolveSuggestionCommand, IReadOnlyList<SuggestionDto>> resolveSuggestion,
     IQueryHandler<GetSquadStatsQuery, SquadStatsDto> getStats,
     IQueryHandler<GetSquadPlayerProfileQuery, SquadPlayerProfileDto> getPlayerProfile,
     IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto> getTimeline,
@@ -98,6 +101,12 @@ internal sealed class SquadsRepository(
 
     public Task<bool> CancelVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default) =>
         cancelVideoUpload.Handle(new CancelVideoUploadCommand(squadId, uploadId), cancellationToken);
+
+    public Task<IReadOnlyList<SuggestionDto>> ListSuggestionsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        listSuggestions.Handle(new ListSquadSuggestionsQuery(squadId), cancellationToken);
+
+    public Task<IReadOnlyList<SuggestionDto>> ResolveSuggestionAsync(Guid squadId, Guid suggestionId, ResolveSuggestionRequest request, CancellationToken cancellationToken = default) =>
+        resolveSuggestion.Handle(request.ToCommand(squadId, suggestionId), cancellationToken);
 
     public Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         getStats.Handle(new GetSquadStatsQuery(squadId), cancellationToken);

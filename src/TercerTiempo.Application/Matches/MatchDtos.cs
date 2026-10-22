@@ -21,7 +21,12 @@ public sealed record MatchDto(
     int? AwayGoals,
     string? Venue);
 
-public sealed record MatchDetailDto(MatchDto Match, IReadOnlyList<MatchSquadSheetDto> Sheets);
+public sealed record MatchDetailDto(
+    MatchDto Match,
+    string? CompetitionName,
+    string? SeasonLabel,
+    [property: System.ComponentModel.Description("Actas internas de las plantillas de los dos equipos; las privadas llegan sin líneas (visible = false).")]
+    IReadOnlyList<MatchSquadSheetDto> Sheets);
 
 public sealed record MatchSquadSheetDto(
     Guid SquadId,

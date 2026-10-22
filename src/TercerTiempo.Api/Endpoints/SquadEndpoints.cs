@@ -212,6 +212,22 @@ internal static class SquadEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{squadId:guid}/suggestions", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.ListSuggestionsAsync(squadId, ct))
+            .WithName("ListSquadSuggestions")
+            .WithSummary("Sugerencias de los jugadores sobre sus actas")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Cada sugerencia trae la línea propuesta, la actual del acta (si existe) y el mensaje del jugador; pendientes primero.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{squadId:guid}/suggestions/{suggestionId:guid}/resolve", (Guid squadId, Guid suggestionId, ResolveSuggestionRequest request, ISquadsRepository squads, CancellationToken ct) => squads.ResolveSuggestionAsync(squadId, suggestionId, request, ct))
+            .WithName("ResolveSuggestion")
+            .WithSummary("Aprobar o rechazar una sugerencia")
+            .WithDescription("Al aprobar, la línea propuesta se escribe en el acta del partido (se crea o se actualiza) en nombre del técnico que aprueba o, si aprueba el club, del primer entrenador vigente. Devuelve la lista actualizada.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
         group.MapGet("/{squadId:guid}/stats", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetStatsAsync(squadId, ct))
             .AllowAnonymous()
             .WithName("GetSquadStats")

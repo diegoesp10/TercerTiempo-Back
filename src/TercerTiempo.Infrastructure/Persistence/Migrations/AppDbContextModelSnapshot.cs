@@ -1136,6 +1136,36 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "suggestion.not_found",
+                            Language = "es",
+                            Message = "La sugerencia '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "suggestion.already_resolved",
+                            Language = "es",
+                            Message = "Esa sugerencia ya se ha aprobado o rechazado."
+                        },
+                        new
+                        {
+                            Code = "suggestion.pending_exists",
+                            Language = "es",
+                            Message = "Ya tienes una sugerencia pendiente para este partido. Espera a que tu club o tu entrenador la revisen."
+                        },
+                        new
+                        {
+                            Code = "suggestion.message_too_long",
+                            Language = "es",
+                            Message = "El mensaje no puede superar los {0} caracteres."
+                        },
+                        new
+                        {
+                            Code = "suggestion.no_staff_to_record",
+                            Language = "es",
+                            Message = "No hay ningún técnico vigente en la plantilla en cuyo nombre registrar el acta."
+                        },
+                        new
+                        {
                             Code = "video.not_found",
                             Language = "es",
                             Message = "El vídeo '{0}' no existe."
@@ -1568,6 +1598,101 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("SheetId");
 
                     b.ToTable("OfficialSheetLines", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Performances.PerformanceSuggestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Assists")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Goals")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Interceptions")
+                        .HasColumnType("int");
+
+                    b.Property<int>("KeyPasses")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("MinutesPlayed")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("RedCard")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ResolvedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ResolvedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Saves")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Shots")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ShotsOnTarget")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SquadPlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Started")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("Tackles")
+                        .HasColumnType("int");
+
+                    b.Property<int>("YellowCards")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("PlayerId");
+
+                    b.HasIndex("ResolvedByClubId");
+
+                    b.HasIndex("ResolvedByCoachId");
+
+                    b.HasIndex("SquadPlayerId");
+
+                    b.HasIndex("SquadId", "Status");
+
+                    b.ToTable("PerformanceSuggestions", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Performances.PlayerMatchPerformance", b =>
@@ -2603,6 +2728,43 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .WithMany("Lines")
                         .HasForeignKey("SheetId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Performances.PerformanceSuggestion", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Players.Player", null)
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ResolvedByClubId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("ResolvedByCoachId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.SquadPlayer", null)
+                        .WithMany()
+                        .HasForeignKey("SquadPlayerId")
+                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });
 

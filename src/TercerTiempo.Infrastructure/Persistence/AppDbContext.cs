@@ -39,6 +39,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Match> Matches => Set<Match>();
     public DbSet<Standing> Standings => Set<Standing>();
     public DbSet<PlayerMatchPerformance> Performances => Set<PlayerMatchPerformance>();
+    public DbSet<PerformanceSuggestion> PerformanceSuggestions => Set<PerformanceSuggestion>();
     public DbSet<OfficialMatchSheet> OfficialSheets => Set<OfficialMatchSheet>();
     public DbSet<OfficialSheetLine> OfficialSheetLines => Set<OfficialSheetLine>();
     public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();

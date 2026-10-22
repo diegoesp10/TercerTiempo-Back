@@ -3,6 +3,7 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Performances;
 using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Squads;
@@ -20,6 +21,7 @@ internal sealed class GetMatchHandler(
     ISquadStore squads,
     IPerformanceStore performances,
     IClubStore clubs,
+    ICompetitionStore competitions,
     TimeProvider clock) : IQueryHandler<GetMatchQuery, MatchDetailDto>
 {
     public async Task<MatchDetailDto> Handle(GetMatchQuery query, CancellationToken cancellationToken)
@@ -54,6 +56,8 @@ internal sealed class GetMatchHandler(
                 squad.Visibility, visible, entries));
         }
 
-        return new MatchDetailDto(MatchMapper.ToDto(match, teamMap), sheets);
+        var competition = await competitions.GetBySeasonAsync(match.SeasonId, cancellationToken);
+        var season = competition?.Seasons.FirstOrDefault(s => s.Id == match.SeasonId);
+        return new MatchDetailDto(MatchMapper.ToDto(match, teamMap), competition?.Name, season?.Label, sheets);
     }
 }

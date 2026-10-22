@@ -2,6 +2,7 @@ using TercerTiempo.Application.Performances;
 using TercerTiempo.Application.Players;
 using TercerTiempo.Application.Players.JoinSquad;
 using TercerTiempo.Application.Squads;
+using TercerTiempo.Application.Squads.Suggestions;
 using TercerTiempo.Application.Stats;
 
 namespace TercerTiempo.Repository.Players;
@@ -13,4 +14,6 @@ public interface IPlayersRepository
     Task<PlayerDto> LeaveSquadAsync(CancellationToken cancellationToken = default);
     Task<PlayerDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PerformanceWithMatchDto>> GetMyPerformancesAsync(CancellationToken cancellationToken = default);
+    Task<SuggestionDto> SuggestAsync(SuggestPerformanceCommand command, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SuggestionDto>> ListMySuggestionsAsync(CancellationToken cancellationToken = default);
 }

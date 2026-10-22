@@ -6,6 +6,7 @@ using TercerTiempo.Application.Players.GetInvite;
 using TercerTiempo.Application.Players.JoinSquad;
 using TercerTiempo.Application.Players.LeaveSquad;
 using TercerTiempo.Application.Squads;
+using TercerTiempo.Application.Squads.Suggestions;
 using TercerTiempo.Application.Stats;
 using TercerTiempo.Application.Stats.GetPlayerDashboard;
 
@@ -16,7 +17,9 @@ internal sealed class PlayersRepository(
     ICommandHandler<JoinSquadAsPlayerCommand, PlayerDto> joinSquad,
     ICommandHandler<LeaveSquadAsPlayerCommand, PlayerDto> leaveSquad,
     IQueryHandler<GetPlayerDashboardQuery, PlayerDashboardDto> getDashboard,
-    IQueryHandler<ListMyPerformancesQuery, IReadOnlyList<PerformanceWithMatchDto>> listPerformances) : IPlayersRepository
+    IQueryHandler<ListMyPerformancesQuery, IReadOnlyList<PerformanceWithMatchDto>> listPerformances,
+    ICommandHandler<SuggestPerformanceCommand, SuggestionDto> suggest,
+    IQueryHandler<ListMySuggestionsQuery, IReadOnlyList<SuggestionDto>> listSuggestions) : IPlayersRepository
 {
     public Task<SquadInviteDto> GetInviteAsync(string inviteCode, CancellationToken cancellationToken = default) =>
         getInvite.Handle(new GetSquadInviteQuery(inviteCode), cancellationToken);
@@ -32,4 +35,10 @@ internal sealed class PlayersRepository(
 
     public Task<IReadOnlyList<PerformanceWithMatchDto>> GetMyPerformancesAsync(CancellationToken cancellationToken = default) =>
         listPerformances.Handle(new ListMyPerformancesQuery(), cancellationToken);
+
+    public Task<SuggestionDto> SuggestAsync(SuggestPerformanceCommand command, CancellationToken cancellationToken = default) =>
+        suggest.Handle(command, cancellationToken);
+
+    public Task<IReadOnlyList<SuggestionDto>> ListMySuggestionsAsync(CancellationToken cancellationToken = default) =>
+        listSuggestions.Handle(new ListMySuggestionsQuery(), cancellationToken);
 }

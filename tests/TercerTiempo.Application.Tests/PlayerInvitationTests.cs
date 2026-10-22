@@ -229,7 +229,12 @@ public class PlayerInvitationTests
         private static object? Run(Action action) { action(); return null; }
         private IClubStore Clubs => Stub<IClubStore>((_, args) => Task.FromResult<Club?>((Guid)args![0]! == Club.Id ? Club : null));
         private ICoachStore Coaches => Stub<ICoachStore>((_, _) => Task.FromResult<IReadOnlyList<Coach>>([Coach]));
-        private ITeamStore Teams => Stub<ITeamStore>((_, _) => Task.FromResult<Team?>(Team));
+        private ITeamStore Teams => Stub<ITeamStore>((method, _) => method switch
+        {
+            nameof(ITeamStore.GetRosterAsync) => Task.FromResult<IReadOnlyList<RosterEntry>>([]),
+            nameof(ITeamStore.GetByIdsAsync) => Task.FromResult<IReadOnlyList<Team>>([Team]),
+            _ => Task.FromResult<Team?>(Team),
+        });
         private ICompetitionStore Competitions => Stub<ICompetitionStore>((_, _) => Task.FromResult<Competition?>(Competition));
         private IInjuryStore Injuries => Stub<IInjuryStore>((_, _) => Task.FromResult<IReadOnlyList<PlayerInjury>>([]));
         private IUnitOfWork Unit => Stub<IUnitOfWork>((_, _) => Task.FromResult(++Saves));

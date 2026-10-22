@@ -2,6 +2,7 @@ using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Squads.Charts;
 using TercerTiempo.Application.Squads.Injuries;
+using TercerTiempo.Application.Squads.Suggestions;
 using TercerTiempo.Application.Videos;
 using TercerTiempo.Domain.Videos;
 
@@ -42,4 +43,7 @@ public interface ISquadsRepository
     Task<IReadOnlyList<InjuryDto>> CloseInjuryAsync(Guid squadId, Guid injuryId, CloseInjuryRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InjuryDto>> ReopenInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InjuryDto>> DeleteInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<SuggestionDto>> ListSuggestionsAsync(Guid squadId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SuggestionDto>> ResolveSuggestionAsync(Guid squadId, Guid suggestionId, ResolveSuggestionRequest request, CancellationToken cancellationToken = default);
 }

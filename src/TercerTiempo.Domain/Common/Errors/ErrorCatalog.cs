@@ -149,6 +149,11 @@ public static class ErrorCatalog
         (ErrorCode.SheetNoMinutes, "Sin minutos jugados no se pueden registrar acciones de juego."),
         (ErrorCode.SheetNotesTooLong, "Las notas no pueden superar {0} caracteres."),
         (ErrorCode.SheetLineMismatch, "La línea del acta no corresponde a ese jugador o partido."),
+        (ErrorCode.SuggestionNotFound, "La sugerencia '{0}' no existe."),
+        (ErrorCode.SuggestionAlreadyResolved, "Esa sugerencia ya se ha aprobado o rechazado."),
+        (ErrorCode.SuggestionPendingExists, "Ya tienes una sugerencia pendiente para este partido. Espera a que tu club o tu entrenador la revisen."),
+        (ErrorCode.SuggestionMessageTooLong, "El mensaje no puede superar los {0} caracteres."),
+        (ErrorCode.SuggestionNoStaffToRecord, "No hay ningún técnico vigente en la plantilla en cuyo nombre registrar el acta."),
 
         (ErrorCode.VideoNotFound, "El vídeo '{0}' no existe."),
         (ErrorCode.VideoFormatNotAllowed, "Formato no admitido. Sube un vídeo en {0}."),

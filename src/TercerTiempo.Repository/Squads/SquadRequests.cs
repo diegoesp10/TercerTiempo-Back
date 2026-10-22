@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using TercerTiempo.Application.Squads.Injuries;
+using TercerTiempo.Application.Squads.Suggestions;
 using TercerTiempo.Application.Squads.ManagePlayers;
 using TercerTiempo.Application.Squads.MatchSheet;
 using TercerTiempo.Domain.Players;
@@ -33,6 +34,15 @@ public sealed record InjuryRequest(
 {
     internal RecordInjuryCommand ToRecord(Guid squadId) => new(squadId, SquadPlayerId ?? Guid.Empty, Type, Reason, StartedOn, ExpectedReturnOn);
     internal UpdateInjuryCommand ToUpdate(Guid squadId, Guid injuryId) => new(squadId, injuryId, Type, Reason, StartedOn, ExpectedReturnOn);
+}
+
+public sealed record ResolveSuggestionRequest(
+    [property: Description("true aprueba y escribe la línea en el acta; false la rechaza.")]
+    bool Approve,
+    [property: Description("Nota para el jugador, opcional.")]
+    string? Note)
+{
+    internal ResolveSuggestionCommand ToCommand(Guid squadId, Guid suggestionId) => new(squadId, suggestionId, Approve, Note);
 }
 
 public sealed record CloseInjuryRequest(
