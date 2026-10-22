@@ -7,6 +7,12 @@ internal static class AdminEndpoints
     public static IEndpointRouteBuilder MapAdminEndpoints(this IEndpointRouteBuilder app)
     {
         // TODO: restringir a un rol "Admin" cuando se añadan roles. De momento basta con estar autenticado.
+        app.MapGet("/api/sync/status", (IAdminRepository admin, CancellationToken ct) => admin.GetSyncStatusAsync(ct))
+            .WithTags("Admin")
+            .WithName("GetSyncStatus")
+            .WithSummary("Estado de la sincronización")
+            .WithDescription("Si está corriendo (fase «datos» o «fichas», liga en curso y progreso), cuándo terminó la última, su resumen y errores, y cuándo toca la siguiente (FootballData:SyncIntervalHours). Público: el frontal lo sondea para mostrar «actualizando datos».");
+
         var group = app.MapGroup("/api/admin").WithTags("Admin").RequireAuthorization();
 
         group.MapPost("/sync", (IAdminRepository admin, CancellationToken ct) => admin.SyncSeasonAsync(ct))

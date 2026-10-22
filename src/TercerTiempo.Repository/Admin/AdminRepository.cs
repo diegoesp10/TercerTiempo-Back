@@ -7,9 +7,13 @@ namespace TercerTiempo.Repository.Admin;
 
 internal sealed class AdminRepository(
     ICommandHandler<SyncSeasonCommand, SyncResultDto> syncSeason,
+    IQueryHandler<GetSyncStatusQuery, SyncStatusDto> syncStatus,
     ICommandHandler<SyncTeamProfilesCommand, TeamProfileSyncResultDto> syncProfiles,
     ICommandHandler<ImportTeamCrestCommand, TeamCrestImportDto> importCrest) : IAdminRepository
 {
+    public Task<SyncStatusDto> GetSyncStatusAsync(CancellationToken cancellationToken = default) =>
+        syncStatus.Handle(new GetSyncStatusQuery(), cancellationToken);
+
     public Task<SyncResultDto> SyncSeasonAsync(CancellationToken cancellationToken = default) =>
         syncSeason.Handle(new SyncSeasonCommand(), cancellationToken);
 

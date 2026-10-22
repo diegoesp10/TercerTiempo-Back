@@ -10,11 +10,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Sync;
 
-/// <summary>
-/// Descarga todas las ligas que publica el proveedor externo y las vuelca en el dominio: competiciones y
-/// temporadas, equipos, calendario y resultados, clasificación y plantillas. Es idempotente y cada liga
-/// se guarda por separado, de modo que un fallo en una no impide sincronizar las demás.
-/// </summary>
 public sealed record SyncSeasonCommand : ICommand<SyncResultDto>;
 
 public sealed record SyncResultDto(
@@ -36,6 +31,7 @@ internal sealed class SyncSeasonHandler(
     IUnitOfWork unitOfWork,
     ICrestDownloader crestDownloader,
     ICrestStorage crests,
+    ISyncProgress progress,
     TimeProvider clock,
     ILogger<SyncSeasonHandler> logger) : ICommandHandler<SyncSeasonCommand, SyncResultDto>
 {
@@ -44,7 +40,18 @@ internal sealed class SyncSeasonHandler(
         var now = clock.GetUtcNow();
         var providerName = provider.ProviderName;
 
-        var snapshots = await provider.GetCompetitionsAsync(cancellationToken);
+        IReadOnlyList<CompetitionSnapshot> snapshots;
+        try
+        {
+            snapshots = await provider.GetCompetitionsAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            progress.Start("datos", 0);
+            progress.Finish("sin ligas: el proveedor no ha respondido", [ex.Message]);
+            throw;
+        }
+        progress.Start("datos", snapshots.Count);
 
         // Los equipos pueden cambiar de liga entre temporadas: se indexan por id externo una sola vez.
         var teamsByExternalId = (await teams.GetAllAsync(cancellationToken))
@@ -54,9 +61,10 @@ internal sealed class SyncSeasonHandler(
         var totals = (Competitions: 0, Teams: 0, Matches: 0, Standings: 0, Roster: 0);
         var errors = new List<string>();
 
-        foreach (var snapshot in snapshots)
+        foreach (var (snapshot, index) in snapshots.Select((s, i) => (s, i)))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            progress.Step(snapshot.Name, index);
 
             try
             {
@@ -85,6 +93,8 @@ internal sealed class SyncSeasonHandler(
 
         logger.LogInformation("Sincronización con {Provider} completada: {Competitions} competiciones, {Teams} equipos, {Matches} partidos, {Errors} errores",
             providerName, totals.Competitions, totals.Teams, totals.Matches, errors.Count);
+
+        progress.Finish($"{totals.Competitions} ligas, {totals.Teams} equipos, {totals.Matches} partidos y {totals.Roster} fichas", errors);
 
         return new SyncResultDto(providerName, totals.Competitions, totals.Teams, totals.Matches, totals.Standings, totals.Roster, errors, now);
     }

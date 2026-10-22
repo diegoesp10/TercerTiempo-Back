@@ -1,5 +1,6 @@
 using FluentValidation;
 using TercerTiempo.Application.Abstractions.Errors;
+using TercerTiempo.Application.Sync;
 using Microsoft.Extensions.DependencyInjection;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Auth;
@@ -10,10 +11,6 @@ namespace TercerTiempo.Application;
 
 public static class DependencyInjection
 {
-    /// <summary>
-    /// Registra validadores y todos los handlers de la capa por reflexión.
-    /// Los command handlers se envuelven en <see cref="ValidatingCommandHandler{TCommand,TResult}"/>.
-    /// </summary>
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         var assembly = typeof(DependencyInjection).Assembly;
@@ -23,6 +20,7 @@ public static class DependencyInjection
         // Servicios internos compartidos por varios handlers.
         services.AddScoped<AccountStores>();
         services.AddScoped<IErrorMessageResolver, ErrorMessageResolver>();
+        services.AddSingleton<ISyncProgress, SyncProgress>();
         services.AddScoped<AppointmentRedemption>();
         services.AddScoped<OfficialSheetLocator>();
 

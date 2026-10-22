@@ -9,11 +9,12 @@ using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
 namespace TercerTiempo.Infrastructure.FootballData;
 
-/// <summary>Ejecuta la sincronización con el proveedor al arrancar y después cada N horas.</summary>
 internal sealed class FootballDataSyncWorker(
     IServiceScopeFactory scopeFactory,
     IOptions<FootballDataOptions> options,
     IOptions<OfficialSheetOptions> officialSheets,
+    ISyncProgress progress,
+    TimeProvider clock,
     ILogger<FootballDataSyncWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -26,10 +27,15 @@ internal sealed class FootballDataSyncWorker(
         if (settings.SyncIntervalHours <= 0)
             return;
 
-        using var timer = new PeriodicTimer(TimeSpan.FromHours(settings.SyncIntervalHours));
+        var interval = TimeSpan.FromHours(settings.SyncIntervalHours);
+        progress.ScheduleNext(clock.GetUtcNow() + interval);
+        using var timer = new PeriodicTimer(interval);
 
         while (await timer.WaitForNextTickAsync(stoppingToken))
+        {
             await RunOnceAsync(stoppingToken);
+            progress.ScheduleNext(clock.GetUtcNow() + interval);
+        }
     }
 
     private async Task RunOnceAsync(CancellationToken cancellationToken)

@@ -156,6 +156,7 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST | `/api/auth/register` | Alta como jugador, cuerpo técnico (con el código de acceso del club: lo canjea y entra en su plantilla) o club |
 | POST | `/api/auth/login` | Login |
 | GET | `/api/auth/me` | Cuenta autenticada: jugador con su plantilla; técnico con sus plantillas y nombramientos; club con sus equipos y nombramientos |
+| GET | `/api/sync/status` | Estado de la sincronización (fase, liga en curso, progreso, última ejecución, siguiente); el frontal lo sondea. Público |
 | POST | `/api/admin/sync/team-profiles?force=` | Localiza cada equipo en asturfutbol.es y descarga su ficha (sede, web, equipación, campo) y su escudo; sin ficha, el escudo del proveedor |
 | POST | `/api/admin/teams/{id}/crest` | Importar el escudo de un equipo desde una URL (`{ "url": ... }`) |
 | GET | `/api/clubs/catalog?search=` | Catálogo de clubes del proveedor (equipos agrupados, si ya tienen cuenta); de aquí sale el nombre del alta. Público |

@@ -5,18 +5,13 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Application.Abstractions.Teams;
 using TercerTiempo.Application.OfficialSheets;
+using TercerTiempo.Application.Sync;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Teams.SyncProfiles;
 
-/// <summary>
-/// Descarga de la federación la ficha de cada equipo de la temporada en curso (sede, campo, equipación) y su escudo,
-/// que se guarda en nuestro almacenamiento. Primero localiza el código de cada equipo en la federación a partir de
-/// las primeras jornadas de su competición. Los equipos sin ficha en la federación (los de fuera de Asturias) se
-/// quedan con el escudo que descargó la sincronización de datos o con el que importe el club.
-/// </summary>
 public sealed record SyncTeamProfilesCommand(
     [property: Description("Volver a descargar fichas y escudos aunque se hayan consultado hace poco.")]
     bool Force = false) : ICommand<TeamProfileSyncResultDto>;
@@ -38,13 +33,12 @@ internal sealed class SyncTeamProfilesHandler(
     ITeamStore teams,
     IUnitOfWork unitOfWork,
     IOptions<CrestOptions> options,
+    ISyncProgress progress,
     TimeProvider clock,
     ILogger<SyncTeamProfilesHandler> logger) : ICommandHandler<SyncTeamProfilesCommand, TeamProfileSyncResultDto>
 {
-    /// <summary>Parecido mínimo entre nuestro nombre y el de la federación para dar por bueno el código del equipo.</summary>
     private const double MinSimilarity = 0.6;
 
-    /// <summary>Jornadas que se leen para encontrar a todos los equipos (en una juegan todos salvo el que descansa).</summary>
     private const int MatchdaysToScan = 2;
 
     public async Task<TeamProfileSyncResultDto> Handle(SyncTeamProfilesCommand command, CancellationToken cancellationToken)
@@ -57,9 +51,13 @@ internal sealed class SyncTeamProfilesHandler(
         var withoutProfile = 0;
         var errors = new List<string>();
 
-        foreach (var competition in await competitions.GetAllAsync(cancellationToken))
+        var all = await competitions.GetAllAsync(cancellationToken);
+        progress.Start("fichas", all.Count);
+
+        foreach (var (competition, index) in all.Select((c, i) => (c, i)))
         {
             if (competition.CurrentSeason is not { } season) continue;
+            progress.Step(competition.Name, index);
 
             try
             {
@@ -112,10 +110,11 @@ internal sealed class SyncTeamProfilesHandler(
             }
         }
 
+        progress.Finish($"{updated} fichas y {downloaded} escudos de la federación", errors);
+
         return new TeamProfileSyncResultDto(profiles.ProviderName, linked, updated, downloaded, withoutProfile, errors);
     }
 
-    /// <summary>Asigna el código de la federación a los equipos que aún no lo tienen, por parecido de nombre con los de las primeras jornadas.</summary>
     private async Task<int> LinkTeamsAsync(Competition competition, Season season, IReadOnlyList<Team> seasonTeams, CancellationToken cancellationToken)
     {
         var pending = seasonTeams.Where(t => t.OfficialRef?.Provider != profiles.ProviderName).ToList();
