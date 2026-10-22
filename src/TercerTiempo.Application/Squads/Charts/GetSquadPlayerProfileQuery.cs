@@ -14,7 +14,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.Charts;
 
-/// <summary>Ficha de un jugador de la plantilla para sus gráficos: serie partido a partido, perfil por 90' y referencias.</summary>
 public sealed record GetSquadPlayerProfileQuery(Guid SquadId, Guid SquadPlayerId) : IQuery<SquadPlayerProfileDto>;
 
 internal sealed class GetSquadPlayerProfileHandler(

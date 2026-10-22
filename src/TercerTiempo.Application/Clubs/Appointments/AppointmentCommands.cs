@@ -11,10 +11,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Clubs.Appointments;
 
-/// <summary>
-/// El club nombra a un técnico para uno de sus equipos en la temporada en curso y obtiene el código de acceso que
-/// debe entregarle. La validez empieza hoy y termina, como mucho, con la temporada.
-/// </summary>
 public sealed record CreateAppointmentCommand(
     [property: Description("Equipo del club.")]
     Guid TeamId,
@@ -70,7 +66,6 @@ internal sealed class CreateAppointmentHandler(
     }
 }
 
-/// <summary>El club revoca un nombramiento: el código deja de valer y el técnico sale del cuerpo técnico.</summary>
 public sealed record RevokeAppointmentCommand(Guid AppointmentId) : ICommand<AppointmentDto>;
 
 internal sealed class RevokeAppointmentValidator : AbstractValidator<RevokeAppointmentCommand>
@@ -115,7 +110,6 @@ internal sealed class RevokeAppointmentHandler(
     }
 }
 
-/// <summary>El club acorta o prorroga un nombramiento (sin pasar del final de la temporada).</summary>
 public sealed record UpdateAppointmentCommand(
     Guid AppointmentId,
     [property: Description("Nuevo último día de validez (yyyy-MM-dd).")]

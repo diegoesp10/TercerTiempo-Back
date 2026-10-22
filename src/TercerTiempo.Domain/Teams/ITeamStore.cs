@@ -6,7 +6,6 @@ public interface ITeamStore
     Task<IReadOnlyList<Team>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Team>> GetAllAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Equipos que participan en una temporada (aparecen en su clasificación o en su calendario).</summary>
     Task<IReadOnlyList<Team>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default);
 
     void Add(Team team);

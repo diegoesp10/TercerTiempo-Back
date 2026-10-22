@@ -4,7 +4,6 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Performances;
 
-/// <summary>Recalcula la nota de líneas del acta cargando las plantillas (posiciones) y partidos (resultados) que hagan falta.</summary>
 internal static class RatingRecalculator
 {
     public static async Task<int> RecalculateAsync(

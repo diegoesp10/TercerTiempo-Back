@@ -4,7 +4,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Infrastructure.Persistence.Stores;
 
-/// <summary>Lee la tabla ErrorMessages una vez y la guarda en memoria unos minutos: se consulta en cada error de la API.</summary>
 internal sealed class ErrorMessageStore(AppDbContext db, IMemoryCache cache) : IErrorMessageStore
 {
     private const string CacheKey = "error-messages";

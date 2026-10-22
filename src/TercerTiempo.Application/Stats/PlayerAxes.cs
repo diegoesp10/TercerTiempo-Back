@@ -1,9 +1,5 @@
 namespace TercerTiempo.Application.Stats;
 
-/// <summary>
-/// Perfil de un jugador normalizado por 90 minutos (ejes del radar): permite comparar jugadores con distinto número de
-/// minutos. La nota media y la participación van aparte porque ya son medias.
-/// </summary>
 public sealed record PlayerAxesDto(
     double GoalsPer90,
     double AssistsPer90,
@@ -20,7 +16,6 @@ public sealed record PlayerAxesDto(
 
 internal static class PlayerAxes
 {
-    /// <summary>Minutos mínimos para que un jugador cuente en la media y el máximo de la plantilla.</summary>
     public const int MinMinutesForReference = 90;
 
     public static PlayerAxesDto From(IndividualStatsDto stats, TeamImpactDto impact)

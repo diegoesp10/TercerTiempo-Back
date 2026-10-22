@@ -5,7 +5,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Performances;
 
-/// <summary>Reglas que deciden quién puede registrar el acta de un partido y para qué plantilla.</summary>
 public static class PerformancePolicy
 {
     public static void EnsureCanRecord(Squad squad, Guid coachId, Match match, DateOnly today)

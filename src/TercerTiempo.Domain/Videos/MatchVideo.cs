@@ -3,10 +3,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Videos;
 
-/// <summary>
-/// Vídeo de un partido subido por el cuerpo técnico de una plantilla. Lo ve gratis la plantilla que lo sube (su staff
-/// y sus jugadores vinculados); el resto de técnicos tienen que comprar el acceso (<see cref="VideoPurchase"/>).
-/// </summary>
 public sealed class MatchVideo : AggregateRoot
 {
     public const long MinSizeBytes = 1024;
@@ -21,10 +17,8 @@ public sealed class MatchVideo : AggregateRoot
     public string ContentType { get; private set; } = string.Empty;
     public long SizeBytes { get; private set; }
 
-    /// <summary>Clave en el almacenamiento (ruta relativa, nombre de blob...).</summary>
     public string StorageKey { get; private set; } = string.Empty;
 
-    /// <summary>Precio del acceso para quien no es de la plantilla, en céntimos; 0 = gratis para todos.</summary>
     public int PriceCents { get; private set; }
 
     public string Currency { get; private set; } = "EUR";
@@ -74,7 +68,6 @@ public sealed class MatchVideo : AggregateRoot
     }
 }
 
-/// <summary>Acceso de pago de un técnico ajeno a la plantilla a un vídeo.</summary>
 public sealed class VideoPurchase : AggregateRoot
 {
     public Guid VideoId { get; private set; }
@@ -82,7 +75,6 @@ public sealed class VideoPurchase : AggregateRoot
     public int AmountCents { get; private set; }
     public string Currency { get; private set; } = "EUR";
 
-    /// <summary>Referencia de la pasarela de pago.</summary>
     public string PaymentReference { get; private set; } = string.Empty;
 
     public DateTimeOffset PurchasedAt { get; private set; }
@@ -106,7 +98,6 @@ public interface IMatchVideoStore
 {
     Task<MatchVideo?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
-    /// <summary>Vídeos no eliminados de un partido.</summary>
     Task<IReadOnlyList<MatchVideo>> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default);
     void Add(MatchVideo video);
 }

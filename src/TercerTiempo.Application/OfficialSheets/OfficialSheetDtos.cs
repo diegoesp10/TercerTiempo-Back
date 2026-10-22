@@ -7,19 +7,15 @@ namespace TercerTiempo.Application.OfficialSheets;
 
 public enum OfficialSheetAvailability
 {
-    /// <summary>El partido aún no se ha jugado: no tiene sentido consultar a la federación.</summary>
     NotPlayed,
 
-    /// <summary>Partido en juego o recién terminado: la federación todavía no ha publicado el acta.</summary>
     Pending,
 
     Available,
 
-    /// <summary>No se ha podido localizar el partido en la federación (liga sin correspondencia, nombres distintos...).</summary>
     Unavailable,
 }
 
-/// <summary>Acta oficial de un partido (copia de la publicada por la federación) o el motivo por el que aún no está.</summary>
 public sealed record OfficialSheetDto(
     Guid MatchId,
     OfficialSheetAvailability Status,
@@ -65,7 +61,6 @@ public sealed record OfficialEventDto(
     string PlayerName,
     string? RelatedPlayerName);
 
-/// <summary>Acta interna de la plantilla frente al acta oficial, jugador a jugador, con las discrepancias detectadas.</summary>
 public sealed record SheetComparisonDto(
     SquadSummaryDto Squad,
     MatchDto Match,
@@ -82,7 +77,6 @@ public sealed record SheetComparisonRowDto(
     OfficialLineDto? Official,
     IReadOnlyList<SheetDifferenceDto> Differences);
 
-/// <summary>Campo en el que difieren las dos actas: played, started, minutes, goals, yellowCards o redCard.</summary>
 public sealed record SheetDifferenceDto(string Field, string? Coach, string? Official);
 
 public sealed record SheetComparisonSummaryDto(

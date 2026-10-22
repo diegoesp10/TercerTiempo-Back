@@ -8,7 +8,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Squads.ListMySquads;
 
-/// <summary>Plantillas en cuyo cuerpo técnico está el técnico autenticado.</summary>
 public sealed record ListMySquadsQuery : IQuery<IReadOnlyList<SquadSummaryDto>>;
 
 internal sealed class ListMySquadsHandler(

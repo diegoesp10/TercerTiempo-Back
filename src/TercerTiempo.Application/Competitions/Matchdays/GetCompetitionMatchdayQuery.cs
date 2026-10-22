@@ -8,12 +8,8 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Competitions.Matchdays;
 
-/// <summary>Partidos de una jornada de la temporada en curso de una liga; sin número, la jornada en curso o la próxima.</summary>
 public sealed record GetCompetitionMatchdayQuery(Guid CompetitionId, int? Matchday) : IQuery<CompetitionMatchdayDto>;
 
-/// <param name="Matchday">Jornada devuelta (null si la temporada aún no tiene calendario).</param>
-/// <param name="CurrentMatchday">Jornada en curso o la próxima por jugarse (null si no hay calendario).</param>
-/// <param name="Matchdays">Todas las jornadas de la temporada con sus fechas, para navegar entre ellas.</param>
 public sealed record CompetitionMatchdayDto(
     Guid CompetitionId,
     string CompetitionName,
@@ -23,7 +19,6 @@ public sealed record CompetitionMatchdayDto(
     IReadOnlyList<MatchdaySummaryDto> Matchdays,
     IReadOnlyList<MatchDto> Matches);
 
-/// <param name="ReferenceAt">Fecha central de la jornada (mediana de sus partidos).</param>
 public sealed record MatchdaySummaryDto(
     int Number,
     DateTimeOffset StartsAt,

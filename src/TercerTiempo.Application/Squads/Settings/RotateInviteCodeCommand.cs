@@ -11,7 +11,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Squads.Settings;
 
-/// <summary>Genera un código de invitación nuevo; el anterior deja de valer.</summary>
 public sealed record RotateInviteCodeCommand(Guid SquadId) : ICommand<SquadDetailDto>;
 
 internal sealed class RotateInviteCodeValidator : AbstractValidator<RotateInviteCodeCommand>

@@ -14,12 +14,10 @@ internal static class ConfigurationExtensions
         builder.Ignore(e => e.DomainEvents);
     }
 
-    /// <summary>Mapea el value object ExternalRef como columnas ExternalProvider/ExternalId de la propia tabla.</summary>
     public static void OwnsExternalRef<T>(this EntityTypeBuilder<T> builder, Expression<Func<T, ExternalRef?>> navigation)
         where T : class =>
         builder.OwnsExternalRef(navigation, "External");
 
-    /// <summary>Mapea un ExternalRef como columnas {prefijo}Provider/{prefijo}Id (p. ej. OfficialProvider/OfficialId).</summary>
     public static void OwnsExternalRef<T>(this EntityTypeBuilder<T> builder, Expression<Func<T, ExternalRef?>> navigation, string prefix)
         where T : class
     {

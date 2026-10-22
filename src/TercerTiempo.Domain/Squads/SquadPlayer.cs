@@ -4,10 +4,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Squads;
 
-/// <summary>
-/// Ficha de un jugador dentro de la plantilla que gestiona el cuerpo técnico. Puede venir de la plantilla publicada
-/// por el proveedor (RosterEntryId) o añadirse a mano, y puede estar vinculada a un jugador con cuenta (PlayerId).
-/// </summary>
 public sealed class SquadPlayer : Entity
 {
     public Guid SquadId { get; private set; }

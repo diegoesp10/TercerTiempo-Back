@@ -3,7 +3,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Common;
 
-/// <summary>Reglas de FluentValidation con mensaje del catálogo: código, argumentos (para traducirlo) y texto por defecto.</summary>
 internal static class ValidationExtensions
 {
     public static IRuleBuilderOptions<T, TProperty> WithCatalogMessage<T, TProperty>(

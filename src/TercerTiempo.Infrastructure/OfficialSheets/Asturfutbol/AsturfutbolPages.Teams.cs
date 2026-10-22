@@ -6,15 +6,8 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
-/// <summary>Dirección del campo según su página (<c>NFG_VisCampos</c>).</summary>
 internal sealed record GroundInfo(string? Address, string? Locality, string? Surface);
 
-/// <summary>
-/// Páginas de equipo y campo de asturfutbol.es:
-///  - <c>NFG_VisEquipos?Codigo_Equipo=</c>: escudo, nombre oficial, sede, web, equipación y terreno de juego (con enlace al campo).
-///  - <c>NFG_VisCampos?Codigo_Campo=</c>: dirección, localidad y superficie del campo.
-/// Los datos van como <c>&lt;h5&gt;&lt;strong&gt;Etiqueta:&lt;/strong&gt; valor&lt;/h5&gt;</c>.
-/// </summary>
 internal static partial class AsturfutbolPages
 {
     [GeneratedRegex(@"Codigo_Campo=(?<code>\d+)", RegexOptions.IgnoreCase)]
@@ -23,7 +16,6 @@ internal static partial class AsturfutbolPages
     [GeneratedRegex(@"^(?<name>[^(]+?)\s*\((?<surface>[^)]+)\)\s*$")]
     private static partial Regex GroundWithSurfacePattern();
 
-    /// <summary>Superficies tal y como las abrevia la federación en el nombre del campo.</summary>
     private static readonly Dictionary<string, string> Surfaces = new(StringComparer.OrdinalIgnoreCase)
     {
         ["H.SINTETICA"] = "Hierba artificial",
@@ -33,7 +25,6 @@ internal static partial class AsturfutbolPages
         ["TIERRA"] = "Tierra",
     };
 
-    /// <summary>Ficha del equipo; null si la página no tiene la cabecera del club (equipo inexistente).</summary>
     public static (OfficialTeamProfile Profile, string? GroundCode)? ParseTeamProfile(string html)
     {
         var document = Parser.ParseDocument(html);
@@ -67,7 +58,6 @@ internal static partial class AsturfutbolPages
         return (new OfficialTeamProfile(crest, profile), groundCode);
     }
 
-    /// <summary>Dirección del campo; null si la página no tiene datos.</summary>
     public static GroundInfo? ParseGround(string html)
     {
         var document = Parser.ParseDocument(html);
@@ -80,7 +70,6 @@ internal static partial class AsturfutbolPages
             fields.GetValueOrDefault("superficie de juego"));
     }
 
-    /// <summary>"VALLOBIN(H.SINTETICA)" → ("Vallobin", "Hierba artificial").</summary>
     internal static (string? Ground, string? Surface) SplitGround(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return (null, null);
@@ -92,7 +81,6 @@ internal static partial class AsturfutbolPages
         return (TitleCase(name), surface is null ? null : Surfaces.GetValueOrDefault(surface) ?? TitleCase(surface));
     }
 
-    /// <summary>Pares etiqueta normalizada → valor de todos los &lt;h5&gt;&lt;strong|b&gt;Etiqueta:&lt;/strong&gt; valor&lt;/h5&gt;; las etiquetas vacías se omiten.</summary>
     private static Dictionary<string, string> Fields(IDocument document)
     {
         var fields = new Dictionary<string, string>();

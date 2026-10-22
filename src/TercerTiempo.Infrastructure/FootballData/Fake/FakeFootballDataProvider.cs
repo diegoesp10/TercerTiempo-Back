@@ -7,12 +7,6 @@ using TercerTiempo.Domain.Players;
 
 namespace TercerTiempo.Infrastructure.FootballData.Fake;
 
-/// <summary>
-/// Proveedor de desarrollo sin red: genera tres ligas ficticias (3ª RFEF, 1ª AsturFútbol y 2ª AsturFútbol · Grupo 1)
-/// de 12 equipos, con calendario completo a doble vuelta, resultados hasta la fecha actual, clasificación y
-/// plantillas (solo en las dos primeras, como ocurre en futbolasturiano.es). Es determinista: los identificadores
-/// y los resultados no cambian entre arranques, así que la sincronización es idempotente y la liga "avanza" sola.
-/// </summary>
 internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDataProvider
 {
     private const string SeasonId = "2026-27";
@@ -147,7 +141,6 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
         return league is null ? [] : TeamSeeds.Skip(league.FirstTeam).Take(12);
     }
 
-    /// <summary>Calendario a doble vuelta por el método del círculo; resultados para las jornadas ya pasadas.</summary>
     private static List<MatchSnapshot> BuildMatches(string leagueId, DateTimeOffset now)
     {
         var seeds = TeamsOf(leagueId).ToList();
@@ -232,7 +225,6 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
         return k - 1;
     }
 
-    /// <summary>Random reproducible a partir de una clave (FNV-1a), para que los datos no cambien entre arranques.</summary>
     private static Random StableRandom(string key)
     {
         unchecked

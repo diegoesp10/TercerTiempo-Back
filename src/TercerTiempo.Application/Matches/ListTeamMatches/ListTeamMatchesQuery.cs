@@ -6,7 +6,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Matches.ListTeamMatches;
 
-/// <summary>Calendario y resultados de un equipo en la temporada activa de su competición.</summary>
 public sealed record ListTeamMatchesQuery(Guid TeamId) : IQuery<IReadOnlyList<MatchDto>>;
 
 internal sealed class ListTeamMatchesHandler(

@@ -8,7 +8,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Clubs.Catalog;
 
-/// <summary>Club del catálogo: nombre canónico, sus equipos y si ya tiene cuenta.</summary>
 public sealed record ClubCatalogDto(
     string Name,
     bool Registered,
@@ -16,7 +15,6 @@ public sealed record ClubCatalogDto(
 
 public sealed record ClubCatalogTeamDto(Guid Id, string Name, string? CompetitionName);
 
-/// <summary>Clubes que pueden darse de alta: los que publica el proveedor de datos, con sus equipos agrupados.</summary>
 public sealed record GetClubCatalogQuery(
     [property: Description("Texto a buscar en el nombre del club o de sus equipos (opcional).")]
     string? Search) : IQuery<IReadOnlyList<ClubCatalogDto>>;
@@ -41,17 +39,10 @@ internal sealed class GetClubCatalogHandler(AccountStores stores) : IQueryHandle
     }
 }
 
-/// <summary>Equipo del proveedor con la competición en curso en la que juega, si la hay.</summary>
 public sealed record CatalogTeam(Team Team, string? CompetitionName);
 
-/// <summary>Club deducido de los nombres de los equipos: el primer equipo y sus filiales ("B", "C"...).</summary>
 public sealed record ClubCatalogEntry(string Name, string NormalizedName, IReadOnlyList<CatalogTeam> Teams);
 
-/// <summary>
-/// Agrupa los equipos del proveedor por club. Dos equipos son del mismo club cuando comparten las palabras
-/// significativas del nombre (sin siglas ni la letra del filial): "Caudal Deportivo" y "Caudal Deportivo 'B'",
-/// "CD Lealtad de Villaviciosa" y "CD Lealtad 'B'". El nombre del club es el del equipo sin letra de filial.
-/// </summary>
 internal static partial class ClubCatalog
 {
     public static async Task<IReadOnlyList<ClubCatalogEntry>> LoadAsync(AccountStores stores, CancellationToken cancellationToken)
@@ -112,7 +103,6 @@ internal static partial class ClubCatalog
             .ToList();
     }
 
-    /// <summary>El equipo sin letra de filial da nombre al club; si todos son filiales, se le quita la letra al primero.</summary>
     private static string ClubName(List<(CatalogTeam Team, string? Suffix)> ordered)
     {
         var first = ordered.FirstOrDefault(t => t.Suffix is null).Team ?? ordered[0].Team;

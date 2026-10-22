@@ -5,10 +5,6 @@ using Microsoft.OpenApi;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>
-/// Marca con el esquema Bearer solo las operaciones que exigen autorización (así la referencia muestra el candado
-/// únicamente donde hace falta) y les añade la respuesta 401 documentada.
-/// </summary>
 internal sealed class AuthorizationOperationTransformer : IOpenApiOperationTransformer
 {
     public Task TransformAsync(OpenApiOperation operation, OpenApiOperationTransformerContext context, CancellationToken cancellationToken)

@@ -2,7 +2,6 @@ using TercerTiempo.Domain.Common;
 
 namespace TercerTiempo.Domain.Standings;
 
-/// <summary>Fila de la clasificación de un equipo en una temporada (instantánea del proveedor).</summary>
 public sealed class Standing : AggregateRoot
 {
     public Guid SeasonId { get; private set; }

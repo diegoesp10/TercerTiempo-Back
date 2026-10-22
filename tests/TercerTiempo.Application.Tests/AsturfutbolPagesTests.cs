@@ -4,10 +4,6 @@ using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
 namespace TercerTiempo.Application.Tests;
 
-/// <summary>
-/// Lectura de las páginas de asturfutbol.es (RFFPA). Los fixtures son páginas reales de octubre de 2026 recortadas:
-/// el acta del C.D. Vallobín - Navarro C.F. de la jornada 6 de 1ª Asturfútbol, esa jornada y los desplegables del calendario.
-/// </summary>
 public class AsturfutbolPagesTests
 {
     private static string Fixture(string name)

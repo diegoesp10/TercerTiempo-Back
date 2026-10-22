@@ -200,7 +200,6 @@ public static class DependencyInjection
         services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
     }
 
-    /// <summary>Aplica las migraciones pendientes. Se invoca desde la API al arrancar.</summary>
     public static async Task MigrateDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
     {
         using var scope = services.CreateScope();

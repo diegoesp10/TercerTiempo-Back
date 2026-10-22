@@ -4,7 +4,6 @@ using TercerTiempo.Application.Players;
 
 namespace TercerTiempo.Application.Stats;
 
-/// <summary>Panel del jugador: su rendimiento según las actas de su cuerpo técnico, su impacto en el equipo y su posición en la liga.</summary>
 public sealed record PlayerDashboardDto(
     PlayerDto Player,
     SeasonDto? Season,
@@ -38,7 +37,6 @@ public sealed record IndividualStatsDto(
         new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null, null, null, null);
 }
 
-/// <summary>Qué aporta un jugador a su equipo: cuota de goles, participación y resultados con/sin él.</summary>
 public sealed record TeamImpactDto(
     Guid TeamId,
     int TeamMatchesPlayed,
@@ -60,10 +58,6 @@ public sealed record TeamImpactDto(
     double? GoalsForPerMatchWithoutPlayer,
     double? GoalsAgainstPerMatchWithoutPlayer);
 
-/// <summary>
-/// Comparativa con la liga: el equipo frente a la media y el jugador frente a los demás jugadores con actas
-/// visibles (plantillas públicas y la suya).
-/// </summary>
 public sealed record LeagueComparisonDto(
     int TeamsCount,
     int? TeamPosition,

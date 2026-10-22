@@ -13,10 +13,8 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Auth;
 
-/// <summary>Cuenta autenticada: perfil de jugador, de técnico (con sus plantillas y nombramientos) o de club.</summary>
 public sealed record AccountDto(AccountType Type, PlayerDto? Player, CoachDto? Coach, ClubDto? Club);
 
-/// <summary>Almacenes necesarios para montar la cuenta de cualquier tipo de usuario.</summary>
 internal sealed record AccountStores(
     IPlayerStore Players,
     ICoachStore Coaches,

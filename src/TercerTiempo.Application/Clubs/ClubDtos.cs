@@ -7,14 +7,12 @@ using TercerTiempo.Application.Teams;
 
 namespace TercerTiempo.Application.Clubs;
 
-/// <summary>Club con los equipos que gestiona y los nombramientos de técnicos que ha emitido.</summary>
 public sealed record ClubDto(
     Guid Id,
     string Name,
     IReadOnlyList<ClubTeamDto> Teams,
     IReadOnlyList<AppointmentDto> Appointments);
 
-/// <summary>Equipo gestionado por el club, con su competición y temporada en curso y si ya tiene plantilla.</summary>
 public sealed record ClubTeamDto(
     Guid TeamId,
     string TeamName,
@@ -28,7 +26,6 @@ public sealed record ClubTeamDto(
     Guid? SquadId,
     int ActiveAppointments);
 
-/// <summary>Nombramiento visto por el club: incluye el código de acceso hasta que se canjea.</summary>
 public sealed record AppointmentDto(
     Guid Id,
     Guid TeamId,

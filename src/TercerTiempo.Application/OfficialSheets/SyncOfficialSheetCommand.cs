@@ -11,11 +11,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
-/// <summary>
-/// Devuelve el acta oficial de un partido, consultando a la federación cuando toca: nunca antes del partido; cada
-/// pocos minutos mientras no esté publicada (partido en juego o recién terminado); y una vez al día durante la
-/// semana posterior por si la corrigen. Con <c>Force</c> se vuelve a descargar siempre.
-/// </summary>
 public sealed record SyncOfficialSheetCommand(Guid MatchId, bool Force = false) : ICommand<OfficialSheetDto>;
 
 internal sealed class SyncOfficialSheetValidator : AbstractValidator<SyncOfficialSheetCommand>
@@ -33,16 +28,12 @@ internal sealed class SyncOfficialSheetHandler(
     TimeProvider clock,
     ILogger<SyncOfficialSheetHandler> logger) : ICommandHandler<SyncOfficialSheetCommand, OfficialSheetDto>
 {
-    /// <summary>Mientras no haya acta, se vuelve a preguntar como mucho cada 10 minutos.</summary>
     private static readonly TimeSpan PendingRecheck = TimeSpan.FromMinutes(10);
 
-    /// <summary>Un acta publicada se refresca una vez al día...</summary>
     private static readonly TimeSpan AvailableRefresh = TimeSpan.FromHours(24);
 
-    /// <summary>...durante la semana siguiente al partido.</summary>
     private static readonly TimeSpan CorrectionWindow = TimeSpan.FromDays(7);
 
-    /// <summary>Hasta que no empieza el partido no se consulta nada.</summary>
     private static readonly TimeSpan NotBefore = TimeSpan.Zero;
 
     public async Task<OfficialSheetDto> Handle(SyncOfficialSheetCommand command, CancellationToken cancellationToken)

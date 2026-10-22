@@ -11,7 +11,6 @@ public sealed class Season : Entity
     public bool IsCurrent { get; private set; }
     public ExternalRef? ExternalRef { get; private set; }
 
-    /// <summary>Competición, grupo y temporada en la federación (asturfutbol.es), cuando ya se han localizado.</summary>
     public ExternalRef? OfficialRef { get; private set; }
 
     private Season() { }

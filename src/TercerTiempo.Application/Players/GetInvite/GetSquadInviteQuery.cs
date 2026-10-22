@@ -9,7 +9,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Players.GetInvite;
 
-/// <summary>Qué plantilla hay detrás de un código de invitación y qué fichas siguen sin vincular (para que el jugador elija la suya).</summary>
 public sealed record GetSquadInviteQuery(string InviteCode) : IQuery<SquadInviteDto>;
 
 internal sealed class GetSquadInviteHandler(

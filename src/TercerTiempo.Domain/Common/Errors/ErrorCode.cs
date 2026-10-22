@@ -1,10 +1,5 @@
 namespace TercerTiempo.Domain.Common.Errors;
 
-/// <summary>
-/// Códigos de error de toda la API. Son estables e independientes del idioma: el texto de cada uno está en
-/// <see cref="ErrorCatalog"/> (semilla de la tabla ErrorMessages) y la API lo devuelve en ProblemDetails junto al
-/// mensaje ya traducido. Convención: área.motivo, en minúsculas.
-/// </summary>
 public static class ErrorCode
 {
     // Títulos de las respuestas ProblemDetails

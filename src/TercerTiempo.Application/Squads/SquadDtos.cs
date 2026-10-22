@@ -7,7 +7,6 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Squads;
 
-/// <summary>Plantilla gestionada por un cuerpo técnico, con su equipo, competición y temporada.</summary>
 public sealed record SquadSummaryDto(
     Guid Id,
     Guid TeamId,
@@ -24,7 +23,6 @@ public sealed record SquadSummaryDto(
     int StaffCount,
     StaffRole? MyRole);
 
-/// <summary>Detalle de la plantilla. InviteCode solo se devuelve al cuerpo técnico.</summary>
 public sealed record SquadDetailDto(
     SquadSummaryDto Summary,
     string? InviteCode,
@@ -32,7 +30,6 @@ public sealed record SquadDetailDto(
     IReadOnlyList<SquadStaffDto> Staff,
     IReadOnlyList<SquadPlayerDto> Players);
 
-/// <summary>Miembro vigente del cuerpo técnico; ValidUntil es el último día de su nombramiento.</summary>
 public sealed record SquadStaffDto(Guid CoachId, string DisplayName, StaffRole Role, DateTimeOffset JoinedAt, DateOnly? ValidUntil);
 
 public sealed record SquadPlayerDto(
@@ -45,10 +42,8 @@ public sealed record SquadPlayerDto(
     string? LinkedPlayerName,
     SquadPlayerStatus Status);
 
-/// <summary>Partido del equipo de la plantilla con cuántas líneas de acta tiene registradas.</summary>
 public sealed record SquadMatchDto(MatchDto Match, int EntriesRecorded);
 
-/// <summary>Acta de un partido: una línea por ficha de la plantilla (sin rendimiento = no jugó o no está rellenado).</summary>
 public sealed record MatchSheetDto(
     SquadSummaryDto Squad,
     MatchDto Match,
@@ -57,7 +52,6 @@ public sealed record MatchSheetDto(
 
 public sealed record MatchSheetEntryDto(SquadPlayerDto Player, PerformanceDto? Performance);
 
-/// <summary>Estadísticas de temporada de toda la plantilla, jugador a jugador.</summary>
 public sealed record SquadStatsDto(
     SquadSummaryDto Squad,
     int TeamMatchesPlayed,
@@ -66,7 +60,6 @@ public sealed record SquadStatsDto(
 
 public sealed record SquadPlayerStatsDto(SquadPlayerDto Player, IndividualStatsDto Stats, TeamImpactDto Impact);
 
-/// <summary>Lo que ve un jugador al introducir un código de invitación: la plantilla y las fichas aún sin vincular.</summary>
 public sealed record SquadInviteDto(
     Guid SquadId,
     string TeamName,

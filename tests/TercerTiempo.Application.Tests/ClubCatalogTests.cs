@@ -3,7 +3,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Tests;
 
-/// <summary>Agrupación de los equipos del proveedor en clubes (primer equipo + filiales).</summary>
 public class ClubCatalogTests
 {
     private static CatalogTeam Team(string name, string? competition = null) =>

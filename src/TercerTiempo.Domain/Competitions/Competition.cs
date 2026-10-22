@@ -3,30 +3,22 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Competitions;
 
-/// <summary>
-/// Una liga concreta: categoría + grupo (p. ej. "2ª AsturFútbol · Grupo 1" o "3ª RFEF"), con sus temporadas.
-/// Cada competición tiene su propia temporada activa; un equipo participa en una competición por temporada.
-/// </summary>
 public sealed class Competition : AggregateRoot
 {
     private readonly List<Season> _seasons = [];
 
     public string Name { get; private set; } = string.Empty;
 
-    /// <summary>Categoría sin el grupo: "3ª RFEF", "1ª AsturFútbol", "2ª AsturFútbol"...</summary>
     public string Category { get; private set; } = string.Empty;
 
     public CompetitionLevel Level { get; private set; }
 
-    /// <summary>Escalón dentro del nivel (1 = el más alto): 1ª RFEF = 1, 3ª RFEF = 3, 2ª AsturFútbol = 2...</summary>
     public int Tier { get; private set; }
 
-    /// <summary>Grupo dentro de la categoría ("1", "2", "A"...), o null si solo hay uno.</summary>
     public string? Group { get; private set; }
 
     public string Region { get; private set; } = string.Empty;
 
-    /// <summary>Orden de presentación: nivel, escalón y grupo.</summary>
     public int SortOrder { get; private set; }
 
     public ExternalRef? ExternalRef { get; private set; }

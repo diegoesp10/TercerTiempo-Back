@@ -4,7 +4,6 @@ using TercerTiempo.Application.Abstractions.Teams;
 
 namespace TercerTiempo.Infrastructure.Teams;
 
-/// <summary>Descarga escudos de cualquier URL pública; solo acepta imágenes de hasta 2 MB.</summary>
 internal sealed class HttpCrestDownloader(HttpClient http, ILogger<HttpCrestDownloader> logger) : ICrestDownloader
 {
     private const int MaxBytes = 2 * 1024 * 1024;

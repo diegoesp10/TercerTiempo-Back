@@ -6,7 +6,6 @@ using TercerTiempo.Application.Abstractions.Videos;
 
 namespace TercerTiempo.Infrastructure.Videos;
 
-/// <summary>Guarda los vídeos en una carpeta local (Videos:Directory) con un nombre aleatorio y la extensión original.</summary>
 internal sealed class FileSystemVideoStorage(IOptions<VideoOptions> options) : IVideoStorage
 {
     private string Root => Path.GetFullPath(options.Value.Directory);
@@ -44,7 +43,6 @@ internal sealed class FileSystemVideoStorage(IOptions<VideoOptions> options) : I
         return Task.CompletedTask;
     }
 
-    /// <summary>Solo se sirven archivos dentro de la carpeta de vídeos (la clave nunca lleva rutas).</summary>
     private string Resolve(string storageKey)
     {
         var path = Path.GetFullPath(Path.Combine(Root, Path.GetFileName(storageKey)));
@@ -54,10 +52,6 @@ internal sealed class FileSystemVideoStorage(IOptions<VideoOptions> options) : I
     }
 }
 
-/// <summary>
-/// Pasarela simulada: aprueba todos los cobros y deja constancia en el log. Sustituir por Stripe (u otra) para cobrar
-/// de verdad; el resto de la aplicación solo depende de <see cref="IPaymentGateway"/>.
-/// </summary>
 internal sealed class FakePaymentGateway(ILogger<FakePaymentGateway> logger) : IPaymentGateway
 {
     public string ProviderName => "fake";
@@ -72,7 +66,6 @@ internal sealed class FakePaymentGateway(ILogger<FakePaymentGateway> logger) : I
     }
 }
 
-/// <summary>Tickets de reproducción en memoria (una sola instancia de la API). Caducan según Videos:TicketMinutes.</summary>
 internal sealed class MemoryVideoTickets(IMemoryCache cache, IOptions<VideoOptions> options, TimeProvider clock) : IVideoTickets
 {
     public (string Ticket, DateTimeOffset ExpiresAt) Issue(Guid videoId, Guid userId)

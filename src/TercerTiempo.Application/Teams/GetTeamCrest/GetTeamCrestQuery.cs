@@ -4,7 +4,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Teams.GetTeamCrest;
 
-/// <summary>Escudo guardado del equipo; null si no lo tiene (el cliente muestra entonces una insignia con las iniciales).</summary>
 public sealed record GetTeamCrestQuery(Guid TeamId) : IQuery<CrestFile?>;
 
 internal sealed class GetTeamCrestHandler(ITeamStore teams, ICrestStorage crests) : IQueryHandler<GetTeamCrestQuery, CrestFile?>

@@ -10,7 +10,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.Matches;
 
-/// <summary>Partidos del equipo de la plantilla con el número de líneas de acta registradas en cada uno.</summary>
 public sealed record ListSquadMatchesQuery(Guid SquadId) : IQuery<IReadOnlyList<SquadMatchDto>>;
 
 internal sealed class ListSquadMatchesHandler(

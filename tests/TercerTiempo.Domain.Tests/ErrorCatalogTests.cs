@@ -4,7 +4,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Tests;
 
-/// <summary>El catálogo de errores (semilla de ErrorMessages) cubre todos los códigos y las plantillas son coherentes.</summary>
 public class ErrorCatalogTests
 {
     [Fact]

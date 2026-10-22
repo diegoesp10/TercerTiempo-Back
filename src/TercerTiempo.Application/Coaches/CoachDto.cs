@@ -7,14 +7,12 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Coaches;
 
-/// <summary>Técnico con las plantillas que gestiona (nombramientos vigentes) y todos sus nombramientos.</summary>
 public sealed record CoachDto(
     Guid Id,
     string DisplayName,
     IReadOnlyList<SquadSummaryDto> Squads,
     IReadOnlyList<CoachAppointmentDto> Appointments);
 
-/// <summary>Nombramiento visto por el técnico: para qué equipo y temporada, con qué rol y hasta cuándo.</summary>
 public sealed record CoachAppointmentDto(
     Guid Id,
     string ClubName,

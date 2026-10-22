@@ -8,7 +8,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Common;
 
-/// <summary>Helpers compartidos por los handlers para resolver la cuenta autenticada y las temporadas.</summary>
 internal static class Resolvers
 {
     public static async Task<Player> CurrentPlayerAsync(
@@ -41,7 +40,6 @@ internal static class Resolvers
             ?? throw new ForbiddenException(ErrorCode.AuthClubAccountRequired);
     }
 
-    /// <summary>Plantilla por id, comprobando que el usuario actual pertenece a su cuerpo técnico vigente.</summary>
     public static async Task<Squad> SquadForStaffAsync(
         ISquadStore squads, ICurrentUser currentUser, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
     {
@@ -52,7 +50,6 @@ internal static class Resolvers
         return squad;
     }
 
-    /// <summary>Competición y temporada activa en la que participa un equipo.</summary>
     public static async Task<(Competition Competition, Season Season)> SeasonOfTeamAsync(
         ICompetitionStore competitions, Guid teamId, CancellationToken cancellationToken)
     {
@@ -65,12 +62,10 @@ internal static class Resolvers
         return (competition, season);
     }
 
-    /// <summary>Competición y temporada de una plantilla.</summary>
     public static async Task<(Competition Competition, Season Season)> SeasonOfSquadAsync(
         ICompetitionStore competitions, Squad squad, CancellationToken cancellationToken) =>
         await SeasonByIdAsync(competitions, squad.SeasonId, cancellationToken);
 
-    /// <summary>Competición y temporada a partir del id de la temporada.</summary>
     public static async Task<(Competition Competition, Season Season)> SeasonByIdAsync(
         ICompetitionStore competitions, Guid seasonId, CancellationToken cancellationToken)
     {

@@ -4,12 +4,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Clubs;
 
-/// <summary>
-/// Nombramiento de un técnico por su club para un equipo y una temporada. El club lo crea con un código de acceso;
-/// el técnico lo canjea al darse de alta (o desde su cuenta si ya la tiene) y pasa a formar parte del cuerpo técnico
-/// de la plantilla hasta la fecha de validez, que nunca supera la temporada. El club puede acortarlo, prorrogarlo
-/// dentro de la temporada o revocarlo.
-/// </summary>
 public sealed class CoachAppointment : AggregateRoot
 {
     public Guid ClubId { get; private set; }
@@ -63,7 +57,6 @@ public sealed class CoachAppointment : AggregateRoot
 
     public bool IsExpiredOn(DateOnly today) => today > ValidUntil;
 
-    /// <summary>Canjeado, no revocado y dentro de su periodo de validez.</summary>
     public bool IsActiveOn(DateOnly today) =>
         IsRedeemed && !IsRevoked && today >= ValidFrom && today <= ValidUntil;
 
@@ -73,7 +66,6 @@ public sealed class CoachAppointment : AggregateRoot
         : IsRedeemed ? AppointmentStatus.Active
         : AppointmentStatus.Pending;
 
-    /// <summary>El técnico canjea el código y queda vinculado al nombramiento.</summary>
     public void Redeem(Guid coachId, DateTimeOffset now)
     {
         if (IsRevoked)
@@ -97,7 +89,6 @@ public sealed class CoachAppointment : AggregateRoot
         RevokedAt = now;
     }
 
-    /// <summary>Acorta o prorroga la validez (sin pasar del fin de temporada, que comprueba quien lo invoca).</summary>
     public void SetValidity(DateOnly validUntil)
     {
         if (IsRevoked)
@@ -122,14 +113,12 @@ public sealed class CoachAppointment : AggregateRoot
 
 public enum AppointmentStatus
 {
-    /// <summary>Creado por el club; el técnico aún no ha canjeado el código.</summary>
     Pending = 1,
     Active = 2,
     Expired = 3,
     Revoked = 4,
 }
 
-/// <summary>Códigos de acceso que el club entrega a cada técnico: más largos que los de invitación y sin caracteres ambiguos.</summary>
 public static class AccessCodes
 {
     public const int Length = 10;

@@ -14,7 +14,6 @@ public sealed record PlayerDto(
     DateOnly? BirthDate,
     PlayerSquadDto? Squad);
 
-/// <summary>Plantilla a la que está vinculado el jugador.</summary>
 public sealed record PlayerSquadDto(
     Guid SquadId,
     Guid SquadPlayerId,

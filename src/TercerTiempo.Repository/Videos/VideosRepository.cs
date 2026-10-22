@@ -3,7 +3,6 @@ using TercerTiempo.Application.Videos;
 
 namespace TercerTiempo.Repository.Videos;
 
-/// <summary>Acceso a los vídeos de partido: compra, tickets de reproducción, streaming y borrado.</summary>
 public interface IVideosRepository
 {
     Task<MatchVideoDto> PurchaseAsync(Guid videoId, CancellationToken cancellationToken = default);

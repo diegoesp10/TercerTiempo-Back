@@ -5,7 +5,6 @@ using TercerTiempo.Application.Videos;
 
 namespace TercerTiempo.Repository.Matches;
 
-/// <summary>Detalle de partidos: actas visibles para el usuario, acta oficial de la federación y vídeos.</summary>
 public interface IMatchesRepository
 {
     Task<MatchDetailDto> GetAsync(Guid matchId, CancellationToken cancellationToken = default);

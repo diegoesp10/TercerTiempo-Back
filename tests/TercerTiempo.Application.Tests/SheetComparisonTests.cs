@@ -10,7 +10,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Tests;
 
-/// <summary>Emparejamiento de equipos y jugadores entre futbolasturiano.es, la federación y la plantilla.</summary>
 public class SheetComparisonTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 19, 12, 0, 0, TimeSpan.Zero);

@@ -1,6 +1,5 @@
 namespace TercerTiempo.Domain.Common;
 
-/// <summary>Base de toda entidad con identidad propia (Guid v7: ordenable, amigable con índices).</summary>
 public abstract class Entity
 {
     public Guid Id { get; protected set; }

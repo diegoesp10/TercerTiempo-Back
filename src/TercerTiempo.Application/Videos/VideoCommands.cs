@@ -14,7 +14,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Videos;
 
-/// <summary>El cuerpo técnico sube el vídeo de un partido de su equipo.</summary>
 public sealed record UploadMatchVideoCommand(Guid SquadId, Guid MatchId, string? Title, VideoUpload File) : ICommand<MatchVideoDto>;
 
 internal sealed class UploadMatchVideoValidator : AbstractValidator<UploadMatchVideoCommand>
@@ -75,7 +74,6 @@ internal sealed class UploadMatchVideoHandler(
     }
 }
 
-/// <summary>Un técnico de otra plantilla compra el acceso a un vídeo.</summary>
 public sealed record PurchaseVideoCommand(Guid VideoId) : ICommand<MatchVideoDto>;
 
 internal sealed class PurchaseVideoValidator : AbstractValidator<PurchaseVideoCommand>
@@ -125,7 +123,6 @@ internal sealed class PurchaseVideoHandler(
     }
 }
 
-/// <summary>El cuerpo técnico de la plantilla que subió el vídeo lo elimina.</summary>
 public sealed record DeleteVideoCommand(Guid VideoId) : ICommand<bool>;
 
 internal sealed class DeleteVideoValidator : AbstractValidator<DeleteVideoCommand>
@@ -157,7 +154,6 @@ internal sealed class DeleteVideoHandler(
     }
 }
 
-/// <summary>Emite un ticket de reproducción para quien tiene acceso al vídeo.</summary>
 public sealed record IssueVideoTicketCommand(Guid VideoId) : ICommand<VideoTicketDto>;
 
 internal sealed class IssueVideoTicketValidator : AbstractValidator<IssueVideoTicketCommand>

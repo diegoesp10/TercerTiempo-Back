@@ -7,11 +7,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Coaches.Appointments;
 
-/// <summary>
-/// Canje de un nombramiento: el técnico queda vinculado a él y entra en el cuerpo técnico de la plantilla del equipo
-/// en esa temporada, que se crea (importando la plantilla publicada por el proveedor) si aún no existía.
-/// Lo usan el alta de técnicos y el canje desde una cuenta existente.
-/// </summary>
 internal sealed class AppointmentRedemption(ICoachAppointmentStore appointments, ISquadStore squads, ITeamStore teams)
 {
     public async Task<CoachAppointment> FindRedeemableAsync(string accessCode, CancellationToken cancellationToken)

@@ -11,7 +11,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.Charts;
 
-/// <summary>Evolución del equipo de la plantilla partido a partido: resultado, puntos acumulados y nota media del acta.</summary>
 public sealed record GetSquadTimelineQuery(Guid SquadId) : IQuery<SquadTimelineDto>;
 
 internal sealed class GetSquadTimelineHandler(

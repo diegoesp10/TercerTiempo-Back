@@ -4,7 +4,6 @@ using TercerTiempo.Domain.Standings;
 
 namespace TercerTiempo.Application.Competitions.ListCompetitions;
 
-/// <summary>Todas las ligas sincronizadas, ordenadas por nivel, escalón y grupo.</summary>
 public sealed record ListCompetitionsQuery : IQuery<IReadOnlyList<CompetitionDto>>;
 
 internal sealed class ListCompetitionsHandler(

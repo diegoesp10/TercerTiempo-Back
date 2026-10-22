@@ -7,7 +7,6 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Squads.ManagePlayers;
 
-/// <summary>Da de baja una ficha de la plantilla. Sus actas se conservan.</summary>
 public sealed record RemoveSquadPlayerCommand(Guid SquadId, Guid SquadPlayerId) : ICommand<SquadPlayerDto>;
 
 internal sealed class RemoveSquadPlayerValidator : AbstractValidator<RemoveSquadPlayerCommand>

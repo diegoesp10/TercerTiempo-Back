@@ -3,7 +3,6 @@ using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
 namespace TercerTiempo.Application.Tests;
 
-/// <summary>Lectura de la ficha del equipo y de la página del campo de asturfutbol.es (HTML guardado, sin datos personales).</summary>
 public class AsturfutbolTeamPagesTests
 {
     private static string Fixture(string name)

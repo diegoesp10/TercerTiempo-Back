@@ -12,10 +12,8 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Clubs.ManageTeams;
 
-/// <summary>Archivo de imagen subido por el club.</summary>
 public sealed record CrestUpload(string FileName, string ContentType, long Length, Stream Content);
 
-/// <summary>El club sustituye el escudo de uno de sus equipos (solo de los equipos vinculados a su cuenta).</summary>
 public sealed record UploadTeamCrestCommand(
     [property: Description("Equipo del club.")]
     Guid TeamId,

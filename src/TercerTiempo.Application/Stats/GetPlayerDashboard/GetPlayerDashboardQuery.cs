@@ -15,7 +15,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Stats.GetPlayerDashboard;
 
-/// <summary>Panel del jugador autenticado, calculado a partir de las actas que registra su cuerpo técnico.</summary>
 public sealed record GetPlayerDashboardQuery : IQuery<PlayerDashboardDto>;
 
 internal sealed class GetPlayerDashboardHandler(

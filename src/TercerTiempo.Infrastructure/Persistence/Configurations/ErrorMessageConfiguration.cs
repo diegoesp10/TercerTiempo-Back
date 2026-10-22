@@ -4,10 +4,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Infrastructure.Persistence.Configurations;
 
-/// <summary>
-/// Tabla ErrorMessages con todos los mensajes del catálogo como datos de semilla: cada migración que cambie el
-/// catálogo incluye las filas nuevas o modificadas, así que al crear la base de datos desde cero quedan insertados.
-/// </summary>
 internal sealed class ErrorMessageConfiguration : IEntityTypeConfiguration<ErrorMessage>
 {
     public void Configure(EntityTypeBuilder<ErrorMessage> builder)

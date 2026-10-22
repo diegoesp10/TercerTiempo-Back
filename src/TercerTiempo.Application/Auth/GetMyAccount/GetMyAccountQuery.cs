@@ -5,7 +5,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Auth.GetMyAccount;
 
-/// <summary>Cuenta autenticada con su perfil: plantillas y nombramientos del técnico, equipos y nombramientos del club.</summary>
 public sealed record GetMyAccountQuery : IQuery<AccountDto>;
 
 internal sealed class GetMyAccountHandler(ICurrentUser currentUser, AccountStores stores) : IQueryHandler<GetMyAccountQuery, AccountDto>

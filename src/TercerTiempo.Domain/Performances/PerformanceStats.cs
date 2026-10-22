@@ -3,10 +3,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Performances;
 
-/// <summary>
-/// Datos de rendimiento de un jugador en un partido, tal y como los registra el cuerpo técnico en el acta. La nota no
-/// forma parte de ellos: se calcula a partir de estos datos (<see cref="PerformanceRating"/>).
-/// </summary>
 public sealed record PerformanceStats(
     bool Started,
     int MinutesPlayed,

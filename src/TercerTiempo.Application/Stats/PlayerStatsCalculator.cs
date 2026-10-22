@@ -4,7 +4,6 @@ using TercerTiempo.Domain.Standings;
 
 namespace TercerTiempo.Application.Stats;
 
-/// <summary>Funciones puras de agregación sobre líneas de acta. Sin dependencias: fáciles de testear.</summary>
 internal static class PlayerStatsCalculator
 {
     public static IndividualStatsDto Individual(IReadOnlyCollection<PlayerMatchPerformance> performances)
@@ -86,7 +85,6 @@ internal static class PlayerStatsCalculator
             GoalsAgainstPerMatchWithoutPlayer: Average(withoutPlayer, m => m.GoalsAgainst(teamId) ?? 0));
     }
 
-    /// <summary>Percentiles del jugador (por ficha) frente al resto de fichas con minutos en las actas comparables.</summary>
     public static LeagueComparisonDto? LeagueComparison(
         Guid squadPlayerId,
         Guid? teamId,
@@ -132,7 +130,6 @@ internal static class PlayerStatsCalculator
             MinutesPercentile: Percentile(lines, me, l => l.Minutes));
     }
 
-    /// <summary>Porcentaje de jugadores con un valor igual o inferior al del jugador (rango percentil).</summary>
     internal static double? Percentile(
         IReadOnlyCollection<PlayerSeasonLine> lines, PlayerSeasonLine? me, Func<PlayerSeasonLine, double> selector)
     {

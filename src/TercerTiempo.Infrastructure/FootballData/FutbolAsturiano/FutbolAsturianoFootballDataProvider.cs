@@ -11,20 +11,6 @@ using TercerTiempo.Domain.Players;
 
 namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
-/// <summary>
-/// Proveedor real: lee la API REST pública de futbolasturiano.es (WordPress + SportsPress).
-///  - Ligas y grupos: taxonomía <c>sp_league</c>; temporadas: <c>sp_season</c>.
-///  - Equipos: <c>sp_team</c> filtrado por liga y temporada (con escudo embebido), más los que aparezcan
-///    en el calendario sin estar etiquetados en la liga.
-///  - Partidos: <c>sp_event</c> filtrado por liga y temporada (jornada en <c>day</c>, goles en <c>results</c>,
-///    fecha real en <c>date</c>, hora peninsular). Los que WordPress mantiene como "programados" (estado
-///    <c>future</c>: la jornada en curso y buena parte del calendario de algunas ligas) no salen en la API aunque la web
-///    los muestra; se recuperan de su página pública (ver <see cref="HiddenEventPlanner"/>).
-///  - Clasificación: <c>sportspress/v2/sp_table</c> (datos por id de equipo).
-///  - Plantillas: catálogo completo de <c>sp_player</c> agrupado por <c>current_teams</c>
-///    (la API no permite filtrarlos por equipo; se descarga una vez por sincronización).
-/// Las respuestas se cachean durante la vida de la instancia (una por sincronización).
-/// </summary>
 internal sealed class FutbolAsturianoFootballDataProvider(
     HttpClient http,
     IOptions<FootballDataOptions> options,
@@ -37,7 +23,6 @@ internal sealed class FutbolAsturianoFootballDataProvider(
 
     private static readonly TimeSpan RefreshBehind = TimeSpan.FromDays(2);
 
-    /// <summary>Tiempo tras el saque durante el que un marcador sin desenlace se considera en directo.</summary>
     private static readonly TimeSpan LiveWindow = TimeSpan.FromHours(3);
 
     private readonly FutbolAsturianoOptions _settings = options.Value.FutbolAsturiano;
@@ -611,7 +596,6 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     // HTTP: paginación de la API REST de WordPress (cabeceras X-WP-Total / X-WP-TotalPages), ritmo y reintentos
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>Elementos devueltos y total que declara WordPress (incluye los que no devuelve por no estar publicados).</summary>
     private sealed record Paged(List<JsonElement> Items, int Total);
 
     private async Task<Paged> GetPagedAsync(string pathAndQuery, CancellationToken cancellationToken)
@@ -645,7 +629,6 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     private static int? HeaderInt(HttpResponseMessage response, string name) =>
         response.Headers.TryGetValues(name, out var values) && int.TryParse(values.FirstOrDefault(), out var parsed) ? parsed : null;
 
-    /// <summary>GET con ritmo y reintentos. Con <paramref name="allowNotFound"/> un 404 devuelve null en lugar de fallar.</summary>
     private async Task<HttpResponseMessage?> SendAsync(string pathAndQuery, string accept, bool allowNotFound, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)

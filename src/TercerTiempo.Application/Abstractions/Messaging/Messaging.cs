@@ -1,9 +1,7 @@
 namespace TercerTiempo.Application.Abstractions.Messaging;
 
-/// <summary>Intención de cambiar el estado del sistema. Se valida (FluentValidation) antes de ejecutarse.</summary>
 public interface ICommand<TResult> { }
 
-/// <summary>Lectura sin efectos secundarios.</summary>
 public interface IQuery<TResult> { }
 
 public interface ICommandHandler<in TCommand, TResult> where TCommand : ICommand<TResult>

@@ -7,18 +7,12 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
-/// <summary>
-/// Localiza en la federación el acta de un partido: primero la competición (y la guarda en la temporada), después
-/// la jornada, cuyos partidos se emparejan con los nuestros por los nombres de los equipos. Todo lo que se
-/// resuelve (equipos, actas de toda la jornada) queda guardado para no volver a buscarlo.
-/// </summary>
 internal sealed class OfficialSheetLocator(
     IOfficialSheetProvider provider,
     IMatchStore matches,
     ITeamStore teams,
     ILogger<OfficialSheetLocator> logger)
 {
-    /// <summary>Parecido mínimo (local + visitante, sobre 2) para dar por bueno un emparejamiento.</summary>
     private const double MinPairScore = 1.2;
 
     public async Task<ExternalRef?> LocateAsync(Match match, Competition competition, Season season, CancellationToken cancellationToken)
@@ -59,7 +53,6 @@ internal sealed class OfficialSheetLocator(
         return match.OfficialRef;
     }
 
-    /// <summary>Competición en la federación (se guarda en la temporada la primera vez); null si no se encuentra.</summary>
     public async Task<OfficialCompetitionRef?> ResolveCompetitionAsync(Competition competition, Season season, CancellationToken cancellationToken)
     {
         if (season.OfficialRef is { } saved && saved.Provider == provider.ProviderName && OfficialCompetitionRef.Parse(saved.ExternalId) is { } parsed)
@@ -84,7 +77,6 @@ internal sealed class OfficialSheetLocator(
         team.LinkOfficial(ExternalRef.Create(provider.ProviderName, code));
     }
 
-    /// <summary>Empareja nuestros partidos con los del proveedor por parecido de nombres, de mejor a peor y sin repetir.</summary>
     internal static IEnumerable<(Match Ours, OfficialFixture Theirs)> Pair(
         IReadOnlyList<Match> ours, IReadOnlyList<OfficialFixture> theirs, IReadOnlyDictionary<Guid, Team> teamMap)
     {

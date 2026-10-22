@@ -9,7 +9,6 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Squads.ManagePlayers;
 
-/// <summary>El cuerpo técnico añade a mano un jugador a la plantilla (p. ej. cuando el proveedor no la publica).</summary>
 public sealed record AddSquadPlayerCommand(
     Guid SquadId,
     [property: Description("Nombre y apellidos del jugador.")]

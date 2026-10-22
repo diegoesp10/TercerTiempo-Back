@@ -10,7 +10,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Performances.ListMyPerformances;
 
-/// <summary>Actas en las que aparece el jugador autenticado (en su plantilla actual), con su partido.</summary>
 public sealed record ListMyPerformancesQuery : IQuery<IReadOnlyList<PerformanceWithMatchDto>>;
 
 internal sealed class ListMyPerformancesHandler(

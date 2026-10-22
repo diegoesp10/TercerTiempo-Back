@@ -3,11 +3,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Players;
 
-/// <summary>
-/// Jugador con cuenta en la plataforma. Está vinculado a un usuario de identidad (UserId) y, cuando el cuerpo
-/// técnico de su equipo le da acceso, a su ficha dentro de una plantilla (<see cref="Squads.SquadPlayer"/>).
-/// Los datos de rendimiento los registra el cuerpo técnico; el jugador solo los consulta.
-/// </summary>
 public sealed class Player : AggregateRoot
 {
     public Guid UserId { get; private set; }

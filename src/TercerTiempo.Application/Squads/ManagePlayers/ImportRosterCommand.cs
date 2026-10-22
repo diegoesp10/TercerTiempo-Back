@@ -11,7 +11,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Squads.ManagePlayers;
 
-/// <summary>Añade a la plantilla las fichas de la plantilla publicada por el proveedor que aún no estén.</summary>
 public sealed record ImportRosterCommand(Guid SquadId) : ICommand<SquadDetailDto>;
 
 internal sealed class ImportRosterValidator : AbstractValidator<ImportRosterCommand>

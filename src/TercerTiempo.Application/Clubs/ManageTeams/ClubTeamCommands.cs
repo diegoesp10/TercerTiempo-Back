@@ -10,10 +10,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Clubs.ManageTeams;
 
-/// <summary>
-/// El club vincula uno de los equipos publicados por el proveedor que no quedó vinculado al darse de alta (un filial
-/// con otro nombre, un equipo nuevo). Solo equipos cuyo nombre se corresponde con el del club.
-/// </summary>
 public sealed record AddClubTeamCommand(
     [property: Description("Id del equipo (GET /api/teams?competitionId=...).")]
     Guid TeamId) : ICommand<ClubDto>;
@@ -28,7 +24,6 @@ internal sealed class AddClubTeamHandler(
     AccountStores stores,
     IUnitOfWork unitOfWork) : ICommandHandler<AddClubTeamCommand, ClubDto>
 {
-    /// <summary>Parecido mínimo entre el nombre del club y el del equipo (ver <see cref="TeamNameSimilarity"/>).</summary>
     private const double MinimumSimilarity = 0.5;
 
     public async Task<ClubDto> Handle(AddClubTeamCommand command, CancellationToken cancellationToken)
@@ -51,7 +46,6 @@ internal sealed class AddClubTeamHandler(
     }
 }
 
-/// <summary>El club deja de gestionar un equipo (sus nombramientos ya emitidos no cambian).</summary>
 public sealed record RemoveClubTeamCommand(Guid TeamId) : ICommand<ClubDto>;
 
 internal sealed class RemoveClubTeamValidator : AbstractValidator<RemoveClubTeamCommand>

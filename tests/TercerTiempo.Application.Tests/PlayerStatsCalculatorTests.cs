@@ -116,10 +116,6 @@ public class PlayerStatsCalculatorTests
         Assert.Null(PlayerStatsCalculator.LeagueComparison(Guid.NewGuid(), null, [], []));
     }
 
-    /// <summary>
-    /// Mi equipo juega 4 partidos: gana 2 y empata 1 conmigo en el acta (90, 90 y 45 minutos), y pierde 1 sin mí.
-    /// Goles del equipo: 3 + 2 + 2 + 0 = 7. Yo marco 2 + 1 + 0 = 3 y doy 1 asistencia.
-    /// </summary>
     private static (SquadPlayer Me, List<PlayerMatchPerformance> Performances, List<Match> Matches) Scenario()
     {
         var coachId = Guid.NewGuid();

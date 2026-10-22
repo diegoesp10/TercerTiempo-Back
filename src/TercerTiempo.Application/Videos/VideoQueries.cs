@@ -11,7 +11,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Videos;
 
-/// <summary>Vídeos subidos para un partido (por cualquiera de los dos equipos) con el acceso del usuario a cada uno.</summary>
 public sealed record ListMatchVideosQuery(Guid MatchId) : IQuery<IReadOnlyList<MatchVideoDto>>;
 
 internal sealed class ListMatchVideosHandler(
@@ -63,7 +62,6 @@ internal sealed class ListMatchVideosHandler(
     }
 }
 
-/// <summary>Abre el vídeo para servirlo en streaming a partir de un ticket de reproducción.</summary>
 public sealed record OpenVideoStreamQuery(string Ticket) : IQuery<VideoStreamDto>;
 
 internal sealed class OpenVideoStreamHandler(

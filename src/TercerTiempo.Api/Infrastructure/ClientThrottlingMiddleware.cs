@@ -7,10 +7,6 @@ using TercerTiempo.Infrastructure.Security;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>
-/// Corta las llamadas a /api de las IP que superan el límite por ventana (global o por endpoint) y las bloquea un
-/// tiempo creciente (<see cref="ClientThrottle"/>). Responde 429 con ProblemDetails (código del catálogo) y Retry-After.
-/// </summary>
 internal sealed class ClientThrottlingMiddleware(RequestDelegate next, ClientThrottle throttle, ILogger<ClientThrottlingMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context)
@@ -59,7 +55,6 @@ internal sealed class ClientThrottlingMiddleware(RequestDelegate next, ClientThr
             .WriteAsync(new ProblemDetailsContext { HttpContext = context, ProblemDetails = problem });
     }
 
-    /// <summary>IP del cliente; detrás de un proxy de confianza, la primera de X-Forwarded-For.</summary>
     private static string ResolveIp(HttpContext context, bool trustForwarded)
     {
         if (trustForwarded && context.Request.Headers.TryGetValue("X-Forwarded-For", out var forwarded))

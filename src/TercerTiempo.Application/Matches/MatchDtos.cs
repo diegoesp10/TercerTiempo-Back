@@ -21,7 +21,6 @@ public sealed record MatchDto(
     int? AwayGoals,
     string? Venue);
 
-/// <summary>Partido con las actas de las plantillas de ambos equipos, según la visibilidad de cada una.</summary>
 public sealed record MatchDetailDto(MatchDto Match, IReadOnlyList<MatchSquadSheetDto> Sheets);
 
 public sealed record MatchSquadSheetDto(

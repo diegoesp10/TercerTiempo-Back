@@ -3,7 +3,6 @@ using Microsoft.OpenApi;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>Título, descripción y descripción/orden de cada grupo (tag) del documento OpenAPI.</summary>
 internal sealed class ApiInfoDocumentTransformer : IOpenApiDocumentTransformer
 {
     // El orden define cómo se muestran los grupos en la referencia: sigue el flujo de uso.

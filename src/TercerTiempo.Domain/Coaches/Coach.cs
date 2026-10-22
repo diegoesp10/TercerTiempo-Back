@@ -2,10 +2,6 @@ using TercerTiempo.Domain.Common;
 
 namespace TercerTiempo.Domain.Coaches;
 
-/// <summary>
-/// Miembro del cuerpo técnico (entrenador, ayudante, delegado...) con cuenta en la plataforma.
-/// Su pertenencia a cada plantilla se modela en <see cref="Squads.Squad"/>.
-/// </summary>
 public sealed class Coach : AggregateRoot
 {
     public Guid UserId { get; private set; }

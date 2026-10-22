@@ -11,7 +11,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Squads.MatchSheet;
 
-/// <summary>Construye el acta de un partido: una línea por ficha activa (más las fichas de baja que sí tengan rendimiento).</summary>
 internal static class MatchSheetBuilder
 {
     public static async Task<MatchSheetDto> BuildAsync(

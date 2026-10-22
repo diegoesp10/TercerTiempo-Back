@@ -6,11 +6,6 @@ using TercerTiempo.Application.Abstractions.OfficialSheets;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
-/// <summary>
-/// Cliente HTTP de asturfutbol.es: mantiene la cookie de sesión (JSESSIONID) que la web exige, sigue la redirección
-/// de bienvenida (<c>NLogin</c>), espacia las peticiones y decodifica las páginas (vienen en ISO-8859-1).
-/// Una instancia por ámbito; el <see cref="HttpClient"/> se configura con cookies y redirecciones en el registro.
-/// </summary>
 internal sealed class AsturfutbolClient(HttpClient http, IOptions<OfficialSheetOptions> options, ILogger<AsturfutbolClient> logger)
 {
     private const int MaxRetries = 2;
@@ -20,7 +15,6 @@ internal sealed class AsturfutbolClient(HttpClient http, IOptions<OfficialSheetO
     private readonly AsturfutbolOptions _settings = options.Value.Asturfutbol;
     private DateTimeOffset _lastRequestAt = DateTimeOffset.MinValue;
 
-    /// <summary>GET relativo a BaseUrl. Devuelve el HTML ya decodificado; null si la web responde 404.</summary>
     public async Task<string?> GetHtmlAsync(string pathAndQuery, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
@@ -83,7 +77,6 @@ internal sealed class AsturfutbolClient(HttpClient http, IOptions<OfficialSheetO
         }
     }
 
-    /// <summary>GET binario (imágenes); la ruta puede ser relativa a BaseUrl o absoluta en el mismo sitio. Null si 404.</summary>
     public async Task<(byte[] Content, string ContentType)?> GetBytesAsync(string pathAndQuery, CancellationToken cancellationToken)
     {
         await ThrottleAsync(cancellationToken);

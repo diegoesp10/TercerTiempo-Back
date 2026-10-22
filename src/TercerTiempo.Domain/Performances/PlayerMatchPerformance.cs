@@ -6,10 +6,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Performances;
 
-/// <summary>
-/// Línea del acta: rendimiento de una ficha de la plantilla en un partido, registrado por el cuerpo técnico.
-/// Una única línea por ficha y partido.
-/// </summary>
 public sealed class PlayerMatchPerformance : AggregateRoot
 {
     public Guid SquadId { get; private set; }
@@ -31,7 +27,6 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     public int YellowCards { get; private set; }
     public bool RedCard { get; private set; }
 
-    /// <summary>Nota calculada con los datos del acta y el resultado (3,0-10,0); null si no llegó a jugar.</summary>
     public double? Rating { get; private set; }
 
     public string? Notes { get; private set; }
@@ -40,7 +35,6 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     public DateTimeOffset LoggedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    /// <summary>Dorsal con el que jugó este partido si fue distinto del habitual de su ficha; null = el de la ficha.</summary>
     public int? ShirtNumber { get; private set; }
 
     public int GoalContributions => Goals + Assists;
@@ -91,10 +85,6 @@ public sealed class PlayerMatchPerformance : AggregateRoot
         UpdatedAt = now;
     }
 
-    /// <summary>
-    /// Vuelve a calcular la nota con los datos actuales: al registrar o corregir la línea, al cambiar la posición del
-    /// jugador o si cambia el resultado del partido.
-    /// </summary>
     public RatingBreakdown? Recalculate(SquadPlayer player, Match match)
     {
         if (player.Id != SquadPlayerId || match.Id != MatchId)
@@ -105,7 +95,6 @@ public sealed class PlayerMatchPerformance : AggregateRoot
         return breakdown;
     }
 
-    /// <summary>Desglose de la nota según los datos registrados y el resultado del partido.</summary>
     public RatingBreakdown? Breakdown(Position? position, Match match) =>
         PerformanceRating.Calculate(ToStats(), position, match.GoalsFor(TeamId) ?? 0, match.GoalsAgainst(TeamId) ?? 0);
 

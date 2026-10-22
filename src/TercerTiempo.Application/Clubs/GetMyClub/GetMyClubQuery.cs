@@ -5,7 +5,6 @@ using TercerTiempo.Application.Common;
 
 namespace TercerTiempo.Application.Clubs.GetMyClub;
 
-/// <summary>El club autenticado con sus equipos y nombramientos.</summary>
 public sealed record GetMyClubQuery : IQuery<ClubDto>;
 
 internal sealed class GetMyClubHandler(ICurrentUser currentUser, AccountStores stores) : IQueryHandler<GetMyClubQuery, ClubDto>

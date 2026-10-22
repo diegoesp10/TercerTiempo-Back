@@ -5,11 +5,6 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
-/// <summary>
-/// Empareja las líneas del acta oficial con las fichas de la plantilla. La federación escribe
-/// "APELLIDOS, NOMBRE" (y a veces solo el nombre de pila de los menores), así que se comparan las palabras del
-/// nombre sin importar el orden y, en caso de duda, el dorsal.
-/// </summary>
 internal static class SheetMatcher
 {
     private const double MinScore = 0.6;
@@ -67,7 +62,6 @@ internal static class SheetMatcher
     internal static HashSet<string> Tokens(string normalizedName) =>
         normalizedName.Replace(",", " ").Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
 
-    /// <summary>Discrepancias entre la línea del cuerpo técnico y la oficial para un mismo jugador.</summary>
     public static List<SheetDifferenceDto> Differences(PlayerMatchPerformance? coach, OfficialSheetLine? official)
     {
         var result = new List<SheetDifferenceDto>();

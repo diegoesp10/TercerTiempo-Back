@@ -10,7 +10,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.GetSquad;
 
-/// <summary>Detalle de una plantilla: visible para su cuerpo técnico, sus jugadores y, si es pública, para todos.</summary>
 public sealed record GetSquadQuery(Guid SquadId) : IQuery<SquadDetailDto>;
 
 internal sealed class GetSquadHandler(

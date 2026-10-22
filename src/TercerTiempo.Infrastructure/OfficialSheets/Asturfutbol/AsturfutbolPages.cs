@@ -9,23 +9,14 @@ using TercerTiempo.Domain.OfficialSheets;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
-/// <summary>Opción de un desplegable de la web (código y texto).</summary>
 internal sealed record CatalogEntry(string Code, string Name);
 
-/// <summary>
-/// Lectura de las páginas de asturfutbol.es. Los parsers son estáticos y puros para poder probarlos con HTML guardado.
-///  - <c>NFG_CmpJornada</c>: desplegables de temporada y competición.
-///  - <c>NFG_CmpJornada_Exec?codcompeticion=</c>: script con el array de grupos.
-///  - <c>NFG_CmpJornada?...&amp;CodJornada=</c>: partidos de la jornada con el botón del acta.
-///  - <c>NFG_CmpPartido?CodActa=</c>: el acta.
-/// </summary>
 internal static partial class AsturfutbolPages
 {
     private static readonly HtmlParser Parser = new();
 
     // ------------------------------------------------------------------ catálogos
 
-    /// <summary>Opciones de un &lt;select&gt; por nombre; se descartan las de valor vacío o "0".</summary>
     public static IReadOnlyList<CatalogEntry> ParseSelect(string html, string selectName)
     {
         var document = Parser.ParseDocument(html);
@@ -44,7 +35,6 @@ internal static partial class AsturfutbolPages
     [GeneratedRegex("\"(?<item>[^\"]*)\"")]
     private static partial Regex JsStringPattern();
 
-    /// <summary>Pares código/nombre del script <c>var grupos=new Array("0","-- Seleccione --","22932421","1")</c>.</summary>
     public static IReadOnlyList<CatalogEntry> ParseJsArray(string script)
     {
         var match = JsArrayPattern().Match(script);
@@ -78,7 +68,6 @@ internal static partial class AsturfutbolPages
     [GeneratedRegex(@"\b(?<h>\d{1,2}):(?<mi>\d{2})\b")]
     private static partial Regex TimePattern();
 
-    /// <summary>Partidos de la página de una jornada: cada uno es una tabla con los dos equipos y el botón del acta.</summary>
     public static IReadOnlyList<OfficialFixture> ParseMatchday(string html)
     {
         var document = Parser.ParseDocument(html);
@@ -127,9 +116,6 @@ internal static partial class AsturfutbolPages
     [GeneratedRegex(@"\((?<min>\d{1,3})'(?:\s*\+\s*(?<extra>\d{1,2}))?\)")]
     private static partial Regex MinutePattern();
 
-    /// <summary>
-    /// Lee el acta. Devuelve null si la página no es un acta; con lista de líneas vacía si aún no tiene alineaciones.
-    /// </summary>
     public static OfficialSheetData? ParseSheet(string html, int matchLength)
     {
         var document = Parser.ParseDocument(html);
@@ -291,7 +277,6 @@ internal static partial class AsturfutbolPages
         return null;
     }
 
-    /// <summary>Tablas consecutivas que siguen a una cabecera hasta la siguiente cabecera.</summary>
     private static IEnumerable<IElement> TablesAfter(IElement header)
     {
         for (var sibling = header.NextElementSibling; sibling is not null; sibling = sibling.NextElementSibling)
@@ -304,7 +289,6 @@ internal static partial class AsturfutbolPages
     private static List<string> Cells(IElement row) =>
         row.QuerySelectorAll("td").Select(c => Clean(c.TextContent)).Where(t => t.Length > 0).ToList();
 
-    /// <summary>De las celdas de una fila, el dorsal (primera celda numérica) y el nombre (primera celda con letras).</summary>
     private static (int? Shirt, string Name) SplitShirt(List<string> cells)
     {
         int? shirt = null;
@@ -321,7 +305,6 @@ internal static partial class AsturfutbolPages
         return (shirt, name);
     }
 
-    /// <summary>"(58') FERNANDEZ PEÑA, MIGUEL" → 58, null, "FERNANDEZ PEÑA, MIGUEL"; "(90'+1) X" → 90, 1, "X".</summary>
     private static (int? Minute, int? Extra, string Name) SplitMinute(string text)
     {
         var match = MinutePattern().Match(text);
@@ -346,7 +329,6 @@ internal static partial class AsturfutbolPages
     private static string Clean(string text) =>
         Regex.Replace(WebUtility.HtmlDecode(text).Replace(' ', ' '), @"\s+", " ").Trim();
 
-    /// <summary>Línea en construcción: titulares, suplentes, minutos de entrada/salida, goles y tarjetas.</summary>
     private sealed class LineBuilder(MatchSide side, int? shirt, string name, bool started, int matchLength)
     {
         public MatchSide Side { get; } = side;

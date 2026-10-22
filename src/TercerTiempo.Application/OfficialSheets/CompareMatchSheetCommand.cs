@@ -16,10 +16,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
-/// <summary>
-/// Comparador del acta interna de la plantilla con el acta oficial del partido. Es un comando porque puede descargar
-/// (y guardar) el acta de la federación si todavía no se tenía o toca refrescarla.
-/// </summary>
 public sealed record CompareMatchSheetCommand(Guid SquadId, Guid MatchId, bool Refresh = false) : ICommand<SheetComparisonDto>;
 
 internal sealed class CompareMatchSheetValidator : AbstractValidator<CompareMatchSheetCommand>

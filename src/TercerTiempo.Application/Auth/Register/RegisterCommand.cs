@@ -17,12 +17,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Auth.Register;
 
-/// <summary>
-/// Alta en la plataforma como jugador, como técnico o como club. Un técnico solo puede darse de alta con el código de
-/// acceso que le entrega su club: al crear la cuenta se canjea y queda en el cuerpo técnico de la plantilla. Un club
-/// elige su nombre del catálogo (GET /api/clubs/catalog): solo puede haber una cuenta por club y al crearla quedan
-/// vinculados todos sus equipos.
-/// </summary>
 public sealed record RegisterCommand(
     [property: Description("Email de acceso. Debe ser único.")]
     string Email,
@@ -115,7 +109,6 @@ internal sealed class RegisterHandler(
         return new AuthResponse(token.AccessToken, token.ExpiresAt, account);
     }
 
-    /// <summary>El club tiene que estar en el catálogo del proveedor y no tener ya cuenta.</summary>
     private async Task<ClubCatalogEntry> FindClubAsync(string name, CancellationToken cancellationToken)
     {
         var normalized = NameNormalizer.Normalize(name);

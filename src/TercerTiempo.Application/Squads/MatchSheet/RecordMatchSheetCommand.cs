@@ -15,7 +15,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.MatchSheet;
 
-/// <summary>Una línea del acta. Con Played = false se elimina el rendimiento que hubiera (no jugó / no convocado).</summary>
 public sealed record MatchSheetEntryInput(
     Guid SquadPlayerId,
     [property: Description("false si no jugó o no fue convocado: se borra su línea si existía.")]
@@ -45,10 +44,6 @@ public sealed record MatchSheetEntryInput(
         Tackles, Interceptions, Saves, YellowCards, RedCard, Notes);
 }
 
-/// <summary>
-/// El cuerpo técnico registra (o corrige) el acta completa de un partido: una línea por jugador. La nota de cada línea
-/// no se introduce: se calcula con los datos registrados y el resultado (<see cref="PerformanceRating"/>).
-/// </summary>
 public sealed record RecordMatchSheetCommand(Guid SquadId, Guid MatchId, IReadOnlyList<MatchSheetEntryInput> Entries) : ICommand<MatchSheetDto>;
 
 internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchSheetCommand>

@@ -7,7 +7,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Teams.ListTeams;
 
-/// <summary>Equipos de la temporada activa de una competición, ordenados por clasificación.</summary>
 public sealed record ListTeamsQuery(Guid CompetitionId) : IQuery<IReadOnlyList<TeamSummaryDto>>;
 
 internal sealed class ListTeamsHandler(

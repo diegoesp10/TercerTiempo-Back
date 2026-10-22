@@ -4,13 +4,8 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Common;
 
-/// <summary>
-/// Política de acceso a los datos de una plantilla: su cuerpo técnico vigente (nombrado por el club y dentro del
-/// periodo de validez) gestiona y ve todo; un jugador vinculado puede ver; el resto solo si la plantilla es pública.
-/// </summary>
 internal static class SquadAccess
 {
-    /// <summary>Fecha (UTC) con la que se evalúa la validez de los nombramientos.</summary>
     public static DateOnly Today(TimeProvider clock) => Squad.Today(clock.GetUtcNow());
 
     public static bool IsStaff(Squad squad, ICurrentUser user, TimeProvider clock) =>

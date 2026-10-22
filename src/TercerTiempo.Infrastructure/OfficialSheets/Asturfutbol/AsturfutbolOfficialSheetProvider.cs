@@ -6,10 +6,6 @@ using TercerTiempo.Domain.OfficialSheets;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
-/// <summary>
-/// Actas oficiales de asturfutbol.es (RFFPA). Resuelve la competición por nombre en los desplegables del calendario,
-/// lista los partidos de una jornada y lee el acta de cada uno.
-/// </summary>
 internal sealed class AsturfutbolOfficialSheetProvider(
     AsturfutbolClient client,
     IOptions<OfficialSheetOptions> options,
@@ -17,7 +13,6 @@ internal sealed class AsturfutbolOfficialSheetProvider(
 {
     public const string Name = "asturfutbol";
 
-    /// <summary>Nombres con los que la federación llama a cada categoría de futbolasturiano.es (clave normalizada).</summary>
     private static readonly Dictionary<string, string[]> CategoryAliases = new()
     {
         ["3ª rfef"] = ["tercera federacion", "tercera division"],
@@ -119,7 +114,6 @@ internal sealed class AsturfutbolOfficialSheetProvider(
 
     // ------------------------------------------------------------------ nombres
 
-    /// <summary>"2026/2027", "2026-2027" y "2026-27" son la misma temporada.</summary>
     internal static string SeasonKey(string label)
     {
         var digits = new string(label.Where(char.IsDigit).ToArray());
@@ -132,7 +126,6 @@ internal sealed class AsturfutbolOfficialSheetProvider(
         return key.Length == 0 ? string.Empty : key;
     }
 
-    /// <summary>¿El nombre de la federación corresponde a nuestra categoría? (sin tildes, con alias para las nacionales).</summary>
     internal static bool Matches(string federationName, string category)
     {
         var theirs = NameNormalizer.Normalize(federationName).Replace("- ", string.Empty).Trim();

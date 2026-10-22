@@ -11,7 +11,6 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Repository.Clubs;
 
-/// <summary>Lo que hace un club: elegirse del catálogo al darse de alta, ajustar sus equipos y nombrar, prorrogar o revocar a sus técnicos.</summary>
 public interface IClubsRepository
 {
     Task<IReadOnlyList<ClubCatalogDto>> GetCatalogAsync(string? search, CancellationToken cancellationToken = default);

@@ -2,11 +2,6 @@ using System.Reflection;
 
 namespace TercerTiempo.Domain.Common.Errors;
 
-/// <summary>
-/// Catálogo embebido de mensajes: el texto por defecto (español) de cada <see cref="ErrorCode"/>. Es la semilla de
-/// la tabla ErrorMessages (migraciones) y el respaldo si la base de datos no tiene el código. Para añadir un idioma
-/// basta con añadir sus filas aquí (o directamente en la tabla) con el mismo código.
-/// </summary>
 public static class ErrorCatalog
 {
     private static readonly (string Code, string Message)[] Spanish =
@@ -158,11 +153,9 @@ public static class ErrorCatalog
 
     private static readonly Dictionary<string, string> Defaults = Spanish.ToDictionary(e => e.Code, e => e.Message);
 
-    /// <summary>Filas de semilla de la tabla ErrorMessages (todos los idiomas embebidos).</summary>
     public static IReadOnlyList<ErrorMessage> Messages { get; } =
         Spanish.Select(e => new ErrorMessage(e.Code, ErrorMessage.DefaultLanguage, e.Message)).ToList();
 
-    /// <summary>Todos los códigos declarados en <see cref="ErrorCode"/>.</summary>
     public static IReadOnlyList<string> Codes { get; } = typeof(ErrorCode)
         .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
         .Where(f => f.IsLiteral && f.FieldType == typeof(string))
@@ -171,13 +164,10 @@ public static class ErrorCatalog
 
     public static bool Contains(string code) => Defaults.ContainsKey(code);
 
-    /// <summary>Plantilla en español del código; si no existe, el propio código (nunca se pierde el error).</summary>
     public static string Template(string code) => Defaults.GetValueOrDefault(code) ?? code;
 
-    /// <summary>Mensaje en español con los argumentos aplicados.</summary>
     public static string Format(string code, params object[] args) => Fill(Template(code), args);
 
-    /// <summary>Rellena los marcadores {0}, {1}... de una plantilla; si faltan argumentos, deja el texto tal cual.</summary>
     public static string Fill(string template, object[] args)
     {
         if (args.Length == 0) return template;

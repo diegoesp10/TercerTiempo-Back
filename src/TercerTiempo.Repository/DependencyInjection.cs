@@ -15,7 +15,6 @@ namespace TercerTiempo.Repository;
 
 public static class DependencyInjection
 {
-    /// <summary>Registra las fachadas que consumen los endpoints. Requiere <c>AddApplication()</c>.</summary>
     public static IServiceCollection AddRepositoryLayer(this IServiceCollection services)
     {
         services.AddScoped<IAuthRepository, AuthRepository>();

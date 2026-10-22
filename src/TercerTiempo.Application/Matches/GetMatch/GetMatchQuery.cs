@@ -10,7 +10,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Matches.GetMatch;
 
-/// <summary>Detalle de un partido con las actas que el usuario puede ver (plantillas públicas o propias).</summary>
 public sealed record GetMatchQuery(Guid MatchId) : IQuery<MatchDetailDto>;
 
 internal sealed class GetMatchHandler(

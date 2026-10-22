@@ -12,7 +12,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.Stats;
 
-/// <summary>Estadísticas de temporada de toda la plantilla a partir de las actas registradas.</summary>
 public sealed record GetSquadStatsQuery(Guid SquadId) : IQuery<SquadStatsDto>;
 
 internal sealed class GetSquadStatsHandler(

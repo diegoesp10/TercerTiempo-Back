@@ -4,19 +4,15 @@ namespace TercerTiempo.Application.Videos;
 
 public enum VideoAccessLevel
 {
-    /// <summary>Sin acceso ni posibilidad de comprarlo (anónimos, jugadores de otras plantillas).</summary>
     None,
 
-    /// <summary>Técnico de otra plantilla: puede comprar el acceso.</summary>
     Locked,
 
-    /// <summary>De la plantilla que lo subió (staff vigente o jugador vinculado).</summary>
     Owner,
     Purchased,
     Free,
 }
 
-/// <summary>Vídeo de un partido con el acceso que tiene el usuario actual.</summary>
 public sealed record MatchVideoDto(
     Guid Id,
     Guid MatchId,
@@ -37,10 +33,8 @@ public sealed record MatchVideoDto(
 
 public sealed record VideoTicketDto(Guid VideoId, string Ticket, DateTimeOffset ExpiresAt);
 
-/// <summary>Contenido listo para servir en streaming (el llamante debe cerrar el stream).</summary>
 public sealed record VideoStreamDto(Stream Content, string ContentType, string FileName, long Length);
 
-/// <summary>Archivo recibido para subir (el handler lo copia al almacenamiento).</summary>
 public sealed record VideoUpload(string FileName, string ContentType, long Length, Stream Content);
 
 internal static class VideoMapper

@@ -5,10 +5,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
-/// <summary>
-/// Fichas de los clubes en asturfutbol.es (RFFPA): la página del equipo da el escudo, la sede, la equipación y el
-/// terreno de juego; la del campo, su dirección. Comparte cliente, cookie y ritmo de peticiones con las actas.
-/// </summary>
 internal sealed class AsturfutbolTeamProfileProvider(
     AsturfutbolClient client,
     IOptions<OfficialSheetOptions> options,

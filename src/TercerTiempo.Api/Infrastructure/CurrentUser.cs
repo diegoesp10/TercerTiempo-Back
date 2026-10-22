@@ -4,7 +4,6 @@ using TercerTiempo.Application.Abstractions.Identity;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>Resuelve la cuenta autenticada (usuario, tipo y perfil) a partir de los claims del JWT de la petición.</summary>
 internal sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : ICurrentUser
 {
     private ClaimsPrincipal? Principal => httpContextAccessor.HttpContext?.User;

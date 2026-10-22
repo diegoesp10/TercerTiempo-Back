@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 
 namespace TercerTiempo.Domain.Squads;
 
-/// <summary>Códigos de invitación cortos y sin caracteres ambiguos (sin 0/O ni 1/I/L).</summary>
 public static class InviteCodes
 {
     public const int Length = 8;

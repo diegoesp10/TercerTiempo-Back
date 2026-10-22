@@ -3,11 +3,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.OfficialSheets;
 
-/// <summary>
-/// Acta oficial de un partido tal y como la publica la federación (asturfutbol.es): alineaciones, minutos, goles y
-/// tarjetas de los dos equipos, sin más detalle. Se guarda como copia para compararla con el acta interna que
-/// registra el cuerpo técnico y se refresca mientras el partido es reciente.
-/// </summary>
 public sealed class OfficialMatchSheet : AggregateRoot
 {
     private readonly List<OfficialSheetLine> _lines = [];
@@ -16,7 +11,6 @@ public sealed class OfficialMatchSheet : AggregateRoot
     public Guid MatchId { get; private set; }
     public string Provider { get; private set; } = string.Empty;
 
-    /// <summary>Código del acta en el proveedor (CodActa en asturfutbol.es).</summary>
     public string ExternalId { get; private set; } = string.Empty;
 
     public OfficialSheetStatus Status { get; private set; }
@@ -27,10 +21,8 @@ public sealed class OfficialMatchSheet : AggregateRoot
     public int? HomeGoals { get; private set; }
     public int? AwayGoals { get; private set; }
 
-    /// <summary>Última vez que se consultó al proveedor (aunque no hubiera acta todavía).</summary>
     public DateTimeOffset CheckedAt { get; private set; }
 
-    /// <summary>Última vez que se obtuvo el acta con alineaciones.</summary>
     public DateTimeOffset? FetchedAt { get; private set; }
 
     public IReadOnlyCollection<OfficialSheetLine> Lines => _lines.AsReadOnly();
@@ -52,10 +44,8 @@ public sealed class OfficialMatchSheet : AggregateRoot
             CheckedAt = now,
         };
 
-    /// <summary>El proveedor respondió pero el acta aún no tiene alineaciones (partido sin cerrar).</summary>
     public void MarkChecked(DateTimeOffset now) => CheckedAt = now;
 
-    /// <summary>Sustituye el contenido por el que publica el proveedor.</summary>
     public void Apply(OfficialSheetData data, DateTimeOffset now)
     {
         Referee = data.Referee;
@@ -85,7 +75,6 @@ public sealed class OfficialMatchSheet : AggregateRoot
 
 public enum OfficialSheetStatus
 {
-    /// <summary>Se conoce el acta en el proveedor pero aún no tiene alineaciones (no publicada o partido sin cerrar).</summary>
     Pending = 1,
     Available = 2,
 }
@@ -107,7 +96,6 @@ public enum OfficialEventType
     Substitution = 7,
 }
 
-/// <summary>Una línea del acta oficial: un jugador convocado por uno de los equipos.</summary>
 public sealed class OfficialSheetLine : Entity
 {
     public Guid SheetId { get; private set; }
@@ -117,10 +105,8 @@ public sealed class OfficialSheetLine : Entity
     public string NormalizedName { get; private set; } = string.Empty;
     public bool Started { get; private set; }
 
-    /// <summary>Minuto de entrada (0 para los titulares); null si no llegó a jugar.</summary>
     public int? MinuteIn { get; private set; }
 
-    /// <summary>Minuto de salida (sustitución o expulsión); null si terminó el partido en el campo o no jugó.</summary>
     public int? MinuteOut { get; private set; }
 
     public int MinutesPlayed { get; private set; }
@@ -159,7 +145,6 @@ public sealed class OfficialSheetLine : Entity
     }
 }
 
-/// <summary>Suceso del acta oficial en orden cronológico: gol, tarjeta o sustitución.</summary>
 public sealed class OfficialSheetEvent : Entity
 {
     public Guid SheetId { get; private set; }
@@ -170,7 +155,6 @@ public sealed class OfficialSheetEvent : Entity
     public int? ExtraMinute { get; private set; }
     public string PlayerName { get; private set; } = string.Empty;
 
-    /// <summary>En las sustituciones, el jugador que sale.</summary>
     public string? RelatedPlayerName { get; private set; }
 
     private OfficialSheetEvent() { }
@@ -195,7 +179,6 @@ public sealed class OfficialSheetEvent : Entity
     }
 }
 
-/// <summary>Contenido del acta oficial tal y como lo devuelve el proveedor.</summary>
 public sealed record OfficialSheetData(
     string? Referee,
     string HomeTeamName,

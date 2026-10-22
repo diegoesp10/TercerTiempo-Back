@@ -10,12 +10,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Matches.GetMatchPreview;
 
-/// <summary>
-/// Previa de un partido para el cuerpo técnico: probabilidad de cada resultado a partir de los goles a favor y en
-/// contra de la liga (modelo de Poisson con fuerza atacante y defensiva de cada equipo y ventaja de jugar en casa),
-/// con las razones; forma reciente, balance como local/visitante y, de las actas oficiales de la federación, los
-/// jugadores en forma del rival, penaltis, goles en propia y disciplina.
-/// </summary>
 public sealed record GetMatchPreviewQuery(Guid MatchId) : IQuery<MatchPreviewDto>;
 
 public sealed record MatchPreviewDto(
@@ -45,7 +39,6 @@ public sealed record TeamPreviewDto(
     IReadOnlyList<PreviewPlayerDto> InFormPlayers,
     SetPiecesDto SetPieces);
 
-/// <summary>Balance del equipo en la condición en que jugará este partido (el local en casa, el visitante fuera).</summary>
 public sealed record VenueRecordDto(string Label, int Played, int Won, int Drawn, int Lost, int GoalsFor, int GoalsAgainst);
 
 public sealed record FormResultDto(Guid MatchId, int Matchday, string OpponentName, bool Home, int GoalsFor, int GoalsAgainst, string Outcome);
@@ -160,7 +153,6 @@ internal sealed class GetMatchPreviewHandler(
             venue, form, sheetsCount, players, setPieces);
     }
 
-    /// <summary>Jugadores del equipo según las actas oficiales de sus partidos: minutos, goles, tarjetas y goles en los tres últimos.</summary>
     private async Task<(IReadOnlyList<PreviewPlayerDto> Players, SetPiecesDto SetPieces, int Sheets)> PlayersFromSheetsAsync(
         Guid teamId, List<Match> mine, CancellationToken cancellationToken)
     {
@@ -308,7 +300,6 @@ internal sealed class GetMatchPreviewHandler(
     private static string FormLabel(IReadOnlyList<FormResultDto> form) =>
         form.Count == 0 ? "sin partidos" : string.Concat(form.Select(f => f.Outcome switch { "W" => "V", "D" => "E", _ => "D" })) + $" ({form.Sum(f => f.Outcome switch { "W" => 3, "D" => 1, _ => 0 })} pts)";
 
-    /// <summary>Medias de la liga con los partidos jugados: goles del local y del visitante por partido, goles por equipo y partido, y % de victorias locales.</summary>
     private sealed record LeagueAverages(double HomeGoals, double AwayGoals, double GoalsPerTeamMatch, double HomeWinRate)
     {
         public static LeagueAverages From(List<Match> played)

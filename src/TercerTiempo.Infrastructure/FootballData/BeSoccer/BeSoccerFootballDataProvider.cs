@@ -8,11 +8,6 @@ using TercerTiempo.Domain.Players;
 
 namespace TercerTiempo.Infrastructure.FootballData.BeSoccer;
 
-/// <summary>
-/// Integración con la API de BeSoccer (apiclient.besoccerapps.com) para una única liga configurada.
-/// ESQUELETO: la fontanería (HttpClient tipado, opciones, parseo tolerante) está lista, pero los nombres de
-/// "req" y de los campos de respuesta dependen del plan contratado: revísalos contra la documentación oficial.
-/// </summary>
 internal sealed class BeSoccerFootballDataProvider(
     HttpClient http,
     IOptions<FootballDataOptions> options,

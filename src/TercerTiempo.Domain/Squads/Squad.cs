@@ -4,12 +4,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Squads;
 
-/// <summary>
-/// Plantilla de un equipo en una temporada, gestionada por su cuerpo técnico: quién forma el staff (nombrado por el
-/// club y con validez limitada a la temporada), qué jugadores la componen (y cuáles tienen cuenta vinculada), el
-/// código de invitación para los jugadores y la visibilidad de sus datos.
-/// Es el límite de privacidad: las actas y estadísticas pertenecen a la plantilla.
-/// </summary>
 public sealed class Squad : AggregateRoot
 {
     private readonly List<SquadStaff> _staff = [];
@@ -28,10 +22,6 @@ public sealed class Squad : AggregateRoot
 
     private Squad() { }
 
-    /// <summary>
-    /// Crea la plantilla con su primer técnico (nombrado por el club hasta <paramref name="validUntil"/>).
-    /// Nace privada y con un código de invitación nuevo para los jugadores.
-    /// </summary>
     public static Squad Create(Guid teamId, Guid seasonId, Guid headCoachId, DateTimeOffset now, StaffRole role = StaffRole.HeadCoach, DateOnly? validUntil = null, Guid? appointmentId = null)
     {
         var squad = new Squad
@@ -50,13 +40,8 @@ public sealed class Squad : AggregateRoot
 
     // ---------------------------------------------------------------- Cuerpo técnico
 
-    /// <summary>Miembros del staff vigentes en la fecha indicada (sin baja y sin caducar).</summary>
     public IEnumerable<SquadStaff> StaffOn(DateOnly today) => _staff.Where(s => s.IsActiveOn(today));
 
-    /// <summary>
-    /// Incorpora a un técnico. Si ya figuraba y su pertenencia había caducado, se renueva (nueva validez y
-    /// nombramiento); si sigue vigente, es un error.
-    /// </summary>
     public SquadStaff AddStaff(Guid coachId, StaffRole role, DateTimeOffset now, DateOnly? validUntil = null, Guid? appointmentId = null)
     {
         var today = Today(now);
@@ -83,7 +68,6 @@ public sealed class Squad : AggregateRoot
         member.Leave(now);
     }
 
-    /// <summary>Cambia la fecha de validez de un técnico (cuando el club acorta o prorroga su nombramiento).</summary>
     public void SetStaffValidity(Guid coachId, DateOnly? validUntil)
     {
         var member = _staff.FirstOrDefault(s => s.CoachId == coachId && s.IsActive)
@@ -186,7 +170,6 @@ public sealed class Squad : AggregateRoot
 
     public void RotateInviteCode() => InviteCode = InviteCodes.Generate();
 
-    /// <summary>Un técnico vigente de la plantilla o un jugador vinculado siempre pueden verla; el resto, solo si es pública.</summary>
     public bool CanBeViewedBy(Guid? coachId, Guid? playerId, DateOnly today) =>
         Visibility == SquadVisibility.Public
         || (coachId is { } c && IsStaff(c, today))

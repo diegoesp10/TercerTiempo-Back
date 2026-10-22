@@ -1,10 +1,5 @@
 namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
-/// <summary>
-/// Conversión de las fechas locales del sitio a UTC. futbolasturiano.es guarda en <c>date</c> la fecha y hora reales
-/// del partido (hora peninsular), mientras que <c>date_gmt</c> se queda a menudo con la fecha provisional con la que se
-/// creó el calendario (domingo a las 12:00), así que la referencia buena es <c>date</c> en la zona del sitio.
-/// </summary>
 internal static class SiteClock
 {
     public static TimeZoneInfo Resolve(string? timeZoneId)

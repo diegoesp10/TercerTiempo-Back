@@ -12,7 +12,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Squads.Settings;
 
-/// <summary>Quién puede ver las actas y estadísticas de la plantilla. Por defecto son privadas.</summary>
 public sealed record SetSquadVisibilityCommand(
     Guid SquadId,
     [property: Description("Private (solo cuerpo técnico y jugadores vinculados) o Public (cualquiera).")]

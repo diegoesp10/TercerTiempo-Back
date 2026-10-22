@@ -34,7 +34,6 @@ internal sealed class TeamStore(AppDbContext db) : ITeamStore
 
     public void Add(Team team) => db.Teams.Add(team);
 
-    /// <summary>Plantilla visible: sin las fichas del proveedor que el club ha retirado.</summary>
     public async Task<IReadOnlyList<RosterEntry>> GetRosterAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken = default) =>
         await db.RosterEntries
             .Where(r => r.TeamId == teamId && r.SeasonId == seasonId && !r.Hidden)

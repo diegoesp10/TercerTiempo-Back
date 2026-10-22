@@ -12,10 +12,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Players.JoinSquad;
 
-/// <summary>
-/// El jugador se vincula a su ficha en una plantilla con el código de invitación que le da el cuerpo técnico.
-/// Si no indica ficha, se busca una no vinculada con su mismo nombre.
-/// </summary>
 public sealed record JoinSquadAsPlayerCommand(
     [property: Description("Código de invitación de la plantilla (lo facilita el cuerpo técnico).")]
     string InviteCode,

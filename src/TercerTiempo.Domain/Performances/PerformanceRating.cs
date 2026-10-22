@@ -2,29 +2,12 @@ using TercerTiempo.Domain.Players;
 
 namespace TercerTiempo.Domain.Performances;
 
-/// <summary>
-/// Nota de un jugador en un partido calculada solo con datos: lo que registra el acta y el resultado del partido.
-/// Nadie la pone a mano. Escala 3,0-10,0 con un decimal; parte de <see cref="Base"/> y suma o resta por bloques:
-///
-/// <list type="bullet">
-/// <item><b>Ataque</b>: goles (valen más cuanto más atrás juega el jugador) y tiros a puerta.</item>
-/// <item><b>Creación</b>: asistencias y pases clave.</item>
-/// <item><b>Defensa</b>: entradas e intercepciones; para defensas y medios, portería a cero (con 60' o más) y goles
-/// encajados (proporcional a los minutos).</item>
-/// <item><b>Portería</b>: paradas; para porteros, portería a cero y goles encajados.</item>
-/// <item><b>Disciplina</b>: amarillas y roja.</item>
-/// <item><b>Resultado</b>: victoria, empate o derrota, proporcional a los minutos jugados.</item>
-/// </list>
-///
-/// Sin minutos no hay nota. Sin posición conocida se puntúa como centrocampista.
-/// </summary>
 public static class PerformanceRating
 {
     public const double Base = 6.0;
     public const double Min = 3.0;
     public const double Max = 10.0;
 
-    /// <summary>Minutos mínimos para que cuente la portería a cero.</summary>
     public const int CleanSheetMinutes = 60;
 
     private sealed record Weights(
@@ -43,9 +26,6 @@ public static class PerformanceRating
     private const double Draw = 0.1;
     private const double Loss = -0.3;
 
-    /// <param name="goalsFor">Goles del equipo del jugador en el partido.</param>
-    /// <param name="goalsAgainst">Goles encajados por su equipo.</param>
-    /// <returns>Desglose y nota final; null si el jugador no llegó a jugar (0 minutos).</returns>
     public static RatingBreakdown? Calculate(PerformanceStats stats, Position? position, int goalsFor, int goalsAgainst)
     {
         if (stats.MinutesPlayed <= 0) return null;
@@ -85,7 +65,6 @@ public static class PerformanceRating
     private static double Round(double value, int digits) => Math.Round(value, digits, MidpointRounding.AwayFromZero);
 }
 
-/// <summary>Aportación de cada bloque a la nota (sobre la base de 6,0) y nota final.</summary>
 public sealed record RatingBreakdown(
     double Attack,
     double Creation,

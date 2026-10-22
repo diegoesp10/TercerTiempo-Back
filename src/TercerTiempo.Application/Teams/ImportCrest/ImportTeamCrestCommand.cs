@@ -9,7 +9,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Teams.ImportCrest;
 
-/// <summary>Descarga el escudo de un equipo desde una URL y lo guarda en nuestro almacenamiento (para los que no tienen ficha en la federación).</summary>
 public sealed record ImportTeamCrestCommand(
     Guid TeamId,
     [property: Description("URL pública de la imagen del escudo (png, jpg, gif, webp o svg).")]

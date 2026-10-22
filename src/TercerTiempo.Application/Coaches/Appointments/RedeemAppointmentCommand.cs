@@ -8,7 +8,6 @@ using TercerTiempo.Domain.Common;
 
 namespace TercerTiempo.Application.Coaches.Appointments;
 
-/// <summary>Un técnico con cuenta canjea un nuevo código de acceso de su club (otra temporada u otro equipo).</summary>
 public sealed record RedeemAppointmentCommand(
     [property: Description("Código de acceso entregado por el club.")]
     string AccessCode) : ICommand<CoachDto>;

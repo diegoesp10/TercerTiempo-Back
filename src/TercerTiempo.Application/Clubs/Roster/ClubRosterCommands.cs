@@ -12,11 +12,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Clubs.Roster;
 
-/// <summary>
-/// El club corrige la plantilla publicada por el proveedor para uno de sus equipos (temporada en curso): añade,
-/// edita o retira fichas. Lo que toca el club deja de actualizarse desde el proveedor; una ficha del proveedor
-/// retirada se oculta (no se borra) para que la sincronización no la vuelva a crear.
-/// </summary>
 public sealed record AddClubRosterEntryCommand(
     Guid TeamId,
     [property: Description("Nombre y apellidos.")]
@@ -66,7 +61,6 @@ internal sealed class RemoveClubRosterEntryValidator : AbstractValidator<RemoveC
     }
 }
 
-/// <summary>Comprobaciones comunes: cuenta de club, equipo del club y temporada en curso; devuelve la plantilla visible.</summary>
 internal static class ClubRoster
 {
     public static async Task<(Guid SeasonId, DateTimeOffset Now)> ContextAsync(Guid teamId, ICurrentUser currentUser, AccountStores stores, CancellationToken cancellationToken)

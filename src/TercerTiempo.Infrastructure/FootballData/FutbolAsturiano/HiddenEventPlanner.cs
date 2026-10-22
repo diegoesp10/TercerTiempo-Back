@@ -3,25 +3,8 @@ using TercerTiempo.Application.Abstractions.FootballData;
 
 namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
-/// <summary>
-/// Decide qué partidos ocultos por la API hay que leer de su página pública en una sincronización.
-///
-/// La API REST de WordPress solo devuelve los partidos publicados, pero su cabecera <c>X-WP-Total</c> los cuenta todos,
-/// así que se sabe cuántos faltan. El calendario de cada liga se generó de una vez, con identificadores consecutivos:
-/// los ocultos son los huecos del bloque <c>[primer id visible, primer id + total)</c>.
-///
-/// Orden de lectura, para llegar antes a las jornadas próximas: primero los ids posteriores a la "frontera" (el mayor
-/// id visible ya disputado), porque el calendario se creó jornada a jornada. Algunas ligas (3ª AsturFútbol) intercalan
-/// ida y vuelta (ids impares la ida, pares la vuelta); se detecta porque casi todos los visibles comparten paridad, y
-/// entonces se sigue primero esa serie. Después, el resto de huecos de menor a mayor.
-///
-/// Para no castigar al sitio (cada página tarda segundos) los ya conocidos se reutilizan, solo se vuelven a leer los
-/// que se juegan pronto (pueden cambiar de hora o tener ya resultado) y las lecturas nuevas tienen un tope por liga:
-/// el resto llega en las siguientes sincronizaciones.
-/// </summary>
 internal static class HiddenEventPlanner
 {
-    /// <summary>Proporción mínima de ids visibles con la misma paridad para considerar ida y vuelta intercaladas.</summary>
     private const double InterleavedThreshold = 0.9;
     private const int InterleavedMinSample = 6;
 
@@ -79,7 +62,6 @@ internal static class HiddenEventPlanner
             NextId: last + 1);
     }
 
-    /// <summary>Primero la serie que continúa tras la frontera (jornadas próximas); luego el resto, de menor a mayor.</summary>
     private static List<int> PrioritizeUnknown(List<int> unknown, IReadOnlyCollection<VisibleEvent> visibleEvents, int first, DateTimeOffset now)
     {
         var played = visibleEvents.Where(e => e.KickoffAt < now).Select(e => e.Id).ToList();
@@ -91,7 +73,6 @@ internal static class HiddenEventPlanner
         return unknown.Where(Next).Concat(unknown.Where(id => !Next(id))).ToList();
     }
 
-    /// <summary>Paridad común a casi todos los ids visibles (ida y vuelta intercaladas) o null si no la hay.</summary>
     private static int? DominantParity(IReadOnlyList<int> ids)
     {
         if (ids.Count < InterleavedMinSample) return null;
@@ -106,14 +87,8 @@ internal static class HiddenEventPlanner
         int.TryParse(externalId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : null;
 }
 
-/// <summary>Partido devuelto por la API: su id y su fecha (para saber cuáles ya se jugaron).</summary>
 internal readonly record struct VisibleEvent(int Id, DateTimeOffset KickoffAt);
 
-/// <param name="Hidden">Partidos que la API no devuelve (total − visibles).</param>
-/// <param name="Reused">Ya conocidos y lejanos en el tiempo: se reutilizan sin descargar nada.</param>
-/// <param name="Refresh">Ya conocidos que se juegan pronto: se vuelven a leer (hora definitiva, resultado). Por fecha.</param>
-/// <param name="Unknown">Identificadores del bloque aún no leídos, en orden de prioridad.</param>
-/// <param name="NextId">Primer identificador tras el bloque, por si alguno del bloque resulta no ser de la liga.</param>
 internal sealed record HiddenEventPlan(
     int Hidden,
     IReadOnlyList<MatchSnapshot> Reused,

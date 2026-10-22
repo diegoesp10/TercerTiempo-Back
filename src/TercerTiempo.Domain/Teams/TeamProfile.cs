@@ -1,9 +1,5 @@
 namespace TercerTiempo.Domain.Teams;
 
-/// <summary>
-/// Ficha del club según la federación: nombre oficial, sede, web, equipación y el campo donde juega de local.
-/// Se guarda como tipo propio del equipo; todos los campos son opcionales porque la federación no siempre los rellena.
-/// </summary>
 public sealed class TeamProfile
 {
     public string? OfficialName { get; init; }
@@ -13,10 +9,8 @@ public sealed class TeamProfile
     public string? PostalCode { get; init; }
     public string? Website { get; init; }
 
-    /// <summary>Nombre del campo donde juega de local.</summary>
     public string? Ground { get; init; }
 
-    /// <summary>Superficie del campo (hierba natural, hierba sintética, tierra...).</summary>
     public string? GroundSurface { get; init; }
     public string? GroundAddress { get; init; }
     public string? GroundLocality { get; init; }

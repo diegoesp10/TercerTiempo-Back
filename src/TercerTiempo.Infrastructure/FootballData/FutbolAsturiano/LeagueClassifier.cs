@@ -4,13 +4,8 @@ using TercerTiempo.Domain.Competitions;
 
 namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
-/// <summary>Cómo se interpreta un término de liga de futbolasturiano.es.</summary>
 public sealed record LeagueInfo(string DisplayName, string Category, CompetitionLevel Level, int Tier, string? Group);
 
-/// <summary>
-/// Traduce el nombre de una liga tal y como lo publica futbolasturiano.es ("3ª RFEF", "2ª AsturFútbol - Grupo 1",
-/// "Copa AsturFútbol 2026 · Grupo A"...) a nivel, categoría, escalón y grupo.
-/// </summary>
 public static partial class LeagueClassifier
 {
     [GeneratedRegex(@"^(?<tier>\d)ª\s*(?<cat>RFEF|AsturF[uú]tbol)(?:\s*[-–·]\s*Grupo\s*(?<grp>\w+))?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

@@ -5,7 +5,6 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Performances;
 
-/// <summary>Línea del acta de un partido para una ficha de la plantilla.</summary>
 public sealed record PerformanceDto(
     Guid Id,
     Guid MatchId,

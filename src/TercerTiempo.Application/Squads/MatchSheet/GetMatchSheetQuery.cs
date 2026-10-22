@@ -11,7 +11,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.MatchSheet;
 
-/// <summary>Acta de un partido de la plantilla, lista para consultar o rellenar.</summary>
 public sealed record GetMatchSheetQuery(Guid SquadId, Guid MatchId) : IQuery<MatchSheetDto>;
 
 internal sealed class GetMatchSheetHandler(

@@ -4,10 +4,6 @@ using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
 namespace TercerTiempo.Application.Tests;
 
-/// <summary>
-/// Lectura de las páginas de partido de futbolasturiano.es y plan de recuperación de los partidos que su API oculta.
-/// Los HTML son fragmentos reales de la web (octubre de 2026) recortados a lo que se usa.
-/// </summary>
 public class FutbolAsturianoScrapingTests
 {
     // Partido de la jornada 6 de 1ª AsturFútbol todavía "programado" en WordPress: la API REST no lo devuelve.

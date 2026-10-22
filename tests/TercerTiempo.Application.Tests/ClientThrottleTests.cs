@@ -3,7 +3,6 @@ using TercerTiempo.Infrastructure.Security;
 
 namespace TercerTiempo.Application.Tests;
 
-/// <summary>Límite de llamadas por IP/endpoint y bloqueos exponenciales (5 min → 30 min → 1 día → 2 días...).</summary>
 public class ClientThrottleTests
 {
     private sealed class ManualClock(DateTimeOffset now) : TimeProvider

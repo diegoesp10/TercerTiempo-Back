@@ -3,12 +3,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Clubs;
 
-/// <summary>
-/// Club con cuenta en la plataforma. Es quien da de alta a los entrenadores de sus equipos: por cada equipo y temporada
-/// emite un nombramiento (<see cref="CoachAppointment"/>) con un código de acceso, y es el único que puede renovarlo o
-/// revocarlo. Solo puede haber una cuenta por club (nombre normalizado único): al darse de alta elige su club entre los
-/// que publica el proveedor de datos y quedan vinculados todos sus equipos (primero, filiales...).
-/// </summary>
 public sealed class Club : AggregateRoot
 {
     private readonly List<ClubTeam> _teams = [];
@@ -64,7 +58,6 @@ public sealed class Club : AggregateRoot
     }
 }
 
-/// <summary>Equipo (del proveedor de datos) que gestiona un club.</summary>
 public sealed class ClubTeam : Entity
 {
     public Guid ClubId { get; private set; }

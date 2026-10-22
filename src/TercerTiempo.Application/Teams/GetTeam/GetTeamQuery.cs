@@ -12,7 +12,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Teams.GetTeam;
 
-/// <summary>Ficha pública del equipo: clasificación, plantilla del proveedor y si tiene plantilla gestionada en la plataforma.</summary>
 public sealed record GetTeamQuery(Guid TeamId) : IQuery<TeamDetailDto>;
 
 internal sealed class GetTeamHandler(

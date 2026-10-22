@@ -20,7 +20,6 @@ internal static class TestData
     public static Coach NewCoach(string name = "Míster González") =>
         Coach.Register(Guid.NewGuid(), name, Now);
 
-    /// <summary>Plantilla (del equipo local por defecto) con un primer entrenador recién creado.</summary>
     public static (Squad Squad, Guid CoachId) NewSquad(Guid? teamId = null)
     {
         var coachId = Guid.NewGuid();

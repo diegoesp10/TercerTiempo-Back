@@ -2,11 +2,6 @@ using TercerTiempo.Domain.Common;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
-/// <summary>
-/// Parecido entre dos nombres de equipo escritos por fuentes distintas ("CD Vallobín" / C.D. Vallobin "A",
-/// "Real Sporting 'C'" / Real Sporting de Gijón SAD "C"): se comparan las palabras significativas y la letra del
-/// filial, que distingue al B del C.
-/// </summary>
 internal static class TeamNameSimilarity
 {
     private static readonly HashSet<string> Fillers =
@@ -15,10 +10,8 @@ internal static class TeamNameSimilarity
         "deportivo", "deportiva", "futbol", "ff",
     ];
 
-    /// <summary>Comillas con las que las fuentes escriben la letra del filial: 'B', "B", «B», “B”, ‘B’.</summary>
     public static readonly HashSet<char> Quotes = ['\'', '"', '«', '»', '“', '”', '‘', '’'];
 
-    /// <summary>Entre 0 (nada que ver) y 1 (mismo equipo).</summary>
     public static double Score(string a, string b)
     {
         var (coreA, suffixA) = Split(a);
@@ -42,11 +35,6 @@ internal static class TeamNameSimilarity
         return Math.Round(core * suffixFactor, 3);
     }
 
-    /// <summary>
-    /// Palabras significativas (sin siglas ni artículos) y letra del filial ("A", "B", "C"...), si la hay. La letra
-    /// cuenta como filial si va entrecomillada ("Barcia CF 'B'") o si no viene detrás de otra letra suelta: la "F" de
-    /// "Berrón C.F." no es un filial.
-    /// </summary>
     public static (HashSet<string> Core, string? Suffix) Split(string name)
     {
         var normalized = NameNormalizer.Normalize(name);

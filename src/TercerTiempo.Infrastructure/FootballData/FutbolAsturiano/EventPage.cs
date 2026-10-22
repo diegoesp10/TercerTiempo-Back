@@ -6,10 +6,6 @@ using TercerTiempo.Domain.Common;
 
 namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
-/// <summary>
-/// Datos de un partido leídos de su página pública (<c>/evento/...</c>). Es la única fuente para los partidos que
-/// WordPress mantiene como "programados" (estado <c>future</c>): la web los muestra, pero su API REST no los devuelve.
-/// </summary>
 internal sealed record EventPage(
     IReadOnlyList<string> Leagues,
     string? Season,
@@ -23,19 +19,15 @@ internal sealed record EventPage(
     bool Live,
     string? Venue)
 {
-    /// <summary>Hora que se asume cuando la página no la indica.</summary>
     public static readonly TimeOnly DefaultKickoffTime = new(12, 0);
 
     public bool IsMatch =>
         Matchday is > 0 && Date is not null && !string.IsNullOrEmpty(HomeTeamSlug) && !string.IsNullOrEmpty(AwayTeamSlug);
 
-    /// <summary>Con marcador y sin la marca "en directo": partido terminado.</summary>
     public bool Played => !Live && HomeGoals is not null && AwayGoals is not null;
 
-    /// <summary>Fecha y hora locales (zona horaria del sitio) del saque inicial.</summary>
     public DateTime? LocalKickoff => Date?.ToDateTime(Time ?? DefaultKickoffTime);
 
-    /// <summary>¿Pertenece a la liga y temporada indicadas? (nombres comparados sin tildes, mayúsculas ni separadores).</summary>
     public bool BelongsTo(string leagueName, string seasonLabel)
     {
         var league = Key(leagueName);
@@ -44,7 +36,6 @@ internal sealed record EventPage(
         return inLeague && inSeason;
     }
 
-    /// <summary>Clave de comparación: sin entidades HTML, tildes ni mayúsculas, y con guiones largos como guion simple.</summary>
     private static string Key(string value) =>
         NameNormalizer.Normalize(WebUtility.HtmlDecode(value).Replace('–', '-').Replace('—', '-'));
 }

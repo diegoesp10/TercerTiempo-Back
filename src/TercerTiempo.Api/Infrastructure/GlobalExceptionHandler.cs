@@ -11,12 +11,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>
-/// Traduce las excepciones de aplicación/dominio a ProblemDetails. Los mensajes no van en el código: cada excepción
-/// lleva un código de error (<see cref="ErrorCode"/>) y sus argumentos, y el texto se resuelve desde la tabla
-/// ErrorMessages en el idioma de la cabecera Accept-Language (español si no hay traducción). La respuesta incluye
-/// el código en la extensión <c>code</c> para que el cliente pueda tratarlo sin depender del texto.
-/// </summary>
 internal sealed class GlobalExceptionHandler(
     IProblemDetailsService problemDetailsService,
     ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
@@ -82,10 +76,6 @@ internal sealed class GlobalExceptionHandler(
         }
     }
 
-    /// <summary>
-    /// Mensajes de validación por campo (camelCase). Si la regla lleva un código del catálogo (WithErrorCode) se
-    /// resuelve por idioma, con los argumentos que la regla dejó en CustomState; si no, se deja el texto de FluentValidation.
-    /// </summary>
     private static async Task<Dictionary<string, string[]>> ErrorsByFieldAsync(IErrorMessageResolver messages, IEnumerable<ValidationFailure> failures, string language, CancellationToken cancellationToken)
     {
         var result = new Dictionary<string, List<string>>();
@@ -109,7 +99,6 @@ internal sealed class GlobalExceptionHandler(
     private static Task<string> TitleAsync(IErrorMessageResolver messages, string code, string language, CancellationToken cancellationToken) =>
         messages.ResolveAsync(code, language, [], cancellationToken);
 
-    /// <summary>Idioma principal de Accept-Language ("es-ES,es;q=0.9" → "es"); español si no viene.</summary>
     internal static string Language(HttpRequest request)
     {
         var header = request.Headers[HeaderNames.AcceptLanguage].ToString();

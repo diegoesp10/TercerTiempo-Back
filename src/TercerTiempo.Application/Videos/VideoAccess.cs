@@ -5,10 +5,6 @@ using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Application.Videos;
 
-/// <summary>
-/// Quién puede ver un vídeo: la plantilla que lo subió (su staff vigente y sus jugadores vinculados) siempre; el
-/// resto de técnicos, si lo compran (o es gratis). Nadie más.
-/// </summary>
 internal static class VideoAccess
 {
     public static VideoAccessLevel LevelFor(MatchVideo video, Squad? ownerSquad, ICurrentUser user, bool purchased, TimeProvider clock)

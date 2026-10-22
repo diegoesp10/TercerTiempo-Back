@@ -8,7 +8,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Players.LeaveSquad;
 
-/// <summary>El jugador deja de estar vinculado a su ficha (la ficha y sus actas siguen en la plantilla).</summary>
 public sealed record LeaveSquadAsPlayerCommand : ICommand<PlayerDto>;
 
 internal sealed class LeaveSquadAsPlayerHandler(

@@ -11,7 +11,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Stats.GetLeagueTable;
 
-/// <summary>Clasificación de una competición. Sin CompetitionId se usa la de la plantilla del usuario autenticado.</summary>
 public sealed record GetLeagueTableQuery(Guid? CompetitionId) : IQuery<LeagueTableDto>;
 
 internal sealed class GetLeagueTableHandler(

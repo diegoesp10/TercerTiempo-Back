@@ -5,7 +5,6 @@ using TercerTiempo.Application.Videos;
 
 namespace TercerTiempo.Repository.Squads;
 
-/// <summary>Gestión de plantillas por el cuerpo técnico: jugadores, visibilidad, actas, comparador, vídeos y estadísticas.</summary>
 public interface ISquadsRepository
 {
     Task<IReadOnlyList<SquadSummaryDto>> ListMineAsync(CancellationToken cancellationToken = default);

@@ -3,7 +3,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Matches;
 
-/// <summary>Partido de liga entre dos equipos de una temporada. Lo alimenta el proveedor externo.</summary>
 public sealed class Match : AggregateRoot
 {
     // El marcador se persiste como dos columnas (HomeGoals/AwayGoals) y se expone como value object.
@@ -19,7 +18,6 @@ public sealed class Match : AggregateRoot
     public string? Venue { get; private set; }
     public ExternalRef? ExternalRef { get; private set; }
 
-    /// <summary>Acta del partido en la federación (asturfutbol.es), cuando ya se ha localizado.</summary>
     public ExternalRef? OfficialRef { get; private set; }
 
     public Score? Score => _homeGoals is { } home && _awayGoals is { } away ? Score.Create(home, away) : null;
@@ -71,10 +69,6 @@ public sealed class Match : AggregateRoot
         Status = MatchStatus.Scheduled;
     }
 
-    /// <summary>
-    /// Datos de calendario según el proveedor (jornada, fecha y hora, campo). Se pueden corregir en cualquier estado,
-    /// también con el partido ya disputado; el estado y el marcador no cambian.
-    /// </summary>
     public void UpdateFixture(int matchday, DateTimeOffset kickoffAt, string? venue)
     {
         Matchday = Guard.InRange(matchday, 1, 60, "jornada");
@@ -108,7 +102,6 @@ public sealed class Match : AggregateRoot
         Status = MatchStatus.InProgress;
     }
 
-    /// <summary>Vincula el partido con su acta en la federación.</summary>
     public void LinkOfficial(ExternalRef officialRef) => OfficialRef = officialRef;
 
     public bool Involves(Guid teamId) => HomeTeamId == teamId || AwayTeamId == teamId;

@@ -3,10 +3,6 @@ using TercerTiempo.Application.Abstractions.Teams;
 
 namespace TercerTiempo.Infrastructure.Teams;
 
-/// <summary>
-/// Guarda los escudos en una carpeta local (Crests:Directory): un archivo por equipo, "{teamId}-{versión}.{ext}". La
-/// versión cambia en cada guardado (y se borra el archivo anterior) para que la URL del escudo invalide la caché.
-/// </summary>
 internal sealed class FileSystemCrestStorage(IOptions<CrestOptions> options) : ICrestStorage
 {
     private static readonly Dictionary<string, string> Extensions = new(StringComparer.OrdinalIgnoreCase)
@@ -49,7 +45,6 @@ internal sealed class FileSystemCrestStorage(IOptions<CrestOptions> options) : I
         return Task.FromResult<CrestFile?>(new CrestFile(stream, contentType));
     }
 
-    /// <summary>Solo se sirven archivos dentro de la carpeta de escudos (la clave nunca lleva rutas).</summary>
     private string Resolve(string crestKey)
     {
         var path = Path.GetFullPath(Path.Combine(Root, Path.GetFileName(crestKey)));

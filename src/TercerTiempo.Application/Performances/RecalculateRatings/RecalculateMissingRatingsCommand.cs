@@ -7,10 +7,6 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Performances.RecalculateRatings;
 
-/// <summary>
-/// Calcula la nota de las líneas del acta que tienen minutos pero no nota (las registradas cuando la nota la ponía el
-/// cuerpo técnico). Idempotente; se ejecuta al arrancar, tras aplicar las migraciones.
-/// </summary>
 public sealed record RecalculateMissingRatingsCommand : ICommand<int>;
 
 internal sealed class RecalculateMissingRatingsHandler(

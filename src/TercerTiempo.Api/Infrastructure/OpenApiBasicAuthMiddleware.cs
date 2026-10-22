@@ -6,10 +6,6 @@ using TercerTiempo.Api.Extensions;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>
-/// Protege el documento OpenAPI y la referencia interactiva con HTTP Basic Auth usando las credenciales
-/// de OpenApi:BasicAuth. Pensado para exponer la documentación en producción.
-/// </summary>
 internal sealed class OpenApiBasicAuthMiddleware(RequestDelegate next, IOptions<OpenApiDocsOptions> options)
 {
     private const string Realm = "Tercer Tiempo API docs";

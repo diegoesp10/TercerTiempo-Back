@@ -6,7 +6,6 @@ using TercerTiempo.Application.Stats;
 
 namespace TercerTiempo.Repository.Players;
 
-/// <summary>Lo que puede hacer un jugador: vincularse a su plantilla y consultar sus estadísticas.</summary>
 public interface IPlayersRepository
 {
     Task<SquadInviteDto> GetInviteAsync(string inviteCode, CancellationToken cancellationToken = default);
