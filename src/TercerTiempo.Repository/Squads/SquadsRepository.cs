@@ -38,6 +38,7 @@ internal sealed class SquadsRepository(
     IQueryHandler<ListSquadSuggestionsQuery, IReadOnlyList<SuggestionDto>> listSuggestions,
     ICommandHandler<ResolveSuggestionCommand, IReadOnlyList<SuggestionDto>> resolveSuggestion,
     IQueryHandler<GetSquadStatsQuery, SquadStatsDto> getStats,
+    IQueryHandler<GetSquadSeasonTableQuery, SquadSeasonTableDto> getSeasonTable,
     IQueryHandler<GetSquadPlayerProfileQuery, SquadPlayerProfileDto> getPlayerProfile,
     IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto> getTimeline,
     IQueryHandler<ListInjuryTypesQuery, IReadOnlyList<InjuryTypeDto>> listInjuryTypes,
@@ -107,6 +108,9 @@ internal sealed class SquadsRepository(
 
     public Task<IReadOnlyList<SuggestionDto>> ResolveSuggestionAsync(Guid squadId, Guid suggestionId, ResolveSuggestionRequest request, CancellationToken cancellationToken = default) =>
         resolveSuggestion.Handle(request.ToCommand(squadId, suggestionId), cancellationToken);
+
+    public Task<SquadSeasonTableDto> GetSeasonTableAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        getSeasonTable.Handle(new GetSquadSeasonTableQuery(squadId), cancellationToken);
 
     public Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         getStats.Handle(new GetSquadStatsQuery(squadId), cancellationToken);

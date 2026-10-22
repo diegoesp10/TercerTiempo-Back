@@ -50,8 +50,13 @@ internal static class SquadMapper
             .Where(e => e.PhotoKey is not null)
             .ToDictionary(e => e.Id, e => e.PhotoLink()!);
 
-    public static SquadPlayerDto WithPhoto(SquadPlayerDto dto, SquadPlayer player, IReadOnlyDictionary<Guid, string> photos) =>
-        player.RosterEntryId is { } rosterId && photos.TryGetValue(rosterId, out var url) ? dto with { PhotoUrl = url } : dto;
+    // La foto que sube el propio jugador manda sobre la que el club puso en la ficha.
+    public static SquadPlayerDto WithPhoto(SquadPlayerDto dto, SquadPlayer player, IReadOnlyDictionary<Guid, string> photos, IReadOnlyDictionary<Guid, Player>? linkedPlayers = null)
+    {
+        if (player.PlayerId is { } playerId && linkedPlayers is not null && linkedPlayers.TryGetValue(playerId, out var account) && account.PhotoKey is not null)
+            return dto with { PhotoUrl = Players.Photos.PlayerPhotos.PhotoLink(account) };
+        return player.RosterEntryId is { } rosterId && photos.TryGetValue(rosterId, out var url) ? dto with { PhotoUrl = url } : dto;
+    }
 
     public static IEnumerable<SquadPlayer> Ordered(IEnumerable<SquadPlayer> players) =>
         players.OrderBy(p => p.ShirtNumber ?? int.MaxValue).ThenBy(p => p.FullName);
@@ -92,7 +97,7 @@ internal static class SquadMapper
 
         var photos = await PhotoLinksAsync(squad, teams, cancellationToken);
         var squadPlayers = Ordered(squad.ActivePlayers)
-            .Select(p => WithPhoto(ToPlayerDto(p, linkedMap, activeInjuries) with { InviteCode = canInvitePlayers ? p.InviteCode : null }, p, photos))
+            .Select(p => WithPhoto(ToPlayerDto(p, linkedMap, activeInjuries) with { InviteCode = canInvitePlayers ? p.InviteCode : null }, p, photos, linkedMap))
             .ToList();
 
         return new SquadDetailDto(summary, canInvitePlayers, canManage, staff, squadPlayers);

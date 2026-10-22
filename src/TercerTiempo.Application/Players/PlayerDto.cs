@@ -12,7 +12,9 @@ public sealed record PlayerDto(
     string DisplayName,
     Position Position,
     DateOnly? BirthDate,
-    PlayerSquadDto? Squad);
+    PlayerSquadDto? Squad,
+    [property: System.ComponentModel.Description("Foto subida por el propio jugador (recortada, fondo transparente).")]
+    string? PhotoUrl = null);
 
 public sealed record PlayerSquadDto(
     Guid SquadId,
@@ -46,7 +48,7 @@ internal static class PlayerMapper
                 entry.ShirtNumber, squad.Visibility);
         }
 
-        return new PlayerDto(player.Id, player.DisplayName, player.Position, player.BirthDate, squadDto);
+        return new PlayerDto(player.Id, player.DisplayName, player.Position, player.BirthDate, squadDto, Photos.PlayerPhotos.PhotoLink(player));
     }
 
     public static async Task<PlayerDto> ToDtoAsync(

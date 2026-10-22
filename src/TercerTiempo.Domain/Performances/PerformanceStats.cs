@@ -16,7 +16,8 @@ public sealed record PerformanceStats(
     int Saves,
     int YellowCards,
     bool RedCard,
-    string? Notes)
+    string? Notes,
+    int Fouls = 0)
 {
     public const int MaxMinutes = 120;
     public const int MaxNotesLength = 1000;
@@ -33,6 +34,7 @@ public sealed record PerformanceStats(
         Guard.NotNegative(Interceptions, "intercepciones");
         Guard.NotNegative(Saves, "paradas");
         Guard.InRange(YellowCards, 0, 2, "amarillas");
+        Guard.NotNegative(Fouls, "faltas");
 
         if (ShotsOnTarget > Shots)
             throw new DomainException(ErrorCode.SheetShotsOnTarget);
@@ -41,7 +43,7 @@ public sealed record PerformanceStats(
             throw new DomainException(ErrorCode.SheetTwoYellows);
 
         if (MinutesPlayed == 0 && (Started || Goals > 0 || Assists > 0 || Shots > 0 || KeyPasses > 0
-                                   || Tackles > 0 || Interceptions > 0 || Saves > 0 || YellowCards > 0 || RedCard))
+                                   || Tackles > 0 || Interceptions > 0 || Saves > 0 || YellowCards > 0 || RedCard || Fouls > 0))
             throw new DomainException(ErrorCode.SheetNoMinutes);
 
         if (Notes is { Length: > MaxNotesLength })

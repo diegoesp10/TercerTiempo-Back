@@ -150,6 +150,7 @@ public static class ErrorCatalog
         (ErrorCode.SheetNotesTooLong, "Las notas no pueden superar {0} caracteres."),
         (ErrorCode.SheetLineMismatch, "La línea del acta no corresponde a ese jugador o partido."),
         (ErrorCode.SuggestionNotFound, "La sugerencia '{0}' no existe."),
+        (ErrorCode.PlayerPhotoTooLarge, "La foto no puede superar los 3 MB."),
         (ErrorCode.SuggestionAlreadyResolved, "Esa sugerencia ya se ha aprobado o rechazado."),
         (ErrorCode.SuggestionPendingExists, "Ya tienes una sugerencia pendiente para este partido. Espera a que tu club o tu entrenador la revisen."),
         (ErrorCode.SuggestionMessageTooLong, "El mensaje no puede superar los {0} caracteres."),

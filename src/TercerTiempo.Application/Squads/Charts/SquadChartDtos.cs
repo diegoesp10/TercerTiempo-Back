@@ -24,7 +24,9 @@ public sealed record PlayerMatchPointDto(
     int? GoalsAgainst,
     MatchOutcome Outcome,
     PerformanceDto? Performance,
-    RatingBreakdownDto? Rating);
+    RatingBreakdownDto? Rating,
+    [property: System.ComponentModel.Description("Su línea en el acta oficial de la federación, si está descargada.")]
+    OfficialSheets.OfficialLineDto? Official = null);
 
 public sealed record RatingBreakdownDto(
     double Attack,

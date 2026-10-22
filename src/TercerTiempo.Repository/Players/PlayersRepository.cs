@@ -18,6 +18,9 @@ internal sealed class PlayersRepository(
     ICommandHandler<LeaveSquadAsPlayerCommand, PlayerDto> leaveSquad,
     IQueryHandler<GetPlayerDashboardQuery, PlayerDashboardDto> getDashboard,
     IQueryHandler<ListMyPerformancesQuery, IReadOnlyList<PerformanceWithMatchDto>> listPerformances,
+    ICommandHandler<Application.Players.Photos.UploadMyPhotoCommand, PlayerDto> uploadPhoto,
+    ICommandHandler<Application.Players.Photos.DeleteMyPhotoCommand, PlayerDto> deletePhoto,
+    IQueryHandler<Application.Players.Photos.OpenPlayerPhotoQuery, Application.Abstractions.Teams.CrestFile?> openPhoto,
     ICommandHandler<SuggestPerformanceCommand, SuggestionDto> suggest,
     IQueryHandler<ListMySuggestionsQuery, IReadOnlyList<SuggestionDto>> listSuggestions) : IPlayersRepository
 {
@@ -35,6 +38,15 @@ internal sealed class PlayersRepository(
 
     public Task<IReadOnlyList<PerformanceWithMatchDto>> GetMyPerformancesAsync(CancellationToken cancellationToken = default) =>
         listPerformances.Handle(new ListMyPerformancesQuery(), cancellationToken);
+
+    public Task<PlayerDto> UploadPhotoAsync(Application.Clubs.ManageTeams.CrestUpload file, CancellationToken cancellationToken = default) =>
+        uploadPhoto.Handle(new Application.Players.Photos.UploadMyPhotoCommand(file), cancellationToken);
+
+    public Task<PlayerDto> DeletePhotoAsync(CancellationToken cancellationToken = default) =>
+        deletePhoto.Handle(new Application.Players.Photos.DeleteMyPhotoCommand(), cancellationToken);
+
+    public Task<Application.Abstractions.Teams.CrestFile?> OpenPhotoAsync(Guid playerId, CancellationToken cancellationToken = default) =>
+        openPhoto.Handle(new Application.Players.Photos.OpenPlayerPhotoQuery(playerId), cancellationToken);
 
     public Task<SuggestionDto> SuggestAsync(SuggestPerformanceCommand command, CancellationToken cancellationToken = default) =>
         suggest.Handle(command, cancellationToken);

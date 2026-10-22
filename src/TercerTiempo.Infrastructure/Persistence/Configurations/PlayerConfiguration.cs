@@ -14,6 +14,7 @@ internal sealed class PlayerConfiguration : IEntityTypeConfiguration<Player>
         builder.Property(p => p.DisplayName).HasMaxLength(100).IsRequired();
         builder.Property(p => p.NormalizedName).HasMaxLength(100).IsRequired();
         builder.Property(p => p.Position).HasConversion<string>().HasMaxLength(20);
+        builder.Property(p => p.PhotoKey).HasMaxLength(100);
 
         builder.HasIndex(p => p.UserId).IsUnique();
         builder.HasIndex(p => p.NormalizedName);

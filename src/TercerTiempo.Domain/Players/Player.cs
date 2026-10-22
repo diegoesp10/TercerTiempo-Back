@@ -11,6 +11,7 @@ public sealed class Player : AggregateRoot
     public Position Position { get; private set; }
     public DateOnly? BirthDate { get; private set; }
     public DateTimeOffset RegisteredAt { get; private set; }
+    public string? PhotoKey { get; private set; }
 
     private Player() { }
 
@@ -38,6 +39,10 @@ public sealed class Player : AggregateRoot
         player.RaiseDomainEvent(new PlayerRegisteredEvent(player.Id, now));
         return player;
     }
+
+    public void SetPhoto(string photoKey) => PhotoKey = Guard.NotEmpty(photoKey, nameof(photoKey), 100);
+
+    public void ClearPhoto() => PhotoKey = null;
 
     public void UpdateProfile(string displayName, Position position, DateOnly? birthDate)
     {

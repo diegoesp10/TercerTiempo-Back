@@ -32,6 +32,7 @@ public interface ISquadsRepository
     Task<MatchVideoDto> CompleteVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default);
     Task<bool> CancelVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default);
     Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default);
+    Task<Application.Squads.Stats.SquadSeasonTableDto> GetSeasonTableAsync(Guid squadId, CancellationToken cancellationToken = default);
 
     Task<SquadPlayerProfileDto> GetPlayerProfileAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
     Task<SquadTimelineDto> GetTimelineAsync(Guid squadId, CancellationToken cancellationToken = default);

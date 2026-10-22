@@ -1142,6 +1142,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "player.photo_too_large",
+                            Language = "es",
+                            Message = "La foto no puede superar los 3 MB."
+                        },
+                        new
+                        {
                             Code = "suggestion.already_resolved",
                             Language = "es",
                             Message = "Esa sugerencia ya se ha aprobado o rechazado."
@@ -1842,6 +1848,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("Assists")
                         .HasColumnType("int");
 
+                    b.Property<int>("Fouls")
+                        .HasColumnType("int");
+
                     b.Property<int>("Goals")
                         .HasColumnType("int");
 
@@ -1942,6 +1951,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("NormalizedName")
                         .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PhotoKey")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 

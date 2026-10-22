@@ -231,7 +231,7 @@ internal sealed class ResolveSuggestionHandler(
             if (current is null)
                 performances.Add(PlayerMatchPerformance.Record(squad, entry, match, recorder, suggestion.ToStats(), now));
             else
-                current.Update(suggestion.ToStats(current.Notes), entry, match, recorder, now);
+                current.Update(suggestion.ToStats(current.Notes) with { Fouls = current.Fouls }, entry, match, recorder, now);
 
             suggestion.Approve(currentUser.CoachId, currentUser.ClubId, command.Note, now);
         }

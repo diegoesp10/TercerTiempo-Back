@@ -37,11 +37,13 @@ public sealed record MatchSheetEntryInput(
     [property: Description("Opcional, máximo 1000 caracteres.")]
     string? Notes,
     [property: Description("Dorsal con el que jugó este partido si fue distinto del de su ficha (1-99); vacío = el de la ficha.")]
-    int? ShirtNumber = null)
+    int? ShirtNumber = null,
+    [property: Description("Faltas cometidas.")]
+    int Fouls = 0)
 {
     public PerformanceStats ToStats() => new(
         Started, MinutesPlayed, Goals, Assists, Shots, ShotsOnTarget, KeyPasses,
-        Tackles, Interceptions, Saves, YellowCards, RedCard, Notes);
+        Tackles, Interceptions, Saves, YellowCards, RedCard, Notes, Fouls);
 }
 
 public sealed record RecordMatchSheetCommand(Guid SquadId, Guid MatchId, IReadOnlyList<MatchSheetEntryInput> Entries) : ICommand<MatchSheetDto>;
@@ -69,6 +71,7 @@ internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchS
                 entry.RuleFor(e => e.Interceptions).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.Saves).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.YellowCards).InclusiveBetween(0, 2);
+                entry.RuleFor(e => e.Fouls).InclusiveBetween(0, 30);
                 entry.RuleFor(e => e.Notes).MaximumLength(PerformanceStats.MaxNotesLength);
                 entry.RuleFor(e => e.ShirtNumber).InclusiveBetween(1, 99).When(e => e.ShirtNumber.HasValue);
             });

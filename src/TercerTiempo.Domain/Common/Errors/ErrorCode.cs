@@ -158,6 +158,7 @@ public static class ErrorCode
     public const string SheetNotesTooLong = "sheet.notes_too_long";
     public const string SheetLineMismatch = "sheet.line_mismatch";
     public const string SuggestionNotFound = "suggestion.not_found";
+    public const string PlayerPhotoTooLarge = "player.photo_too_large";
     public const string SuggestionAlreadyResolved = "suggestion.already_resolved";
     public const string SuggestionPendingExists = "suggestion.pending_exists";
     public const string SuggestionMessageTooLong = "suggestion.message_too_long";

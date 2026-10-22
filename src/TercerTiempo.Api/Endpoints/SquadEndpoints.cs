@@ -230,6 +230,13 @@ internal static class SquadEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        group.MapGet("/{squadId:guid}/season-table", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetSeasonTableAsync(squadId, ct))
+            .WithName("GetSquadSeasonTable")
+            .WithSummary("Temporada de cada jugador (tabla de la plantilla)")
+            .WithDescription("Partidos, titularidades, minutos, goles, asistencias, tarjetas, faltas y nota media de cada ficha activa. Por partido cuenta el acta interna si existe y, si no, el acta oficial descargada de la federación (sin asistencias ni faltas). Indica cuántos partidos salen de cada fuente.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapGet("/{squadId:guid}/stats", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetStatsAsync(squadId, ct))
             .AllowAnonymous()
             .WithName("GetSquadStats")

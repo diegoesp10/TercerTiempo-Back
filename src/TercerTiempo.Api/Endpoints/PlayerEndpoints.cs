@@ -9,7 +9,38 @@ internal static class PlayerEndpoints
 {
     public static IEndpointRouteBuilder MapPlayerEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/players/{playerId:guid}/photo", async (Guid playerId, HttpContext context, IPlayersRepository players, CancellationToken ct) =>
+            {
+                var photo = await players.OpenPhotoAsync(playerId, ct);
+                if (photo is null) return Results.NotFound();
+
+                context.Response.Headers.CacheControl = "public, max-age=86400";
+                return Results.Stream(photo.Content, photo.ContentType);
+            })
+            .WithTags("Jugadores")
+            .WithName("GetPlayerPhoto")
+            .WithSummary("Foto de un jugador")
+            .WithDescription("Foto que ha subido el propio jugador (photoUrl apunta aquí, con la versión en la URL). 404 si no tiene.")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         var group = app.MapGroup("/api/players/me").WithTags("Jugadores").RequireAuthorization();
+
+        group.MapPut("/photo", async (IFormFile file, IPlayersRepository players, CancellationToken ct) =>
+            {
+                await using var content = file.OpenReadStream();
+                return await players.UploadPhotoAsync(new TercerTiempo.Application.Clubs.ManageTeams.CrestUpload(file.FileName, file.ContentType, file.Length, content), ct);
+            })
+            .DisableAntiforgery()
+            .WithName("UploadMyPhoto")
+            .WithSummary("Subir mi foto")
+            .WithDescription("Solo jugadores. multipart/form-data con el campo file (PNG con fondo transparente recomendado; también JPG o WebP), hasta 3 MB. Sustituye la anterior y manda sobre la foto que el club ponga en la ficha.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapDelete("/photo", (IPlayersRepository players, CancellationToken ct) => players.DeletePhotoAsync(ct))
+            .WithName("DeleteMyPhoto")
+            .WithSummary("Quitar mi foto");
 
         group.MapGet("/invite/{inviteCode}", (string inviteCode, IPlayersRepository players, CancellationToken ct) => players.GetInviteAsync(inviteCode, ct))
             .WithName("GetSquadInvite")

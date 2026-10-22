@@ -26,6 +26,7 @@ internal sealed class GetSquadPlayerProfileHandler(
     IPlayerStore players,
     IPerformanceStore performances,
     IClubStore clubs,
+    TercerTiempo.Domain.OfficialSheets.IOfficialSheetStore sheets,
     TimeProvider clock) : IQueryHandler<GetSquadPlayerProfileQuery, SquadPlayerProfileDto>
 {
     public async Task<SquadPlayerProfileDto> Handle(GetSquadPlayerProfileQuery query, CancellationToken cancellationToken)
@@ -67,6 +68,19 @@ internal sealed class GetSquadPlayerProfileHandler(
             ? (await players.GetByIdsAsync([playerId], cancellationToken)).ToDictionary(p => p.Id)
             : null;
 
+        // Líneas del acta oficial de este jugador (mismo cruce de nombres y dorsales que el comparador).
+        var officialSheets = (await sheets.GetByMatchIdsAsync(teamMatches.Select(m => m.Id), cancellationToken))
+            .Where(s => s.IsAvailable)
+            .ToDictionary(s => s.MatchId);
+        var officialMap = new Dictionary<Guid, TercerTiempo.Domain.OfficialSheets.OfficialSheetLine>();
+        foreach (var m in teamMatches)
+        {
+            if (!officialSheets.TryGetValue(m.Id, out var sheet)) continue;
+            var side = m.HomeTeamId == squad.TeamId ? TercerTiempo.Domain.OfficialSheets.MatchSide.Home : TercerTiempo.Domain.OfficialSheets.MatchSide.Away;
+            if (OfficialSheets.SheetMatcher.Match(squad.Players.Where(p => p.IsActive || p.Id == entry.Id), sheet.LinesOf(side)).TryGetValue(entry.Id, out var line))
+                officialMap[m.Id] = line;
+        }
+
         var points = teamMatches
             .Select(m =>
             {
@@ -86,14 +100,15 @@ internal sealed class GetSquadPlayerProfileHandler(
                     breakdown is null
                         ? null
                         : new RatingBreakdownDto(breakdown.Attack, breakdown.Creation, breakdown.Defense, breakdown.Goalkeeping,
-                            breakdown.Discipline, breakdown.Result, breakdown.Total));
+                            breakdown.Discipline, breakdown.Result, breakdown.Total),
+                    officialMap.TryGetValue(m.Id, out var official) ? OfficialSheets.OfficialSheetMapper.ToDto(official) : null);
             })
             .ToList();
 
         var photos = await SquadMapper.PhotoLinksAsync(squad, teams, cancellationToken);
         return new SquadPlayerProfileDto(
             summary,
-            SquadMapper.WithPhoto(SquadMapper.ToPlayerDto(entry, linked), entry, photos),
+            SquadMapper.WithPhoto(SquadMapper.ToPlayerDto(entry, linked), entry, photos, linked),
             stats,
             impact,
             PlayerAxes.From(stats, impact),
