@@ -90,9 +90,10 @@ internal sealed class GetSquadPlayerProfileHandler(
             })
             .ToList();
 
+        var photos = await SquadMapper.PhotoLinksAsync(squad, teams, cancellationToken);
         return new SquadPlayerProfileDto(
             summary,
-            SquadMapper.ToPlayerDto(entry, linked),
+            SquadMapper.WithPhoto(SquadMapper.ToPlayerDto(entry, linked), entry, photos),
             stats,
             impact,
             PlayerAxes.From(stats, impact),

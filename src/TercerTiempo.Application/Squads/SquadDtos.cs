@@ -44,7 +44,9 @@ public sealed record SquadPlayerDto(
     SquadPlayerStatus Status,
     [property: System.ComponentModel.Description("Lesión abierta; solo la ven el cuerpo técnico y los jugadores vinculados.")]
     InjuryDto? Injury = null,
-    string? InviteCode = null);
+    string? InviteCode = null,
+    [property: System.ComponentModel.Description("Foto de la ficha publicada por el club, si la ha subido.")]
+    string? PhotoUrl = null);
 
 public sealed record SquadMatchDto(MatchDto Match, int EntriesRecorded);
 

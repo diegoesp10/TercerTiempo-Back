@@ -1,6 +1,7 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Squads.Injuries;
+using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
@@ -44,6 +45,14 @@ internal static class SquadMapper
             player.Status,
             injuries?.GetValueOrDefault(player.Id));
 
+    public static async Task<IReadOnlyDictionary<Guid, string>> PhotoLinksAsync(Squad squad, ITeamStore teams, CancellationToken cancellationToken) =>
+        (await teams.GetRosterAsync(squad.TeamId, squad.SeasonId, cancellationToken))
+            .Where(e => e.PhotoKey is not null)
+            .ToDictionary(e => e.Id, e => e.PhotoLink()!);
+
+    public static SquadPlayerDto WithPhoto(SquadPlayerDto dto, SquadPlayer player, IReadOnlyDictionary<Guid, string> photos) =>
+        player.RosterEntryId is { } rosterId && photos.TryGetValue(rosterId, out var url) ? dto with { PhotoUrl = url } : dto;
+
     public static IEnumerable<SquadPlayer> Ordered(IEnumerable<SquadPlayer> players) =>
         players.OrderBy(p => p.ShirtNumber ?? int.MaxValue).ThenBy(p => p.FullName);
 
@@ -81,8 +90,9 @@ internal static class SquadMapper
             ? InjuryMapper.ActiveByPlayer(await injuries.GetBySquadAsync(squad.Id, cancellationToken), squad, today)
             : null;
 
+        var photos = await PhotoLinksAsync(squad, teams, cancellationToken);
         var squadPlayers = Ordered(squad.ActivePlayers)
-            .Select(p => ToPlayerDto(p, linkedMap, activeInjuries) with { InviteCode = canInvitePlayers ? p.InviteCode : null })
+            .Select(p => WithPhoto(ToPlayerDto(p, linkedMap, activeInjuries) with { InviteCode = canInvitePlayers ? p.InviteCode : null }, p, photos))
             .ToList();
 
         return new SquadDetailDto(summary, canInvitePlayers, canManage, staff, squadPlayers);
