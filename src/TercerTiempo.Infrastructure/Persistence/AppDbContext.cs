@@ -16,6 +16,7 @@ using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Domain.Videos;
+using TercerTiempo.Domain.Licensing;
 using TercerTiempo.Infrastructure.Identity;
 
 namespace TercerTiempo.Infrastructure.Persistence;
@@ -44,6 +45,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<OfficialSheetLine> OfficialSheetLines => Set<OfficialSheetLine>();
     public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();
     public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
+    public DbSet<TeamLicense> TeamLicenses => Set<TeamLicense>();
+    public DbSet<LicensePayment> LicensePayments => Set<LicensePayment>();
     public DbSet<VideoPurchase> VideoPurchases => Set<VideoPurchase>();
     public DbSet<VideoUploadSession> VideoUploads => Set<VideoUploadSession>();
     public DbSet<VideoShareLink> VideoShareLinks => Set<VideoShareLink>();

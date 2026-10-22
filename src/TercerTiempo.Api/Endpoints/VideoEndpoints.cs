@@ -1,3 +1,4 @@
+using TercerTiempo.Api.Infrastructure;
 using TercerTiempo.Repository.Videos;
 
 namespace TercerTiempo.Api.Endpoints;
@@ -6,7 +7,9 @@ internal static class VideoEndpoints
 {
     public static IEndpointRouteBuilder MapVideoEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/videos").WithTags("Vídeos");
+        // Los vídeos requieren licencia vigente del equipo que los subió (y del espectador si no es de ese equipo);
+        // los enlaces compartidos solo la del equipo.
+        var group = app.MapGroup("/api/videos").WithTags("Vídeos").RequireLicense(LicenseScope.Video);
 
         group.MapPost("/{videoId:guid}/purchase", (Guid videoId, IVideosRepository videos, CancellationToken ct) => videos.PurchaseAsync(videoId, ct))
             .RequireAuthorization()
@@ -70,6 +73,7 @@ internal static class VideoEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapGet("/shared/{token}", (string token, IVideosRepository videos, CancellationToken ct) => videos.GetSharedAsync(token, ct))
+            .RequireLicense(LicenseScope.SharedVideo)
             .WithName("GetSharedVideo")
             .WithSummary("Datos del vídeo de un enlace compartido")
             .WithDescription("Público, sin sesión. 403 si el enlace no existe, caducó o se revocó.")
@@ -81,6 +85,7 @@ internal static class VideoEndpoints
                 http.Response.Headers.CacheControl = "no-store";
                 return Results.File(stream.Content, stream.ContentType, enableRangeProcessing: true);
             })
+            .RequireLicense(LicenseScope.SharedVideo)
             .WithName("StreamSharedVideo")
             .WithSummary("Reproducir el vídeo de un enlace compartido")
             .WithDescription("Público, sin sesión, con soporte de rangos (Range/206).")

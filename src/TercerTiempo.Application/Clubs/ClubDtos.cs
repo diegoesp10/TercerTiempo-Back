@@ -24,7 +24,11 @@ public sealed record ClubTeamDto(
     string? SeasonLabel,
     DateOnly? SeasonEndsOn,
     Guid? SquadId,
-    int ActiveAppointments);
+    int ActiveAppointments,
+    [property: System.ComponentModel.Description("Estado de la licencia del equipo: Trial, Active o Expired.")]
+    Domain.Licensing.LicenseStatus License,
+    [property: System.ComponentModel.Description("Último día con acceso a los datos privados del equipo.")]
+    DateOnly LicenseValidUntil);
 
 public sealed record AppointmentDto(
     Guid Id,
@@ -57,6 +61,7 @@ internal static class ClubMapper
             var team = await stores.Teams.GetByIdAsync(clubTeam.TeamId, cancellationToken);
             if (team is null) continue;
 
+            var license = await stores.Licenses.EnsureForTeamAsync(club, team.Id, cancellationToken);
             var competition = await stores.Competitions.GetByTeamAsync(team.Id, cancellationToken);
             var season = competition?.CurrentSeason;
             var squad = season is null ? null : await stores.Squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
@@ -65,7 +70,8 @@ internal static class ClubMapper
                 team.Id, team.Name, team.ShortName, team.CrestLink(),
                 competition?.Id, competition?.Name, season?.Id, season?.Label, season?.EndsOn,
                 squad?.Id,
-                appointments.Count(a => a.TeamId == team.Id && season is not null && a.SeasonId == season.Id && a.IsActiveOn(today))));
+                appointments.Count(a => a.TeamId == team.Id && season is not null && a.SeasonId == season.Id && a.IsActiveOn(today)),
+                license.StatusOn(today), license.ValidUntil));
         }
 
         var appointmentsDto = new List<AppointmentDto>();

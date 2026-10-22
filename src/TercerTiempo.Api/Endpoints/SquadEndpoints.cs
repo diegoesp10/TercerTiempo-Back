@@ -1,3 +1,4 @@
+using TercerTiempo.Api.Infrastructure;
 using Microsoft.AspNetCore.Http.Features;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Videos;
@@ -11,7 +12,8 @@ internal static class SquadEndpoints
 {
     public static IEndpointRouteBuilder MapSquadEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/squads").WithTags("Plantillas").RequireAuthorization();
+        // Toda operación sobre una plantilla concreta pasa por la puerta de licencias del equipo.
+        var group = app.MapGroup("/api/squads").WithTags("Plantillas").RequireAuthorization().RequireLicense(LicenseScope.Squad);
 
         group.MapGet("/mine", (ISquadsRepository squads, CancellationToken ct) => squads.ListMineAsync(ct))
             .WithName("ListMySquads")

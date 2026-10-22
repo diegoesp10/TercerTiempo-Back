@@ -162,6 +162,14 @@ public static class ErrorCode
     public const string SuggestionPendingExists = "suggestion.pending_exists";
     public const string SuggestionMessageTooLong = "suggestion.message_too_long";
     public const string SuggestionNoStaffToRecord = "suggestion.no_staff_to_record";
+    public const string LicenseRequired = "license.required";
+    public const string LicenseViewerRequired = "license.viewer_required";
+    public const string LicenseNotFound = "license.not_found";
+    public const string LicenseMonthsInvalid = "license.months_invalid";
+    public const string LicensePaymentNotFound = "license.payment_not_found";
+    public const string LicensePaymentAlreadyPaid = "license.payment_already_paid";
+    public const string LicensePaymentCancelled = "license.payment_cancelled";
+    public const string LicensePaymentNotConfirmed = "license.payment_not_confirmed";
 
     // Vídeos
     public const string VideoNotFound = "video.not_found";

@@ -245,7 +245,13 @@ public class PlayerInvitationTests
             var identity = Stub<IIdentityService>((_, _) => Task.FromResult(Guid.NewGuid()));
             var tokens = Stub<ITokenService>((_, args) => new AuthToken("token", DateTimeOffset.UtcNow.AddHours(1)));
             var appointments = Stub<ICoachAppointmentStore>((method, _) => throw new NotSupportedException(method));
-            var stores = new AccountStores(Players, Coaches, Clubs, appointments, Squads, Teams, Competitions, TimeProvider.System);
+            var licenses = Stub<TercerTiempo.Application.Licensing.ILicenseGate>((method, _) => method switch
+            {
+                nameof(TercerTiempo.Application.Licensing.ILicenseGate.IsViewerLicensedAsync) => Task.FromResult(true),
+                nameof(TercerTiempo.Application.Licensing.ILicenseGate.CanAccessSquadAsync) => Task.FromResult(true),
+                _ => throw new NotSupportedException(method),
+            });
+            var stores = new AccountStores(Players, Coaches, Clubs, appointments, Squads, Teams, Competitions, licenses, TimeProvider.System);
             return new RegisterHandler(identity, stores, new AppointmentRedemption(appointments, Squads, Teams), Unit, tokens);
         }
         public JoinSquadAsPlayerHandler Join() => new(PlayerUser, Players, Squads, Teams, Competitions, Unit);

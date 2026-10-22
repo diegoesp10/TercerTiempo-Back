@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<IErrorMessageResolver, ErrorMessageResolver>();
         services.AddSingleton<ISyncProgress, SyncProgress>();
         services.AddScoped<AppointmentRedemption>();
+        services.AddScoped<Licensing.ILicenseGate, Licensing.LicenseGate>();
         services.AddScoped<OfficialSheetLocator>();
 
         var handlerTypes = assembly.GetTypes()

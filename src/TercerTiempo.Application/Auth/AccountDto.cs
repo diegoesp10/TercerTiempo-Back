@@ -2,6 +2,7 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Clubs;
 using TercerTiempo.Application.Coaches;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Players;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
@@ -23,6 +24,7 @@ internal sealed record AccountStores(
     ISquadStore Squads,
     ITeamStore Teams,
     ICompetitionStore Competitions,
+    ILicenseGate Licenses,
     TimeProvider Clock);
 
 internal static class AccountResolver

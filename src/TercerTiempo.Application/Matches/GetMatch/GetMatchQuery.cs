@@ -1,6 +1,7 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Performances;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
@@ -22,6 +23,7 @@ internal sealed class GetMatchHandler(
     IPerformanceStore performances,
     IClubStore clubs,
     ICompetitionStore competitions,
+    ILicenseGate licenses,
     TimeProvider clock) : IQueryHandler<GetMatchQuery, MatchDetailDto>
 {
     public async Task<MatchDetailDto> Handle(GetMatchQuery query, CancellationToken cancellationToken)
@@ -37,7 +39,9 @@ internal sealed class GetMatchHandler(
 
         foreach (var squad in matchSquads.OrderBy(s => s.TeamId == match.HomeTeamId ? 0 : 1))
         {
-            var visible = await SquadAccess.CanViewAsync(squad, currentUser, clock, clubs, cancellationToken);
+            // Sin licencia (la del equipo, o la del espectador si no es de ese equipo) el acta interna no se muestra.
+            var visible = await SquadAccess.CanViewAsync(squad, currentUser, clock, clubs, cancellationToken)
+                && await licenses.CanAccessSquadAsync(squad, currentUser, cancellationToken);
             var entries = new List<PerformanceDto>();
 
             if (visible)

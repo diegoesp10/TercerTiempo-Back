@@ -15,6 +15,7 @@ public static class EndpointExtensions
         app.MapVideoEndpoints();
         app.MapStatsEndpoints();
         app.MapAdminEndpoints();
+        app.MapLicensingEndpoints();
 
         return app;
     }

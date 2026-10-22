@@ -1166,6 +1166,54 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "license.required",
+                            Language = "es",
+                            Message = "Este equipo no tiene licencia vigente en Tercer Tiempo. Sus datos se conservan, pero el club debe renovar la licencia para que el cuerpo técnico y los jugadores vuelvan a verlos."
+                        },
+                        new
+                        {
+                            Code = "license.viewer_required",
+                            Language = "es",
+                            Message = "Para ver las actas internas y los vídeos de otros equipos tu cuenta debe pertenecer a un equipo con licencia vigente."
+                        },
+                        new
+                        {
+                            Code = "license.not_found",
+                            Language = "es",
+                            Message = "La licencia '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "license.months_invalid",
+                            Language = "es",
+                            Message = "Puedes pagar entre 1 y {0} meses."
+                        },
+                        new
+                        {
+                            Code = "license.payment_not_found",
+                            Language = "es",
+                            Message = "El pago '{0}' no existe o no es de tu club."
+                        },
+                        new
+                        {
+                            Code = "license.payment_already_paid",
+                            Language = "es",
+                            Message = "Ese pago ya está confirmado."
+                        },
+                        new
+                        {
+                            Code = "license.payment_cancelled",
+                            Language = "es",
+                            Message = "Ese pago se canceló; inicia uno nuevo."
+                        },
+                        new
+                        {
+                            Code = "license.payment_not_confirmed",
+                            Language = "es",
+                            Message = "La pasarela no ha confirmado el pago todavía."
+                        },
+                        new
+                        {
                             Code = "video.not_found",
                             Language = "es",
                             Message = "El vídeo '{0}' no existe."
@@ -1382,6 +1430,97 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Seasons", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePayment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AmountCents")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<Guid>("LicenseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Months")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("PaidAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("LicenseId");
+
+                    b.HasIndex("SessionId")
+                        .IsUnique();
+
+                    b.ToTable("LicensePayments", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.TeamLicense", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly?>("PaidUntil")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("TrialEndsOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("TeamId")
+                        .IsUnique();
+
+                    b.ToTable("TeamLicenses", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Matches.Match", b =>
@@ -2623,6 +2762,36 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Navigation("ExternalRef");
 
                     b.Navigation("OfficialRef");
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePayment", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Licensing.TeamLicense", null)
+                        .WithMany()
+                        .HasForeignKey("LicenseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.TeamLicense", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Matches.Match", b =>

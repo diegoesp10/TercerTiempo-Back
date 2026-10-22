@@ -1,3 +1,4 @@
+using TercerTiempo.Api.Infrastructure;
 using TercerTiempo.Application.Squads.Suggestions;
 using TercerTiempo.Application.Players.JoinSquad;
 using TercerTiempo.Repository.Players;
@@ -33,16 +34,19 @@ internal static class PlayerEndpoints
 
         group.MapGet("/dashboard", (IPlayersRepository players, CancellationToken ct) => players.GetDashboardAsync(ct))
             .WithName("GetPlayerDashboard")
+            .RequireLicense(LicenseScope.Player)
             .WithSummary("Panel del jugador")
             .WithDescription("Estadísticas calculadas a partir de las actas que registra su cuerpo técnico: individuales (totales y por 90'), impacto en el equipo (minutos, cuota de goles, resultados con y sin él) y comparativa con la liga. Los percentiles solo comparan con actas visibles (plantillas públicas y la suya) y aparecen con al menos dos jugadores con minutos.");
 
         group.MapGet("/performances", (IPlayersRepository players, CancellationToken ct) => players.GetMyPerformancesAsync(ct))
             .WithName("ListMyPerformances")
+            .RequireLicense(LicenseScope.Player)
             .WithSummary("Mis actas")
             .WithDescription("Partidos en los que el cuerpo técnico ha registrado la línea del jugador, del más reciente al más antiguo.");
 
         group.MapPost("/suggestions", (SuggestPerformanceCommand command, IPlayersRepository players, CancellationToken ct) => players.SuggestAsync(command, ct))
             .WithName("SuggestPerformance")
+            .RequireLicense(LicenseScope.Player)
             .WithSummary("Sugerir mi línea del acta de un partido")
             .WithDescription("El jugador propone corregir su línea (o crearla si el cuerpo técnico no la registró) con un mensaje. La decide su club o su cuerpo técnico; solo puede haber una pendiente por partido.")
             .ProducesValidationProblem()
@@ -53,6 +57,7 @@ internal static class PlayerEndpoints
 
         group.MapGet("/suggestions", (IPlayersRepository players, CancellationToken ct) => players.ListMySuggestionsAsync(ct))
             .WithName("ListMySuggestions")
+            .RequireLicense(LicenseScope.Player)
             .WithSummary("Mis sugerencias")
             .WithDescription("Sugerencias del jugador en su plantilla actual, pendientes primero, con la decisión y la nota del club o el técnico.");
 

@@ -23,6 +23,9 @@ using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Domain.Videos;
+using TercerTiempo.Application.Licensing;
+using TercerTiempo.Domain.Licensing;
+using TercerTiempo.Infrastructure.Licensing;
 using TercerTiempo.Infrastructure.FootballData;
 using TercerTiempo.Infrastructure.FootballData.BeSoccer;
 using TercerTiempo.Infrastructure.FootballData.Fake;
@@ -85,6 +88,7 @@ public static class DependencyInjection
         services.AddScoped<IVideoPurchaseStore, VideoPurchaseStore>();
         services.AddScoped<IVideoUploadStore, VideoUploadStore>();
         services.AddScoped<IVideoShareStore, VideoShareStore>();
+        services.AddScoped<ILicenseStore, LicenseStore>();
     }
 
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)
@@ -198,6 +202,11 @@ public static class DependencyInjection
     {
         services.AddOptions<VideoOptions>()
             .Bind(configuration.GetSection(VideoOptions.SectionName));
+
+        // Licencias por equipo: precio, prueba y pasarela. De momento solo existe la pasarela simulada.
+        services.AddOptions<LicensingOptions>()
+            .Bind(configuration.GetSection(LicensingOptions.SectionName));
+        services.AddSingleton<ILicensePaymentGateway, MockLicensePaymentGateway>();
 
         services.AddMemoryCache();
         services.AddSingleton<IVideoStorage, FileSystemVideoStorage>();
