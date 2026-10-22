@@ -11,8 +11,11 @@ public sealed class Team : AggregateRoot
     /// <summary>Código del equipo en la federación (asturfutbol.es), cuando ya se ha localizado.</summary>
     public ExternalRef? OfficialRef { get; private set; }
 
-    /// <summary>Ficha del club según la federación (sede, campo, equipación), cuando se ha descargado.</summary>
-    public TeamProfile? Profile { get; private set; }
+    /// <summary>
+    /// Ficha del club según la federación (sede, campo, equipación). Siempre existe (vacía hasta que se descarga):
+    /// así EF no tiene que adivinar por las columnas si hay ficha o no (aviso 20606).
+    /// </summary>
+    public TeamProfile Profile { get; private set; } = new();
 
     /// <summary>Clave del escudo en nuestro almacenamiento ("{id}-{versión}.{ext}"); la API lo sirve por id. Nunca se guarda una URL de terceros.</summary>
     public string? CrestKey { get; private set; }

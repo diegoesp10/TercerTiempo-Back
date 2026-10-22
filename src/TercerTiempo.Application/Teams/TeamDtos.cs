@@ -46,7 +46,7 @@ public sealed record TeamProfileDto(
     string? ShortsColor,
     string? SocksColor)
 {
-    public static TeamProfileDto? From(TeamProfile? profile) => profile is null || profile.IsEmpty
+    public static TeamProfileDto? From(TeamProfile profile) => profile.IsEmpty
         ? null
         : new TeamProfileDto(
             profile.OfficialName, profile.Locality, profile.Province, profile.Address, profile.PostalCode, profile.Website,

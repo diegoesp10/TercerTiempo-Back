@@ -19,7 +19,9 @@ internal sealed class TeamConfiguration : IEntityTypeConfiguration<Team>
         builder.OwnsExternalRef(t => t.ExternalRef);
         builder.OwnsExternalRef(t => t.OfficialRef, "Official");
 
-        // Ficha de la federación en la misma tabla, con prefijo Profile_.
+        // Ficha de la federación en la misma tabla, con prefijo Profile_. La navegación es obligatoria (la ficha existe
+        // siempre, vacía si no se ha descargado) para que EF no deduzca su existencia de las columnas nulas.
+        builder.Navigation(t => t.Profile).IsRequired();
         builder.OwnsOne(t => t.Profile, profile =>
         {
             profile.Property(p => p.OfficialName).HasColumnName("Profile_OfficialName").HasMaxLength(160);
