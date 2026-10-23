@@ -23,17 +23,16 @@ public sealed class AsturfutbolOptions
 
     public string UserAgent { get; set; } = "TercerTiempo/1.0 (+https://github.com/diegoesp10/TercerTiempo-Back)";
 
-    public int RequestDelayMs { get; set; } = 10000;
-    public int MaxRequestsPerHour { get; set; } = 60;
-    public int MaxRequestsPerDay { get; set; } = 200;
+    // La web bloquea la IP tras unas 15 peticiones seguidas aunque vayan espaciadas: mejor pocas y lentas.
+    public int RequestDelayMs { get; set; } = 30000;
+    public int MaxRequestsPerHour { get; set; } = 20;
+    public int MaxRequestsPerDay { get; set; } = 60;
     public int CacheHours { get; set; } = 24;
     public int FailureRetryMinutes { get; set; } = 60;
     public int BlockedPauseHours { get; set; } = 24;
 
     public string CalendarCode { get; set; } = "1000120";
     public string TeamsCode { get; set; } = "1000119";
-
-    public string GroundsCode { get; set; } = "1000122";
 
     public string TimeZone { get; set; } = "Europe/Madrid";
 

@@ -1,16 +1,11 @@
 using System.Reflection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
-using TercerTiempo.Application.Abstractions.Teams;
 using TercerTiempo.Application.OfficialSheets;
-using TercerTiempo.Application.Sync;
-using TercerTiempo.Application.Teams.SyncProfiles;
-using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
-using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
 namespace TercerTiempo.Application.Tests;
@@ -72,47 +67,28 @@ public class FederationDatabaseFirstTests
         var handler = new PlanOfficialSheetSyncHandler(
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
             Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([match])),
+            Stub<ISquadStore>((_, _) => Task.FromResult<IReadOnlyList<Squad>>([Squad.Create(match.HomeTeamId, season.Id, Guid.NewGuid(), Now)])),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([sheet])),
             new OfficialSheetSyncMemory(), TimeProvider.System);
         Assert.Empty(await handler.Handle(new(20), default));
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Profile_sync_preserves_saved_data_and_only_resumes_a_missing_crest(bool hasCrest)
+    [Fact]
+    public async Task Background_scan_only_plans_matches_of_teams_with_a_squad()
     {
         var competition = Competition.Create("Liga", "Primera", CompetitionLevel.Regional, 1, null, "Asturias", null);
         var season = competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
         competition.MarkCurrent(season.Id);
-        var team = Team.Create("Equipo", "EQ", null);
-        team.LinkOfficial(ExternalRef.Create("asturfutbol", "123"));
-        team.UpdateProfile(new TeamProfile { OfficialName = "Ficha guardada" }, Now);
-        if (hasCrest) team.SetCrest("existing.png");
-        var profileCalls = 0;
-        var provider = Stub<ITeamProfileProvider>((method, _) => method switch
-        {
-            "get_ProviderName" => "asturfutbol",
-            "GetProfileAsync" => ReadProfile(),
-            "DownloadCrestAsync" => Task.FromResult<CrestImage?>(new([1], "image/png")),
-            _ => throw new Exception($"Unexpected provider call: {method}"),
-        });
-        Task<OfficialTeamProfile?> ReadProfile()
-        {
-            profileCalls++;
-            return Task.FromResult<OfficialTeamProfile?>(new("https://federation.invalid/crest.png", new() { OfficialName = "Otra ficha" }));
-        }
-        var handler = new SyncTeamProfilesHandler(null!, provider,
-            Stub<ICrestStorage>((_, _) => Task.FromResult("downloaded.png")), null!,
+        var ours = Guid.NewGuid();
+        var withSquad = Match.Schedule(season.Id, 1, Guid.NewGuid(), ours, Now.AddDays(-2), null, null);
+        var others = Match.Schedule(season.Id, 1, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(-2), null, null);
+        var handler = new PlanOfficialSheetSyncHandler(
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
-            Stub<ITeamStore>((_, _) => Task.FromResult<IReadOnlyList<Team>>([team])),
-            Stub<IUnitOfWork>((_, _) => Task.FromResult(1)), Options.Create(new CrestOptions()),
-            Stub<ISyncProgress>((_, _) => null), TimeProvider.System, NullLogger<SyncTeamProfilesHandler>.Instance);
-        var result = await handler.Handle(new(Force: true), default);
-        Assert.Empty(result.Errors);
-        Assert.Equal(hasCrest ? 0 : 1, profileCalls);
-        Assert.Equal(hasCrest ? "existing.png" : "downloaded.png", team.CrestKey);
-        Assert.Equal("Ficha guardada", team.Profile.OfficialName);
+            Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([withSquad, others])),
+            Stub<ISquadStore>((_, _) => Task.FromResult<IReadOnlyList<Squad>>([Squad.Create(ours, season.Id, Guid.NewGuid(), Now)])),
+            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([])),
+            new OfficialSheetSyncMemory(), TimeProvider.System);
+        Assert.Equal([withSquad.Id], await handler.Handle(new(20), default));
     }
 
     private static (Match, OfficialMatchSheet) CompletedSheet(Guid? seasonId = null)

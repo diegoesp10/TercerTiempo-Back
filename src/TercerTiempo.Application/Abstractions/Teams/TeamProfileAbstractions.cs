@@ -1,19 +1,11 @@
-using TercerTiempo.Domain.Teams;
-
 namespace TercerTiempo.Application.Abstractions.Teams;
 
 public interface ITeamProfileProvider
 {
     string ProviderName { get; }
 
-    Task<OfficialTeamProfile?> GetProfileAsync(string teamCode, CancellationToken cancellationToken);
-
-    Task<CrestImage?> DownloadCrestAsync(string crestUrl, CancellationToken cancellationToken);
-
     string TeamUrl(string teamCode);
 }
-
-public sealed record OfficialTeamProfile(string? CrestUrl, TeamProfile Profile);
 
 public sealed record CrestImage(byte[] Content, string ContentType);
 
@@ -45,6 +37,4 @@ public sealed class CrestOptions
     public string Directory { get; set; } = "data/crests";
 
     public string PhotosDirectory { get; set; } = "data/photos";
-
-    public int RefreshDays { get; set; } = 30;
 }

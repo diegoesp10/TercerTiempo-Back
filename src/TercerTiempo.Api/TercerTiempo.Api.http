@@ -24,11 +24,7 @@ Content-Type: application/json
   "accessCode": null
 }
 
-### Fichas y escudos de la federación (tras la sincronización; force=true para repetir)
-POST {{baseUrl}}/api/admin/sync/team-profiles?force=false
-Authorization: Bearer {{token}}
-
-### Importar el escudo de un equipo desde una URL (equipos sin ficha en la federación)
+### Importar el escudo de un equipo desde una URL (equipos sin escudo guardado)
 POST {{baseUrl}}/api/admin/teams/{{teamId}}/crest
 Authorization: Bearer {{token}}
 Content-Type: application/json

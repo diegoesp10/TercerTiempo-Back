@@ -11,7 +11,7 @@ internal static class AdminEndpoints
             .WithTags("Admin")
             .WithName("GetSyncStatus")
             .WithSummary("Estado de la sincronización")
-            .WithDescription("Si está corriendo (fase «datos» o «fichas», liga en curso y progreso), cuándo terminó la última, su resumen y errores, y cuándo toca la siguiente (FootballData:SyncIntervalHours). Público: el frontal lo sondea para mostrar «actualizando datos».");
+            .WithDescription("Si está corriendo (fase «datos», liga en curso y progreso), cuándo terminó la última, su resumen y errores, y cuándo toca la siguiente (FootballData:SyncIntervalHours). Público: el frontal lo sondea para mostrar «actualizando datos».");
 
         var group = app.MapGroup("/api/admin").WithTags("Admin").RequireAuthorization();
 
@@ -20,15 +20,10 @@ internal static class AdminEndpoints
             .WithSummary("Forzar sincronización con el proveedor de datos")
             .WithDescription("Descarga todas las ligas del proveedor configurado (FootballData:Provider) con sus equipos, partidos, clasificación y plantillas y las vuelca en la base de datos. Idempotente; cada liga se guarda por separado y los errores se devuelven en errors. El worker lo ejecuta además al arrancar y cada FootballData:SyncIntervalHours horas. Con futbolasturiano.es tarda del orden de un minuto.");
 
-        group.MapPost("/sync/team-profiles", (bool? force, IAdminRepository admin, CancellationToken ct) => admin.SyncTeamProfilesAsync(force ?? false, ct))
-            .WithName("SyncTeamProfiles")
-            .WithSummary("Descargar fichas y escudos de la federación")
-            .WithDescription("Completa únicamente las fichas y escudos que faltan en SQL. Reutiliza las páginas guardadas y respeta los límites y pausas persistidos de OfficialSheets:Asturfutbol. Los equipos de fuera de Asturias conservan el escudo del proveedor de datos. force se mantiene por compatibilidad, pero no vuelve a descargar los datos ya guardados.");
-
         group.MapPost("/teams/{teamId:guid}/crest", (Guid teamId, ImportCrestRequest request, IAdminRepository admin, CancellationToken ct) => admin.ImportTeamCrestAsync(teamId, request.Url, ct))
             .WithName("ImportTeamCrest")
             .WithSummary("Importar el escudo de un equipo desde una URL")
-            .WithDescription("Para los equipos que no tienen escudo en la federación ni en el proveedor de datos: descarga la imagen (png, jpg, gif, webp o svg, hasta 2 MB) y la guarda en Crests:Directory; a partir de entonces crestUrl apunta a GET /api/teams/{teamId}/crest.")
+            .WithDescription("Para los equipos que no tienen escudo guardado ni en el proveedor de datos: descarga la imagen (nunca de asturfutbol.es, de donde solo se leen actas) (png, jpg, gif, webp o svg, hasta 2 MB) y la guarda en Crests:Directory; a partir de entonces crestUrl apunta a GET /api/teams/{teamId}/crest.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);

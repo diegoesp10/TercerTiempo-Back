@@ -8,6 +8,7 @@ using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
@@ -110,11 +111,14 @@ internal sealed class GetOfficialSheetHandler(
 
 public sealed record PlanOfficialSheetSyncCommand(int Max) : ICommand<IReadOnlyList<Guid>>;
 
-// Planificar solo lee SQL: partidos jugados sin acta o pendientes desde hace al menos un día,
-// de los más recientes a los más antiguos. La resolución de la federación se hace al descargar lo que falta.
+// Planificar solo lee SQL: partidos jugados sin acta o pendientes desde hace al menos un día, de los más recientes a
+// los más antiguos, y solo de los equipos que tienen plantilla en la app. El resto de actas se descargan únicamente
+// cuando alguien abre el partido, para pedir a la federación lo mínimo. La resolución de la federación se hace al
+// descargar lo que falta.
 internal sealed class PlanOfficialSheetSyncHandler(
     ICompetitionStore competitions,
     IMatchStore matches,
+    ISquadStore squads,
     IOfficialSheetStore sheets,
     OfficialSheetSyncMemory memory,
     TimeProvider clock) : ICommandHandler<PlanOfficialSheetSyncCommand, IReadOnlyList<Guid>>
@@ -129,8 +133,13 @@ internal sealed class PlanOfficialSheetSyncHandler(
             if (competition.CurrentSeason is not { } season || memory.SkipSeason(season.Id, now))
                 continue;
 
+            var teamsWithSquad = (await squads.GetBySeasonAsync(season.Id, cancellationToken)).Select(s => s.TeamId).ToHashSet();
+            if (teamsWithSquad.Count == 0)
+                continue;
+
             var played = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
-                .Where(m => OfficialSheetRefresh.IsPlayed(m, now) && m.Status != MatchStatus.Cancelled && !memory.SkipMatch(m.Id, now))
+                .Where(m => (teamsWithSquad.Contains(m.HomeTeamId) || teamsWithSquad.Contains(m.AwayTeamId))
+                    && OfficialSheetRefresh.IsPlayed(m, now) && m.Status != MatchStatus.Cancelled && !memory.SkipMatch(m.Id, now))
                 .ToList();
             if (played.Count == 0)
                 continue;

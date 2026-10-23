@@ -87,16 +87,11 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 - **Escudos siempre propios**: `Team` no guarda ninguna URL de terceros; solo `CrestKey`, el archivo
   "{id}-{versión}.{ext}" de `Crests:Directory` que la API sirve en `GET /api/teams/{id}/crest?v=` (la versión cambia
   con cada escudo nuevo e invalida la caché). La sincronización de datos descarga el escudo que publica el proveedor al
-  crear el equipo; la federación aporta el suyo; el club puede sustituir el de sus equipos; y para el resto está la
-  importación por URL de administración. Un equipo sin escudo muestra sus iniciales en el frontal.
-- **Ficha y escudo del equipo** (`Team.Profile`, `Team.CrestKey`): `SyncTeamProfilesCommand` localiza cada equipo de
-  la temporada en curso en asturfutbol.es (código del equipo por las primeras jornadas de su competición), descarga su
-  ficha (`ITeamProfileProvider`: nombre oficial, sede, web, equipación, campo donde juega de local con su dirección) y
-  su escudo, que se guarda en `Crests:Directory` (`ICrestStorage`) y se sirve desde la API para no enlazar imágenes de
-  terceros. Se ejecuta tras cada sincronización del worker y se refresca cada `Crests:RefreshDays` días. Los equipos sin
-  escudo en la federación (los de fuera de Asturias) lo descargan del proveedor de datos si lo publica, y para el resto
-  hay `POST /api/admin/teams/{id}/crest` con la URL de la imagen; en el frontal, un equipo sin escudo muestra una
-  insignia con sus iniciales.
+  crear el equipo; el club puede sustituir el de sus equipos; y para el resto está la importación por URL de
+  administración (nunca desde asturfutbol.es). Un equipo sin escudo muestra sus iniciales en el frontal.
+- **Ficha del equipo** (`Team.Profile`): nombre oficial, sede, web, equipación y campo. Se conservan las que se
+  descargaron de asturfutbol.es hasta el 22-10-2026; ya no se piden a la federación, de la que solo se leen actas.
+  `ITeamProfileProvider` solo da el enlace a la ficha del equipo en la federación.
 - **Club**: solo puede haber una cuenta por club (`NormalizedName` único). Al darse de alta elige su nombre del
   **catálogo de clubes** (`GET /api/clubs/catalog`, `ClubCatalog`: los equipos del proveedor agrupados por las palabras
   significativas del nombre, primer equipo + filiales) y quedan vinculados todos sus equipos (`ClubTeam`; un equipo solo
@@ -160,7 +155,6 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST | `/api/auth/login` | Login |
 | GET | `/api/auth/me` | Cuenta autenticada: jugador con su plantilla; técnico con sus plantillas y nombramientos; club con sus equipos y nombramientos |
 | GET | `/api/sync/status` | Estado de la sincronización (fase, liga en curso, progreso, última ejecución, siguiente); el frontal lo sondea. Público |
-| POST | `/api/admin/sync/team-profiles?force=` | Localiza cada equipo en asturfutbol.es y descarga su ficha (sede, web, equipación, campo) y su escudo; sin ficha, el escudo del proveedor |
 | POST | `/api/admin/teams/{id}/crest` | Importar el escudo de un equipo desde una URL (`{ "url": ... }`) |
 | GET | `/api/clubs/catalog?search=` | Catálogo de clubes del proveedor (equipos agrupados, si ya tienen cuenta); de aquí sale el nombre del alta. Público |
 | GET | `/api/clubs/me` | El club: equipos vinculados y nombramientos (el código solo mientras está pendiente) |
@@ -269,19 +263,21 @@ El worker `FootballDataSyncWorker` sincroniza al arrancar y cada `SyncIntervalHo
 
 La web de la RFFPA ([asturfutbol.es](https://www.asturfutbol.es)) publica el acta de cada partido (alineaciones,
 sustituciones con minuto, goles y tarjetas). No tiene API: `AsturfutbolOfficialSheetProvider` lee sus páginas
-(`Infrastructure/OfficialSheets/Asturfutbol`, AngleSharp). Antes de acceder a la web se consulta SQL: las actas completas,
-fichas y escudos ya guardados no se vuelven a descargar automáticamente. Solo se completan los datos que faltan.
-El frontal consulta nuestra API y su botón «Consultar datos guardados» no fuerza el scraper. Particularidades:
+(`Infrastructure/OfficialSheets/Asturfutbol`, AngleSharp). **De esta web solo se descargan actas**: ni fichas de
+equipo, ni campos, ni escudos, porque bloquea la IP tras unas pocas peticiones. Antes de acceder a la web se consulta
+SQL: las actas completas no se vuelven a descargar. El proceso en segundo plano (`OfficialSheetSyncWorker`, cada
+`BackgroundScanMinutes`) solo busca las actas que faltan de los partidos de equipos con plantilla en la app; el resto
+se descargan únicamente cuando alguien abre ese partido. El frontal consulta nuestra API y su botón «Consultar datos
+guardados» no fuerza el scraper. Particularidades:
 
 - Las páginas son públicas pero exigen una cookie de sesión: la primera petición redirige a `/pnfg/NLogin`, que la fija
   y devuelve a la página pedida (`AsturfutbolClient` conserva las cookies y controla cada redirección). Sin cookie
   responde una página vacía ("No se ha aceptado el cookie"). Las páginas no declaran charset (ISO-8859-1).
-- Todas las lecturas de la federación (calendarios, jornadas, actas, fichas, campos y escudos) pasan por el mismo
-  control. `FederationHttpCache` guarda páginas y respuestas 404 durante 24 horas y los fallos durante 60 minutos;
+- Todas las lecturas de la federación (calendario, jornadas y actas) pasan por el mismo control. `FederationHttpCache` guarda páginas y respuestas 404 durante 24 horas y los fallos durante 60 minutos;
   también reserva la URL para impedir descargas simultáneas entre procesos. `FederationRequestStates` guarda los
   contadores y la pausa global. Sobreviven a reinicios y se comparten entre instancias conectadas a la misma SQL.
-- Valores iniciales en `OfficialSheets:Asturfutbol`: `RequestDelayMs=10000`, `MaxRequestsPerHour=60`,
-  `MaxRequestsPerDay=200`, `CacheHours=24`, `FailureRetryMinutes=60`, `BlockedPauseHours=24`. Los contadores usan
+- Valores iniciales en `OfficialSheets:Asturfutbol`: `RequestDelayMs=30000`, `MaxRequestsPerHour=20`,
+  `MaxRequestsPerDay=60`, `CacheHours=24`, `FailureRetryMinutes=60`, `BlockedPauseHours=24`. Los contadores usan
   horas y días UTC. Cada redirección cuenta como una petición. No hay reintentos HTTP inmediatos. Una respuesta
   403/429 o una página vacía/de bloqueo pausa todo al menos 24 horas; un error 5xx pausa al menos 60 minutos.
   Se respeta un `Retry-After` superior. Estos límites son configurables, no un umbral garantizado por la federación.
