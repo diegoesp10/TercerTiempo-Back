@@ -11,4 +11,4 @@ public sealed class ForbiddenException(string code, params object[] args) : Code
 
 public sealed class UnauthenticatedException() : CodedException(ErrorCode.AuthUnauthenticated);
 
-public sealed class InvalidCredentialsException() : CodedException(ErrorCode.AuthInvalidCredentials);
+public sealed class InvalidCredentialsException(string code = ErrorCode.AuthInvalidCredentials) : CodedException(code);

@@ -1,60 +1,65 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.Sync;
+using TercerTiempo.Infrastructure.Jobs;
 
 namespace TercerTiempo.Infrastructure.FootballData;
 
 internal sealed class FootballDataSyncWorker(
     IServiceScopeFactory scopeFactory,
-    IOptions<FootballDataOptions> options,
+    JobScheduler scheduler,
     ISyncProgress progress,
     TimeProvider clock,
     ILogger<FootballDataSyncWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var settings = options.Value;
-
-        if (settings.SyncOnStartup)
-            await RunOnceAsync(stoppingToken);
-
-        if (settings.SyncIntervalHours <= 0)
-            return;
-
-        var interval = TimeSpan.FromHours(settings.SyncIntervalHours);
-        progress.ScheduleNext(clock.GetUtcNow() + interval);
-        using var timer = new PeriodicTimer(interval);
-
-        while (await timer.WaitForNextTickAsync(stoppingToken))
-        {
-            await RunOnceAsync(stoppingToken);
-            progress.ScheduleNext(clock.GetUtcNow() + interval);
-        }
-    }
-
-    private async Task RunOnceAsync(CancellationToken cancellationToken)
-    {
+        var job = scheduler.Get(JobNames.FootballData);
         try
         {
-            using var scope = scopeFactory.CreateScope();
-            var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<SyncSeasonCommand, SyncResultDto>>();
+            var due = await scheduler.FirstDueAsync(job.Name, stoppingToken);
+            if (due is not null) logger.LogInformation("Próxima sincronización de datos: {Due}", due);
 
-            var result = await handler.Handle(new SyncSeasonCommand(), cancellationToken);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                progress.ScheduleNext(due);
+                var manual = await scheduler.WaitAsync(job.Name, due, stoppingToken);
+                progress.ScheduleNext(null);
 
-            logger.LogInformation(
-                "Datos de fútbol sincronizados ({Provider}): {Competitions} competiciones, {Teams} equipos, {Matches} partidos, {Roster} fichas de plantilla, {Errors} errores",
-                result.Provider, result.Competitions, result.Teams, result.Matches, result.RosterEntries, result.Errors.Count);
+                try
+                {
+                    await scheduler.RunAsync(job.Name, manual, RunOnceAsync, stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogError(ex, "Error sincronizando los datos de fútbol");
+                }
+
+                due = job.Interval is { } interval ? clock.GetUtcNow() + interval : null;
+            }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             // Apagado ordenado.
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error sincronizando los datos de fútbol");
-        }
+    }
+
+    private async Task<JobOutcome> RunOnceAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<SyncSeasonCommand, SyncResultDto>>();
+
+        var result = await handler.Handle(new SyncSeasonCommand(), cancellationToken);
+
+        logger.LogInformation(
+            "Datos de fútbol sincronizados ({Provider}): {Competitions} competiciones, {Teams} equipos, {Matches} partidos, {Roster} fichas de plantilla, {Errors} errores",
+            result.Provider, result.Competitions, result.Teams, result.Matches, result.RosterEntries, result.Errors.Count);
+
+        return new JobOutcome(
+            $"{result.Competitions} ligas, {result.Teams} equipos, {result.Matches} partidos, {result.Standings} filas de clasificación y {result.RosterEntries} fichas",
+            result.Errors);
     }
 }

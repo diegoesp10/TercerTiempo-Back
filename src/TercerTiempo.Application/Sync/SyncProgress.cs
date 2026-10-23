@@ -1,5 +1,3 @@
-using TercerTiempo.Application.Abstractions.Messaging;
-
 namespace TercerTiempo.Application.Sync;
 
 public sealed record SyncStatusDto(
@@ -82,11 +80,4 @@ internal sealed class SyncProgress(TimeProvider clock) : ISyncProgress
         lock (_lock)
             return new SyncStatusDto(_running, _phase, _current, _done, _total, _startedAt, _lastFinishedAt, _lastSummary, _lastErrors, _nextRunAt);
     }
-}
-
-public sealed record GetSyncStatusQuery : IQuery<SyncStatusDto>;
-
-internal sealed class GetSyncStatusHandler(ISyncProgress progress) : IQueryHandler<GetSyncStatusQuery, SyncStatusDto>
-{
-    public Task<SyncStatusDto> Handle(GetSyncStatusQuery query, CancellationToken cancellationToken) => Task.FromResult(progress.Snapshot());
 }

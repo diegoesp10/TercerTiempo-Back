@@ -53,7 +53,9 @@ public static class ApiServiceExtensions
                 };
             });
 
-        services.AddAuthorization();
+        services.AddAuthorization(options => options.AddPolicy(AuthClaims.AdminPolicy, policy => policy
+            .RequireAuthenticatedUser()
+            .RequireClaim(AuthClaims.Admin, "true")));
     }
 
     private static void AddCors(IServiceCollection services, IConfiguration configuration)

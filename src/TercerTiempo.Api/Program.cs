@@ -3,6 +3,7 @@ using TercerTiempo.Api.Extensions;
 using TercerTiempo.Api.Infrastructure;
 using TercerTiempo.Application;
 using TercerTiempo.Infrastructure;
+using TercerTiempo.Infrastructure.Identity;
 using TercerTiempo.Repository;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,6 +18,9 @@ var app = builder.Build();
 
 // Aplica migraciones pendientes antes de aceptar tráfico (el worker de sincronización arranca después).
 await app.Services.MigrateDatabaseAsync();
+
+// Rol Admin y usuario administrador de la configuración (Admin:UserName / Admin:Password en user-secrets) para /jobs.
+await app.Services.SeedAdminAsync();
 
 // Las actas antiguas (o sin nota) reciben la nota calculada con sus datos.
 await app.Services.RecalculateMissingRatingsAsync();

@@ -446,6 +446,30 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "admin.invalid_credentials",
+                            Language = "es",
+                            Message = "Usuario o contraseña incorrectos."
+                        },
+                        new
+                        {
+                            Code = "job.not_found",
+                            Language = "es",
+                            Message = "El trabajo '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "job.already_running",
+                            Language = "es",
+                            Message = "El trabajo '{0}' ya está en marcha."
+                        },
+                        new
+                        {
+                            Code = "job.disabled",
+                            Language = "es",
+                            Message = "El trabajo '{0}' está desactivado en la configuración."
+                        },
+                        new
+                        {
                             Code = "auth.email_taken",
                             Language = "es",
                             Message = "Ya existe una cuenta con ese email."
@@ -2680,6 +2704,98 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasFilter("[NormalizedUserName] IS NOT NULL");
 
                     b.ToTable("AspNetUsers", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Infrastructure.Jobs.JobRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Errors")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Job")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("Manual")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Requests")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Summary")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Job", "StartedAt");
+
+                    b.ToTable("JobRuns", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Infrastructure.Jobs.ScrapeRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid?>("JobRunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("StatusCode")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.HasIndex("JobRunId");
+
+                    b.HasIndex("Provider", "At");
+
+                    b.ToTable("ScrapeRequests", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol.FederationHttpCache", b =>

@@ -54,4 +54,21 @@ internal sealed class IdentityService(UserManager<ApplicationUser> userManager) 
 
         return await userManager.CheckPasswordAsync(user, password) ? user.Id : null;
     }
+
+    public async Task<Guid?> ValidateAdminAsync(string userName, string password, CancellationToken cancellationToken)
+    {
+        var user = await userManager.FindByNameAsync(userName);
+        if (user is null || await userManager.IsLockedOutAsync(user)) return null;
+
+        if (!await userManager.CheckPasswordAsync(user, password))
+        {
+            await userManager.AccessFailedAsync(user);
+            return null;
+        }
+
+        if (!await userManager.IsInRoleAsync(user, AuthClaims.AdminRole)) return null;
+
+        await userManager.ResetAccessFailedCountAsync(user);
+        return user.Id;
+    }
 }

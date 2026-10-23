@@ -154,7 +154,6 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST | `/api/auth/register` | Alta como jugador (solo con su código personal: queda vinculado a su ficha), cuerpo técnico (con el código de acceso del club: lo canjea y entra en su plantilla) o club |
 | POST | `/api/auth/login` | Login |
 | GET | `/api/auth/me` | Cuenta autenticada: jugador con su plantilla; técnico con sus plantillas y nombramientos; club con sus equipos y nombramientos |
-| GET | `/api/sync/status` | Estado de la sincronización (fase, liga en curso, progreso, última ejecución, siguiente); el frontal lo sondea. Público |
 | POST | `/api/admin/teams/{id}/crest` | Importar el escudo de un equipo desde una URL (`{ "url": ... }`) |
 | GET | `/api/clubs/catalog?search=` | Catálogo de clubes del proveedor (equipos agrupados, si ya tienen cuenta); de aquí sale el nombre del alta. Público |
 | GET | `/api/clubs/me` | El club: equipos vinculados y nombramientos (el código solo mientras está pendiente) |
@@ -193,7 +192,9 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/videos/{id}/stream?ticket=` | Streaming con rangos (206) para el reproductor |
 | DELETE | `/api/videos/{id}` | Eliminar el vídeo (solo el cuerpo técnico que lo subió) |
 | GET | `/api/league/table?competitionId=` | Clasificación de una liga (sin parámetro, la de la plantilla del usuario) |
-| POST | `/api/admin/sync` | Forzar sincronización con el proveedor |
+| POST | `/api/admin/login` | Sesión del administrador (rol `Admin`); su token abre todo `/api/admin/*` |
+| GET | `/api/admin/jobs` | Trabajos en segundo plano, historial de ejecuciones, contadores de cada web y últimas llamadas |
+| POST | `/api/admin/jobs/{job}/run` | Lanzar ya `football-data` u `official-sheets` |
 
 Las lecturas de una plantilla (`GET /api/squads/{id}`, sus partidos, actas, comparador y estadísticas) son públicas
 si la plantilla es pública y, si es privada, solo para su cuerpo técnico vigente y sus jugadores vinculados (403 en
@@ -257,7 +258,27 @@ no impide sincronizar las demás). Se elige en `appsettings.json` → `FootballD
   `rosters/{teamId}.json` de `FootballData:JsonFiles:Directory`. Ideal para enchufar un scraper externo.
 - `besoccer`: esqueleto para una única liga configurada; **hay que ajustar los `req` y los campos** al plan contratado.
 
-El worker `FootballDataSyncWorker` sincroniza al arrancar y cada `SyncIntervalHours` horas; `POST /api/admin/sync` la fuerza.
+El worker `FootballDataSyncWorker` sincroniza cada `SyncIntervalMinutes` minutos (60 por defecto) contados desde la
+última ejecución guardada en `JobRuns`: arrancar la API **no** vuelve a sincronizar si no ha pasado ese tiempo.
+
+## Trabajos en segundo plano y página /jobs
+
+Los dos scrapeos periódicos son trabajos (`Infrastructure/Jobs/JobScheduler.cs`): `football-data` (datos de las ligas)
+y `official-sheets` (pasada de actas públicas). Cada ejecución queda en la tabla `JobRuns` (automática o a mano, estado,
+resumen, errores y llamadas hechas) y cada llamada real a una web externa en `ScrapeRequests` (proveedor, URL, código,
+duración y ejecución). Al arrancar se lee la última ejecución de cada trabajo y se espera a que pase su intervalo; las
+que quedaron a medias se marcan como interrumpidas. Se guardan 30 días de llamadas y 180 de ejecuciones.
+
+La página oculta `/jobs` del frontal (sin enlace en el menú) muestra todo eso y permite lanzar cada trabajo a mano.
+Solo entra el administrador: `POST /api/admin/login` con el usuario del rol `Admin`, que se crea al arrancar a partir
+de `Admin:UserName` (por defecto `diego`) y `Admin:Password`. La contraseña va en user-secrets, nunca en appsettings:
+
+```bash
+dotnet user-secrets set "Admin:Password" "<contraseña>" --project src/TercerTiempo.Api
+```
+
+Si se cambia el secreto, la contraseña guardada se sustituye en el siguiente arranque. Todo `/api/admin/*` exige ese
+token (claim `admin`).
 
 ## Acta pública: BeSoccer y asturfutbol.es
 
@@ -269,7 +290,7 @@ completa, y si una web está en pausa o falla se prueba la siguiente (`SyncOffic
 cambiar de fuente mientras siga pendiente. Antes de acceder a ninguna web se consulta SQL: las actas completas no se
 vuelven a descargar.
 
-El proceso en segundo plano (`OfficialSheetSyncWorker`, cada `BackgroundScanMinutes`, lotes de `BackgroundBatch`)
+El proceso en segundo plano (`OfficialSheetSyncWorker`, cada `BackgroundScanMinutes` desde la última pasada guardada, lotes de `BackgroundBatch`)
 planifica primero los partidos de equipos con plantilla en la app y después todos los demás. A la federación solo van
 los primeros y los que alguien abre; el resto solo se busca en BeSoccer, que aguanta mucho más tráfico. El frontal
 consulta nuestra API y su botón «Consultar datos guardados» no fuerza el scraper.

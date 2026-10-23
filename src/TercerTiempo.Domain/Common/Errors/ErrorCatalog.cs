@@ -27,6 +27,10 @@ public static class ErrorCatalog
 
         (ErrorCode.AuthUnauthenticated, "Debes iniciar sesión para realizar esta acción."),
         (ErrorCode.AuthInvalidCredentials, "Email o contraseña incorrectos."),
+        (ErrorCode.AdminInvalidCredentials, "Usuario o contraseña incorrectos."),
+        (ErrorCode.JobNotFound, "El trabajo '{0}' no existe."),
+        (ErrorCode.JobAlreadyRunning, "El trabajo '{0}' ya está en marcha."),
+        (ErrorCode.JobDisabled, "El trabajo '{0}' está desactivado en la configuración."),
         (ErrorCode.AuthEmailTaken, "Ya existe una cuenta con ese email."),
         (ErrorCode.AuthPositionRequired, "Indica tu posición."),
         (ErrorCode.AuthAccessCodeRequired, "Introduce el código de acceso que te ha dado tu club."),

@@ -32,6 +32,8 @@ using TercerTiempo.Infrastructure.FootballData.Fake;
 using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.FootballData.JsonFiles;
 using TercerTiempo.Infrastructure.Identity;
+using TercerTiempo.Infrastructure.Jobs;
+using TercerTiempo.Application.Jobs;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Security;
 using TercerTiempo.Infrastructure.Teams;
@@ -113,6 +115,8 @@ public static class DependencyInjection
                 "Jwt:Key debe configurarse con al menos 32 caracteres (user-secrets o variable de entorno).")
             .ValidateOnStart();
 
+        services.AddOptions<AdminOptions>().Bind(configuration.GetSection(AdminOptions.SectionName));
+
         services.AddScoped<IIdentityService, IdentityService>();
         services.AddSingleton<ITokenService, JwtTokenService>();
     }
@@ -135,7 +139,7 @@ public static class DependencyInjection
                 break;
 
             case FootballDataOptions.BeSoccerProvider:
-                services.AddHttpClient<BeSoccerFootballDataProvider>();
+                services.AddHttpClient<BeSoccerFootballDataProvider>().LogScrapes("besoccer-datos");
                 services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<BeSoccerFootballDataProvider>());
                 break;
 
@@ -148,11 +152,14 @@ public static class DependencyInjection
                     client.Timeout = TimeSpan.FromSeconds(30);
                     client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
                     client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                });
+                }).LogScrapes("futbolasturiano");
                 services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<FutbolAsturianoFootballDataProvider>());
                 break;
         }
 
+        // Trabajos en segundo plano: cuándo tocan, su historial y el lanzamiento a mano desde /jobs.
+        services.AddSingleton<JobScheduler>();
+        services.AddScoped<IJobsMonitor, JobsMonitor>();
         services.AddHostedService<FootballDataSyncWorker>();
 
         // Actas oficiales: cola en memoria y proceso en segundo plano que las descarga y guarda.
@@ -184,7 +191,8 @@ public static class DependencyInjection
                 AllowAutoRedirect = false,
                 AutomaticDecompression = System.Net.DecompressionMethods.All,
             })
-            .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
+            .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
+            .LogScrapes(AsturfutbolOfficialSheetProvider.Name);
 
         services.AddScoped<IOfficialSheetProvider, AsturfutbolOfficialSheetProvider>();
         services.AddScoped<ITeamProfileProvider, AsturfutbolTeamProfileProvider>();
@@ -205,7 +213,8 @@ public static class DependencyInjection
                 client.DefaultRequestVersion = System.Net.HttpVersion.Version20;
                 client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
             })
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AutomaticDecompression = System.Net.DecompressionMethods.All });
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AutomaticDecompression = System.Net.DecompressionMethods.All })
+            .LogScrapes(OfficialSheets.BeSoccer.BeSoccerDirectory.Name);
         services.AddScoped<IMatchSheetDirectory, OfficialSheets.BeSoccer.BeSoccerDirectory>();
 
         services.AddOptions<CrestOptions>()
@@ -222,7 +231,7 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(30);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("TercerTiempo/1.0 (+https://github.com/diegoesp10/TercerTiempo-Back)");
             client.DefaultRequestHeaders.Accept.ParseAdd("image/*");
-        });
+        }).LogScrapes("escudos");
     }
 
     private static void AddVideos(IServiceCollection services, IConfiguration configuration)

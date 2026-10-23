@@ -1,5 +1,6 @@
 @baseUrl = http://localhost:5080
 @token = PEGA_AQUI_EL_ACCESS_TOKEN
+@adminToken = PEGA_AQUI_EL_TOKEN_DE_ADMINISTRADOR
 @competitionId = PEGA_AQUI_UN_ID_DE_GET_COMPETITIONS
 @teamId = PEGA_AQUI_UN_ID_DE_GET_TEAMS
 @squadId = PEGA_AQUI_EL_ID_DE_LA_PLANTILLA
@@ -314,6 +315,19 @@ GET {{baseUrl}}/api/matches/{{matchId}}
 ### Clasificación de una liga (sin competitionId, la de mi plantilla)
 GET {{baseUrl}}/api/league/table?competitionId={{competitionId}}
 
-### Forzar sincronización con futbolasturiano.es (~1 minuto)
-POST {{baseUrl}}/api/admin/sync
-Authorization: Bearer {{token}}
+### Administrador: iniciar sesión (Admin:UserName / Admin:Password de user-secrets)
+POST {{baseUrl}}/api/admin/login
+Content-Type: application/json
+
+{
+  "userName": "diego",
+  "password": "PEGA_AQUI_LA_CONTRASEÑA"
+}
+
+### Administrador: trabajos, ejecuciones y últimas llamadas a webs externas
+GET {{baseUrl}}/api/admin/jobs?requests=50
+Authorization: Bearer {{adminToken}}
+
+### Administrador: lanzar ya la sincronización con futbolasturiano.es (football-data u official-sheets)
+POST {{baseUrl}}/api/admin/jobs/football-data/run
+Authorization: Bearer {{adminToken}}

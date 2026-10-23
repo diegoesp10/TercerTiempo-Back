@@ -6,8 +6,9 @@ public sealed class OfficialSheetOptions
 
     public bool Enabled { get; set; } = true;
 
-    // Descarga en segundo plano: cada cuántos minutos se buscan actas que falten o toque refrescar, cuántas como
-    // máximo por pasada y cuánto se espera tras arrancar antes de la primera.
+    // Descarga en segundo plano: cada cuántos minutos (desde la última pasada guardada en JobRuns; 0 = solo a mano) se
+    // buscan actas que falten o toque refrescar, cuántas como máximo por pasada y cuánto se espera tras arrancar si
+    // nunca se ha hecho ninguna.
     public int BackgroundScanMinutes { get; set; } = 60;
 
     public int BackgroundBatch { get; set; } = 60;

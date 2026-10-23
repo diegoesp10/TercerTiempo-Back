@@ -12,20 +12,32 @@ internal sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider
 
     public AuthToken CreateToken(Guid userId, string email, AccountType accountType, Guid profileId)
     {
-        var settings = options.Value;
-        var now = clock.GetUtcNow();
-        var expires = now.AddMinutes(settings.ExpirationMinutes);
-
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.Key));
-
-        var claims = new Dictionary<string, object>
+        return Create(new Dictionary<string, object>
         {
             [JwtRegisteredClaimNames.Sub] = userId.ToString(),
             [JwtRegisteredClaimNames.Email] = email,
             [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
             [AuthClaims.AccountType] = accountType.ToString(),
             [AuthClaims.ProfileClaimFor(accountType)] = profileId.ToString(),
-        };
+        });
+    }
+
+    public AuthToken CreateAdminToken(Guid userId, string userName) =>
+        Create(new Dictionary<string, object>
+        {
+            [JwtRegisteredClaimNames.Sub] = userId.ToString(),
+            [JwtRegisteredClaimNames.UniqueName] = userName,
+            [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
+            [AuthClaims.Admin] = "true",
+        });
+
+    private AuthToken Create(Dictionary<string, object> claims)
+    {
+        var settings = options.Value;
+        var now = clock.GetUtcNow();
+        var expires = now.AddMinutes(settings.ExpirationMinutes);
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.Key));
 
         var descriptor = new SecurityTokenDescriptor
         {

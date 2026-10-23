@@ -15,7 +15,7 @@ internal sealed class ApiInfoDocumentTransformer : IOpenApiDocumentTransformer
         ("Equipos", "Equipos de cada competición, su plantilla publicada por el proveedor y su calendario. Públicos."),
         ("Partidos", "Detalle de partidos con las actas visibles."),
         ("Liga", "Clasificación de cada liga. Pública."),
-        ("Admin", "Operaciones de administración (sincronización con el proveedor de datos)."),
+        ("Admin", "Administración: trabajos en segundo plano, llamadas a webs externas y escudos. Solo con el token de POST /api/admin/login."),
     ];
 
     public Task TransformAsync(OpenApiDocument document, OpenApiDocumentTransformerContext context, CancellationToken cancellationToken)

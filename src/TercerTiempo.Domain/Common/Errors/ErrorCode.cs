@@ -28,6 +28,10 @@ public static class ErrorCode
     // Cuentas y acceso
     public const string AuthUnauthenticated = "auth.unauthenticated";
     public const string AuthInvalidCredentials = "auth.invalid_credentials";
+    public const string AdminInvalidCredentials = "admin.invalid_credentials";
+    public const string JobNotFound = "job.not_found";
+    public const string JobAlreadyRunning = "job.already_running";
+    public const string JobDisabled = "job.disabled";
     public const string AuthEmailTaken = "auth.email_taken";
     public const string AuthPositionRequired = "auth.position_required";
     public const string AuthAccessCodeRequired = "auth.access_code_required";

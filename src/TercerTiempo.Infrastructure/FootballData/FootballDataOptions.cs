@@ -13,9 +13,9 @@ public sealed class FootballDataOptions
 
     public string Provider { get; set; } = FutbolAsturianoProvider;
 
-    public bool SyncOnStartup { get; set; } = true;
-
-    public int SyncIntervalHours { get; set; } = 24;
+    // Minutos entre sincronizaciones, contados desde la última guardada en JobRuns (arrancar la API no la repite).
+    // 0 = solo a mano desde /jobs.
+    public int SyncIntervalMinutes { get; set; } = 60;
 
     public FutbolAsturianoOptions FutbolAsturiano { get; set; } = new();
     public JsonFilesOptions JsonFiles { get; set; } = new();
