@@ -259,16 +259,46 @@ no impide sincronizar las demás). Se elige en `appsettings.json` → `FootballD
 
 El worker `FootballDataSyncWorker` sincroniza al arrancar y cada `SyncIntervalHours` horas; `POST /api/admin/sync` la fuerza.
 
-## Acta oficial: asturfutbol.es
+## Acta pública: BeSoccer y asturfutbol.es
 
-La web de la RFFPA ([asturfutbol.es](https://www.asturfutbol.es)) publica el acta de cada partido (alineaciones,
-sustituciones con minuto, goles y tarjetas). No tiene API: `AsturfutbolOfficialSheetProvider` lee sus páginas
-(`Infrastructure/OfficialSheets/Asturfutbol`, AngleSharp). **De esta web solo se descargan actas**: ni fichas de
-equipo, ni campos, ni escudos, porque bloquea la IP tras unas pocas peticiones. Antes de acceder a la web se consulta
-SQL: las actas completas no se vuelven a descargar. El proceso en segundo plano (`OfficialSheetSyncWorker`, cada
-`BackgroundScanMinutes`) solo busca las actas que faltan de los partidos de equipos con plantilla en la app; el resto
-se descargan únicamente cuando alguien abre ese partido. El frontal consulta nuestra API y su botón «Consultar datos
-guardados» no fuerza el scraper. Particularidades:
+Cada partido tiene un **acta pública** (alineaciones, cambios con minuto, goles y tarjetas), igual para todos, y
+además el **acta interna** que lleva el cuerpo técnico de cada club (privada). El acta pública sale de una de dos webs,
+en el orden de `OfficialSheets:Sources` (por defecto `besoccer` y después `asturfutbol`): vale la primera que la tenga
+completa, y si una web está en pausa o falla se prueba la siguiente (`SyncOfficialSheetCommand`, fuentes en
+`Application/OfficialSheets/PublicSheetSources.cs`). El acta guarda de qué web salió (`Provider`, `SourceUrl`) y puede
+cambiar de fuente mientras siga pendiente. Antes de acceder a ninguna web se consulta SQL: las actas completas no se
+vuelven a descargar.
+
+El proceso en segundo plano (`OfficialSheetSyncWorker`, cada `BackgroundScanMinutes`, lotes de `BackgroundBatch`)
+planifica primero los partidos de equipos con plantilla en la app y después todos los demás. A la federación solo van
+los primeros y los que alguien abre; el resto solo se busca en BeSoccer, que aguanta mucho más tráfico. El frontal
+consulta nuestra API y su botón «Consultar datos guardados» no fuerza el scraper.
+
+### BeSoccer
+
+[es.besoccer.com](https://es.besoccer.com) publica las actas de las ligas nacionales y regionales asturianas
+(`Infrastructure/OfficialSheets/BeSoccer`; su `robots.txt` permite estas páginas). Pasa por el mismo control de
+peticiones que la federación con su propia fila de contadores (`OfficialSheets:BeSoccer`: `RequestDelayMs=8000`,
+`MaxRequestsPerHour=150`, `MaxRequestsPerDay=1200`; un 403/406/429 la pausa `BlockedPauseHours`).
+
+- Competiciones: `OfficialSheets:BeSoccer:Competitions` traduce nuestra categoría a la suya (`1ª AsturFútbol` =
+  `asturias`, `2ª AsturFútbol` = `primera_regional_asturias`, `3ª AsturFútbol` = `segunda_regional_asturias`,
+  `1ª/2ª/3ª RFEF` = `primera/segunda/tercera_division_rfef`). La temporada 2026/2027 es la `2027` de sus URLs.
+- Equipos: `/competicion/equipos/{competición}/{año}/{grupo}`. El grupo se elige por los equipos en común con los
+  nuestros (su numeración no coincide con la de la federación) y cada equipo se empareja por nombre
+  (`TeamNameSimilarity`). Se guarda 30 días (`CatalogCacheDays`).
+- Partido: `/equipo/partidos/{equipo}` lista los partidos con su enlace, equipos y hora; se elige el de esos dos
+  equipos más cercano a nuestra fecha (aplazamientos incluidos, hasta 10 días). Se guarda 6 horas.
+- Acta: `/partido/{local}/{visitante}/{id}/alineaciones` (dorsal, titular o suplente, árbitro) y `/eventos` (goles,
+  tarjetas y cambios con su minuto); los jugadores se cruzan por el enlace a su ficha. Sin alineaciones el acta sigue
+  pendiente. Los nombres son cortos («M. Huelga», «Guille»): `SheetMatcher` acepta iniciales y diminutivos, y el dorsal
+  desempata.
+
+### asturfutbol.es
+
+La web de la RFFPA ([asturfutbol.es](https://www.asturfutbol.es)) no tiene API: `AsturfutbolOfficialSheetProvider` lee
+sus páginas (`Infrastructure/OfficialSheets/Asturfutbol`, AngleSharp). **De esta web solo se descargan actas**: ni
+fichas de equipo, ni campos, ni escudos, porque bloquea la IP tras unas pocas peticiones. Particularidades:
 
 - Las páginas son públicas pero exigen una cookie de sesión: la primera petición redirige a `/pnfg/NLogin`, que la fija
   y devuelve a la página pedida (`AsturfutbolClient` conserva las cookies y controla cada redirección). Sin cookie
@@ -299,7 +329,7 @@ guardados» no fuerza el scraper. Particularidades:
 - Cuándo se consulta (`SyncOfficialSheetCommand`): solo si faltan datos de un partido jugado; las actas pendientes
   se comprueban como máximo una vez al día. Una vez completa, se conserva sin volver a buscar correcciones externas.
   `refresh` y `force` se aceptan por compatibilidad, pero no saltan SQL ni los límites. El worker planifica leyendo
-  SQL cada 60 minutos, con lotes de hasta 20 partidos, y descarga progresivamente dentro del presupuesto disponible.
+  SQL cada 60 minutos, con lotes de hasta 60 partidos, y descarga progresivamente dentro del presupuesto de cada web.
   `Unavailable` indica que no se localiza el partido (liga sin correspondencia, nombres muy distintos).
 - Comparador (`CompareMatchSheetCommand`, `SheetMatcher`): cada línea oficial del equipo de la plantilla se empareja
   con una ficha por las palabras del nombre (sin orden ni tildes) y, en caso de duda, por el dorsal; se comparan

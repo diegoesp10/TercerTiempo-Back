@@ -74,13 +74,13 @@ public class FederationDatabaseFirstTests
     }
 
     [Fact]
-    public async Task Background_scan_only_plans_matches_of_teams_with_a_squad()
+    public async Task Background_scan_puts_squad_matches_first_and_keeps_the_federation_for_them()
     {
         var competition = Competition.Create("Liga", "Primera", CompetitionLevel.Regional, 1, null, "Asturias", null);
         var season = competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
         competition.MarkCurrent(season.Id);
         var ours = Guid.NewGuid();
-        var withSquad = Match.Schedule(season.Id, 1, Guid.NewGuid(), ours, Now.AddDays(-2), null, null);
+        var withSquad = Match.Schedule(season.Id, 1, Guid.NewGuid(), ours, Now.AddDays(-3), null, null);
         var others = Match.Schedule(season.Id, 1, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(-2), null, null);
         var handler = new PlanOfficialSheetSyncHandler(
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
@@ -88,7 +88,7 @@ public class FederationDatabaseFirstTests
             Stub<ISquadStore>((_, _) => Task.FromResult<IReadOnlyList<Squad>>([Squad.Create(ours, season.Id, Guid.NewGuid(), Now)])),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([])),
             new OfficialSheetSyncMemory(), TimeProvider.System);
-        Assert.Equal([withSquad.Id], await handler.Handle(new(20), default));
+        Assert.Equal([new PlannedSheet(withSquad.Id, true), new PlannedSheet(others.Id, false)], await handler.Handle(new(20), default));
     }
 
     private static (Match, OfficialMatchSheet) CompletedSheet(Guid? seasonId = null)

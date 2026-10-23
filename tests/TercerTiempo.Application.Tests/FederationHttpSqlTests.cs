@@ -99,13 +99,13 @@ public class FederationHttpSqlTests(FederationSqlFixture fixture) : IClassFixtur
         options.Asturfutbol.MaxRequestsPerDay = 2;
         var now = new DateTimeOffset(2026, 10, 22, 10, 0, 0, TimeSpan.Zero);
         var store = fixture.Store();
-        Assert.Null((await store.ReserveAsync("one", "https://federation.invalid/one", Guid.NewGuid(), false, now, options, default)).RetryAt);
-        var samePage = await fixture.Store().ReserveAsync("one", "https://federation.invalid/one", Guid.NewGuid(), false, now, options, default);
+        Assert.Null((await store.ReserveAsync("one", "https://federation.invalid/one", Guid.NewGuid(), false, now, options.AsturfutbolLimits, default)).RetryAt);
+        var samePage = await fixture.Store().ReserveAsync("one", "https://federation.invalid/one", Guid.NewGuid(), false, now, options.AsturfutbolLimits, default);
         Assert.NotNull(samePage.RetryAt);
-        var hourLimit = await fixture.Store().ReserveAsync("two", "https://federation.invalid/two", Guid.NewGuid(), false, now.AddMinutes(1), options, default);
+        var hourLimit = await fixture.Store().ReserveAsync("two", "https://federation.invalid/two", Guid.NewGuid(), false, now.AddMinutes(1), options.AsturfutbolLimits, default);
         Assert.Equal(now.AddHours(1), hourLimit.RetryAt);
-        Assert.Null((await fixture.Store().ReserveAsync("two", "https://federation.invalid/two", Guid.NewGuid(), false, now.AddHours(1), options, default)).RetryAt);
-        var dayLimit = await fixture.Store().ReserveAsync("three", "https://federation.invalid/three", Guid.NewGuid(), false, now.AddHours(2), options, default);
+        Assert.Null((await fixture.Store().ReserveAsync("two", "https://federation.invalid/two", Guid.NewGuid(), false, now.AddHours(1), options.AsturfutbolLimits, default)).RetryAt);
+        var dayLimit = await fixture.Store().ReserveAsync("three", "https://federation.invalid/three", Guid.NewGuid(), false, now.AddHours(2), options.AsturfutbolLimits, default);
         Assert.Equal(new DateTimeOffset(2026, 10, 23, 0, 0, 0, TimeSpan.Zero), dayLimit.RetryAt);
     }
 

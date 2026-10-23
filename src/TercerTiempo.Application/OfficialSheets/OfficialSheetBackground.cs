@@ -38,19 +38,19 @@ internal static class OfficialSheetRefresh
     }
 }
 
-// Lo que el proceso en segundo plano ya sabe que no está en la federación (competiciones que no gestiona, partidos que
-// no aparecen en su calendario), para no volver a preguntarlo en cada pasada.
+// Lo que el proceso en segundo plano ya sabe que no está en cada web (competiciones que no cubre) o en ninguna
+// (partidos que no aparecen), para no volver a preguntarlo en cada pasada.
 internal sealed class OfficialSheetSyncMemory
 {
     private static readonly TimeSpan RetryAfter = TimeSpan.FromHours(24);
-    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _seasonsWithoutCompetition = new();
+    private readonly ConcurrentDictionary<(string, Guid), DateTimeOffset> _seasonsWithoutCompetition = new();
     private readonly ConcurrentDictionary<Guid, DateTimeOffset> _matchesNotFound = new();
 
-    public void SeasonNotFound(Guid seasonId, DateTimeOffset now) => _seasonsWithoutCompetition[seasonId] = now;
+    public void SeasonNotFound(string provider, Guid seasonId, DateTimeOffset now) => _seasonsWithoutCompetition[(provider, seasonId)] = now;
     public void MatchNotFound(Guid matchId, DateTimeOffset now) => _matchesNotFound[matchId] = now;
 
-    public bool SkipSeason(Guid seasonId, DateTimeOffset now) =>
-        _seasonsWithoutCompetition.TryGetValue(seasonId, out var at) && now - at < RetryAfter;
+    public bool SkipSeason(string provider, Guid seasonId, DateTimeOffset now) =>
+        _seasonsWithoutCompetition.TryGetValue((provider, seasonId), out var at) && now - at < RetryAfter;
 
     public bool SkipMatch(Guid matchId, DateTimeOffset now) =>
         _matchesNotFound.TryGetValue(matchId, out var at) && now - at < RetryAfter;
@@ -58,7 +58,7 @@ internal sealed class OfficialSheetSyncMemory
 
 public sealed record GetOfficialSheetQuery(Guid MatchId) : IQuery<OfficialSheetDto>;
 
-// Lectura del acta para el usuario: solo base de datos, nunca la web de la federación. Si falta o está por refrescar,
+// Lectura del acta para el usuario: solo base de datos, nunca las webs de actas. Si falta o está por refrescar,
 // se encola para el proceso en segundo plano y se devuelve lo que haya.
 internal sealed class GetOfficialSheetHandler(
     IOfficialSheetProvider provider,
@@ -86,12 +86,12 @@ internal sealed class GetOfficialSheetHandler(
         {
             if (memory.SkipMatch(match.Id, now))
                 return OfficialSheetMapper.Empty(match.Id, OfficialSheetAvailability.Unavailable, provider.ProviderName,
-                    "No se ha encontrado este partido en la federación.");
+                    "No se ha encontrado este partido en ninguna web de actas.");
 
             queue.Enqueue(match.Id);
             var message = queue.PausedUntil is { } until && until > now
-                ? $"La federación está limitando las consultas; el acta se descargará en cuanto lo permita (hacia las {until.ToLocalTime():HH:mm})."
-                : "El acta aún no está guardada. Se descargará en segundo plano respetando los límites de la federación.";
+                ? $"Las webs de actas están limitando las consultas; el acta se descargará en cuanto lo permitan (hacia las {until.ToLocalTime():HH:mm})."
+                : "El acta aún no está guardada. Se descargará en segundo plano respetando los límites de cada web.";
             return OfficialSheetMapper.Empty(match.Id, OfficialSheetAvailability.Fetching, provider.ProviderName, message);
         }
 
@@ -109,37 +109,35 @@ internal sealed class GetOfficialSheetHandler(
             : OfficialSheetMapper.ToDto(sheet, match.HomeTeamId, match.AwayTeamId, status, message);
 }
 
-public sealed record PlanOfficialSheetSyncCommand(int Max) : ICommand<IReadOnlyList<Guid>>;
+public sealed record PlanOfficialSheetSyncCommand(int Max) : ICommand<IReadOnlyList<PlannedSheet>>;
 
-// Planificar solo lee SQL: partidos jugados sin acta o pendientes desde hace al menos un día, de los más recientes a
-// los más antiguos, y solo de los equipos que tienen plantilla en la app. El resto de actas se descargan únicamente
-// cuando alguien abre el partido, para pedir a la federación lo mínimo. La resolución de la federación se hace al
-// descargar lo que falta.
+// FederationAllowed: el partido es de un equipo con plantilla en la app y, si las otras webs no tienen el acta, se
+// puede pedir a la federación.
+public sealed record PlannedSheet(Guid MatchId, bool FederationAllowed);
+
+// Planificar solo lee SQL: partidos jugados sin acta o pendientes desde hace al menos un día. Primero los de equipos
+// con plantilla en la app y después todos los demás, de los más recientes a los más antiguos. Los demás solo se buscan
+// en las webs que aguantan más tráfico; a la federación únicamente van los que importan o alguien abre.
 internal sealed class PlanOfficialSheetSyncHandler(
     ICompetitionStore competitions,
     IMatchStore matches,
     ISquadStore squads,
     IOfficialSheetStore sheets,
     OfficialSheetSyncMemory memory,
-    TimeProvider clock) : ICommandHandler<PlanOfficialSheetSyncCommand, IReadOnlyList<Guid>>
+    TimeProvider clock) : ICommandHandler<PlanOfficialSheetSyncCommand, IReadOnlyList<PlannedSheet>>
 {
-    public async Task<IReadOnlyList<Guid>> Handle(PlanOfficialSheetSyncCommand command, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<PlannedSheet>> Handle(PlanOfficialSheetSyncCommand command, CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
-        var due = new List<Match>();
+        var due = new List<(Match Match, bool Ours)>();
 
         foreach (var competition in await competitions.GetAllAsync(cancellationToken))
         {
-            if (competition.CurrentSeason is not { } season || memory.SkipSeason(season.Id, now))
-                continue;
-
-            var teamsWithSquad = (await squads.GetBySeasonAsync(season.Id, cancellationToken)).Select(s => s.TeamId).ToHashSet();
-            if (teamsWithSquad.Count == 0)
+            if (competition.CurrentSeason is not { } season)
                 continue;
 
             var played = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
-                .Where(m => (teamsWithSquad.Contains(m.HomeTeamId) || teamsWithSquad.Contains(m.AwayTeamId))
-                    && OfficialSheetRefresh.IsPlayed(m, now) && m.Status != MatchStatus.Cancelled && !memory.SkipMatch(m.Id, now))
+                .Where(m => OfficialSheetRefresh.IsPlayed(m, now) && m.Status != MatchStatus.Cancelled && !memory.SkipMatch(m.Id, now))
                 .ToList();
             if (played.Count == 0)
                 continue;
@@ -149,13 +147,15 @@ internal sealed class PlanOfficialSheetSyncHandler(
             if (pending.Count == 0)
                 continue;
 
-            due.AddRange(pending);
+            var teamsWithSquad = (await squads.GetBySeasonAsync(season.Id, cancellationToken)).Select(s => s.TeamId).ToHashSet();
+            due.AddRange(pending.Select(m => (m, teamsWithSquad.Contains(m.HomeTeamId) || teamsWithSquad.Contains(m.AwayTeamId))));
         }
 
         return due
-            .OrderByDescending(m => m.KickoffAt)
+            .OrderByDescending(d => d.Ours)
+            .ThenByDescending(d => d.Match.KickoffAt)
             .Take(command.Max)
-            .Select(m => m.Id)
+            .Select(d => new PlannedSheet(d.Match.Id, d.Ours))
             .ToList();
     }
 }

@@ -115,10 +115,10 @@ internal sealed class OfficialSheetSyncWorker(
 
     private async Task ScanAsync(int batch, CancellationToken cancellationToken)
     {
-        IReadOnlyList<Guid> due;
+        IReadOnlyList<PlannedSheet> due;
         using (var scope = scopeFactory.CreateScope())
         {
-            var plan = scope.ServiceProvider.GetRequiredService<ICommandHandler<PlanOfficialSheetSyncCommand, IReadOnlyList<Guid>>>();
+            var plan = scope.ServiceProvider.GetRequiredService<ICommandHandler<PlanOfficialSheetSyncCommand, IReadOnlyList<PlannedSheet>>>();
             due = await plan.Handle(new PlanOfficialSheetSyncCommand(batch), cancellationToken);
         }
 
@@ -126,25 +126,25 @@ internal sealed class OfficialSheetSyncWorker(
         logger.LogInformation("Actas oficiales: {Count} por descargar o refrescar en segundo plano", due.Count);
 
         var done = 0;
-        foreach (var matchId in due)
+        foreach (var item in due)
         {
             // Lo que piden los usuarios va siempre por delante de la pasada general.
             await DrainQueueAsync(cancellationToken);
-            if (queue.IsQueued(matchId)) continue;
-            await SyncAsync(matchId, cancellationToken);
+            if (queue.IsQueued(item.MatchId)) continue;
+            await SyncAsync(item.MatchId, cancellationToken, item.FederationAllowed);
             done++;
         }
 
         logger.LogInformation("Actas oficiales: pasada terminada, {Done} partidos consultados", done);
     }
 
-    private async Task SyncAsync(Guid matchId, CancellationToken cancellationToken)
+    private async Task SyncAsync(Guid matchId, CancellationToken cancellationToken, bool federationAllowed = true)
     {
         using var scope = scopeFactory.CreateScope();
         var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<SyncOfficialSheetCommand, OfficialSheetDto>>();
         try
         {
-            await handler.Handle(new SyncOfficialSheetCommand(matchId, Background: true), cancellationToken);
+            await handler.Handle(new SyncOfficialSheetCommand(matchId, Background: true, FederationAllowed: federationAllowed), cancellationToken);
         }
         catch (ProviderThrottledException)
         {

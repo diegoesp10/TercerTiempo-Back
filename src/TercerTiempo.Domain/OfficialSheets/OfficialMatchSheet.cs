@@ -46,6 +46,14 @@ public sealed class OfficialMatchSheet : AggregateRoot
 
     public void MarkChecked(DateTimeOffset now) => CheckedAt = now;
 
+    // El acta pública puede venir de otra fuente (otra web) si en la anterior no está o sigue pendiente.
+    public void LinkSource(string provider, string externalId, string? sourceUrl)
+    {
+        Provider = Guard.NotEmpty(provider, nameof(provider), 50);
+        ExternalId = Guard.NotEmpty(externalId, nameof(externalId), 200);
+        SourceUrl = sourceUrl;
+    }
+
     public void Apply(OfficialSheetData data, DateTimeOffset now)
     {
         Referee = data.Referee;

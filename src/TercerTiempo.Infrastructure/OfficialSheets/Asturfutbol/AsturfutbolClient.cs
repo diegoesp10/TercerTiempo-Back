@@ -46,7 +46,7 @@ internal sealed class AsturfutbolClient(
             while (true)
             {
                 var now = clock.GetUtcNow();
-                var reservation = await store.ReserveAsync(key, original.AbsoluteUri, lease, redirect, now, _options, ct);
+                var reservation = await store.ReserveAsync(key, original.AbsoluteUri, lease, redirect, now, _options.AsturfutbolLimits, ct);
                 if (reservation.Cached is { } cached) return cached;
                 if (reservation.RetryAt is { } retry)
                 {
@@ -67,7 +67,7 @@ internal sealed class AsturfutbolClient(
                 catch (Exception ex) when (ex is HttpRequestException || ex is OperationCanceledException && !ct.IsCancellationRequested)
                 {
                     var retryAt = clock.GetUtcNow().AddMinutes(Math.Max(1, _options.Asturfutbol.FailureRetryMinutes));
-                    await store.FailAsync(key, null, retryAt, false, ct);
+                    await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, null, retryAt, false, ct);
                     throw new HttpRequestException("No se pudo consultar la federación; el intento queda aplazado en la base de datos.", ex);
                 }
 
@@ -78,7 +78,7 @@ internal sealed class AsturfutbolClient(
                     {
                         if (response.Headers.Location is not { } location || ++redirects > 5)
                         {
-                            await store.FailAsync(key, status, now.AddHours(1), false, ct);
+                            await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, now.AddHours(1), false, ct);
                             throw new HttpRequestException("Redirección de la federación no válida.");
                         }
                         uri = new Uri(uri, location);
@@ -100,7 +100,7 @@ internal sealed class AsturfutbolClient(
                         var blocked = status is 403 or 429;
                         var pauseProvider = blocked || status >= 500 || response.Headers.RetryAfter is not null;
                         var retryAt = RetryAt(response, blocked);
-                        await store.FailAsync(key, status, retryAt, pauseProvider, ct);
+                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, retryAt, pauseProvider, ct);
                         logger.LogWarning("La federación respondió {Status}; sin reintentos inmediatos, próximo intento a partir de {RetryAt}", status, retryAt);
                         if (pauseProvider) throw new ProviderThrottledException(AsturfutbolOfficialSheetProvider.Name,
                             $"La federación respondió {status}; todas las descargas quedan en pausa hasta {retryAt:O}.", retryAt);
@@ -111,7 +111,7 @@ internal sealed class AsturfutbolClient(
                     try { content = await response.Content.ReadAsByteArrayAsync(ct); }
                     catch (Exception ex) when (ex is HttpRequestException || ex is OperationCanceledException && !ct.IsCancellationRequested)
                     {
-                        await store.FailAsync(key, status, clock.GetUtcNow().AddMinutes(Math.Max(1, _options.Asturfutbol.FailureRetryMinutes)), false, ct);
+                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, clock.GetUtcNow().AddMinutes(Math.Max(1, _options.Asturfutbol.FailureRetryMinutes)), false, ct);
                         throw;
                     }
                     var contentType = response.Content.Headers.ContentType?.ToString();
@@ -123,7 +123,7 @@ internal sealed class AsturfutbolClient(
                         || text.Contains("cf-chl-", StringComparison.OrdinalIgnoreCase)))
                     {
                         var retryAt = clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.BlockedPauseHours));
-                        await store.FailAsync(key, status, retryAt, true, ct);
+                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, retryAt, true, ct);
                         throw new ProviderThrottledException(AsturfutbolOfficialSheetProvider.Name,
                             "La federación devolvió una página vacía o rechazó la sesión; se pausan todas las descargas.", retryAt);
                     }

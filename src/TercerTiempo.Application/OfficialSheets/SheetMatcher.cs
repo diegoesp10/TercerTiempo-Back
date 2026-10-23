@@ -41,6 +41,19 @@ internal static class SheetMatcher
             usedLines.Add(line.Id);
         }
 
+        // Una sola palabra ("Mazo", "Juan") no basta por sí misma, salvo que solo un jugador libre la lleve en su
+        // nombre: las webs de resultados escriben así a muchos jugadores.
+        foreach (var (line, lTokens) in lineTokens.Where(l => l.Tokens.Count == 1 && !usedLines.Contains(l.Line.Id)))
+        {
+            var token = lTokens.First();
+            if (token.Length < 3) continue;
+            var owners = playerTokens.Where(p => !result.ContainsKey(p.Player.Id) && p.Tokens.Any(o => Covers(token, o))).ToList();
+            if (owners.Count != 1) continue;
+            if (playerTokens.Count(p => p.Tokens.Any(o => Covers(token, o))) != 1) continue;
+            result[owners[0].Player.Id] = line;
+            usedLines.Add(line.Id);
+        }
+
         return result;
     }
 
@@ -83,13 +96,20 @@ internal static class SheetMatcher
         var longer = ReferenceEquals(shorter, player) ? line : player;
 
         // Nombre de pila solo ("Mateo") o apellidos sin segundo nombre: todas las palabras del corto están en el largo.
-        if (shorter.IsSubsetOf(longer))
+        // También vale la inicial ("M. Huelga") o el diminutivo que empieza la palabra ("Guille" por Guillermo), como
+        // escriben BeSoccer y otras webs, siempre que al menos una palabra no sea una inicial.
+        if (shorter.All(t => longer.Any(o => Covers(t, o))) && shorter.Any(t => t.Length > 1))
             return (shorter.Count == 1 ? 0.45 : 0.75) + shirtBonus;
 
         var common = player.Intersect(line).Count();
         var jaccard = (double)common / player.Union(line).Count();
         return (common >= 2 ? Math.Max(jaccard, 0.5) : jaccard * 0.5) + shirtBonus;
     }
+
+    private static bool Covers(string token, string other) =>
+        token == other
+        || token.Length == 1 && other.Length > 1 && other[0] == token[0]
+        || token.Length >= 4 && other.Length > token.Length && other.StartsWith(token, StringComparison.Ordinal);
 
     internal static HashSet<string> Tokens(string normalizedName) =>
         normalizedName.Replace(",", " ").Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();

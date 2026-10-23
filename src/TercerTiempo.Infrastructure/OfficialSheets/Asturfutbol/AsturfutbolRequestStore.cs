@@ -55,18 +55,22 @@ internal sealed class FederationRequestStateConfiguration : IEntityTypeConfigura
 internal sealed record FederationResponse(byte[]? Content, string? ContentType);
 internal sealed record FederationReservation(FederationResponse? Cached = null, DateTimeOffset? RetryAt = null, bool Spacing = false);
 
+// Límites de una web (su fila en FederationRequestStates): asturfutbol.es, besoccer.com...
+internal sealed record SourceLimits(string Provider, bool Enabled, int RequestDelayMs, int MaxRequestsPerHour, int MaxRequestsPerDay);
+
 internal interface IAsturfutbolRequestStore
 {
-    Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, OfficialSheetOptions options, CancellationToken ct);
+    Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct);
     Task CompleteAsync(string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct);
-    Task FailAsync(string key, int? status, DateTimeOffset retryAt, bool pauseProvider, CancellationToken ct);
+    Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, bool pauseProvider, CancellationToken ct);
 }
 
 // Cada operación usa un contexto propio: reservar una llamada nunca guarda cambios de los agregados del solicitante.
-// El bloqueo SQL coordina también dos procesos que compartan esta base de datos y su IP de salida.
+// El bloqueo SQL coordina también dos procesos que compartan esta base de datos y su IP de salida. Cada web tiene sus
+// propios contadores y pausa; la caché de páginas es común (la clave es la URL).
 internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : IAsturfutbolRequestStore
 {
-    public async Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, OfficialSheetOptions options, CancellationToken ct)
+    public async Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -75,13 +79,13 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
             db.ChangeTracker.Clear();
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
             var state = await db.Set<FederationRequestState>()
-                .FromSqlRaw("SELECT * FROM [FederationRequestStates] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = 'asturfutbol'")
+                .FromSqlInterpolated($"SELECT * FROM [FederationRequestStates] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = {limits.Provider}")
                 .SingleOrDefaultAsync(ct);
-            if (state is null) { state = new(); db.Add(state); }
+            if (state is null) { state = new() { Id = limits.Provider }; db.Add(state); }
             var cached = await db.Set<FederationHttpCache>().SingleOrDefaultAsync(x => x.Key == key, ct);
             if (!redirect && cached is { StatusCode: 200 or 404 } && cached.ExpiresAt > now)
                 return new(Cached: new(cached.Content, cached.ContentType));
-            if (!options.Enabled) return new(RetryAt: now.AddHours(24));
+            if (!limits.Enabled) return new(RetryAt: now.AddHours(24));
             if (state.PausedUntil > now) return new(RetryAt: state.PausedUntil);
             if (cached?.NextAttemptAt > now) return new(RetryAt: cached.NextAttemptAt);
             if (cached?.LeaseUntil > now && cached.LeaseId != lease) return new(RetryAt: cached.LeaseUntil);
@@ -90,13 +94,13 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
             var day = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
             if (state.HourStartedAt != hour) { state.HourStartedAt = hour; state.HourRequests = 0; }
             if (state.DayStartedAt != day) { state.DayStartedAt = day; state.DayRequests = 0; }
-            if (state.DayRequests >= options.Asturfutbol.MaxRequestsPerDay) return new(RetryAt: day.AddDays(1));
-            if (state.HourRequests >= options.Asturfutbol.MaxRequestsPerHour) return new(RetryAt: hour.AddHours(1));
+            if (state.DayRequests >= limits.MaxRequestsPerDay) return new(RetryAt: day.AddDays(1));
+            if (state.HourRequests >= limits.MaxRequestsPerHour) return new(RetryAt: hour.AddHours(1));
             if (state.NextRequestAt > now) return new(RetryAt: state.NextRequestAt, Spacing: true);
 
             state.HourRequests++;
             state.DayRequests++;
-            state.NextRequestAt = now.AddMilliseconds(Math.Max(1000, options.Asturfutbol.RequestDelayMs));
+            state.NextRequestAt = now.AddMilliseconds(Math.Max(1000, limits.RequestDelayMs));
             if (cached is null) { cached = new() { Key = key, Url = url }; db.Add(cached); }
             cached.LeaseId = lease;
             cached.LeaseUntil = now.AddMinutes(5);
@@ -121,7 +125,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task FailAsync(string key, int? status, DateTimeOffset retryAt, bool pauseProvider, CancellationToken ct)
+    public async Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, bool pauseProvider, CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -130,7 +134,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
             db.ChangeTracker.Clear();
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
             var state = await db.Set<FederationRequestState>()
-                .FromSqlRaw("SELECT * FROM [FederationRequestStates] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = 'asturfutbol'")
+                .FromSqlInterpolated($"SELECT * FROM [FederationRequestStates] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = {provider}")
                 .SingleAsync(ct);
             var cached = await db.Set<FederationHttpCache>().SingleAsync(x => x.Key == key, ct);
             cached.StatusCode = status;

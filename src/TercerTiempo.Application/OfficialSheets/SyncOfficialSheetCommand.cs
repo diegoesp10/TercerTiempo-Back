@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Application.Common;
@@ -11,9 +12,10 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
-// Completa datos que falten desde el proceso en segundo plano (Background = true).
+// Completa el acta pública desde el proceso en segundo plano (Background = true). Se consultan las webs en el orden de
+// OfficialSheets:Sources y vale la primera que la tenga completa; FederationAllowed = false se salta la federación.
 // Force se conserva por compatibilidad; nunca evita la lectura previa de SQL ni los límites de descarga.
-public sealed record SyncOfficialSheetCommand(Guid MatchId, bool Force = false, bool Background = false) : ICommand<OfficialSheetDto>;
+public sealed record SyncOfficialSheetCommand(Guid MatchId, bool Force = false, bool Background = false, bool FederationAllowed = true) : ICommand<OfficialSheetDto>;
 
 internal sealed class SyncOfficialSheetValidator : AbstractValidator<SyncOfficialSheetCommand>
 {
@@ -21,8 +23,8 @@ internal sealed class SyncOfficialSheetValidator : AbstractValidator<SyncOfficia
 }
 
 internal sealed class SyncOfficialSheetHandler(
-    IOfficialSheetProvider provider,
-    OfficialSheetLocator locator,
+    IEnumerable<IPublicSheetSource> sources,
+    IOptions<PublicSheetOptions> options,
     IMatchStore matches,
     ICompetitionStore competitions,
     IOfficialSheetStore sheets,
@@ -31,8 +33,6 @@ internal sealed class SyncOfficialSheetHandler(
     TimeProvider clock,
     ILogger<SyncOfficialSheetHandler> logger) : ICommandHandler<SyncOfficialSheetCommand, OfficialSheetDto>
 {
-    private static readonly TimeSpan NotBefore = TimeSpan.Zero;
-
     public async Task<OfficialSheetDto> Handle(SyncOfficialSheetCommand command, CancellationToken cancellationToken)
     {
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
@@ -48,77 +48,95 @@ internal sealed class SyncOfficialSheetHandler(
         if (match.Status is MatchStatus.Cancelled)
             return Result(sheet, match, OfficialSheetAvailability.Unavailable, "El partido está cancelado.");
 
-        if (match.Status is MatchStatus.Scheduled or MatchStatus.Postponed && match.KickoffAt - NotBefore > now)
+        if (match.Status is MatchStatus.Scheduled or MatchStatus.Postponed && match.KickoffAt > now)
             return Result(sheet, match, OfficialSheetAvailability.NotPlayed, "El partido todavía no se ha jugado.");
 
         if (sheet is not null && !OfficialSheetRefresh.IsDue(sheet, match, now))
-            return Result(sheet, match, sheet.IsAvailable ? OfficialSheetAvailability.Available : OfficialSheetAvailability.Pending, null);
+            return Result(sheet, match, OfficialSheetAvailability.Pending, null);
 
-        try
+        var (competition, season) = await Resolvers.SeasonByIdAsync(competitions, match.SeasonId, cancellationToken);
+
+        SheetFetch? pending = null;
+        var unreachable = false;
+        foreach (var source in Ordered())
         {
-            sheet = await FetchAsync(match, sheet, now, cancellationToken);
-        }
-        catch (ProviderThrottledException) when (command.Background)
-        {
+            if (source.IsFederation && !command.FederationAllowed) continue;
+
+            SheetFetch? fetch;
+            try
+            {
+                fetch = await source.FetchAsync(match, competition, season, sheet, cancellationToken);
+            }
+            catch (ProviderThrottledException ex)
+            {
+                // Esa web está en pausa: se prueba la siguiente; esta volverá a intentarse en la próxima comprobación.
+                logger.LogInformation("{Provider}: en pausa ({Message}); se prueba la siguiente web para el partido {MatchId}", source.Name, ex.Message, match.Id);
+                unreachable = true;
+                continue;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(ex, "{Provider}: no se pudo consultar el acta del partido {MatchId}", source.Name, match.Id);
+                unreachable = true;
+                continue;
+            }
+
+            if (fetch is null) continue;
+            if (!fetch.Complete)
+            {
+                pending ??= fetch;
+                continue;
+            }
+
+            sheet = Link(sheet, match, fetch, now);
+            sheet.Apply(fetch.Data!, now);
             await unitOfWork.SaveChangesAsync(cancellationToken);
-            // Conserva las referencias ya resueltas antes de pausar el proceso hasta RetryAt.
-            throw;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
-        {
-            logger.LogWarning(ex, "{Provider}: no se pudo consultar el acta del partido {MatchId}", provider.ProviderName, match.Id);
-            await unitOfWork.SaveChangesAsync(cancellationToken);
-
-            return sheet is null
-                ? OfficialSheetMapper.Empty(match.Id, OfficialSheetAvailability.Pending, provider.ProviderName, "No se ha podido contactar con la federación; se volverá a intentar.")
-                : Result(sheet, match, sheet.IsAvailable ? OfficialSheetAvailability.Available : OfficialSheetAvailability.Pending, "No se ha podido actualizar el acta; se muestra la última copia.");
+            return Result(sheet, match, OfficialSheetAvailability.Available, null);
         }
 
+        if (sheet is null && pending is not null)
+            sheet = Link(null, match, pending, now);
+        sheet?.MarkChecked(now);
+        // Guarda también lo que se haya localizado por el camino (códigos de equipo y partido de la federación).
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        if (sheet is null)
-        {
-            memory.MatchNotFound(match.Id, now);
-            return OfficialSheetMapper.Empty(match.Id, OfficialSheetAvailability.Unavailable, provider.ProviderName,
-                "No se ha encontrado este partido en la federación.");
-        }
+        if (sheet is not null)
+            return Result(sheet, match, OfficialSheetAvailability.Pending,
+                unreachable ? "No se ha podido consultar alguna web de actas; se volverá a intentar." : "Todavía no se han publicado las alineaciones.");
 
-        return Result(sheet, match,
-            sheet.IsAvailable ? OfficialSheetAvailability.Available : OfficialSheetAvailability.Pending,
-            sheet.IsAvailable ? null : "La federación todavía no ha publicado el acta.");
+        // Solo se da por ausente si se ha preguntado a todas las webs sin errores ni pausas.
+        if (!unreachable && command.FederationAllowed)
+            memory.MatchNotFound(match.Id, now);
+
+        return OfficialSheetMapper.Empty(match.Id,
+            unreachable ? OfficialSheetAvailability.Pending : OfficialSheetAvailability.Unavailable, null,
+            unreachable ? "No se ha podido consultar alguna web de actas; se volverá a intentar." : "No se ha encontrado este partido en ninguna web de actas.");
     }
 
-    private async Task<OfficialMatchSheet?> FetchAsync(Match match, OfficialMatchSheet? sheet, DateTimeOffset now, CancellationToken cancellationToken)
+    private IEnumerable<IPublicSheetSource> Ordered()
+    {
+        var names = options.Value.Sources is { Length: > 0 } configured ? configured : PublicSheetOptions.DefaultSources;
+        var order = names.Distinct(StringComparer.OrdinalIgnoreCase).Select((name, index) => (name, index))
+            .ToDictionary(x => x.name, x => x.index, StringComparer.OrdinalIgnoreCase);
+        return sources.Where(s => order.ContainsKey(s.Name)).OrderBy(s => order[s.Name]);
+    }
+
+    private OfficialMatchSheet Link(OfficialMatchSheet? sheet, Match match, SheetFetch fetch, DateTimeOffset now)
     {
         if (sheet is null)
         {
-            var (competition, season) = await Resolvers.SeasonByIdAsync(competitions, match.SeasonId, cancellationToken);
-            if (memory.SkipSeason(season.Id, now)) return null;
-            if (await locator.ResolveCompetitionAsync(competition, season, cancellationToken) is null)
-            {
-                memory.SeasonNotFound(season.Id, now);
-                return null;
-            }
-            var officialRef = await locator.LocateAsync(match, competition, season, cancellationToken);
-            if (officialRef is null)
-                return null;
-
-            sheet = OfficialMatchSheet.Create(match.Id, officialRef.Provider, officialRef.ExternalId, provider.SheetUrl(officialRef.ExternalId), now);
+            sheet = OfficialMatchSheet.Create(match.Id, fetch.Provider, fetch.ExternalId, fetch.SourceUrl, now);
             sheets.Add(sheet);
         }
-
-        var data = await provider.GetSheetAsync(sheet.ExternalId, cancellationToken);
-
-        if (data is null || data.Lines.Count == 0)
-            sheet.MarkChecked(now);
-        else
-            sheet.Apply(data, now);
-
+        else if (sheet.Provider != fetch.Provider || sheet.ExternalId != fetch.ExternalId)
+        {
+            sheet.LinkSource(fetch.Provider, fetch.ExternalId, fetch.SourceUrl);
+        }
         return sheet;
     }
 
-    private OfficialSheetDto Result(OfficialMatchSheet? sheet, Match match, OfficialSheetAvailability status, string? message) =>
+    private static OfficialSheetDto Result(OfficialMatchSheet? sheet, Match match, OfficialSheetAvailability status, string? message) =>
         sheet is null
-            ? OfficialSheetMapper.Empty(match.Id, status, provider.ProviderName, message)
-            : OfficialSheetMapper.ToDto(sheet, match.HomeTeamId, match.AwayTeamId, status, message);
+            ? OfficialSheetMapper.Empty(match.Id, status, null, message)
+            : OfficialSheetMapper.ToDto(sheet, match.HomeTeamId, match.AwayTeamId, sheet.IsAvailable ? OfficialSheetAvailability.Available : status, message);
 }

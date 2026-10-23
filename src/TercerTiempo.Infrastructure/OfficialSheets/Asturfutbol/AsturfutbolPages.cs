@@ -139,7 +139,7 @@ internal static partial class AsturfutbolPages
         var awayBlock = blocks.LastOrDefault(b => Title(b) == away);
         var goalsBlock = blocks.FirstOrDefault(b => Title(b).Equals("Goles", StringComparison.OrdinalIgnoreCase));
 
-        var lines = new List<LineBuilder>();
+        var lines = new List<SheetLineBuilder>();
         var events = new List<OfficialEventData>();
 
         if (homeBlock is not null) ReadTeam(homeBlock, MatchSide.Home, lines, events, matchLength);
@@ -156,7 +156,7 @@ internal static partial class AsturfutbolPages
             ordered);
     }
 
-    private static int? ScoreOf(List<LineBuilder> lines, MatchSide side)
+    private static int? ScoreOf(List<SheetLineBuilder> lines, MatchSide side)
     {
         if (lines.Count == 0) return null;
         return lines.Where(l => l.Side == side).Sum(l => l.Goals + l.PenaltyGoals) + lines.Where(l => l.Side != side).Sum(l => l.OwnGoals);
@@ -164,7 +164,7 @@ internal static partial class AsturfutbolPages
 
     private static string Title(IElement block) => Clean(block.QuerySelector(".number")?.TextContent ?? string.Empty);
 
-    private static void ReadTeam(IElement block, MatchSide side, List<LineBuilder> lines, List<OfficialEventData> events, int matchLength)
+    private static void ReadTeam(IElement block, MatchSide side, List<SheetLineBuilder> lines, List<OfficialEventData> events, int matchLength)
     {
         // Titulares y suplentes: tabla que sigue a cada cabecera <h5><strong>Titulares</strong></h5>.
         foreach (var header in block.QuerySelectorAll("h5, h4"))
@@ -184,7 +184,7 @@ internal static partial class AsturfutbolPages
                     var (shirt, name) = SplitShirt(cells);
                     if (name.Length == 0) continue;
 
-                    lines.Add(new LineBuilder(side, shirt, name, started, matchLength));
+                    lines.Add(new SheetLineBuilder(side, shirt, name, started, matchLength));
                 }
             }
             else if (title.Equals("Sustituciones", StringComparison.OrdinalIgnoreCase))
@@ -236,7 +236,7 @@ internal static partial class AsturfutbolPages
         }
     }
 
-    private static void ReadGoals(IElement block, List<LineBuilder> lines, List<OfficialEventData> events)
+    private static void ReadGoals(IElement block, List<SheetLineBuilder> lines, List<OfficialEventData> events)
     {
         foreach (var row in block.QuerySelectorAll("table tr"))
         {
@@ -317,7 +317,7 @@ internal static partial class AsturfutbolPages
         return (minute, extra, name);
     }
 
-    private static LineBuilder? Find(List<LineBuilder> lines, MatchSide? side, int? shirt, string name)
+    private static SheetLineBuilder? Find(List<SheetLineBuilder> lines, MatchSide? side, int? shirt, string name)
     {
         var normalized = NameNormalizer.Normalize(name.Replace(',', ' '));
         var candidates = lines.Where(l => side is null || l.Side == side).ToList();
@@ -328,46 +328,4 @@ internal static partial class AsturfutbolPages
 
     private static string Clean(string text) =>
         Regex.Replace(WebUtility.HtmlDecode(text).Replace(' ', ' '), @"\s+", " ").Trim();
-
-    private sealed class LineBuilder(MatchSide side, int? shirt, string name, bool started, int matchLength)
-    {
-        public MatchSide Side { get; } = side;
-        public int? Shirt { get; } = shirt;
-        public string Name { get; } = name;
-        public string NormalizedName { get; } = NameNormalizer.Normalize(name.Replace(',', ' '));
-        public bool Started { get; } = started;
-        public int? MinuteIn { get; private set; } = started ? 0 : null;
-        public int? MinuteOut { get; private set; }
-        public int Goals { get; set; }
-        public int PenaltyGoals { get; set; }
-        public int OwnGoals { get; set; }
-        public int YellowCards { get; private set; }
-        public bool RedCard { get; private set; }
-
-        public void EnterAt(int minute) => MinuteIn ??= minute;
-
-        public void LeaveAt(int minute) => MinuteOut ??= minute;
-
-        public void Yellow(int minute)
-        {
-            YellowCards = Math.Min(2, YellowCards + 1);
-            if (YellowCards == 2)
-            {
-                RedCard = true;
-                MinuteOut ??= minute;
-            }
-        }
-
-        public void Red(int minute)
-        {
-            RedCard = true;
-            MinuteOut ??= minute;
-        }
-
-        public OfficialLineData Build()
-        {
-            var minutes = MinuteIn is { } @in ? Math.Max(0, (MinuteOut ?? Math.Max(matchLength, @in)) - @in) : 0;
-            return new OfficialLineData(Side, Shirt, Name, Started, MinuteIn, MinuteOut, minutes, Goals, PenaltyGoals, OwnGoals, YellowCards, RedCard);
-        }
-    }
 }

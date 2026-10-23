@@ -10,11 +10,20 @@ public sealed class OfficialSheetOptions
     // máximo por pasada y cuánto se espera tras arrancar antes de la primera.
     public int BackgroundScanMinutes { get; set; } = 60;
 
-    public int BackgroundBatch { get; set; } = 20;
+    public int BackgroundBatch { get; set; } = 60;
 
     public int BackgroundStartDelaySeconds { get; set; } = 20;
 
     public AsturfutbolOptions Asturfutbol { get; set; } = new();
+
+    public global::TercerTiempo.Infrastructure.OfficialSheets.BeSoccer.BeSoccerOptions BeSoccer { get; set; } = new();
+
+    internal SourceLimits AsturfutbolLimits =>
+        new(AsturfutbolOfficialSheetProvider.Name, Enabled, Asturfutbol.RequestDelayMs, Asturfutbol.MaxRequestsPerHour, Asturfutbol.MaxRequestsPerDay);
+
+    internal SourceLimits BeSoccerLimits =>
+        new(global::TercerTiempo.Infrastructure.OfficialSheets.BeSoccer.BeSoccerDirectory.Name, Enabled && BeSoccer.Enabled,
+            BeSoccer.RequestDelayMs, BeSoccer.MaxRequestsPerHour, BeSoccer.MaxRequestsPerDay);
 }
 
 public sealed class AsturfutbolOptions
