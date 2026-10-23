@@ -7,10 +7,8 @@ using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
-using TercerTiempo.Domain.Teams;
-
-using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Common.Errors;
+using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Squads;
 
