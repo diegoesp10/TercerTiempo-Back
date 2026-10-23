@@ -11,6 +11,7 @@ using TercerTiempo.Application.Squads.MatchSheet;
 using TercerTiempo.Application.Squads.Settings;
 using TercerTiempo.Application.Squads.Stats;
 using TercerTiempo.Application.Squads.Suggestions;
+using TercerTiempo.Application.Squads.TeamStats;
 using TercerTiempo.Application.Videos;
 using TercerTiempo.Domain.Videos;
 
@@ -47,7 +48,9 @@ internal sealed class SquadsRepository(
     ICommandHandler<UpdateInjuryCommand, IReadOnlyList<InjuryDto>> updateInjury,
     ICommandHandler<CloseInjuryCommand, IReadOnlyList<InjuryDto>> closeInjury,
     ICommandHandler<ReopenInjuryCommand, IReadOnlyList<InjuryDto>> reopenInjury,
-    ICommandHandler<DeleteInjuryCommand, IReadOnlyList<InjuryDto>> deleteInjury) : ISquadsRepository
+    ICommandHandler<DeleteInjuryCommand, IReadOnlyList<InjuryDto>> deleteInjury,
+    ICommandHandler<RecordTeamMatchStatsCommand, TeamMatchStatsDto> recordTeamStats,
+    IQueryHandler<GetSquadTeamStatsQuery, SquadTeamStatsDto> getTeamStats) : ISquadsRepository
 {
     public Task<IReadOnlyList<SquadSummaryDto>> ListMineAsync(CancellationToken cancellationToken = default) =>
         listMine.Handle(new ListMySquadsQuery(), cancellationToken);
@@ -114,6 +117,12 @@ internal sealed class SquadsRepository(
 
     public Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         getStats.Handle(new GetSquadStatsQuery(squadId), cancellationToken);
+
+    public Task<TeamMatchStatsDto> RecordTeamStatsAsync(Guid squadId, Guid matchId, TeamMatchStatsInput request, CancellationToken cancellationToken = default) =>
+        recordTeamStats.Handle(new RecordTeamMatchStatsCommand(squadId, matchId, request), cancellationToken);
+
+    public Task<SquadTeamStatsDto> GetTeamStatsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        getTeamStats.Handle(new GetSquadTeamStatsQuery(squadId), cancellationToken);
 
     public Task<SquadPlayerProfileDto> GetPlayerProfileAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default) =>
         getPlayerProfile.Handle(new GetSquadPlayerProfileQuery(squadId, squadPlayerId), cancellationToken);

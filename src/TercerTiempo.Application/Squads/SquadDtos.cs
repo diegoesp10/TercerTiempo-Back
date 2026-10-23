@@ -54,7 +54,9 @@ public sealed record MatchSheetDto(
     SquadSummaryDto Squad,
     MatchDto Match,
     bool CanEdit,
-    IReadOnlyList<MatchSheetEntryDto> Entries);
+    IReadOnlyList<MatchSheetEntryDto> Entries,
+    [property: System.ComponentModel.Description("Datos del equipo en el partido (córners, posesión, tiros…); null si el cuerpo técnico no los ha apuntado.")]
+    global::TercerTiempo.Application.Squads.TeamStats.TeamMatchStatsDto? TeamStats = null);
 
 public sealed record MatchSheetEntryDto(SquadPlayerDto Player, PerformanceDto? Performance);
 

@@ -22,6 +22,7 @@ internal sealed class GetMatchSheetHandler(
     ICompetitionStore competitions,
     IPlayerStore players,
     IPerformanceStore performances,
+    ITeamMatchStatsStore teamStats,
     IClubStore clubs,
     TimeProvider clock) : IQueryHandler<GetMatchSheetQuery, MatchSheetDto>
 {
@@ -38,6 +39,6 @@ internal sealed class GetMatchSheetHandler(
         if (match.SeasonId != squad.SeasonId || !match.Involves(squad.TeamId))
             throw new ConflictException(ErrorCode.MatchNotOfSquad);
 
-        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, cancellationToken);
+        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, cancellationToken);
     }
 }

@@ -3,6 +3,7 @@ using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Squads.Charts;
 using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Application.Squads.Suggestions;
+using TercerTiempo.Application.Squads.TeamStats;
 using TercerTiempo.Application.Videos;
 using TercerTiempo.Domain.Videos;
 
@@ -32,6 +33,8 @@ public interface ISquadsRepository
     Task<MatchVideoDto> CompleteVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default);
     Task<bool> CancelVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default);
     Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default);
+    Task<TeamMatchStatsDto> RecordTeamStatsAsync(Guid squadId, Guid matchId, TeamMatchStatsInput request, CancellationToken cancellationToken = default);
+    Task<SquadTeamStatsDto> GetTeamStatsAsync(Guid squadId, CancellationToken cancellationToken = default);
     Task<Application.Squads.Stats.SquadSeasonTableDto> GetSeasonTableAsync(Guid squadId, CancellationToken cancellationToken = default);
 
     Task<SquadPlayerProfileDto> GetPlayerProfileAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);

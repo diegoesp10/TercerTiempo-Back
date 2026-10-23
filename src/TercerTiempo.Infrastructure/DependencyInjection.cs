@@ -75,6 +75,7 @@ public static class DependencyInjection
         services.AddScoped<ICoachStore, CoachStore>();
         services.AddScoped<ISquadStore, SquadStore>();
         services.AddScoped<IInjuryStore, InjuryStore>();
+        services.AddScoped<ITeamMatchStatsStore, TeamMatchStatsStore>();
         services.AddScoped<ITeamStore, TeamStore>();
         services.AddScoped<ICompetitionStore, CompetitionStore>();
         services.AddScoped<IMatchStore, MatchStore>();

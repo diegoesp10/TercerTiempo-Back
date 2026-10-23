@@ -1118,6 +1118,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "team_stats.set_piece_goals",
+                            Language = "es",
+                            Message = "Los goles a balón parado no pueden superar los goles del partido."
+                        },
+                        new
+                        {
                             Code = "sheet.two_yellows",
                             Language = "es",
                             Message = "Dos amarillas implican expulsión: marca la tarjeta roja."
@@ -1952,6 +1958,78 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("PlayerMatchPerformances", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Performances.TeamMatchStats", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CornersAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CornersFor")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FoulsCommitted")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FoulsReceived")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("OffsidesAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OffsidesFor")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PossessionPct")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("RecordedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SetPieceGoalsAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SetPieceGoalsFor")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ShotsAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ShotsFor")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ShotsOnTargetAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ShotsOnTargetFor")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("RecordedByCoachId");
+
+                    b.HasIndex("SquadId", "MatchId")
+                        .IsUnique();
+
+                    b.ToTable("TeamMatchStats", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Players.Player", b =>
@@ -3071,6 +3149,27 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("TeamId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Performances.TeamMatchStats", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("RecordedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -154,6 +154,7 @@ public static class ErrorCode
     public const string SheetMatchNotPlayed = "sheet.match_not_played";
     public const string SheetShotsOnTarget = "sheet.shots_on_target";
     public const string SheetPassesCompleted = "sheet.passes_completed";
+    public const string TeamStatsSetPieceGoals = "team_stats.set_piece_goals";
     public const string SheetTwoYellows = "sheet.two_yellows";
     public const string SheetNoMinutes = "sheet.no_minutes";
     public const string SheetNotesTooLong = "sheet.notes_too_long";

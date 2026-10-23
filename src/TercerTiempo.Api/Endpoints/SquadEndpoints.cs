@@ -1,6 +1,7 @@
 using TercerTiempo.Api.Infrastructure;
 using Microsoft.AspNetCore.Http.Features;
 using TercerTiempo.Application.Abstractions.Videos;
+using TercerTiempo.Application.Squads.TeamStats;
 using TercerTiempo.Application.Videos;
 using TercerTiempo.Domain.Videos;
 using Microsoft.Extensions.Options;
@@ -93,6 +94,15 @@ internal static class SquadEndpoints
             .WithName("RecordMatchSheet")
             .WithSummary("Registrar el acta de un partido")
             .WithDescription("Solo el cuerpo técnico y solo para partidos disputados. Idempotente: cada línea se crea o se sobrescribe; con played = false se borra. Reglas por línea: minutos 0-120, tiros a puerta ≤ tiros, dos amarillas ⇒ roja, sin minutos no hay acciones. La nota no se envía: se calcula con los datos de la línea, la posición del jugador y el resultado (base 6,0 ± ataque, creación, defensa, portería, disciplina y resultado; 3,0-10,0).")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPut("/{squadId:guid}/matches/{matchId:guid}/team-stats", (Guid squadId, Guid matchId, TeamMatchStatsInput request, ISquadsRepository squads, CancellationToken ct) => squads.RecordTeamStatsAsync(squadId, matchId, request, ct))
+            .WithName("RecordTeamMatchStats")
+            .WithSummary("Registrar los datos del equipo en un partido")
+            .WithDescription("Solo el cuerpo técnico y solo para partidos disputados. Datos colectivos que no trae el acta pública, desde el punto de vista del equipo (For = a favor, Against = en contra): posesión, córners, tiros y tiros a puerta, fueras de juego, faltas cometidas y recibidas, goles a balón parado y notas. Se crea o se sobrescribe. Tiros a puerta ≤ tiros; goles a balón parado ≤ goles del partido.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -242,6 +252,14 @@ internal static class SquadEndpoints
             .WithName("GetSquadStats")
             .WithSummary("Estadísticas de la plantilla")
             .WithDescription("Totales de temporada de cada jugador (minutos, goles, asistencias, nota media, por 90'...) y su impacto en los resultados del equipo. Misma visibilidad que la plantilla.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{squadId:guid}/team-stats", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetTeamStatsAsync(squadId, ct))
+            .AllowAnonymous()
+            .WithName("GetSquadTeamStats")
+            .WithSummary("Datos del equipo en la temporada")
+            .WithDescription("Partido a partido y en media: posesión, córners, tiros, fueras de juego, faltas y goles a balón parado que ha apuntado el cuerpo técnico. Misma visibilidad que la plantilla.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 

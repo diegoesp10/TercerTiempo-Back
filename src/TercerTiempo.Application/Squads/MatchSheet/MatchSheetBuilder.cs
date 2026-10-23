@@ -22,6 +22,7 @@ internal static class MatchSheetBuilder
         ICompetitionStore competitions,
         IPlayerStore players,
         IPerformanceStore performances,
+        ITeamMatchStatsStore teamStats,
         CancellationToken cancellationToken)
     {
         var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
@@ -42,7 +43,8 @@ internal static class MatchSheetBuilder
             .ToList();
 
         var canEdit = SquadAccess.IsStaff(squad, currentUser, clock) && match.Status == MatchStatus.Played;
+        var team = await teamStats.GetAsync(squad.Id, match.Id, cancellationToken);
 
-        return new MatchSheetDto(summary, matchDto, canEdit, entries);
+        return new MatchSheetDto(summary, matchDto, canEdit, entries, team is null ? null : TeamStats.TeamMatchStatsMapper.ToDto(team));
     }
 }

@@ -102,6 +102,7 @@ internal sealed class RecordMatchSheetHandler(
     ICompetitionStore competitions,
     IPlayerStore players,
     IPerformanceStore performances,
+    ITeamMatchStatsStore teamStats,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<RecordMatchSheetCommand, MatchSheetDto>
 {
@@ -149,6 +150,6 @@ internal sealed class RecordMatchSheetHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, cancellationToken);
+        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, cancellationToken);
     }
 }
