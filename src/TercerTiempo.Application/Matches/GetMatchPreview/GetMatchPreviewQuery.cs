@@ -106,7 +106,7 @@ internal sealed class GetMatchPreviewHandler(
         {
             "Las probabilidades salen de los goles a favor y en contra de esta liga (modelo de Poisson con la fuerza atacante y defensiva de cada equipo y la ventaja de jugar en casa); con pocas jornadas disputadas son orientativas.",
             "Los jugadores en forma, los penaltis, los goles en propia y las tarjetas proceden de las actas públicas ya guardadas (federación o BeSoccer); los partidos sin acta no cuentan.",
-            "Córners y goles a balón parado (salvo penaltis) no constan en ninguna de las fuentes: solo se podrán comparar cuando el cuerpo técnico los registre en el acta interna.",
+            "Córners, posesión y goles a balón parado (salvo penaltis) no constan en ninguna fuente pública: los apunta el cuerpo técnico en «Datos del equipo» del acta interna de cada partido y solo se ven los de su propio equipo.",
         };
 
         return new MatchPreviewDto(MatchMapper.ToDto(match, teamMap), competition.Name, home, away, prediction, notes);
