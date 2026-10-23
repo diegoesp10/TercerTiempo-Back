@@ -17,8 +17,8 @@ internal static class MatchEndpoints
         group.MapGet("/{matchId:guid}/preview", (Guid matchId, IMatchesRepository matches, CancellationToken ct) => matches.GetPreviewAsync(matchId, ct))
             .RequireAuthorization()
             .WithName("GetMatchPreview")
-            .WithSummary("Previa del partido para el cuerpo técnico")
-            .WithDescription("Solo cuentas de cuerpo técnico. Probabilidad de victoria local, empate y victoria visitante (modelo de Poisson con los goles a favor y en contra de la liga, la fuerza de cada equipo y la ventaja de jugar en casa) con las razones en texto; clasificación, forma reciente y balance como local/visitante de cada equipo; y, de las actas oficiales ya descargadas, los jugadores en forma de cada equipo, penaltis, goles en propia y tarjetas. Córners y balón parado no constan en las fuentes.")
+            .WithSummary("Previa del partido para el cuerpo técnico y el club")
+            .WithDescription("Cuentas de cuerpo técnico y de club. Probabilidad de victoria local, empate y victoria visitante (modelo de Poisson con los goles a favor y en contra de la liga, la fuerza de cada equipo y la ventaja de jugar en casa) con las razones en texto; clasificación, forma reciente y balance como local/visitante de cada equipo; y, de las actas oficiales ya descargadas, los jugadores en forma de cada equipo, penaltis, goles en propia y tarjetas. Córners y balón parado no constan en las fuentes.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 

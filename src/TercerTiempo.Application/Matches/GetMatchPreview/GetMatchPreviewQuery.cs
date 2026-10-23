@@ -82,8 +82,9 @@ internal sealed class GetMatchPreviewHandler(
     {
         if (!currentUser.IsAuthenticated)
             throw new UnauthenticatedException();
-        if (currentUser.AccountType != AccountType.Coach)
-            throw new ForbiddenException(ErrorCode.MatchPreviewCoachOnly);
+        // La previa es para quien prepara el partido: el cuerpo técnico y el club (sus dirigentes), siempre.
+        if (currentUser.AccountType is not (AccountType.Coach or AccountType.Club))
+            throw new ForbiddenException(ErrorCode.MatchPreviewStaffOnly);
 
         var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
@@ -104,7 +105,7 @@ internal sealed class GetMatchPreviewHandler(
         var notes = new List<string>
         {
             "Las probabilidades salen de los goles a favor y en contra de esta liga (modelo de Poisson con la fuerza atacante y defensiva de cada equipo y la ventaja de jugar en casa); con pocas jornadas disputadas son orientativas.",
-            "Los jugadores en forma, los penaltis, los goles en propia y las tarjetas proceden de las actas oficiales de la federación ya descargadas; los partidos sin acta no cuentan.",
+            "Los jugadores en forma, los penaltis, los goles en propia y las tarjetas proceden de las actas públicas ya guardadas (federación o BeSoccer); los partidos sin acta no cuentan.",
             "Córners y goles a balón parado (salvo penaltis) no constan en ninguna de las fuentes: solo se podrán comparar cuando el cuerpo técnico los registre en el acta interna.",
         };
 

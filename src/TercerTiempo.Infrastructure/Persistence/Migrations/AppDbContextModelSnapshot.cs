@@ -706,7 +706,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "match.preview_coach_only",
                             Language = "es",
-                            Message = "La previa del partido es para el cuerpo técnico."
+                            Message = "La previa del partido es para el cuerpo técnico y el club."
                         },
                         new
                         {

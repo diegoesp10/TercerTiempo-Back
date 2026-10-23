@@ -72,7 +72,7 @@ public static class ErrorCatalog
         (ErrorCode.MatchCannotStart, "El partido no puede pasar a 'en juego' desde su estado actual."),
         (ErrorCode.MatchTeamNotInvolved, "El equipo no participa en este partido."),
         (ErrorCode.MatchNotOfSquad, "El partido no es de esta plantilla."),
-        (ErrorCode.MatchPreviewCoachOnly, "La previa del partido es para el cuerpo técnico."),
+        (ErrorCode.MatchPreviewStaffOnly, "La previa del partido es para el cuerpo técnico y el club."),
         (ErrorCode.OfficialSheetInvalidEvent, "Tipo de suceso no válido."),
 
         (ErrorCode.ClubTeamNotLinked, "Ese equipo no está vinculado a tu club."),

@@ -75,7 +75,7 @@ public static class ErrorCode
     public const string MatchCannotStart = "match.cannot_start";
     public const string MatchTeamNotInvolved = "match.team_not_involved";
     public const string MatchNotOfSquad = "match.not_of_squad";
-    public const string MatchPreviewCoachOnly = "match.preview_coach_only";
+    public const string MatchPreviewStaffOnly = "match.preview_coach_only";
     public const string OfficialSheetInvalidEvent = "official_sheet.invalid_event";
 
     // Clubes, escudos y plantilla publicada
