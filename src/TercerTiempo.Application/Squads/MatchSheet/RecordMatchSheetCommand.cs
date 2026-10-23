@@ -39,11 +39,20 @@ public sealed record MatchSheetEntryInput(
     [property: Description("Dorsal con el que jugó este partido si fue distinto del de su ficha (1-99); vacío = el de la ficha.")]
     int? ShirtNumber = null,
     [property: Description("Faltas cometidas.")]
-    int Fouls = 0)
+    int Fouls = 0,
+    [property: Description("Pérdidas de balón.")]
+    int BallLosses = 0,
+    [property: Description("Recuperaciones de balón.")]
+    int Recoveries = 0,
+    [property: Description("Pases completados; no pueden superar los intentados.")]
+    int PassesCompleted = 0,
+    [property: Description("Pases intentados.")]
+    int PassesAttempted = 0)
 {
     public PerformanceStats ToStats() => new(
         Started, MinutesPlayed, Goals, Assists, Shots, ShotsOnTarget, KeyPasses,
-        Tackles, Interceptions, Saves, YellowCards, RedCard, Notes, Fouls);
+        Tackles, Interceptions, Saves, YellowCards, RedCard, Notes, Fouls,
+        BallLosses, Recoveries, PassesCompleted, PassesAttempted);
 }
 
 public sealed record RecordMatchSheetCommand(Guid SquadId, Guid MatchId, IReadOnlyList<MatchSheetEntryInput> Entries) : ICommand<MatchSheetDto>;
@@ -72,6 +81,11 @@ internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchS
                 entry.RuleFor(e => e.Saves).GreaterThanOrEqualTo(0);
                 entry.RuleFor(e => e.YellowCards).InclusiveBetween(0, 2);
                 entry.RuleFor(e => e.Fouls).InclusiveBetween(0, 30);
+                entry.RuleFor(e => e.BallLosses).InclusiveBetween(0, 200);
+                entry.RuleFor(e => e.Recoveries).InclusiveBetween(0, 200);
+                entry.RuleFor(e => e.PassesAttempted).InclusiveBetween(0, 300);
+                entry.RuleFor(e => e.PassesCompleted).GreaterThanOrEqualTo(0).LessThanOrEqualTo(e => e.PassesAttempted)
+                    .WithCatalogMessage(ErrorCode.SheetPassesCompleted);
                 entry.RuleFor(e => e.Notes).MaximumLength(PerformanceStats.MaxNotesLength);
                 entry.RuleFor(e => e.ShirtNumber).InclusiveBetween(1, 99).When(e => e.ShirtNumber.HasValue);
             });

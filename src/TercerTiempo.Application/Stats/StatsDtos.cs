@@ -31,7 +31,15 @@ public sealed record IndividualStatsDto(
     double? GoalsPer90,
     double? AssistsPer90,
     double? GoalContributionsPer90,
-    double? ShotAccuracyPct)
+    double? ShotAccuracyPct,
+    int Fouls = 0,
+    int BallLosses = 0,
+    int Recoveries = 0,
+    int PassesCompleted = 0,
+    int PassesAttempted = 0,
+    [property: System.ComponentModel.Description("Pases completados sobre intentados; null sin pases apuntados.")]
+    double? PassAccuracyPct = null,
+    double? RecoveriesPer90 = null)
 {
     public static readonly IndividualStatsDto Empty =
         new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null, null, null, null);

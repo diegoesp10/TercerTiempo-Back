@@ -36,6 +36,25 @@ public class PerformanceRatingTests
     }
 
     [Fact]
+    public void Recoveries_losses_and_pass_accuracy_move_the_rating()
+    {
+        // Medio, 90', empate 0-0: 5 recuperaciones (+0,35 en defensa), 2 pérdidas (−0,10) y 45 de 50 pases (90 %: +0,18).
+        var rating = PerformanceRating.Calculate(
+            Line() with { Recoveries = 5, BallLosses = 2, PassesCompleted = 45, PassesAttempted = 50 }, Position.Midfielder, 0, 0)!;
+
+        Assert.Equal(0.08, rating.Creation);
+        Assert.Equal(0.55, rating.Defense);
+    }
+
+    [Fact]
+    public void Pass_accuracy_needs_a_minimum_of_passes()
+    {
+        var few = PerformanceRating.Calculate(Line() with { PassesCompleted = 1, PassesAttempted = 5 }, Position.Midfielder, 0, 0)!;
+
+        Assert.Equal(0, few.Creation);
+    }
+
+    [Fact]
     public void A_goal_is_worth_more_the_further_back_the_player_plays()
     {
         var forward = PerformanceRating.Calculate(Line(goals: 1), Position.Forward, 1, 1)!.Attack;

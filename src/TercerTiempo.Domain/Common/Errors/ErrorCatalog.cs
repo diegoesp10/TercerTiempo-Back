@@ -145,6 +145,7 @@ public static class ErrorCatalog
         (ErrorCode.SheetTeamNotInvolved, "El equipo de la plantilla no participa en este partido."),
         (ErrorCode.SheetMatchNotPlayed, "Solo se puede registrar el acta de partidos ya disputados."),
         (ErrorCode.SheetShotsOnTarget, "Los tiros a puerta no pueden superar los tiros totales."),
+        (ErrorCode.SheetPassesCompleted, "Los pases completados no pueden superar los pases intentados."),
         (ErrorCode.SheetTwoYellows, "Dos amarillas implican expulsión: marca la tarjeta roja."),
         (ErrorCode.SheetNoMinutes, "Sin minutos jugados no se pueden registrar acciones de juego."),
         (ErrorCode.SheetNotesTooLong, "Las notas no pueden superar {0} caracteres."),

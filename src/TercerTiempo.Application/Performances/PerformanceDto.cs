@@ -32,7 +32,11 @@ public sealed record PerformanceDto(
     double? Rating,
     string? Notes,
     DateTimeOffset UpdatedAt,
-    int Fouls = 0);
+    int Fouls = 0,
+    int BallLosses = 0,
+    int Recoveries = 0,
+    int PassesCompleted = 0,
+    int PassesAttempted = 0);
 
 public sealed record PerformanceWithMatchDto(PerformanceDto Performance, MatchDto Match);
 
@@ -43,5 +47,6 @@ internal static class PerformanceMapper
             player?.FullName ?? "Jugador", player?.Position, p.ShirtNumber ?? player?.ShirtNumber, p.ShirtNumber,
             p.TeamId, p.Started, p.MinutesPlayed, p.Goals, p.Assists, p.Shots, p.ShotsOnTarget,
             p.KeyPasses, p.Tackles, p.Interceptions, p.Saves, p.YellowCards, p.RedCard,
-            p.Rating, p.Notes, p.UpdatedAt, p.Fouls);
+            p.Rating, p.Notes, p.UpdatedAt, p.Fouls,
+            p.BallLosses, p.Recoveries, p.PassesCompleted, p.PassesAttempted);
 }

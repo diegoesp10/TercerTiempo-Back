@@ -24,6 +24,21 @@ public class PerformanceStatsTests
     }
 
     [Fact]
+    public void Completed_passes_cannot_exceed_attempted()
+    {
+        var stats = TestData.ValidStats() with { PassesCompleted = 30, PassesAttempted = 25 };
+
+        Assert.Throws<DomainException>(stats.EnsureValid);
+    }
+
+    [Fact]
+    public void Recoveries_losses_or_passes_need_minutes()
+    {
+        Assert.Throws<DomainException>(new PerformanceStats(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, null, Recoveries: 2).EnsureValid);
+        Assert.Throws<DomainException>(new PerformanceStats(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, null, PassesAttempted: 5).EnsureValid);
+    }
+
+    [Fact]
     public void Cannot_log_actions_without_minutes()
     {
         var stats = TestData.ValidStats(minutes: 0, goals: 1);

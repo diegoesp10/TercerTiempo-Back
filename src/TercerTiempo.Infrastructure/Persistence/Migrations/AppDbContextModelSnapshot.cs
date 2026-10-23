@@ -1112,6 +1112,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "sheet.passes_completed",
+                            Language = "es",
+                            Message = "Los pases completados no pueden superar los pases intentados."
+                        },
+                        new
+                        {
                             Code = "sheet.two_yellows",
                             Language = "es",
                             Message = "Dos amarillas implican expulsión: marca la tarjeta roja."
@@ -1848,6 +1854,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("Assists")
                         .HasColumnType("int");
 
+                    b.Property<int>("BallLosses")
+                        .HasColumnType("int");
+
                     b.Property<int>("Fouls")
                         .HasColumnType("int");
 
@@ -1873,11 +1882,20 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<int>("PassesAttempted")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PassesCompleted")
+                        .HasColumnType("int");
+
                     b.Property<double?>("Rating")
                         .HasColumnType("float");
 
                     b.Property<Guid>("RecordedByCoachId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Recoveries")
+                        .HasColumnType("int");
 
                     b.Property<bool>("RedCard")
                         .HasColumnType("bit");

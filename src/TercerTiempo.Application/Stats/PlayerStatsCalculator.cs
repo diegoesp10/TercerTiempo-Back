@@ -15,6 +15,9 @@ internal static class PlayerStatsCalculator
         var assists = performances.Sum(p => p.Assists);
         var shots = performances.Sum(p => p.Shots);
         var shotsOnTarget = performances.Sum(p => p.ShotsOnTarget);
+        var passesCompleted = performances.Sum(p => p.PassesCompleted);
+        var passesAttempted = performances.Sum(p => p.PassesAttempted);
+        var recoveries = performances.Sum(p => p.Recoveries);
         var ratings = performances.Where(p => p.Rating is not null).Select(p => p.Rating!.Value).ToList();
 
         return new IndividualStatsDto(
@@ -36,7 +39,14 @@ internal static class PlayerStatsCalculator
             GoalsPer90: Per90(goals, minutes),
             AssistsPer90: Per90(assists, minutes),
             GoalContributionsPer90: Per90(goals + assists, minutes),
-            ShotAccuracyPct: shots > 0 ? Round(shotsOnTarget * 100.0 / shots) : null);
+            ShotAccuracyPct: shots > 0 ? Round(shotsOnTarget * 100.0 / shots) : null,
+            Fouls: performances.Sum(p => p.Fouls),
+            BallLosses: performances.Sum(p => p.BallLosses),
+            Recoveries: recoveries,
+            PassesCompleted: passesCompleted,
+            PassesAttempted: passesAttempted,
+            PassAccuracyPct: passesAttempted > 0 ? Round(passesCompleted * 100.0 / passesAttempted) : null,
+            RecoveriesPer90: Per90(recoveries, minutes));
     }
 
     public static TeamImpactDto TeamImpact(

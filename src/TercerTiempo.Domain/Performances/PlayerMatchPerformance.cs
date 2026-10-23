@@ -27,6 +27,10 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     public int YellowCards { get; private set; }
     public bool RedCard { get; private set; }
     public int Fouls { get; private set; }
+    public int BallLosses { get; private set; }
+    public int Recoveries { get; private set; }
+    public int PassesCompleted { get; private set; }
+    public int PassesAttempted { get; private set; }
 
     public double? Rating { get; private set; }
 
@@ -101,7 +105,8 @@ public sealed class PlayerMatchPerformance : AggregateRoot
 
     public PerformanceStats ToStats() => new(
         Started, MinutesPlayed, Goals, Assists, Shots, ShotsOnTarget, KeyPasses,
-        Tackles, Interceptions, Saves, YellowCards, RedCard, Notes, Fouls);
+        Tackles, Interceptions, Saves, YellowCards, RedCard, Notes, Fouls,
+        BallLosses, Recoveries, PassesCompleted, PassesAttempted);
 
     private void Apply(PerformanceStats stats)
     {
@@ -118,6 +123,10 @@ public sealed class PlayerMatchPerformance : AggregateRoot
         YellowCards = stats.YellowCards;
         RedCard = stats.RedCard;
         Fouls = stats.Fouls;
+        BallLosses = stats.BallLosses;
+        Recoveries = stats.Recoveries;
+        PassesCompleted = stats.PassesCompleted;
+        PassesAttempted = stats.PassesAttempted;
         Notes = string.IsNullOrWhiteSpace(stats.Notes) ? null : stats.Notes.Trim();
     }
 }
