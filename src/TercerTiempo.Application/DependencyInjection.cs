@@ -2,6 +2,7 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Errors;
 using TercerTiempo.Application.Sync;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Coaches.Appointments;
@@ -26,6 +27,8 @@ public static class DependencyInjection
         services.AddScoped<Licensing.ILicenseGate, Licensing.LicenseGate>();
         services.AddSingleton<Licensing.LicensingCatalogCache>();
         services.AddScoped<Admin.FootballSyncSettingsReader>();
+        services.AddScoped<Seasons.ISeasonContext, Seasons.SeasonContext>();
+        services.TryAddScoped<Seasons.ISeasonRequest, Seasons.NoSeasonRequest>();
         services.AddScoped<Licensing.ILicensingCatalog, Licensing.LicensingCatalog>();
         services.AddScoped<Licensing.LicenseDescriber>();
         services.AddScoped<Licensing.LicenseCheckoutCompletion>();

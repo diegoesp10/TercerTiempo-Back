@@ -74,6 +74,8 @@ public static class ErrorCode
     public const string CompetitionSeasonDates = "competition.season_dates";
     public const string CompetitionSeasonExists = "competition.season_exists";
     public const string CompetitionSeasonMismatch = "competition.season_mismatch";
+    public const string SeasonNotFound = "season.not_found";
+    public const string SeasonClosed = "season.closed";
     public const string LeagueCompetitionRequired = "league.competition_required";
     public const string MatchdayNotFound = "matchday.not_found";
     public const string MatchNotFound = "match.not_found";

@@ -53,7 +53,7 @@ internal sealed class GetClubRosterEntryHandler(
 {
     public async Task<RosterEntryDetailDto> Handle(GetClubRosterEntryQuery query, CancellationToken cancellationToken)
     {
-        var (seasonId, _) = await ClubRoster.ContextAsync(query.TeamId, currentUser, stores, cancellationToken);
+        var (seasonId, _) = await ClubRoster.ContextAsync(query.TeamId, currentUser, stores, cancellationToken, write: false);
         var entry = await ClubRoster.EntryAsync(query.TeamId, seasonId, query.EntryId, stores.Teams, cancellationToken);
 
         var allEntries = await stores.Teams.GetRosterAsync(query.TeamId, seasonId, cancellationToken);

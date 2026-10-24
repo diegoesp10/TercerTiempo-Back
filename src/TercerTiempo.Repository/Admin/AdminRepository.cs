@@ -10,6 +10,7 @@ internal sealed class AdminRepository(
     ICommandHandler<AdminLoginCommand, AdminAuthResponse> login,
     IQueryHandler<GetJobsOverviewQuery, JobsOverviewDto> jobs,
     ICommandHandler<RunJobCommand, JobDto> runJob,
+    ICommandHandler<TercerTiempo.Application.Seasons.SetCurrentSeasonCommand, IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> setCurrentSeason,
     IQueryHandler<GetFootballSyncSettingsQuery, FootballSyncSettingsDto> footballSyncSettings,
     ICommandHandler<UpdateFootballSyncSettingsCommand, FootballSyncSettingsDto> updateFootballSyncSettings,
     ICommandHandler<RunFootballSyncCommand, JobDto> runFootballSync,
@@ -39,6 +40,9 @@ internal sealed class AdminRepository(
 
     public Task<JobDto> RunFootballSyncAsync(RunFootballSyncCommand command, CancellationToken cancellationToken = default) =>
         runFootballSync.Handle(command, cancellationToken);
+
+    public Task<IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> SetCurrentSeasonAsync(Guid seasonYearId, CancellationToken cancellationToken = default) =>
+        setCurrentSeason.Handle(new TercerTiempo.Application.Seasons.SetCurrentSeasonCommand(seasonYearId), cancellationToken);
 
     public Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default) =>
         licenses.Handle(new GetLicensesOverviewQuery(), cancellationToken);

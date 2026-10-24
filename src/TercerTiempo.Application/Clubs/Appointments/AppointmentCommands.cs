@@ -50,7 +50,8 @@ internal sealed class CreateAppointmentHandler(
         if (!club.Manages(command.TeamId))
             throw new ForbiddenException(ErrorCode.ClubTeamNotLinked);
 
-        var (_, season) = await Resolvers.SeasonOfTeamAsync(stores.Competitions, command.TeamId, cancellationToken);
+        await stores.Seasons.EnsureEditableAsync(cancellationToken);
+        var (_, season) = await Resolvers.SeasonOfTeamAsync(stores.Competitions, stores.Seasons, command.TeamId, cancellationToken);
         var today = SquadAccess.Today(stores.Clock);
         var validUntil = command.ValidUntil ?? season.EndsOn;
 

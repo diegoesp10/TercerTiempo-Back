@@ -28,6 +28,7 @@ internal sealed class GetTeamHandler(
     ISquadStore squads,
     ITeamProfileProvider profiles,
     IClubStore clubs,
+    Seasons.ISeasonContext seasons,
     TimeProvider clock) : IQueryHandler<GetTeamQuery, TeamDetailDto>
 {
     public async Task<TeamDetailDto> Handle(GetTeamQuery query, CancellationToken cancellationToken)
@@ -35,7 +36,7 @@ internal sealed class GetTeamHandler(
         var team = await teams.GetByIdAsync(query.TeamId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.TeamNotFound, query.TeamId);
 
-        var (competition, season) = await Resolvers.SeasonOfTeamAsync(competitions, team.Id, cancellationToken);
+        var (competition, season) = await Resolvers.SeasonOfTeamAsync(competitions, seasons, team.Id, cancellationToken);
 
         var standing = (await standings.GetBySeasonAsync(season.Id, cancellationToken))
             .FirstOrDefault(s => s.TeamId == team.Id);

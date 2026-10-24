@@ -34,6 +34,7 @@ internal sealed class GetCompetitionMatchdayHandler(
     ICompetitionStore competitions,
     IMatchStore matches,
     ITeamStore teams,
+    Seasons.ISeasonContext seasons,
     TimeProvider clock) : IQueryHandler<GetCompetitionMatchdayQuery, CompetitionMatchdayDto>
 {
     public async Task<CompetitionMatchdayDto> Handle(GetCompetitionMatchdayQuery query, CancellationToken cancellationToken)
@@ -42,7 +43,7 @@ internal sealed class GetCompetitionMatchdayHandler(
             ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, query.CompetitionId);
 
         // Temporada nueva o aún sin calendario: no es un error, solo no hay datos todavía.
-        if (competition.CurrentSeason is not { } season)
+        if (Common.Resolvers.SeasonFor(competition, await seasons.SelectedAsync(cancellationToken)) is not { } season)
             return new CompetitionMatchdayDto(competition.Id, competition.Name, null, null, null, [], [], "Todavía no hay temporada en curso: los partidos aparecerán cuando la federación publique el calendario.");
 
         var all = await matches.GetBySeasonAsync(season.Id, cancellationToken);

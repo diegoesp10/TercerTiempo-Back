@@ -34,6 +34,7 @@ internal sealed class SyncSeasonHandler(
     ICrestDownloader crestDownloader,
     ICrestStorage crests,
     ISyncProgress progress,
+    ISeasonYearStore seasonYears,
     TimeProvider clock,
     ILogger<SyncSeasonHandler> logger) : ICommandHandler<SyncSeasonCommand, SyncResultDto>
 {
@@ -65,6 +66,8 @@ internal sealed class SyncSeasonHandler(
         }
         progress.Start("datos", snapshots.Count);
 
+        var years = (await seasonYears.GetAllForUpdateAsync(cancellationToken)).ToList();
+
         // Los equipos pueden cambiar de liga entre temporadas: se indexan por id externo una sola vez.
         var teamsByExternalId = (await teams.GetAllAsync(cancellationToken))
             .Where(t => t.ExternalRef?.Provider == providerName)
@@ -80,7 +83,7 @@ internal sealed class SyncSeasonHandler(
 
             try
             {
-                var counts = await SyncCompetitionAsync(snapshot, providerName, teamsByExternalId, scope, now, cancellationToken);
+                var counts = await SyncCompetitionAsync(snapshot, providerName, teamsByExternalId, YearOf(snapshot, years), scope, now, cancellationToken);
                 await unitOfWork.SaveChangesAsync(cancellationToken);
 
                 totals.Competitions++;
@@ -115,6 +118,7 @@ internal sealed class SyncSeasonHandler(
         CompetitionSnapshot snapshot,
         string providerName,
         Dictionary<string, Team> teamsByExternalId,
+        SeasonYear year,
         SyncScope scope,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -135,7 +139,8 @@ internal sealed class SyncSeasonHandler(
         }
 
         var season = competition.Seasons.FirstOrDefault(s => s.ExternalRef == seasonRef)
-            ?? competition.AddSeason(snapshot.SeasonLabel, snapshot.StartsOn, snapshot.EndsOn, seasonRef);
+            ?? competition.AddSeason(snapshot.SeasonLabel, snapshot.StartsOn, snapshot.EndsOn, seasonRef, year.Id);
+        if (season.SeasonYearId != year.Id) competition.LinkSeasonYear(season.Id, year.Id);
         competition.MarkCurrent(season.Id);
 
         // 2. Calendario según el proveedor. Se le pasan los partidos ya guardados de esta temporada para que pueda
@@ -258,6 +263,25 @@ internal sealed class SyncSeasonHandler(
         }
 
         return (teamSnapshots.Count, syncedMatches, syncedStandings, syncedRoster);
+    }
+
+    // La temporada de la app con ese nombre (se crea la primera vez). Una más reciente que la actual pasa a ser la actual:
+    // así, al empezar la temporada nueva en la web de datos, la app cambia sola.
+    private SeasonYear YearOf(CompetitionSnapshot snapshot, List<SeasonYear> years)
+    {
+        var year = years.FirstOrDefault(y => y.Label.Equals(snapshot.SeasonLabel, StringComparison.OrdinalIgnoreCase));
+        if (year is null)
+        {
+            year = SeasonYear.Create(snapshot.SeasonLabel, snapshot.StartsOn, snapshot.EndsOn);
+            seasonYears.Add(year);
+            years.Add(year);
+        }
+
+        var current = years.FirstOrDefault(y => y.IsCurrent);
+        if (current is null || (current.Id != year.Id && year.StartsOn > current.StartsOn))
+            SeasonYear.MarkCurrent(years, year.Id);
+
+        return year;
     }
 
     private static MatchSnapshot? ToSnapshot(Match match, IReadOnlyDictionary<Guid, string> externalIdByTeamId)

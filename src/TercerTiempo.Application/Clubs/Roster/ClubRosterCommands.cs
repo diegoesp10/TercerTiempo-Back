@@ -66,13 +66,16 @@ internal sealed class RemoveClubRosterEntryValidator : AbstractValidator<RemoveC
 
 internal static class ClubRoster
 {
-    public static async Task<(Guid SeasonId, DateTimeOffset Now)> ContextAsync(Guid teamId, ICurrentUser currentUser, AccountStores stores, CancellationToken cancellationToken)
+    // write: añadir, cambiar o quitar fichas, solo en la temporada actual; las pasadas se consultan.
+    public static async Task<(Guid SeasonId, DateTimeOffset Now)> ContextAsync(
+        Guid teamId, ICurrentUser currentUser, AccountStores stores, CancellationToken cancellationToken, bool write = true)
     {
         var club = await Resolvers.CurrentClubAsync(currentUser, stores.Clubs, cancellationToken);
         if (!club.Manages(teamId))
             throw new ForbiddenException(ErrorCode.ClubRosterOwnTeamsOnly);
 
-        var (_, season) = await Resolvers.SeasonOfTeamAsync(stores.Competitions, teamId, cancellationToken);
+        if (write) await stores.Seasons.EnsureEditableAsync(cancellationToken);
+        var (_, season) = await Resolvers.SeasonOfTeamAsync(stores.Competitions, stores.Seasons, teamId, cancellationToken);
         return (season.Id, stores.Clock.GetUtcNow());
     }
 

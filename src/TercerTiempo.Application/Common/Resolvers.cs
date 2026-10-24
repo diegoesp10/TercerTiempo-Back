@@ -50,17 +50,23 @@ internal static class Resolvers
         return squad;
     }
 
+    // La liga y la temporada del equipo en la temporada de la app que se está viendo.
     public static async Task<(Competition Competition, Season Season)> SeasonOfTeamAsync(
-        ICompetitionStore competitions, Guid teamId, CancellationToken cancellationToken)
+        ICompetitionStore competitions, Seasons.ISeasonContext seasons, Guid teamId, CancellationToken cancellationToken)
     {
-        var competition = await competitions.GetByTeamAsync(teamId, cancellationToken)
+        var year = await seasons.SelectedAsync(cancellationToken);
+        var competition = await competitions.GetByTeamAsync(teamId, year?.Id, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.TeamActiveSeasonNotFound, teamId);
 
-        var season = competition.CurrentSeason
+        var season = SeasonFor(competition, year)
             ?? throw new ConflictException(ErrorCode.TeamNoCurrentSeason);
 
         return (competition, season);
     }
+
+    // Sin temporadas de la app todavía (base recién creada), la temporada en curso de cada liga.
+    public static Season? SeasonFor(Competition competition, SeasonYear? year) =>
+        year is null ? competition.CurrentSeason : competition.SeasonIn(year.Id);
 
     public static async Task<Squad> SquadForManagerAsync(
         ISquadStore squads, ICurrentUser currentUser, IClubStore clubs, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)

@@ -6,12 +6,18 @@ internal static class CompetitionEndpoints
 {
     public static IEndpointRouteBuilder MapCompetitionEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/seasons", (ICompetitionsRepository competitions, CancellationToken ct) => competitions.ListSeasonsAsync(ct))
+            .WithTags("Competiciones")
+            .WithName("ListSeasons")
+            .WithSummary("Temporadas")
+            .WithDescription("Las temporadas de la app (2026/2027, 2025/2026...), de la más reciente a la más antigua, con la actual marcada. Todo lo demás (ligas, equipos, calendario, clasificación, plantillas) se lee de la temporada que llega en la cabecera X-Season (su id o su nombre, p. ej. 2025-2026); sin ella, de la actual. Las temporadas pasadas solo se consultan. Público.");
+
         var group = app.MapGroup("/api/competitions").WithTags("Competiciones");
 
         group.MapGet("/", (ICompetitionsRepository competitions, CancellationToken ct) => competitions.ListAsync(ct))
             .WithName("ListCompetitions")
             .WithSummary("Ligas disponibles")
-            .WithDescription("Todas las ligas sincronizadas (categoría + grupo), con nivel (Professional, National, Regional, Cup, Youth), escalón, grupo, temporada en curso y número de equipos. Ordenadas por nivel, escalón y grupo. Público.");
+            .WithDescription("Las ligas (categoría + grupo) de la temporada elegida (cabecera X-Season; sin ella, la actual), con nivel (Professional, National, Regional, Cup, Youth), escalón, grupo, su temporada y número de equipos. Ordenadas por nivel, escalón y grupo. Público.");
 
         group.MapGet("/{competitionId:guid}/matchdays/current", (Guid competitionId, ICompetitionsRepository competitions, CancellationToken ct) => competitions.GetMatchdayAsync(competitionId, null, ct))
             .WithName("GetCurrentMatchday")

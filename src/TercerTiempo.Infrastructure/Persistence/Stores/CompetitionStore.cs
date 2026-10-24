@@ -20,9 +20,10 @@ internal sealed class CompetitionStore(AppDbContext db) : ICompetitionStore
     public Task<Competition?> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
         db.Competitions.FirstOrDefaultAsync(c => c.Seasons.Any(s => s.Id == seasonId), cancellationToken);
 
-    public async Task<Competition?> GetByTeamAsync(Guid teamId, CancellationToken cancellationToken = default)
+    public async Task<Competition?> GetByTeamAsync(Guid teamId, Guid? seasonYearId = null, CancellationToken cancellationToken = default)
     {
-        var currentSeasons = db.Seasons.Where(s => s.IsCurrent).Select(s => s.Id);
+        var currentSeasons = (seasonYearId is { } year ? db.Seasons.Where(s => s.SeasonYearId == year) : db.Seasons.Where(s => s.IsCurrent))
+            .Select(s => s.Id);
 
         var seasonId = await db.Standings
             .Where(s => s.TeamId == teamId && currentSeasons.Contains(s.SeasonId))

@@ -2,9 +2,12 @@ using TercerTiempo.Domain.Common;
 
 namespace TercerTiempo.Domain.Competitions;
 
+// Temporada de una liga: cuelga de la temporada de la app (SeasonYear) y de ella cuelgan sus partidos, clasificación,
+// plantillas y actas.
 public sealed class Season : Entity
 {
     public Guid CompetitionId { get; private set; }
+    public Guid SeasonYearId { get; private set; }
     public string Label { get; private set; } = string.Empty;
     public DateOnly StartsOn { get; private set; }
     public DateOnly EndsOn { get; private set; }
@@ -15,11 +18,12 @@ public sealed class Season : Entity
 
     private Season() { }
 
-    internal static Season Create(Guid competitionId, string label, DateOnly startsOn, DateOnly endsOn, ExternalRef? externalRef) =>
+    internal static Season Create(Guid competitionId, Guid seasonYearId, string label, DateOnly startsOn, DateOnly endsOn, ExternalRef? externalRef) =>
         new()
         {
             Id = NewId(),
             CompetitionId = competitionId,
+            SeasonYearId = seasonYearId,
             Label = Guard.NotEmpty(label, "temporada", 20),
             StartsOn = startsOn,
             EndsOn = endsOn,
@@ -27,6 +31,8 @@ public sealed class Season : Entity
         };
 
     internal void SetCurrent(bool value) => IsCurrent = value;
+
+    internal void MoveTo(Guid seasonYearId) => SeasonYearId = seasonYearId;
 
     public void LinkOfficial(ExternalRef officialRef) => OfficialRef = officialRef;
 

@@ -28,7 +28,8 @@ public class PlayerInvitationSqlTests
             var player = Player.Register(Guid.NewGuid(), "Pelayo", Position.Forward, null, now);
             var otherAccount = Player.Register(Guid.NewGuid(), "Pelayo", Position.Forward, null, now);
             var competition = Competition.Create("Liga de prueba", "Primera", CompetitionLevel.Regional, 1, null, "Asturias", null);
-            var season = competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
+            var year = SeasonYear.Create("2026/2027", new(2026, 8, 1), new(2027, 6, 30));
+            var season = competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null, year.Id);
             var teams = Enumerable.Range(1, 3).Select(i => Team.Create($"Equipo {i}", $"E{i}", null)).ToList();
             var squads = teams.Select(t => Squad.Create(t.Id, season.Id, coach.Id, now)).ToList();
             foreach (var squad in squads)
@@ -36,7 +37,7 @@ public class PlayerInvitationSqlTests
                 var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, now);
                 squad.GeneratePlayerInviteCode(entry.Id);
             }
-            setup.AddRange(coach, player, otherAccount, competition);
+            setup.AddRange(coach, player, otherAccount, year, competition);
             setup.AddRange(teams);
             setup.AddRange(squads);
             await setup.SaveChangesAsync();

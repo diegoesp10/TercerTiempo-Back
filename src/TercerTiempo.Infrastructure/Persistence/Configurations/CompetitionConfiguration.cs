@@ -45,6 +45,10 @@ internal sealed class SeasonConfiguration : IEntityTypeConfiguration<Season>
         builder.HasIndex(s => new { s.CompetitionId, s.Label }).IsUnique();
         builder.HasIndex(s => s.IsCurrent);
 
+        // Todo cuelga de la temporada de la app: una temporada por liga y año, y búsqueda directa por año.
+        builder.HasOne<SeasonYear>().WithMany().HasForeignKey(s => s.SeasonYearId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(s => new { s.SeasonYearId, s.CompetitionId }).IsUnique();
+
         builder.OwnsExternalRef(s => s.ExternalRef);
         builder.OwnsExternalRef(s => s.OfficialRef, "Official");
     }

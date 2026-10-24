@@ -71,6 +71,8 @@ public static class ErrorCatalog
         (ErrorCode.CompetitionSeasonDates, "La temporada debe terminar después de empezar."),
         (ErrorCode.CompetitionSeasonExists, "La temporada '{0}' ya existe en esta competición."),
         (ErrorCode.CompetitionSeasonMismatch, "La temporada no pertenece a esta competición."),
+        (ErrorCode.SeasonNotFound, "La temporada '{0}' no existe."),
+        (ErrorCode.SeasonClosed, "La temporada {0} está cerrada: solo se puede consultar. Cambia a la temporada actual ({1}) para editar."),
         (ErrorCode.LeagueCompetitionRequired, "Indica la competición (competitionId) o vincúlate a una plantilla para ver la suya."),
         (ErrorCode.MatchdayNotFound, "La jornada {0} no existe."),
         (ErrorCode.MatchNotFound, "El partido '{0}' no existe."),

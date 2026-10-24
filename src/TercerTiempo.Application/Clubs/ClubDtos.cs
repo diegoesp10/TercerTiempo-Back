@@ -55,6 +55,7 @@ internal static class ClubMapper
         var today = SquadAccess.Today(stores.Clock);
         var appointments = await stores.Appointments.GetByClubAsync(club.Id, cancellationToken);
 
+        var year = await stores.Seasons.SelectedAsync(cancellationToken);
         var teamsDto = new List<ClubTeamDto>();
         foreach (var clubTeam in club.Teams.OrderBy(t => t.AddedAt))
         {
@@ -62,8 +63,8 @@ internal static class ClubMapper
             if (team is null) continue;
 
             var license = await stores.Licenses.EnsureForTeamAsync(club, team.Id, cancellationToken);
-            var competition = await stores.Competitions.GetByTeamAsync(team.Id, cancellationToken);
-            var season = competition?.CurrentSeason;
+            var competition = await stores.Competitions.GetByTeamAsync(team.Id, year?.Id, cancellationToken);
+            var season = competition is null ? null : Resolvers.SeasonFor(competition, year);
             var squad = season is null ? null : await stores.Squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
 
             teamsDto.Add(new ClubTeamDto(

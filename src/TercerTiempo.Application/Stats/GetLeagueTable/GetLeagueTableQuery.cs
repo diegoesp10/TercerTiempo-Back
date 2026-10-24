@@ -19,6 +19,7 @@ internal sealed class GetLeagueTableHandler(
     ICompetitionStore competitions,
     IStandingStore standings,
     ITeamStore teams,
+    Seasons.ISeasonContext seasons,
     TimeProvider clock) : IQueryHandler<GetLeagueTableQuery, LeagueTableDto>
 {
     public async Task<LeagueTableDto> Handle(GetLeagueTableQuery query, CancellationToken cancellationToken)
@@ -48,7 +49,7 @@ internal sealed class GetLeagueTableHandler(
             var competition = await competitions.GetByIdAsync(id, cancellationToken)
                 ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, id);
 
-            return (competition, competition.CurrentSeason);
+            return (competition, Resolvers.SeasonFor(competition, await seasons.SelectedAsync(cancellationToken)));
         }
 
         var squad = currentUser.PlayerId is { } playerId

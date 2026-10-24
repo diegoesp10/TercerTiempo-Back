@@ -12,14 +12,15 @@ public sealed record ListTeamsQuery(Guid CompetitionId) : IQuery<IReadOnlyList<T
 internal sealed class ListTeamsHandler(
     ICompetitionStore competitions,
     IStandingStore standings,
-    ITeamStore teams) : IQueryHandler<ListTeamsQuery, IReadOnlyList<TeamSummaryDto>>
+    ITeamStore teams,
+    Seasons.ISeasonContext seasons) : IQueryHandler<ListTeamsQuery, IReadOnlyList<TeamSummaryDto>>
 {
     public async Task<IReadOnlyList<TeamSummaryDto>> Handle(ListTeamsQuery query, CancellationToken cancellationToken)
     {
         var competition = await competitions.GetByIdAsync(query.CompetitionId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, query.CompetitionId);
 
-        if (competition.CurrentSeason is not { } season)
+        if (Resolvers.SeasonFor(competition, await seasons.SelectedAsync(cancellationToken)) is not { } season)
             return [];
 
         var table = (await standings.GetBySeasonAsync(season.Id, cancellationToken)).ToDictionary(s => s.TeamId);

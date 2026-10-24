@@ -159,7 +159,7 @@ internal sealed class LicenseDescriber(
     // Nombramientos de la temporada en curso que ocupan plaza: vigentes o pendientes de canjear.
     public async Task<int> StaffCountAsync(Guid teamId, CancellationToken cancellationToken)
     {
-        var season = (await competitions.GetByTeamAsync(teamId, cancellationToken))?.CurrentSeason;
+        var season = (await competitions.GetByTeamAsync(teamId, cancellationToken: cancellationToken))?.CurrentSeason;
         if (season is null) return 0;
         var today = SquadAccess.Today(clock);
         return (await appointments.GetByTeamAndSeasonAsync(teamId, season.Id, cancellationToken))
@@ -180,7 +180,7 @@ internal sealed class LicenseDescriber(
         var today = SquadAccess.Today(clock);
         var o = await catalog.GetAsync(cancellationToken);
         var team = await teams.GetByIdAsync(license.TeamId, cancellationToken);
-        var season = (await competitions.GetByTeamAsync(license.TeamId, cancellationToken))?.CurrentSeason;
+        var season = (await competitions.GetByTeamAsync(license.TeamId, cancellationToken: cancellationToken))?.CurrentSeason;
         var squad = season is null ? null : await squads.GetByTeamAndSeasonAsync(license.TeamId, season.Id, cancellationToken);
 
         int? renewalPrice = license.IsRenewing

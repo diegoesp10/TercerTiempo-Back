@@ -25,7 +25,8 @@ internal sealed record AccountStores(
     ITeamStore Teams,
     ICompetitionStore Competitions,
     ILicenseGate Licenses,
-    TimeProvider Clock);
+    TimeProvider Clock,
+    Seasons.ISeasonContext Seasons);
 
 internal static class AccountResolver
 {

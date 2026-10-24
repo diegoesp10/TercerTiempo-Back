@@ -115,7 +115,8 @@ public class ClubInvitationBindingTests
         Stub<TercerTiempo.Application.Licensing.ILicenseGate>((method, args) => method == nameof(TercerTiempo.Application.Licensing.ILicenseGate.EnsureForTeamAsync)
             ? Task.FromResult(TercerTiempo.Domain.Licensing.TeamLicense.Start(((Club)args![0]!).Id, (Guid)args[1]!, DateOnly.FromDateTime(DateTime.UtcNow), 30, DateTimeOffset.UtcNow))
             : throw new NotSupportedException(method)),
-        TimeProvider.System);
+        TimeProvider.System,
+        new NoSeasons());
 
     private IClubInvitationStore Invitations() => Stub<IClubInvitationStore>((method, args) => method switch
     {

@@ -31,6 +31,12 @@ internal static class AdminEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        group.MapPut("/seasons/{seasonYearId:guid}/current", (Guid seasonYearId, IAdminRepository admin, CancellationToken ct) => admin.SetCurrentSeasonAsync(seasonYearId, ct))
+            .WithName("SetCurrentSeason")
+            .WithSummary("Cambiar la temporada actual")
+            .WithDescription("La temporada actual es la que ve quien no elige otra y la única en la que se puede editar (plantillas de club, nombramientos). La sincronización la cambia sola al empezar una temporada nueva. Solo administradores.")
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
         group.MapGet("/football-sync", (IAdminRepository admin, CancellationToken ct) => admin.GetFootballSyncSettingsAsync(ct))
             .WithName("GetFootballSyncSettings")
             .WithSummary("Qué descarga la sincronización de las ligas")

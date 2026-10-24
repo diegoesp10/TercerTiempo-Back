@@ -742,6 +742,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "season.not_found",
+                            Language = "es",
+                            Message = "La temporada '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "season.closed",
+                            Language = "es",
+                            Message = "La temporada {0} está cerrada: solo se puede consultar. Cambia a la temporada actual ({1}) para editar."
+                        },
+                        new
+                        {
                             Code = "league.competition_required",
                             Language = "es",
                             Message = "Indica la competición (competitionId) o vincúlate a una plantilla para ver la suya."
@@ -1631,6 +1643,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<Guid>("SeasonYearId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateOnly>("StartsOn")
                         .HasColumnType("date");
 
@@ -1641,7 +1656,41 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("CompetitionId", "Label")
                         .IsUnique();
 
+                    b.HasIndex("SeasonYearId", "CompetitionId")
+                        .IsUnique();
+
                     b.ToTable("Seasons", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Competitions.SeasonYear", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("EndsOn")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateOnly>("StartsOn")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsCurrent")
+                        .IsUnique()
+                        .HasFilter("[IsCurrent] = 1");
+
+                    b.HasIndex("Label")
+                        .IsUnique();
+
+                    b.ToTable("SeasonYears", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePayment", b =>
@@ -1920,6 +1969,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("SeasonId", "AwayTeamId");
 
                     b.HasIndex("SeasonId", "HomeTeamId");
+
+                    b.HasIndex("SeasonId", "KickoffAt");
 
                     b.HasIndex("SeasonId", "Matchday");
 
@@ -3328,6 +3379,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .WithMany("Seasons")
                         .HasForeignKey("CompetitionId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Competitions.SeasonYear", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonYearId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.OwnsOne("TercerTiempo.Domain.Common.ExternalRef", "ExternalRef", b1 =>
