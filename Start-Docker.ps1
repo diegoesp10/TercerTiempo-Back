@@ -5,6 +5,8 @@
 #                             el login de scripts/local-sql-login.sql (TT_LOCAL_SQL_PASSWORD en .env.development).
 #   -Database Container       solo en Development: un SQL Server propio en el contenedor tercer-tiempo-db.
 #                             Sin -Database se usa TT_DEV_DATABASE de .env.development (Container si no está).
+#   -WithJobs                 con -Database Local, la API del contenedor también lanza los scrapeos por horario (por
+#                             defecto solo a mano desde /jobs, porque la API de Visual Studio comparte la base).
 #   -Environment Production   API en Production con los secretos de .env.production (copia .env.example).
 #   -WithDatabase             solo en Production: arranca también el SQL Server del equipo (perfil "database").
 #   -SkipBuild                reutiliza la imagen existente.
@@ -13,6 +15,7 @@ param(
     [ValidateSet('Development', 'Production')][string]$Environment = 'Development',
     [ValidateSet('Local', 'Container')][string]$Database,
     [switch]$WithDatabase,
+    [switch]$WithJobs,
     [switch]$SkipBuild,
     [switch]$ReplaceData
 )
@@ -91,8 +94,14 @@ if ($Environment -eq 'Development') {
         if (-not $localPassword) { throw 'Falta TT_LOCAL_SQL_PASSWORD en .env.development (login de scripts/local-sql-login.sql).' }
         $env:TT_DB_CONNECTION = "Server=host.docker.internal,1433;Database=TercerTiempo;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
         # El SQL del contenedor no hace falta: si estaba en marcha, se para (sus datos siguen en su volumen).
-        docker stop tercer-tiempo-db 2>$null | Out-Null
+        if (docker ps -q --filter 'name=^tercer-tiempo-db$') { Invoke-Native { docker stop tercer-tiempo-db | Out-Null } 'No se pudo parar tercer-tiempo-db.' }
+        if (-not $WithJobs) { $env:TT_SYNC_MINUTES = '0'; $env:TT_SHEETS_MINUTES = '0' }
     } else {
+        if (-not $settings['TT_SQL_PASSWORD']) {
+            $settings['TT_SQL_PASSWORD'] = New-Secret 20
+            Add-Content -LiteralPath $envFile -Value "TT_SQL_PASSWORD=$($settings['TT_SQL_PASSWORD'])", 'TT_SQL_PORT=14333' -Encoding ascii
+            $settings['TT_SQL_PORT'] = '14333'
+        }
         $env:TT_DB_CONNECTION = "Server=db;Database=TercerTiempo;User Id=sa;Password=$($settings['TT_SQL_PASSWORD']);TrustServerCertificate=True;Encrypt=True"
         $compose += @('--profile', 'container-db')
     }

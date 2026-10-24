@@ -387,7 +387,9 @@ Desde el repositorio del frontal, su `Start-Docker.ps1` arranca también la API 
   servidor hay que activar la autenticación mixta y TCP/IP (puerto 1433) y crear el login con
   `scripts/local-sql-login.sql`; su contraseña va en `TT_LOCAL_SQL_PASSWORD` de `.env.development` y
   `TT_DEV_DATABASE=Local` lo deja por defecto. Las dos API (Visual Studio y Docker) pueden compartir la base: el
-  historial de trabajos y los contadores de peticiones a las webs están en SQL.
+  historial de trabajos y los contadores de peticiones a las webs están en SQL. Aun así, con `-Database Local` la API
+  del contenedor no lanza scrapeos por horario (se lanzan a mano desde su `/jobs`), para no duplicar los de Visual
+  Studio; `-WithJobs` los activa.
 - Memoria acotada: API 512 MB, SQL Server del contenedor 1 GB de uso interno (1,5 GB de contenedor) y web 64 MB
   (`TT_API_MEMORY`, `TT_SQL_MEMORY_MB`, `TT_SQL_CONTAINER_MEMORY`).
 - La API escucha en el 8080 del contenedor y solo se publica en el loopback (`127.0.0.1:8181`); los visitantes entran

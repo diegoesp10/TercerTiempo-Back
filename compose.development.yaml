@@ -11,6 +11,10 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.development}"
       Admin__Password: "${TT_ADMIN_PASSWORD:-}"
+      # Minutos entre scrapeos automáticos (0 = solo a mano desde /jobs). Con la base local, Start-Docker.ps1 los pone a
+      # 0 para no duplicar los de la API de Visual Studio, que comparte la misma base.
+      FootballData__SyncIntervalMinutes: "${TT_SYNC_MINUTES:-60}"
+      OfficialSheets__BackgroundScanMinutes: "${TT_SHEETS_MINUTES:-60}"
     depends_on:
       db:
         condition: service_healthy
