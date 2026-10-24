@@ -1,0 +1,17 @@
+.git
+.vs
+.vscode
+.idea
+**/bin
+**/obj
+**/data
+**/*.user
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/.env
+**/.env.*
+**/appsettings.*.local.json
+*.md
+*.ps1
+compose*.yaml

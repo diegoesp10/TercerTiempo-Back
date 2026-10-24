@@ -358,6 +358,54 @@ La pasarela de pago es una abstracción (`IPaymentGateway`); la única implement
 los cobros y los deja en el log: para cobrar de verdad hay que implementar Stripe (u otra) detrás de esa interfaz. La
 retransmisión en directo queda para más adelante.
 
+## Docker
+
+La API y el frontal se levantan en contenedores con sus imágenes, unidos por la red `tercer-tiempo-net`: el Nginx del
+frontal ([TercerTiempo-Front](https://github.com/diegoesp10/TercerTiempo-Front)) reenvía `/api` al contenedor `api`, así
+que la web y la API comparten origen. Con Docker Desktop en modo Linux:
+
+```powershell
+.\Start-Docker.ps1                                   # desarrollo: API en Development (base según TT_DEV_DATABASE)
+.\Start-Docker.ps1 -Database Local                    # desarrollo con el SQL Server de Windows (la base de Visual Studio)
+.\Start-Docker.ps1 -Database Container                # desarrollo con un SQL Server propio en un contenedor
+.\Start-Docker.ps1 -Environment Production           # publicación: secretos de .env.production
+.\Start-Docker.ps1 -Environment Production -WithDatabase   # publicación con el SQL Server en este equipo
+.\Start-Docker.ps1 -SkipBuild                         # reutiliza la imagen
+.\Start-Docker.ps1 -ReplaceData                       # vuelve a copiar escudos y fotos de src/TercerTiempo.Api/data
+```
+
+Desde el repositorio del frontal, su `Start-Docker.ps1` arranca también la API (mismo entorno) si no está en marcha.
+
+| | Desarrollo (`compose.development.yaml`) | Publicación (`compose.production.yaml`) |
+|---|---|---|
+| `ASPNETCORE_ENVIRONMENT` | `Development`: `/docs`, errores detallados, clave JWT de desarrollo | `Production`: sin `/docs` (salvo `OpenApi:Enabled` con Basic Auth) |
+| Base de datos | `-Database Local`: el SQL Server de Windows del equipo por `host.docker.internal,1433` con el login de `scripts/local-sql-login.sql` (misma base que Visual Studio, sin SQL en Docker). `-Database Container`: SQL Server 2022 Developer en `tercer-tiempo-db`, volumen `tercer-tiempo-dev-sql`, desde SSMS en `127.0.0.1,14333` (usuario `sa`) | Externa (`TT_DB_CONNECTION`) o, con `-WithDatabase`, SQL Server Express en `tercer-tiempo-db` sin puertos publicados (volumen `tercer-tiempo-sql`) |
+| Secretos | `.env.development`, que genera el script la primera vez (contraseña de `sa` aleatoria); la de `/jobs` sale de los user-secrets | `.env.production` (copia de `.env.example`): cadena de conexión, `TT_JWT_KEY`, `TT_ADMIN_PASSWORD`, `TT_PUBLIC_URL`, claves de Stripe |
+| Ficheros (escudos, fotos, vídeos) | Volumen `tercer-tiempo-dev-data` | Volumen `tercer-tiempo-data` |
+
+- Para usar el SQL Server local, la API del contenedor (Linux) no puede entrar con la autenticación de Windows: en el
+  servidor hay que activar la autenticación mixta y TCP/IP (puerto 1433) y crear el login con
+  `scripts/local-sql-login.sql`; su contraseña va en `TT_LOCAL_SQL_PASSWORD` de `.env.development` y
+  `TT_DEV_DATABASE=Local` lo deja por defecto. Las dos API (Visual Studio y Docker) pueden compartir la base: el
+  historial de trabajos y los contadores de peticiones a las webs están en SQL.
+- Memoria acotada: API 512 MB, SQL Server del contenedor 1 GB de uso interno (1,5 GB de contenedor) y web 64 MB
+  (`TT_API_MEMORY`, `TT_SQL_MEMORY_MB`, `TT_SQL_CONTAINER_MEMORY`).
+- La API escucha en el 8080 del contenedor y solo se publica en el loopback (`127.0.0.1:8181`); los visitantes entran
+  por la web (`127.0.0.1:8180`). `GET /api/health` comprueba la API y su conexión con SQL Server (lo usa Docker).
+- En el contenedor `ReverseProxy:Enabled = true`: la API lee la IP y el esquema del visitante de `X-Forwarded-*` y no
+  redirige a HTTPS (el TLS lo pone quien publique la web, p. ej. un túnel de Cloudflare como en el portfolio).
+- La imagen es Alpine con ICU y `tzdata` (cultura `es-ES`, hora de `Europe/Madrid`), usuario sin privilegios y sistema
+  de ficheros de solo lectura salvo `/app/data` y `/tmp`. Las migraciones se aplican al arrancar.
+- La primera vez, el script copia al volumen los escudos y fotos de `src/TercerTiempo.Api/data` (nunca entran en la
+  imagen). La base de desarrollo empieza vacía: la sincronización con futbolasturiano.es la llena sola al arrancar.
+
+```powershell
+docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development ps
+docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development logs -f api
+docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development down   # conserva los volúmenes
+docker build --target test .                                                                # tests dentro de la build
+```
+
 ## Configuración y secretos
 
 - `Jwt:Key` (mínimo 32 caracteres) solo está definida en `appsettings.Development.json` para desarrollo.

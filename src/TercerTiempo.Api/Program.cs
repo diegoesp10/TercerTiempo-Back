@@ -16,6 +16,11 @@ builder.Services
 
 var app = builder.Build();
 
+// En Docker la API va detrás del Nginx del frontal, que termina el TLS (ReverseProxy:Enabled).
+var behindProxy = app.Configuration.GetValue<bool>("ReverseProxy:Enabled");
+if (behindProxy)
+    app.UseForwardedHeaders();
+
 // Aplica migraciones pendientes antes de aceptar tráfico (el worker de sincronización arranca después).
 await app.Services.MigrateDatabaseAsync();
 
@@ -42,7 +47,7 @@ app.UseRequestLocalization(new RequestLocalizationOptions()
 // en otros entornos solo con OpenApi:Enabled y Basic Auth.
 app.UseOpenApiDocs();
 
-if (!app.Environment.IsDevelopment())
+if (!app.Environment.IsDevelopment() && !behindProxy)
     app.UseHttpsRedirection();
 
 app.UseCors();
@@ -54,5 +59,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapTercerTiempoEndpoints();
+app.MapHealthChecks("/api/health").ExcludeFromDescription();
 
 app.Run();
