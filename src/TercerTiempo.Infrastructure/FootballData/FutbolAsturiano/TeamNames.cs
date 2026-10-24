@@ -2,7 +2,6 @@ using TercerTiempo.Domain.Common;
 
 namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
-/// <summary>Nombres cortos para equipos cuando el proveedor no publica abreviatura.</summary>
 public static class TeamNames
 {
     private static readonly HashSet<string> Fillers = new(StringComparer.OrdinalIgnoreCase)
@@ -43,6 +42,5 @@ public static class TeamNames
     private static bool IsFiller(string word) =>
         Fillers.Contains(word) || (word.Length <= 3 && word.All(char.IsUpper));
 
-    /// <summary>Letras sin tildes ni diacríticos ("Mérida" → "merida").</summary>
     private static string Letters(string word) => new(NameNormalizer.Normalize(word).Where(char.IsLetter).ToArray());
 }

@@ -34,3 +34,6 @@ appsettings.*.local.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Datos en tiempo de ejecución (vídeos subidos y escudos descargados)
+data/

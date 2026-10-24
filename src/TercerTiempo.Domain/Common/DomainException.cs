@@ -1,4 +1,11 @@
+using TercerTiempo.Domain.Common.Errors;
+
 namespace TercerTiempo.Domain.Common;
 
-/// <summary>Violación de una regla de negocio. La API la traduce a un 400/409 con ProblemDetails.</summary>
-public class DomainException(string message) : Exception(message);
+public abstract class CodedException(string code, params object[] args) : Exception(ErrorCatalog.Format(code, args))
+{
+    public string Code { get; } = code;
+    public object[] Args { get; } = args;
+}
+
+public class DomainException(string code, params object[] args) : CodedException(code, args);

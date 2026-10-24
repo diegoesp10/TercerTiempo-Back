@@ -3,10 +3,6 @@ using System.Text;
 
 namespace TercerTiempo.Domain.Common;
 
-/// <summary>
-/// Normaliza nombres para compararlos con las plantillas scrapeadas:
-/// minúsculas, sin tildes ni diacríticos, separadores colapsados a un espacio.
-/// </summary>
 public static class NameNormalizer
 {
     public static string Normalize(string? value)

@@ -6,7 +6,6 @@ namespace TercerTiempo.Application.Abstractions.FootballData;
 
 // Instantáneas "planas" que devuelve el proveedor. La sincronización las convierte en entidades de dominio.
 
-/// <summary>Una liga (categoría + grupo) y la temporada que el proveedor está siguiendo.</summary>
 public sealed record CompetitionSnapshot(
     string ExternalId,
     string Name,

@@ -2,6 +2,7 @@ using TercerTiempo.Application.Stats;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 
 namespace TercerTiempo.Application.Tests;
@@ -16,7 +17,7 @@ public class PlayerStatsCalculatorTests
     [Fact]
     public void Individual_stats_aggregate_and_compute_per_90()
     {
-        var (player, performances, _) = Scenario();
+        var (me, performances, _) = Scenario();
 
         var stats = PlayerStatsCalculator.Individual(performances);
 
@@ -27,8 +28,9 @@ public class PlayerStatsCalculatorTests
         Assert.Equal(1, stats.Assists);
         Assert.Equal(4, stats.GoalContributions);
         Assert.Equal(1.2, stats.GoalsPer90);
-        Assert.Equal(7.0, stats.AverageRating);
-        Assert.Equal(player.Id, performances[0].PlayerId);
+        // Notas calculadas con los datos: 8,9 (doblete en victoria), 8,5-8,6 (gol y asistencia) y 6,4-6,5 (45' en empate).
+        Assert.InRange(stats.AverageRating!.Value, 7.9, 8.05);
+        Assert.All(performances, p => Assert.Equal(me.Id, p.SquadPlayerId));
     }
 
     [Fact]
@@ -60,16 +62,17 @@ public class PlayerStatsCalculatorTests
     }
 
     [Fact]
-    public void League_comparison_computes_percentiles_among_platform_players()
+    public void League_comparison_computes_percentiles_among_comparable_sheet_lines()
     {
-        var (player, performances, matches) = Scenario();
+        var (me, performances, matches) = Scenario();
         var played = matches.Where(m => m.Status == MatchStatus.Played).ToList();
 
-        var other = Player.Register(Guid.NewGuid(), "Rival Goleador", Position.Forward, null, Now);
-        other.JoinSquad(Rival, SeasonId, 10, true, true, Now);
+        var rivalCoach = Guid.NewGuid();
+        var rivalSquad = Squad.Create(Rival, SeasonId, rivalCoach, Now);
+        var other = rivalSquad.AddPlayer("Rival Goleador", Position.Forward, 10, null, Now);
         var otherPerformances = played.Take(2)
-            .Select(m => PlayerMatchPerformance.Log(other, m, Rival,
-                new PerformanceStats(true, 90, 0, 0, 1, 0, 0, 2, 2, 0, 0, false, 5, null), Now))
+            .Select(m => PlayerMatchPerformance.Record(rivalSquad, other, m, rivalCoach,
+                new PerformanceStats(true, 90, 0, 0, 1, 0, 0, 2, 2, 0, 0, false, null), Now))
             .ToList();
 
         var standings = new List<Standing>
@@ -78,16 +81,33 @@ public class PlayerStatsCalculatorTests
             Standing.Create(SeasonId, Rival, new StandingLine(2, 4, 1, 1, 2, 4, 7, 4), Now),
         };
 
-        var league = PlayerStatsCalculator.LeagueComparison(player.Id, MyTeam, standings, [.. performances, .. otherPerformances]);
+        var league = PlayerStatsCalculator.LeagueComparison(me.Id, MyTeam, standings, [.. performances, .. otherPerformances]);
 
         Assert.NotNull(league);
         Assert.Equal(2, league!.TeamsCount);
         Assert.Equal(1, league.TeamPosition);
-        Assert.Equal(2, league.PlayersOnPlatform);
+        Assert.Equal(2, league.PlayersCompared);
         Assert.Equal(1.38, league.LeagueAvgGoalsForPerMatch);
         Assert.Equal(75, league.GoalsPer90Percentile);
         Assert.Equal(75, league.RatingPercentile);
         Assert.Equal(1.75, league.TeamGoalsForPerMatch);
+    }
+
+    [Fact]
+    public void Percentiles_need_at_least_two_players_with_minutes()
+    {
+        var (me, performances, _) = Scenario();
+        var standings = new List<Standing>
+        {
+            Standing.Create(SeasonId, MyTeam, new StandingLine(1, 4, 2, 1, 1, 7, 4, 7), Now),
+        };
+
+        var league = PlayerStatsCalculator.LeagueComparison(me.Id, MyTeam, standings, performances);
+
+        Assert.NotNull(league);
+        Assert.Equal(1, league!.PlayersCompared);
+        Assert.Null(league.GoalsPer90Percentile);
+        Assert.Null(league.RatingPercentile);
     }
 
     [Fact]
@@ -96,14 +116,11 @@ public class PlayerStatsCalculatorTests
         Assert.Null(PlayerStatsCalculator.LeagueComparison(Guid.NewGuid(), null, [], []));
     }
 
-    /// <summary>
-    /// Mi equipo juega 4 partidos: gana 2 y empata 1 conmigo (90, 90 y 45 minutos), y pierde 1 sin mí.
-    /// Goles del equipo: 3 + 2 + 2 + 0 = 7. Yo marco 2 + 1 + 0 = 3 y doy 1 asistencia.
-    /// </summary>
-    private static (Player Player, List<PlayerMatchPerformance> Performances, List<Match> Matches) Scenario()
+    private static (SquadPlayer Me, List<PlayerMatchPerformance> Performances, List<Match> Matches) Scenario()
     {
-        var player = Player.Register(Guid.NewGuid(), "Pelayo Fernández", Position.Forward, null, Now);
-        player.JoinSquad(MyTeam, SeasonId, 9, true, true, Now);
+        var coachId = Guid.NewGuid();
+        var squad = Squad.Create(MyTeam, SeasonId, coachId, Now);
+        var me = squad.AddPlayer("Pelayo Fernández", Position.Forward, 9, null, Now);
 
         var matches = new List<Match>
         {
@@ -116,12 +133,12 @@ public class PlayerStatsCalculatorTests
 
         var performances = new List<PlayerMatchPerformance>
         {
-            PlayerMatchPerformance.Log(player, matches[0], MyTeam, Stats(90, 2, 0, 8, started: true), Now),
-            PlayerMatchPerformance.Log(player, matches[1], MyTeam, Stats(90, 1, 1, 7, started: true), Now),
-            PlayerMatchPerformance.Log(player, matches[2], MyTeam, Stats(45, 0, 0, 6, started: false), Now),
+            PlayerMatchPerformance.Record(squad, me, matches[0], coachId, Stats(90, 2, 0, started: true), Now),
+            PlayerMatchPerformance.Record(squad, me, matches[1], coachId, Stats(90, 1, 1, started: true), Now),
+            PlayerMatchPerformance.Record(squad, me, matches[2], coachId, Stats(45, 0, 0, started: false), Now),
         };
 
-        return (player, performances, matches);
+        return (me, performances, matches);
     }
 
     private static Match Played(int matchday, Guid home, Guid away, int homeGoals, int awayGoals)
@@ -131,6 +148,6 @@ public class PlayerStatsCalculatorTests
         return match;
     }
 
-    private static PerformanceStats Stats(int minutes, int goals, int assists, int rating, bool started) =>
-        new(started, minutes, goals, assists, goals + 2, goals + 1, 1, 1, 0, 0, 0, false, rating, null);
+    private static PerformanceStats Stats(int minutes, int goals, int assists, bool started) =>
+        new(started, minutes, goals, assists, goals + 2, goals + 1, 1, 1, 0, 0, 0, false, null);
 }

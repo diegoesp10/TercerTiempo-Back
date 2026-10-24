@@ -3,21 +3,19 @@ using Microsoft.OpenApi;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>Título, descripción y descripción/orden de cada grupo (tag) del documento OpenAPI.</summary>
 internal sealed class ApiInfoDocumentTransformer : IOpenApiDocumentTransformer
 {
     // El orden define cómo se muestran los grupos en la referencia: sigue el flujo de uso.
     private static readonly (string Name, string Description)[] TagDescriptions =
     [
-        ("Auth", "Alta e inicio de sesión. Devuelven el JWT que hay que enviar como `Authorization: Bearer <token>`."),
-        ("Jugadores", "Perfil del jugador autenticado y su pertenencia a la plantilla de un equipo."),
-        ("Competiciones", "Ligas sincronizadas desde futbolasturiano.es: nivel (nacional/regional), categoría y grupo. Públicas."),
-        ("Equipos", "Equipos de cada competición, su plantilla (scrapeada del proveedor) y su calendario. Públicos."),
-        ("Partidos", "Detalle de partidos y registro del rendimiento propio en partidos ya disputados."),
-        ("Rendimiento", "Historial de rendimiento del jugador autenticado."),
-        ("Estadísticas", "Panel del jugador: estadísticas individuales, impacto en el equipo y comparativa con la liga."),
-        ("Liga", "Clasificación de la temporada activa. Pública."),
-        ("Admin", "Operaciones de administración (sincronización con el proveedor de datos)."),
+        ("Auth", "Alta (jugador o cuerpo técnico) e inicio de sesión. Devuelven el JWT que hay que enviar como `Authorization: Bearer <token>`."),
+        ("Plantillas", "Lo que hace el cuerpo técnico: crear la plantilla de su equipo, gestionar staff y jugadores, decidir la visibilidad, registrar el acta de cada partido y consultar las estadísticas del grupo."),
+        ("Jugadores", "Lo que hace un jugador: vincularse a su ficha con el código de invitación y consultar sus estadísticas."),
+        ("Competiciones", "Ligas sincronizadas desde futbolasturiano.es: nivel (nacional/regional), categoría y grupo, y sus jornadas (la jornada en curso y cualquier otra). Públicas."),
+        ("Equipos", "Equipos de cada competición, su plantilla publicada por el proveedor y su calendario. Públicos."),
+        ("Partidos", "Detalle de partidos con las actas visibles."),
+        ("Liga", "Clasificación de cada liga. Pública."),
+        ("Admin", "Administración: trabajos en segundo plano, llamadas a webs externas y escudos. Solo con el token de POST /api/admin/login."),
     ];
 
     public Task TransformAsync(OpenApiDocument document, OpenApiDocumentTransformerContext context, CancellationToken cancellationToken)
@@ -27,23 +25,42 @@ internal sealed class ApiInfoDocumentTransformer : IOpenApiDocumentTransformer
         document.Info.Version = "v1";
         document.Info.Description =
             """
-            API de **Tercer Tiempo**: seguimiento de rendimiento para futbolistas amateur.
+            API de **Tercer Tiempo** (versión entrenador): el club nombra a su cuerpo técnico cada temporada, el cuerpo
+            técnico registra el acta de cada partido jugador a jugador, la plataforma la convierte en estadísticas y la
+            compara con el acta oficial de la federación (asturfutbol.es). Cada plantilla es **privada** salvo que su cuerpo
+            técnico la haga pública.
 
-            **Flujo habitual**
+            **Flujo del club**
 
-            1. `POST /api/auth/register` (o `/login`) → devuelve el JWT.
-            2. `GET /api/competitions` → elige liga y grupo; `GET /api/teams?competitionId=` → elige equipo;
-               `GET /api/teams/{teamId}` → busca tu ficha en `roster` (si `rosterPublished`).
-            3. `POST /api/players/me/team` con `teamId` y `rosterEntryId` → pertenencia verificada.
-            4. `GET /api/teams/{teamId}/matches` → partidos disputados (`status = Played`).
-            5. `PUT /api/matches/{matchId}/performance` → registra tu rendimiento.
-            6. `GET /api/stats/dashboard` → tu panel.
+            1. `POST /api/auth/register` con `accountType = Club` (o `/login`) → JWT.
+            2. `GET /api/competitions`, `GET /api/teams?competitionId=` y `POST /api/clubs/me/teams` → vincula tus equipos.
+            3. `POST /api/clubs/me/appointments` → nombra a un técnico para un equipo y la temporada: obtienes su `accessCode`.
+            4. `PUT` / `DELETE /api/clubs/me/appointments/{id}` → prorroga, acorta o revoca el nombramiento.
+
+            **Flujo del cuerpo técnico**
+
+            1. `POST /api/auth/register` con `accountType = Coach` y el `accessCode` del club → JWT y plantilla del equipo
+               (se crea importando la publicada por futbolasturiano.es si existe).
+               Con cuenta ya creada: `POST /api/coaches/me/appointments/redeem`.
+            2. `GET /api/squads/{squadId}/matches` → partidos disputados; `PUT .../matches/{matchId}/sheet` → acta interna.
+            3. `GET .../matches/{matchId}/sheet/comparison` → comparador con el acta oficial de la federación.
+            4. `POST .../matches/{matchId}/video` → sube el vídeo del partido; `GET /api/matches/{matchId}/videos` para verlo
+               (los técnicos de otras plantillas lo compran con `POST /api/videos/{id}/purchase`).
+            5. `GET /api/squads/{squadId}/stats` → estadísticas; `PUT /api/squads/{squadId}/visibility` → hazla pública.
+            6. Club propietario o técnico vigente: `POST /api/squads/{squadId}/players/{squadPlayerId}/invite-code` → código personal de un solo uso para ese jugador.
+
+            **Flujo del jugador**
+
+            1. `POST /api/auth/register` con `accountType = Player`.
+            2. `GET /api/auth/invite/{code}` → ve únicamente su ficha; `POST /api/auth/register` (Player, `accessCode` = ese código, sin nombre) → crea la cuenta con el nombre de la ficha y la vincula. Si ya tenía cuenta sin plantilla: `POST /api/players/me/squad` con `inviteCode`.
+            3. `GET /api/players/me/dashboard` → tus estadísticas, tu impacto en el equipo y tu posición en la liga.
 
             **Autenticación**: en *Authentication* elige `Bearer` y pega el `accessToken` (sin el prefijo `Bearer`).
             Los endpoints con candado requieren token; el resto son públicos.
 
             **Errores**: siempre `application/problem+json` (RFC 9457). 400 datos no válidos (con `errors` por campo),
-            401 no autenticado, 403 sin permiso, 404 no encontrado, 409 conflicto, 422 regla de negocio incumplida.
+            401 no autenticado, 403 sin permiso (plantilla privada o acción reservada al cuerpo técnico), 404 no encontrado,
+            409 conflicto, 422 regla de negocio incumplida.
             """;
 
         var existing = (document.Tags ?? new HashSet<OpenApiTag>()).ToDictionary(t => t.Name ?? string.Empty);

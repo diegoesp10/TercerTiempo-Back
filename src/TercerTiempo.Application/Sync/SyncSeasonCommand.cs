@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Abstractions.Teams;
+using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
@@ -9,11 +11,6 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Sync;
 
-/// <summary>
-/// Descarga todas las ligas que publica el proveedor externo y las vuelca en el dominio: competiciones y
-/// temporadas, equipos, calendario y resultados, clasificación y plantillas. Es idempotente y cada liga
-/// se guarda por separado, de modo que un fallo en una no impide sincronizar las demás.
-/// </summary>
 public sealed record SyncSeasonCommand : ICommand<SyncResultDto>;
 
 public sealed record SyncResultDto(
@@ -33,6 +30,9 @@ internal sealed class SyncSeasonHandler(
     IMatchStore matches,
     IStandingStore standings,
     IUnitOfWork unitOfWork,
+    ICrestDownloader crestDownloader,
+    ICrestStorage crests,
+    ISyncProgress progress,
     TimeProvider clock,
     ILogger<SyncSeasonHandler> logger) : ICommandHandler<SyncSeasonCommand, SyncResultDto>
 {
@@ -41,7 +41,18 @@ internal sealed class SyncSeasonHandler(
         var now = clock.GetUtcNow();
         var providerName = provider.ProviderName;
 
-        var snapshots = await provider.GetCompetitionsAsync(cancellationToken);
+        IReadOnlyList<CompetitionSnapshot> snapshots;
+        try
+        {
+            snapshots = await provider.GetCompetitionsAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            progress.Start("datos", 0);
+            progress.Finish("sin ligas: el proveedor no ha respondido", [ex.Message]);
+            throw;
+        }
+        progress.Start("datos", snapshots.Count);
 
         // Los equipos pueden cambiar de liga entre temporadas: se indexan por id externo una sola vez.
         var teamsByExternalId = (await teams.GetAllAsync(cancellationToken))
@@ -51,9 +62,10 @@ internal sealed class SyncSeasonHandler(
         var totals = (Competitions: 0, Teams: 0, Matches: 0, Standings: 0, Roster: 0);
         var errors = new List<string>();
 
-        foreach (var snapshot in snapshots)
+        foreach (var (snapshot, index) in snapshots.Select((s, i) => (s, i)))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            progress.Step(snapshot.Name, index);
 
             try
             {
@@ -82,6 +94,8 @@ internal sealed class SyncSeasonHandler(
 
         logger.LogInformation("Sincronización con {Provider} completada: {Competitions} competiciones, {Teams} equipos, {Matches} partidos, {Errors} errores",
             providerName, totals.Competitions, totals.Teams, totals.Matches, errors.Count);
+
+        progress.Finish($"{totals.Competitions} ligas, {totals.Teams} equipos, {totals.Matches} partidos y {totals.Roster} fichas", errors);
 
         return new SyncResultDto(providerName, totals.Competitions, totals.Teams, totals.Matches, totals.Standings, totals.Roster, errors, now);
     }
@@ -112,28 +126,47 @@ internal sealed class SyncSeasonHandler(
             ?? competition.AddSeason(snapshot.SeasonLabel, snapshot.StartsOn, snapshot.EndsOn, seasonRef);
         competition.MarkCurrent(season.Id);
 
-        // 2. Equipos
+        // 2. Calendario según el proveedor. Se le pasan los partidos ya guardados de esta temporada para que pueda
+        //    reutilizarlos (futbolasturiano.es tiene que leer de una en una las páginas de los partidos que su API oculta).
+        //    Va antes que los equipos porque así el proveedor puede descubrir equipos que solo aparecen en esos partidos.
+        var matchesByExternalId = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
+            .Where(m => m.ExternalRef?.Provider == providerName)
+            .ToDictionary(m => m.ExternalRef!.ExternalId);
+
+        var externalIdByTeamId = teamsByExternalId.ToDictionary(kv => kv.Value.Id, kv => kv.Key);
+        var known = matchesByExternalId.Values
+            .Select(m => ToSnapshot(m, externalIdByTeamId))
+            .OfType<MatchSnapshot>()
+            .ToList();
+
+        var matchSnapshots = await provider.GetMatchesAsync(snapshot.ExternalId, known, cancellationToken);
+
+        // 3. Equipos
         var teamSnapshots = await provider.GetTeamsAsync(snapshot.ExternalId, cancellationToken);
 
         foreach (var ts in teamSnapshots)
         {
             if (teamsByExternalId.TryGetValue(ts.ExternalId, out var team))
             {
-                team.UpdateDetails(ts.Name, ts.ShortName, ts.CrestUrl);
-                continue;
+                team.UpdateDetails(ts.Name, ts.ShortName);
+            }
+            else
+            {
+                team = Team.Create(ts.Name, ts.ShortName, ExternalRef.Create(providerName, ts.ExternalId));
+                teams.Add(team);
+                teamsByExternalId[ts.ExternalId] = team;
             }
 
-            team = Team.Create(ts.Name, ts.ShortName, ts.CrestUrl, ExternalRef.Create(providerName, ts.ExternalId));
-            teams.Add(team);
-            teamsByExternalId[ts.ExternalId] = team;
+            // El escudo que publica el proveedor se descarga una vez y se sirve desde aquí; su URL no se guarda. Con
+            // Crests:ClubUploadsOnly no se descarga: solo valen los que suben los clubes.
+            if (!TeamCrests.ClubUploadsOnly && team.CrestKey is null && ts.CrestUrl is { } crestUrl
+                && await crestDownloader.DownloadAsync(crestUrl, cancellationToken) is { } crest)
+            {
+                team.SetCrest(await crests.SaveAsync(team.Id, crest, cancellationToken));
+            }
         }
 
-        // 3. Partidos
-        var matchSnapshots = await provider.GetMatchesAsync(snapshot.ExternalId, cancellationToken);
-        var matchesByExternalId = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
-            .Where(m => m.ExternalRef?.Provider == providerName)
-            .ToDictionary(m => m.ExternalRef!.ExternalId);
-
+        // 4. Partidos
         var syncedMatches = 0;
         foreach (var ms in matchSnapshots)
         {
@@ -157,7 +190,7 @@ internal sealed class SyncSeasonHandler(
             syncedMatches++;
         }
 
-        // 4. Clasificación
+        // 5. Clasificación
         var standingSnapshots = await provider.GetStandingsAsync(snapshot.ExternalId, cancellationToken);
         var standingsByTeam = (await standings.GetBySeasonAsync(season.Id, cancellationToken)).ToDictionary(s => s.TeamId);
 
@@ -176,7 +209,7 @@ internal sealed class SyncSeasonHandler(
             syncedStandings++;
         }
 
-        // 5. Plantillas
+        // 6. Plantillas
         var rosterByTeam = (await teams.GetSeasonRosterAsync(season.Id, cancellationToken)).ToLookup(r => r.TeamId);
 
         var syncedRoster = 0;
@@ -197,7 +230,7 @@ internal sealed class SyncSeasonHandler(
                     var externalRef = rs.ExternalId is null ? null : ExternalRef.Create(providerName, rs.ExternalId);
                     teams.AddRosterEntry(RosterEntry.Create(team.Id, season.Id, rs.FullName, rs.Position, rs.ShirtNumber, externalRef, now));
                 }
-                else
+                else if (!entry.ManagedByClub)
                 {
                     entry.Update(rs.FullName, rs.Position, rs.ShirtNumber, now);
                 }
@@ -209,8 +242,24 @@ internal sealed class SyncSeasonHandler(
         return (teamSnapshots.Count, syncedMatches, syncedStandings, syncedRoster);
     }
 
+    private static MatchSnapshot? ToSnapshot(Match match, IReadOnlyDictionary<Guid, string> externalIdByTeamId)
+    {
+        if (match.ExternalRef is null
+            || !externalIdByTeamId.TryGetValue(match.HomeTeamId, out var home)
+            || !externalIdByTeamId.TryGetValue(match.AwayTeamId, out var away))
+            return null;
+
+        return new MatchSnapshot(
+            match.ExternalRef.ExternalId, match.Matchday, home, away, match.KickoffAt, match.Status,
+            match.Score?.Home, match.Score?.Away, match.Venue);
+    }
+
     private static void ApplyMatchSnapshot(Match match, MatchSnapshot snapshot, DateTimeOffset now)
     {
+        // Jornada, fecha y campo se corrigen siempre (también en partidos ya jugados: antes se guardaba la fecha
+        // provisional del calendario en lugar de la real).
+        match.UpdateFixture(snapshot.Matchday, snapshot.KickoffAt, snapshot.Venue);
+
         switch (snapshot.Status)
         {
             case MatchStatus.Played when snapshot.HomeGoals is { } home && snapshot.AwayGoals is { } away:
@@ -229,7 +278,7 @@ internal sealed class SyncSeasonHandler(
                 match.MarkInProgress();
                 break;
 
-            case MatchStatus.Scheduled when match.Status != MatchStatus.Played && match.KickoffAt != snapshot.KickoffAt:
+            case MatchStatus.Scheduled when match.Status is MatchStatus.Postponed or MatchStatus.InProgress:
                 match.Reschedule(snapshot.KickoffAt);
                 break;
         }

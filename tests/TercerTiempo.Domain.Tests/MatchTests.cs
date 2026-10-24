@@ -77,3 +77,31 @@ public class MatchTests
         Assert.Throws<DomainException>(() => match.OpponentOf(Guid.NewGuid()));
     }
 }
+
+public class MatchFixtureTests
+{
+    [Fact]
+    public void UpdateFixture_corrects_date_matchday_and_venue_even_when_played()
+    {
+        var match = TestData.PlayedMatch(2, 1);
+        var kickoff = TestData.Now.AddDays(-4).AddHours(5);
+
+        match.UpdateFixture(7, kickoff, "  El Sotón ");
+
+        Assert.Equal(7, match.Matchday);
+        Assert.Equal(kickoff, match.KickoffAt);
+        Assert.Equal("El Sotón", match.Venue);
+        Assert.Equal(MatchStatus.Played, match.Status);
+        Assert.Equal(2, match.Score!.Home);
+    }
+
+    [Fact]
+    public void UpdateFixture_keeps_the_venue_when_the_provider_does_not_send_one()
+    {
+        var match = TestData.PlayedMatch();
+
+        match.UpdateFixture(1, match.KickoffAt, null);
+
+        Assert.Equal("Campo municipal", match.Venue);
+    }
+}

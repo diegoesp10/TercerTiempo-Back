@@ -30,5 +30,6 @@ internal sealed class MatchConfiguration : IEntityTypeConfiguration<Match>
         builder.HasIndex(m => new { m.SeasonId, m.AwayTeamId });
 
         builder.OwnsExternalRef(m => m.ExternalRef);
+        builder.OwnsExternalRef(m => m.OfficialRef, "Official");
     }
 }

@@ -5,7 +5,6 @@ using Microsoft.OpenApi;
 
 namespace TercerTiempo.Api.Infrastructure;
 
-/// <summary>Declara el esquema Bearer (JWT) en el documento OpenAPI para autenticarse desde la referencia interactiva.</summary>
 internal sealed class BearerSecuritySchemeTransformer(IAuthenticationSchemeProvider authenticationSchemeProvider)
     : IOpenApiDocumentTransformer
 {

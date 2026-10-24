@@ -1,71 +1,151 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
+using TercerTiempo.Domain.Players;
 
 namespace TercerTiempo.Domain.Tests;
 
 public class PerformancePolicyTests
 {
     [Fact]
-    public void Active_squad_member_can_log_performance_on_played_match()
+    public void Staff_can_record_a_sheet_line_on_a_played_match()
     {
-        var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: true, rosterAvailable: true, TestData.Now);
+        var (squad, coachId) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Pelayo Fernández", Position.Forward, 9, null, TestData.Now);
         var match = TestData.PlayedMatch();
 
-        var performance = PlayerMatchPerformance.Log(player, match, TestData.HomeTeamId, TestData.ValidStats(), TestData.Now);
+        var line = PlayerMatchPerformance.Record(squad, entry, match, coachId, TestData.ValidStats(), TestData.Now);
 
-        Assert.Equal(player.Id, performance.PlayerId);
-        Assert.Equal(match.Id, performance.MatchId);
-        Assert.Equal(TestData.SeasonId, performance.SeasonId);
-        Assert.Equal(1, performance.GoalContributions);
+        Assert.Equal(squad.Id, line.SquadId);
+        Assert.Equal(entry.Id, line.SquadPlayerId);
+        Assert.Equal(match.Id, line.MatchId);
+        Assert.Equal(TestData.HomeTeamId, line.TeamId);
+        Assert.Equal(TestData.SeasonId, line.SeasonId);
+        Assert.Equal(coachId, line.RecordedByCoachId);
+        Assert.Equal(1, line.GoalContributions);
+        // Delantero que marca en una victoria 2-1: 6,0 + 1,2 ataque + 0,15 creación + 0,28 defensa + 0,4 resultado.
+        Assert.Equal(8.0, line.Rating);
+        Assert.Equal(TestData.Now, line.LoggedAt);
     }
 
     [Fact]
-    public void Pending_membership_cannot_log_performance()
+    public void Outsiders_cannot_record_the_sheet()
     {
-        var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: false, rosterAvailable: true, TestData.Now);
+        var (squad, _) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), Guid.NewGuid(), TestData.ValidStats(), TestData.Now));
+    }
+
+    [Fact]
+    public void Former_staff_cannot_record_the_sheet()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var assistant = Guid.NewGuid();
+        squad.AddStaff(assistant, Domain.Squads.StaffRole.AssistantCoach, TestData.Now);
+        squad.RemoveStaff(assistant, TestData.Now);
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), assistant, TestData.ValidStats(), TestData.Now));
+    }
+
+    [Fact]
+    public void Expired_staff_cannot_record_the_sheet()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var assistant = Guid.NewGuid();
+        squad.AddStaff(assistant, Domain.Squads.StaffRole.AssistantCoach, TestData.Now.AddDays(-30), TestData.Today.AddDays(-1), Guid.NewGuid());
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), assistant, TestData.ValidStats(), TestData.Now));
+    }
+
+    [Fact]
+    public void Cannot_record_on_a_scheduled_match()
+    {
+        var (squad, coachId) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, entry, TestData.ScheduledMatch(), coachId, TestData.ValidStats(), TestData.Now));
+    }
+
+    [Fact]
+    public void Cannot_record_for_a_match_the_team_does_not_play()
+    {
+        var (squad, coachId) = TestData.NewSquad(teamId: Guid.NewGuid());
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), coachId, TestData.ValidStats(), TestData.Now));
+    }
+
+    [Fact]
+    public void Cannot_record_for_a_match_of_another_season()
+    {
+        var (squad, coachId) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+        var otherSeason = Match.Schedule(Guid.NewGuid(), 1, TestData.HomeTeamId, TestData.AwayTeamId, TestData.Now.AddDays(-3), null, null);
+        otherSeason.RecordResult(1, 1, TestData.Now);
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, entry, otherSeason, coachId, TestData.ValidStats(), TestData.Now));
+    }
+
+    [Fact]
+    public void Cannot_record_an_entry_of_another_squad()
+    {
+        var (squad, coachId) = TestData.NewSquad();
+        var (otherSquad, _) = TestData.NewSquad(teamId: TestData.AwayTeamId);
+        var foreignEntry = otherSquad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, foreignEntry, TestData.PlayedMatch(), coachId, TestData.ValidStats(), TestData.Now));
+    }
+
+    [Fact]
+    public void Invalid_stats_are_rejected()
+    {
+        var (squad, coachId) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+        var stats = TestData.ValidStats() with { ShotsOnTarget = 5 };
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), coachId, stats, TestData.Now));
+    }
+
+    [Fact]
+    public void Update_replaces_stats_records_the_author_and_bumps_the_timestamp()
+    {
+        var (squad, coachId) = TestData.NewSquad();
+        var assistant = Guid.NewGuid();
+        squad.AddStaff(assistant, Domain.Squads.StaffRole.AssistantCoach, TestData.Now);
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
         var match = TestData.PlayedMatch();
+        var line = PlayerMatchPerformance.Record(squad, entry, match, coachId, TestData.ValidStats(), TestData.Now);
 
-        Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Log(player, match, TestData.HomeTeamId, TestData.ValidStats(), TestData.Now));
+        line.Update(TestData.ValidStats(goals: 2, assists: 1), entry, match, assistant, TestData.Now.AddHours(1));
+
+        Assert.Equal(2, line.Goals);
+        Assert.Equal(1, line.Assists);
+        Assert.Equal(9.6, line.Rating);
+        Assert.Equal(assistant, line.RecordedByCoachId);
+        Assert.Equal(TestData.Now, line.LoggedAt);
+        Assert.Equal(TestData.Now.AddHours(1), line.UpdatedAt);
     }
 
     [Fact]
-    public void Cannot_log_performance_on_scheduled_match()
+    public void ToStats_round_trips_the_recorded_values()
     {
-        var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: true, rosterAvailable: true, TestData.Now);
-        var match = TestData.ScheduledMatch();
+        var (squad, coachId) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+        var stats = TestData.ValidStats(minutes: 75, goals: 0, assists: 2) with { Notes = "  Gran partido  " };
 
-        Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Log(player, match, TestData.HomeTeamId, TestData.ValidStats(), TestData.Now));
-    }
+        var line = PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), coachId, stats, TestData.Now);
 
-    [Fact]
-    public void Cannot_log_performance_for_team_not_in_match()
-    {
-        var player = TestData.NewPlayer();
-        var otherTeam = Guid.NewGuid();
-        player.JoinSquad(otherTeam, TestData.SeasonId, 9, verifiedInRoster: true, rosterAvailable: true, TestData.Now);
-        var match = TestData.PlayedMatch();
-
-        Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Log(player, match, otherTeam, TestData.ValidStats(), TestData.Now));
-    }
-
-    [Fact]
-    public void Update_replaces_stats_and_bumps_timestamp()
-    {
-        var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 9, verifiedInRoster: true, rosterAvailable: true, TestData.Now);
-        var performance = PlayerMatchPerformance.Log(player, TestData.PlayedMatch(), TestData.HomeTeamId, TestData.ValidStats(), TestData.Now);
-
-        performance.Update(TestData.ValidStats(goals: 2, assists: 1, rating: 9), TestData.Now.AddHours(1));
-
-        Assert.Equal(2, performance.Goals);
-        Assert.Equal(1, performance.Assists);
-        Assert.Equal(9, performance.SelfRating);
-        Assert.Equal(TestData.Now.AddHours(1), performance.UpdatedAt);
+        Assert.Equal(stats with { Notes = "Gran partido" }, line.ToStats());
     }
 }

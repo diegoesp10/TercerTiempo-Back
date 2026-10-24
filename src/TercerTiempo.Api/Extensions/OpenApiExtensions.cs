@@ -5,18 +5,14 @@ using TercerTiempo.Api.Infrastructure;
 
 namespace TercerTiempo.Api.Extensions;
 
-/// <summary>Sección "OpenApi" de la configuración.</summary>
 public sealed class OpenApiDocsOptions
 {
     public const string SectionName = "OpenApi";
 
-    /// <summary>null = solo en Development. true/false fuerza el valor en cualquier entorno.</summary>
     public bool? Enabled { get; set; }
 
-    /// <summary>Ruta de la referencia interactiva de la API, sin barras (por defecto "docs").</summary>
     public string RoutePrefix { get; set; } = "docs";
 
-    /// <summary>Credenciales de Basic Auth. Fuera de Development son obligatorias para publicar la documentación.</summary>
     public BasicAuthOptions BasicAuth { get; set; } = new();
 
     public sealed class BasicAuthOptions
@@ -28,10 +24,6 @@ public sealed class OpenApiDocsOptions
     }
 }
 
-/// <summary>
-/// Documentación OpenAPI nativa de .NET (Microsoft.AspNetCore.OpenApi): el documento se genera a partir de los
-/// endpoints y sus metadatos y se publica en /openapi/v1.json; Scalar lo renderiza como referencia interactiva.
-/// </summary>
 public static class OpenApiExtensions
 {
     public const string DocumentName = "v1";
@@ -51,12 +43,6 @@ public static class OpenApiExtensions
         return services;
     }
 
-    /// <summary>
-    /// Publica el documento OpenAPI (/openapi/v1.json) y la referencia interactiva (/docs).
-    /// En Development se publica siempre (sin autenticación salvo que se configure OpenApi:BasicAuth).
-    /// En cualquier otro entorno solo con OpenApi:Enabled=true y credenciales de Basic Auth,
-    /// que protegen tanto el documento como la referencia.
-    /// </summary>
     public static WebApplication UseOpenApiDocs(this WebApplication app)
     {
         var options = app.Services.GetRequiredService<IOptions<OpenApiDocsOptions>>().Value;

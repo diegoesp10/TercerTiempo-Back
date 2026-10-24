@@ -5,15 +5,6 @@ using TercerTiempo.Application.Abstractions.FootballData;
 
 namespace TercerTiempo.Infrastructure.FootballData.JsonFiles;
 
-/// <summary>
-/// Proveedor que lee instantáneas desde ficheros JSON locales. Útil para volcar el resultado de un scraper
-/// externo (Python, Playwright, ...) sin acoplarlo a la API, y para pruebas. Estructura esperada:
-///   competitions.json                                  → CompetitionSnapshot[]
-///   competitions/{competitionExternalId}/teams.json     → TeamSnapshot[]
-///   competitions/{competitionExternalId}/matches.json   → MatchSnapshot[]
-///   competitions/{competitionExternalId}/standings.json → StandingSnapshot[]
-///   rosters/{teamExternalId}.json                       → RosterEntrySnapshot[]
-/// </summary>
 internal sealed class JsonFileFootballDataProvider(IOptions<FootballDataOptions> options) : IFootballDataProvider
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -33,7 +24,7 @@ internal sealed class JsonFileFootballDataProvider(IOptions<FootballDataOptions>
     public async Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(string competitionExternalId, CancellationToken cancellationToken) =>
         await ReadAsync<List<TeamSnapshot>>(Path.Combine("competitions", competitionExternalId, "teams.json"), cancellationToken) ?? [];
 
-    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, CancellationToken cancellationToken) =>
+    public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, IReadOnlyCollection<MatchSnapshot> known, CancellationToken cancellationToken) =>
         await ReadAsync<List<MatchSnapshot>>(Path.Combine("competitions", competitionExternalId, "matches.json"), cancellationToken) ?? [];
 
     public async Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken) =>

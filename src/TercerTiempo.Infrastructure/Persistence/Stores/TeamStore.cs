@@ -36,8 +36,13 @@ internal sealed class TeamStore(AppDbContext db) : ITeamStore
 
     public async Task<IReadOnlyList<RosterEntry>> GetRosterAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken = default) =>
         await db.RosterEntries
-            .Where(r => r.TeamId == teamId && r.SeasonId == seasonId)
+            .Where(r => r.TeamId == teamId && r.SeasonId == seasonId && !r.Hidden)
             .ToListAsync(cancellationToken);
+
+    public Task<RosterEntry?> GetRosterEntryAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.RosterEntries.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+    public void RemoveRosterEntry(RosterEntry entry) => db.RosterEntries.Remove(entry);
 
     public async Task<IReadOnlyList<RosterEntry>> GetSeasonRosterAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
         await db.RosterEntries

@@ -3,10 +3,10 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Teams.ListTeams;
 
-/// <summary>Equipos de la temporada activa de una competición, ordenados por clasificación.</summary>
 public sealed record ListTeamsQuery(Guid CompetitionId) : IQuery<IReadOnlyList<TeamSummaryDto>>;
 
 internal sealed class ListTeamsHandler(
@@ -17,7 +17,7 @@ internal sealed class ListTeamsHandler(
     public async Task<IReadOnlyList<TeamSummaryDto>> Handle(ListTeamsQuery query, CancellationToken cancellationToken)
     {
         var competition = await competitions.GetByIdAsync(query.CompetitionId, cancellationToken)
-            ?? throw new NotFoundException("Competición", query.CompetitionId);
+            ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, query.CompetitionId);
 
         if (competition.CurrentSeason is not { } season)
             return [];
@@ -30,7 +30,7 @@ internal sealed class ListTeamsHandler(
             {
                 var standing = table.GetValueOrDefault(team.Id);
                 return new TeamSummaryDto(
-                    team.Id, team.Name, team.ShortName, team.CrestUrl,
+                    team.Id, team.Name, team.ShortName, team.CrestLink(),
                     competition.Id, competition.Name,
                     standing?.Position, standing?.Played, standing?.Points);
             })

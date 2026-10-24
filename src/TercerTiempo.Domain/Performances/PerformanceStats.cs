@@ -1,8 +1,8 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Performances;
 
-/// <summary>Datos de rendimiento que el propio jugador registra tras un partido.</summary>
 public sealed record PerformanceStats(
     bool Started,
     int MinutesPlayed,
@@ -16,8 +16,12 @@ public sealed record PerformanceStats(
     int Saves,
     int YellowCards,
     bool RedCard,
-    int SelfRating,
-    string? Notes)
+    string? Notes,
+    int Fouls = 0,
+    int BallLosses = 0,
+    int Recoveries = 0,
+    int PassesCompleted = 0,
+    int PassesAttempted = 0)
 {
     public const int MaxMinutes = 120;
     public const int MaxNotesLength = 1000;
@@ -34,19 +38,27 @@ public sealed record PerformanceStats(
         Guard.NotNegative(Interceptions, "intercepciones");
         Guard.NotNegative(Saves, "paradas");
         Guard.InRange(YellowCards, 0, 2, "amarillas");
-        Guard.InRange(SelfRating, 1, 10, "valoración");
+        Guard.NotNegative(Fouls, "faltas");
+        Guard.NotNegative(BallLosses, "pérdidas de balón");
+        Guard.NotNegative(Recoveries, "recuperaciones de balón");
+        Guard.NotNegative(PassesCompleted, "pases completados");
+        Guard.NotNegative(PassesAttempted, "pases intentados");
 
         if (ShotsOnTarget > Shots)
-            throw new DomainException("Los tiros a puerta no pueden superar los tiros totales.");
+            throw new DomainException(ErrorCode.SheetShotsOnTarget);
+
+        if (PassesCompleted > PassesAttempted)
+            throw new DomainException(ErrorCode.SheetPassesCompleted);
 
         if (YellowCards == 2 && !RedCard)
-            throw new DomainException("Dos amarillas implican expulsión: marca la tarjeta roja.");
+            throw new DomainException(ErrorCode.SheetTwoYellows);
 
         if (MinutesPlayed == 0 && (Started || Goals > 0 || Assists > 0 || Shots > 0 || KeyPasses > 0
-                                   || Tackles > 0 || Interceptions > 0 || Saves > 0 || YellowCards > 0 || RedCard))
-            throw new DomainException("Sin minutos jugados no se pueden registrar acciones de juego.");
+                                   || Tackles > 0 || Interceptions > 0 || Saves > 0 || YellowCards > 0 || RedCard || Fouls > 0
+                                   || BallLosses > 0 || Recoveries > 0 || PassesAttempted > 0))
+            throw new DomainException(ErrorCode.SheetNoMinutes);
 
         if (Notes is { Length: > MaxNotesLength })
-            throw new DomainException($"Las notas no pueden superar {MaxNotesLength} caracteres.");
+            throw new DomainException(ErrorCode.SheetNotesTooLong, MaxNotesLength);
     }
 }

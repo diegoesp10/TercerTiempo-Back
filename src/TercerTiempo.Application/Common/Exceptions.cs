@@ -1,15 +1,14 @@
+using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
+
 namespace TercerTiempo.Application.Common;
 
-public sealed class NotFoundException(string entity, object key) : Exception($"{entity} '{key}' no encontrado.")
-{
-    public string Entity { get; } = entity;
-    public object Key { get; } = key;
-}
+public sealed class NotFoundException(string code, params object[] args) : CodedException(code, args);
 
-public sealed class ConflictException(string message) : Exception(message);
+public sealed class ConflictException(string code, params object[] args) : CodedException(code, args);
 
-public sealed class ForbiddenException(string message) : Exception(message);
+public sealed class ForbiddenException(string code, params object[] args) : CodedException(code, args);
 
-public sealed class UnauthenticatedException() : Exception("Debes iniciar sesión para realizar esta acción.");
+public sealed class UnauthenticatedException() : CodedException(ErrorCode.AuthUnauthenticated);
 
-public sealed class InvalidCredentialsException() : Exception("Email o contraseña incorrectos.");
+public sealed class InvalidCredentialsException(string code = ErrorCode.AuthInvalidCredentials) : CodedException(code);

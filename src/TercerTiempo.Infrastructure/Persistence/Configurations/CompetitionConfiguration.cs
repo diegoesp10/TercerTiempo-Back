@@ -46,5 +46,6 @@ internal sealed class SeasonConfiguration : IEntityTypeConfiguration<Season>
         builder.HasIndex(s => s.IsCurrent);
 
         builder.OwnsExternalRef(s => s.ExternalRef);
+        builder.OwnsExternalRef(s => s.OfficialRef, "Official");
     }
 }

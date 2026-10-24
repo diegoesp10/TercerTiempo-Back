@@ -1,15 +1,21 @@
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Performances;
 
 public sealed record PerformanceDto(
     Guid Id,
     Guid MatchId,
-    Guid PlayerId,
+    Guid SquadId,
+    Guid SquadPlayerId,
     string PlayerName,
-    Position PlayerPosition,
+    Position? Position,
+    [property: System.ComponentModel.Description("Dorsal con el que jugó: el de este partido si se registró, si no el de su ficha.")]
+    int? ShirtNumber,
+    [property: System.ComponentModel.Description("Dorsal registrado solo para este partido (null = el de la ficha).")]
+    int? MatchShirtNumber,
     Guid TeamId,
     bool Started,
     int MinutesPlayed,
@@ -23,18 +29,24 @@ public sealed record PerformanceDto(
     int Saves,
     int YellowCards,
     bool RedCard,
-    int SelfRating,
+    double? Rating,
     string? Notes,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    int Fouls = 0,
+    int BallLosses = 0,
+    int Recoveries = 0,
+    int PassesCompleted = 0,
+    int PassesAttempted = 0);
 
 public sealed record PerformanceWithMatchDto(PerformanceDto Performance, MatchDto Match);
 
 internal static class PerformanceMapper
 {
-    public static PerformanceDto ToDto(PlayerMatchPerformance p, Player? player) =>
-        new(p.Id, p.MatchId, p.PlayerId,
-            player?.DisplayName ?? "Jugador", player?.Position ?? Position.Midfielder,
+    public static PerformanceDto ToDto(PlayerMatchPerformance p, SquadPlayer? player) =>
+        new(p.Id, p.MatchId, p.SquadId, p.SquadPlayerId,
+            player?.FullName ?? "Jugador", player?.Position, p.ShirtNumber ?? player?.ShirtNumber, p.ShirtNumber,
             p.TeamId, p.Started, p.MinutesPlayed, p.Goals, p.Assists, p.Shots, p.ShotsOnTarget,
             p.KeyPasses, p.Tackles, p.Interceptions, p.Saves, p.YellowCards, p.RedCard,
-            p.SelfRating, p.Notes, p.UpdatedAt);
+            p.Rating, p.Notes, p.UpdatedAt, p.Fouls,
+            p.BallLosses, p.Recoveries, p.PassesCompleted, p.PassesAttempted);
 }

@@ -1,8 +1,8 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Matches;
 
-/// <summary>Partido de liga entre dos equipos de una temporada. Lo alimenta el proveedor externo.</summary>
 public sealed class Match : AggregateRoot
 {
     // El marcador se persiste como dos columnas (HomeGoals/AwayGoals) y se expone como value object.
@@ -18,6 +18,8 @@ public sealed class Match : AggregateRoot
     public string? Venue { get; private set; }
     public ExternalRef? ExternalRef { get; private set; }
 
+    public ExternalRef? OfficialRef { get; private set; }
+
     public Score? Score => _homeGoals is { } home && _awayGoals is { } away ? Score.Create(home, away) : null;
 
     private Match() { }
@@ -26,7 +28,7 @@ public sealed class Match : AggregateRoot
         Guid seasonId, int matchday, Guid homeTeamId, Guid awayTeamId, DateTimeOffset kickoffAt, string? venue, ExternalRef? externalRef)
     {
         if (homeTeamId == awayTeamId)
-            throw new DomainException("Un equipo no puede jugar contra sí mismo.");
+            throw new DomainException(ErrorCode.MatchSameTeam);
 
         return new Match
         {
@@ -45,7 +47,7 @@ public sealed class Match : AggregateRoot
     public void RecordResult(int homeGoals, int awayGoals, DateTimeOffset now)
     {
         if (Status == MatchStatus.Cancelled)
-            throw new DomainException("No se puede registrar el resultado de un partido cancelado.");
+            throw new DomainException(ErrorCode.MatchResultOnCancelled);
 
         var score = Score.Create(homeGoals, awayGoals);
         var wasPlayed = Status == MatchStatus.Played;
@@ -61,16 +63,23 @@ public sealed class Match : AggregateRoot
     public void Reschedule(DateTimeOffset kickoffAt)
     {
         if (Status == MatchStatus.Played)
-            throw new DomainException("No se puede reprogramar un partido ya disputado.");
+            throw new DomainException(ErrorCode.MatchReschedulePlayed);
 
         KickoffAt = kickoffAt;
         Status = MatchStatus.Scheduled;
     }
 
+    public void UpdateFixture(int matchday, DateTimeOffset kickoffAt, string? venue)
+    {
+        Matchday = Guard.InRange(matchday, 1, 60, "jornada");
+        KickoffAt = kickoffAt;
+        Venue = string.IsNullOrWhiteSpace(venue) ? Venue : venue.Trim();
+    }
+
     public void Postpone()
     {
         if (Status == MatchStatus.Played)
-            throw new DomainException("No se puede aplazar un partido ya disputado.");
+            throw new DomainException(ErrorCode.MatchPostponePlayed);
 
         Status = MatchStatus.Postponed;
     }
@@ -78,7 +87,7 @@ public sealed class Match : AggregateRoot
     public void Cancel()
     {
         if (Status == MatchStatus.Played)
-            throw new DomainException("No se puede cancelar un partido ya disputado.");
+            throw new DomainException(ErrorCode.MatchCancelPlayed);
 
         Status = MatchStatus.Cancelled;
         _homeGoals = null;
@@ -88,10 +97,12 @@ public sealed class Match : AggregateRoot
     public void MarkInProgress()
     {
         if (Status is MatchStatus.Played or MatchStatus.Cancelled)
-            throw new DomainException("El partido no puede pasar a 'en juego' desde su estado actual.");
+            throw new DomainException(ErrorCode.MatchCannotStart);
 
         Status = MatchStatus.InProgress;
     }
+
+    public void LinkOfficial(ExternalRef officialRef) => OfficialRef = officialRef;
 
     public bool Involves(Guid teamId) => HomeTeamId == teamId || AwayTeamId == teamId;
 
@@ -101,7 +112,7 @@ public sealed class Match : AggregateRoot
     {
         if (teamId == HomeTeamId) return AwayTeamId;
         if (teamId == AwayTeamId) return HomeTeamId;
-        throw new DomainException("El equipo no participa en este partido.");
+        throw new DomainException(ErrorCode.MatchTeamNotInvolved);
     }
 
     public int? GoalsFor(Guid teamId) => Score is null ? null : IsHome(teamId) ? Score.Home : Score.Away;

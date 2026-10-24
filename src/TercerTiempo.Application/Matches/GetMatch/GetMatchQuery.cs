@@ -1,45 +1,67 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Performances;
+using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
-using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Matches.GetMatch;
 
-/// <summary>Detalle de un partido con los rendimientos registrados por los jugadores de la plataforma.</summary>
 public sealed record GetMatchQuery(Guid MatchId) : IQuery<MatchDetailDto>;
 
 internal sealed class GetMatchHandler(
     ICurrentUser currentUser,
     IMatchStore matches,
     ITeamStore teams,
+    ISquadStore squads,
     IPerformanceStore performances,
-    IPlayerStore players) : IQueryHandler<GetMatchQuery, MatchDetailDto>
+    IClubStore clubs,
+    ICompetitionStore competitions,
+    ILicenseGate licenses,
+    TimeProvider clock) : IQueryHandler<GetMatchQuery, MatchDetailDto>
 {
     public async Task<MatchDetailDto> Handle(GetMatchQuery query, CancellationToken cancellationToken)
     {
         var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
-            ?? throw new NotFoundException("Partido", query.MatchId);
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
 
         var teamMap = (await teams.GetByIdsAsync([match.HomeTeamId, match.AwayTeamId], cancellationToken))
             .ToDictionary(t => t.Id);
 
-        var matchPerformances = await performances.GetByMatchAsync(match.Id, cancellationToken);
-        var playerMap = (await players.GetByIdsAsync(matchPerformances.Select(p => p.PlayerId), cancellationToken))
-            .ToDictionary(p => p.Id);
+        var matchSquads = await squads.GetByTeamIdsAsync([match.HomeTeamId, match.AwayTeamId], match.SeasonId, cancellationToken);
+        var sheets = new List<MatchSquadSheetDto>();
 
-        var dtos = matchPerformances
-            .Select(p => PerformanceMapper.ToDto(p, playerMap.GetValueOrDefault(p.PlayerId)))
-            .OrderByDescending(p => p.MinutesPlayed)
-            .ToList();
+        foreach (var squad in matchSquads.OrderBy(s => s.TeamId == match.HomeTeamId ? 0 : 1))
+        {
+            // Sin licencia (la del equipo, o la del espectador si no es de ese equipo) el acta interna no se muestra.
+            var visible = await SquadAccess.CanViewAsync(squad, currentUser, clock, clubs, cancellationToken)
+                && await licenses.CanAccessSquadAsync(squad, currentUser, cancellationToken);
+            var entries = new List<PerformanceDto>();
 
-        var mine = currentUser.PlayerId is { } playerId
-            ? dtos.FirstOrDefault(p => p.PlayerId == playerId)
-            : null;
+            if (visible)
+            {
+                var playerMap = squad.Players.ToDictionary(p => p.Id);
+                entries = (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken))
+                    .Select(p => PerformanceMapper.ToDto(p, playerMap.GetValueOrDefault(p.SquadPlayerId)))
+                    .OrderByDescending(p => p.Started)
+                    .ThenByDescending(p => p.MinutesPlayed)
+                    .ThenBy(p => p.ShirtNumber ?? int.MaxValue)
+                    .ToList();
+            }
 
-        return new MatchDetailDto(MatchMapper.ToDto(match, teamMap, mine?.Id), mine, dtos);
+            sheets.Add(new MatchSquadSheetDto(
+                squad.Id, squad.TeamId, teamMap.GetValueOrDefault(squad.TeamId)?.Name ?? "Equipo",
+                squad.Visibility, visible, entries));
+        }
+
+        var competition = await competitions.GetBySeasonAsync(match.SeasonId, cancellationToken);
+        var season = competition?.Seasons.FirstOrDefault(s => s.Id == match.SeasonId);
+        return new MatchDetailDto(MatchMapper.ToDto(match, teamMap), competition?.Name, season?.Label, sheets);
     }
 }

@@ -7,21 +7,38 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Application.Abstractions.OfficialSheets;
+using TercerTiempo.Application.Abstractions.Teams;
+using TercerTiempo.Domain.Common.Errors;
+using TercerTiempo.Application.Abstractions.Videos;
+using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Videos;
+using TercerTiempo.Application.Licensing;
+using TercerTiempo.Domain.Licensing;
+using TercerTiempo.Infrastructure.Licensing;
 using TercerTiempo.Infrastructure.FootballData;
-using TercerTiempo.Infrastructure.FootballData.BeSoccer;
 using TercerTiempo.Infrastructure.FootballData.Fake;
 using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.FootballData.JsonFiles;
 using TercerTiempo.Infrastructure.Identity;
+using TercerTiempo.Infrastructure.Jobs;
+using TercerTiempo.Application.Jobs;
+using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
+using TercerTiempo.Infrastructure.Security;
+using TercerTiempo.Infrastructure.Teams;
 using TercerTiempo.Infrastructure.Persistence;
 using TercerTiempo.Infrastructure.Persistence.Stores;
+using TercerTiempo.Infrastructure.Videos;
 
 namespace TercerTiempo.Infrastructure;
 
@@ -34,23 +51,47 @@ public static class DependencyInjection
         AddPersistence(services, configuration);
         AddIdentity(services, configuration);
         AddFootballData(services, configuration);
+        AddOfficialSheets(services, configuration);
+        AddVideos(services, configuration);
 
         return services;
     }
 
     private static void AddPersistence(IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Default") ?? "Data Source=tercertiempo.db";
+        var connectionString = configuration.GetConnectionString("Default")
+            ?? throw new InvalidOperationException("Falta la cadena de conexión ConnectionStrings:Default (SQL Server).");
 
-        services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
+        // SQL Server. Varios agregados cargan dos colecciones a la vez (plantilla: staff y fichas; acta oficial: líneas y
+        // sucesos): en consultas separadas se evita el producto cartesiano de una sola JOIN. Reintentos ante errores
+        // transitorios (arranque del servidor, cortes breves de red).
+        services.AddDbContext<AppDbContext>(options =>
+            options.UseSqlServer(connectionString, sql => sql
+                .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
+                .EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorNumbersToAdd: null)
+                .CommandTimeout(60)));
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
 
         services.AddScoped<IPlayerStore, PlayerStore>();
+        services.AddScoped<ICoachStore, CoachStore>();
+        services.AddScoped<ISquadStore, SquadStore>();
+        services.AddScoped<IInjuryStore, InjuryStore>();
+        services.AddScoped<ITeamMatchStatsStore, TeamMatchStatsStore>();
         services.AddScoped<ITeamStore, TeamStore>();
         services.AddScoped<ICompetitionStore, CompetitionStore>();
         services.AddScoped<IMatchStore, MatchStore>();
         services.AddScoped<IStandingStore, StandingStore>();
         services.AddScoped<IPerformanceStore, PerformanceStore>();
+        services.AddScoped<IPerformanceSuggestionStore, SuggestionStore>();
+        services.AddScoped<IClubStore, ClubStore>();
+        services.AddScoped<IClubInvitationStore, ClubInvitationStore>();
+        services.AddScoped<ICoachAppointmentStore, CoachAppointmentStore>();
+        services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
+        services.AddScoped<IMatchVideoStore, MatchVideoStore>();
+        services.AddScoped<IVideoPurchaseStore, VideoPurchaseStore>();
+        services.AddScoped<IVideoUploadStore, VideoUploadStore>();
+        services.AddScoped<IVideoShareStore, VideoShareStore>();
+        services.AddScoped<ILicenseStore, LicenseStore>();
     }
 
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)
@@ -74,6 +115,10 @@ public static class DependencyInjection
                 "Jwt:Key debe configurarse con al menos 32 caracteres (user-secrets o variable de entorno).")
             .ValidateOnStart();
 
+        services.AddOptions<AdminOptions>().Bind(configuration.GetSection(AdminOptions.SectionName));
+        services.AddOptions<TercerTiempo.Application.Clubs.Invitations.RegistrationOptions>()
+            .Bind(configuration.GetSection(TercerTiempo.Application.Clubs.Invitations.RegistrationOptions.SectionName));
+
         services.AddScoped<IIdentityService, IdentityService>();
         services.AddSingleton<ITokenService, JwtTokenService>();
     }
@@ -95,11 +140,6 @@ public static class DependencyInjection
                 services.AddSingleton<IFootballDataProvider, JsonFileFootballDataProvider>();
                 break;
 
-            case FootballDataOptions.BeSoccerProvider:
-                services.AddHttpClient<BeSoccerFootballDataProvider>();
-                services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<BeSoccerFootballDataProvider>());
-                break;
-
             default:
                 // Una instancia por ámbito (sincronización): cachea catálogos de temporada, estadios, posiciones y jugadores.
                 services.AddHttpClient<FutbolAsturianoFootballDataProvider>((sp, client) =>
@@ -109,15 +149,101 @@ public static class DependencyInjection
                     client.Timeout = TimeSpan.FromSeconds(30);
                     client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
                     client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                });
+                }).LogScrapes("futbolasturiano");
                 services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<FutbolAsturianoFootballDataProvider>());
                 break;
         }
 
+        // Trabajos en segundo plano: cuándo tocan, su historial y el lanzamiento a mano desde /jobs.
+        services.AddSingleton<JobScheduler>();
+        services.AddScoped<IJobsMonitor, JobsMonitor>();
         services.AddHostedService<FootballDataSyncWorker>();
+
+        // Actas oficiales: cola en memoria y proceso en segundo plano que las descarga y guarda.
+        services.AddSingleton<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>();
+        services.AddSingleton<TercerTiempo.Application.OfficialSheets.IOfficialSheetQueue>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
+        services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetSyncWorker>();
     }
 
-    /// <summary>Aplica las migraciones pendientes. Se invoca desde la API al arrancar.</summary>
+    private static void AddOfficialSheets(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton<IAsturfutbolRequestStore, SqlAsturfutbolRequestStore>();
+        services.AddSingleton<AsturfutbolRequestGate>();
+        services.AddOptions<OfficialSheetOptions>()
+            .Bind(configuration.GetSection(OfficialSheetOptions.SectionName));
+
+        // Cookie compartida; los saltos de sesión también pasan por el control persistente de peticiones.
+        services.AddHttpClient<AsturfutbolClient>((sp, client) =>
+            {
+                var settings = sp.GetRequiredService<IOptions<OfficialSheetOptions>>().Value.Asturfutbol;
+                client.BaseAddress = new Uri(settings.BaseUrl.EndsWith('/') ? settings.BaseUrl : settings.BaseUrl + "/");
+                client.Timeout = TimeSpan.FromSeconds(40);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
+                client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                UseCookies = true,
+                CookieContainer = new System.Net.CookieContainer(),
+                AllowAutoRedirect = false,
+                AutomaticDecompression = System.Net.DecompressionMethods.All,
+            })
+            .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
+            .LogScrapes(AsturfutbolOfficialSheetProvider.Name);
+
+        services.AddScoped<IOfficialSheetProvider, AsturfutbolOfficialSheetProvider>();
+        services.AddScoped<ITeamProfileProvider, AsturfutbolTeamProfileProvider>();
+
+        // Webs del acta pública (OfficialSheets:Sources): hoy solo la federación.
+        services.AddOptions<TercerTiempo.Application.OfficialSheets.PublicSheetOptions>()
+            .Bind(configuration.GetSection(TercerTiempo.Application.OfficialSheets.PublicSheetOptions.SectionName));
+
+        services.AddOptions<CrestOptions>()
+            .Bind(configuration.GetSection(CrestOptions.SectionName));
+        services.AddSingleton<ICrestStorage, FileSystemCrestStorage>();
+        services.AddSingleton<IPlayerPhotoStorage, FileSystemPlayerPhotoStorage>();
+        services.AddScoped<IErrorMessageStore, ErrorMessageStore>();
+
+        // Límite de llamadas por IP y por endpoint con bloqueos crecientes (el middleware vive en la API).
+        services.AddOptions<ThrottlingOptions>().Bind(configuration.GetSection(ThrottlingOptions.SectionName));
+        services.AddSingleton<ClientThrottle>();
+        services.AddHttpClient<ICrestDownloader, HttpCrestDownloader>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("TercerTiempo/1.0 (+https://github.com/diegoesp10/TercerTiempo-Back)");
+            client.DefaultRequestHeaders.Accept.ParseAdd("image/*");
+        }).LogScrapes("escudos");
+    }
+
+    private static void AddVideos(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<VideoOptions>()
+            .Bind(configuration.GetSection(VideoOptions.SectionName));
+
+        // Licencias por equipo: planes, precios, prueba y pasarela («mock» = pago simulado, «stripe»).
+        services.AddOptions<LicensingOptions>()
+            .Bind(configuration.GetSection(LicensingOptions.SectionName));
+        if (configuration.GetValue<string>($"{LicensingOptions.SectionName}:Provider") == "stripe")
+        {
+            services.AddHttpClient<ILicensePaymentGateway, StripeLicensePaymentGateway>((sp, client) =>
+            {
+                var stripe = sp.GetRequiredService<IOptions<LicensingOptions>>().Value.Stripe;
+                client.BaseAddress = new Uri(stripe.ApiBaseUrl.EndsWith('/') ? stripe.ApiBaseUrl : stripe.ApiBaseUrl + "/");
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
+        }
+        else
+        {
+            services.AddSingleton<ILicensePaymentGateway, MockLicensePaymentGateway>();
+        }
+        services.AddHostedService<LicenseRenewalWorker>();
+
+        services.AddMemoryCache();
+        services.AddSingleton<IVideoStorage, FileSystemVideoStorage>();
+        services.AddSingleton<IVideoTickets, MemoryVideoTickets>();
+        services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
+    }
+
     public static async Task MigrateDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
     {
         using var scope = services.CreateScope();

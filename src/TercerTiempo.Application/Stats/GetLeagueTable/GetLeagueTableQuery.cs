@@ -4,27 +4,33 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Standings;
 using TercerTiempo.Domain.Competitions;
-using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Stats.GetLeagueTable;
 
-/// <summary>Clasificación de una competición. Sin CompetitionId se usa la del equipo del jugador autenticado.</summary>
 public sealed record GetLeagueTableQuery(Guid? CompetitionId) : IQuery<LeagueTableDto>;
 
 internal sealed class GetLeagueTableHandler(
     ICurrentUser currentUser,
-    IPlayerStore players,
+    ISquadStore squads,
     ICompetitionStore competitions,
     IStandingStore standings,
-    ITeamStore teams) : IQueryHandler<GetLeagueTableQuery, LeagueTableDto>
+    ITeamStore teams,
+    TimeProvider clock) : IQueryHandler<GetLeagueTableQuery, LeagueTableDto>
 {
     public async Task<LeagueTableDto> Handle(GetLeagueTableQuery query, CancellationToken cancellationToken)
     {
         var (competition, season) = await ResolveAsync(query.CompetitionId, cancellationToken);
+        if (season is null)
+            return new LeagueTableDto(null, [], "Todavía no hay temporada en curso: la clasificación aparecerá cuando empiecen los partidos.");
 
         var table = await standings.GetBySeasonAsync(season.Id, cancellationToken);
+        if (table.Count == 0)
+            return new LeagueTableDto(SeasonDto.From(competition, season), [], "Todavía no hay partidos jugados esta temporada: la clasificación aparecerá con la primera jornada.");
+
         var teamMap = (await teams.GetByIdsAsync(table.Select(s => s.TeamId), cancellationToken)).ToDictionary(t => t.Id);
 
         var rows = table
@@ -32,30 +38,28 @@ internal sealed class GetLeagueTableHandler(
             .Select(s => StandingDto.From(s, teamMap.GetValueOrDefault(s.TeamId)))
             .ToList();
 
-        return new LeagueTableDto(SeasonDto.From(competition, season), rows);
+        return new LeagueTableDto(SeasonDto.From(competition, season), rows, null);
     }
 
-    private async Task<(Competition, Season)> ResolveAsync(Guid? competitionId, CancellationToken cancellationToken)
+    private async Task<(Competition, Season?)> ResolveAsync(Guid? competitionId, CancellationToken cancellationToken)
     {
         if (competitionId is { } id)
         {
             var competition = await competitions.GetByIdAsync(id, cancellationToken)
-                ?? throw new NotFoundException("Competición", id);
+                ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, id);
 
-            var season = competition.CurrentSeason
-                ?? throw new ConflictException("La competición no tiene una temporada en curso.");
-
-            return (competition, season);
+            return (competition, competition.CurrentSeason);
         }
 
-        if (!currentUser.IsAuthenticated)
-            throw new ConflictException("Indica la competición (competitionId) o inicia sesión para ver la de tu equipo.");
+        var squad = currentUser.PlayerId is { } playerId
+            ? await squads.GetByPlayerAsync(playerId, cancellationToken)
+            : currentUser.CoachId is { } coachId
+                ? (await squads.GetByCoachAsync(coachId, SquadAccess.Today(clock), cancellationToken)).FirstOrDefault()
+                : null;
 
-        var player = await Resolvers.CurrentPlayerAsync(currentUser, players, cancellationToken);
+        if (squad is null)
+            throw new ConflictException(ErrorCode.LeagueCompetitionRequired);
 
-        var membership = player.CurrentMembership
-            ?? throw new ConflictException("No perteneces a ninguna plantilla: indica la competición (competitionId).");
-
-        return await Resolvers.SeasonOfMembershipAsync(competitions, membership, cancellationToken);
+        return await Resolvers.SeasonOfSquadAsync(competitions, squad, cancellationToken);
     }
 }

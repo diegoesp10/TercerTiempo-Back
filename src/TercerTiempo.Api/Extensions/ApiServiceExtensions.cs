@@ -10,7 +10,6 @@ namespace TercerTiempo.Api.Extensions;
 
 public static class ApiServiceExtensions
 {
-    /// <summary>Servicios propios de la capa web: usuario actual, JSON, errores, JWT, CORS y documentación OpenAPI.</summary>
     public static IServiceCollection AddApi(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddHttpContextAccessor();
@@ -54,7 +53,9 @@ public static class ApiServiceExtensions
                 };
             });
 
-        services.AddAuthorization();
+        services.AddAuthorization(options => options.AddPolicy(AuthClaims.AdminPolicy, policy => policy
+            .RequireAuthenticatedUser()
+            .RequireClaim(AuthClaims.Admin, "true")));
     }
 
     private static void AddCors(IServiceCollection services, IConfiguration configuration)

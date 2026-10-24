@@ -11,6 +11,8 @@ public sealed class Season : Entity
     public bool IsCurrent { get; private set; }
     public ExternalRef? ExternalRef { get; private set; }
 
+    public ExternalRef? OfficialRef { get; private set; }
+
     private Season() { }
 
     internal static Season Create(Guid competitionId, string label, DateOnly startsOn, DateOnly endsOn, ExternalRef? externalRef) =>
@@ -25,6 +27,8 @@ public sealed class Season : Entity
         };
 
     internal void SetCurrent(bool value) => IsCurrent = value;
+
+    public void LinkOfficial(ExternalRef officialRef) => OfficialRef = officialRef;
 
     public bool Covers(DateOnly date) => date >= StartsOn && date <= EndsOn;
 }

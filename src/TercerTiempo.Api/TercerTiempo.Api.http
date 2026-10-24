@@ -1,20 +1,150 @@
 @baseUrl = http://localhost:5080
 @token = PEGA_AQUI_EL_ACCESS_TOKEN
+@adminToken = PEGA_AQUI_EL_TOKEN_DE_ADMINISTRADOR
 @competitionId = PEGA_AQUI_UN_ID_DE_GET_COMPETITIONS
 @teamId = PEGA_AQUI_UN_ID_DE_GET_TEAMS
-@rosterEntryId = PEGA_AQUI_UN_ID_DE_ROSTER
+@squadId = PEGA_AQUI_EL_ID_DE_LA_PLANTILLA
+@squadPlayerId = PEGA_AQUI_EL_ID_DE_UNA_FICHA
 @matchId = PEGA_AQUI_UN_ID_DE_PARTIDO
+@inviteCode = PEGA_AQUI_EL_CODIGO_DE_INVITACION
+@accessCode = PEGA_AQUI_EL_CODIGO_DE_ACCESO_DEL_CLUB
+@appointmentId = PEGA_AQUI_EL_ID_DE_UN_NOMBRAMIENTO
+@videoId = PEGA_AQUI_EL_ID_DE_UN_VIDEO
 
-### Alta de jugador
+### Alta como club
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "club@example.com",
+  "password": "Password123",
+  "displayName": "C.D. Vallobín",
+  "accountType": "Club",
+  "position": null,
+  "birthDate": null,
+  "accessCode": null
+}
+
+### Importar el escudo de un equipo desde una URL (equipos sin escudo guardado)
+POST {{baseUrl}}/api/admin/teams/{{teamId}}/crest
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "url": "https://example.org/escudo.png"
+}
+
+### Escudo guardado de un equipo
+GET {{baseUrl}}/api/teams/{{teamId}}/crest
+
+### Club: cambiar el escudo de uno de sus equipos (multipart, campo file)
+PUT {{baseUrl}}/api/clubs/me/teams/{{teamId}}/crest
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=escudo
+
+--escudo
+Content-Disposition: form-data; name="file"; filename="escudo.png"
+Content-Type: image/png
+
+< ./escudo.png
+--escudo--
+
+### Club: plantilla del proveedor editable (añadir / corregir / retirar fichas)
+POST {{baseUrl}}/api/clubs/me/teams/{{teamId}}/roster
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fullName": "Jugador Nuevo",
+  "position": "Forward",
+  "shirtNumber": 23
+}
+
+### Previa del partido (cuerpo técnico)
+GET {{baseUrl}}/api/matches/{{matchId}}/preview
+Authorization: Bearer {{token}}
+
+### Error con código e idioma (Accept-Language): el mensaje sale de la tabla ErrorMessages
+GET {{baseUrl}}/api/teams/00000000-0000-0000-0000-000000000000
+Accept-Language: es-ES,es;q=0.9
+
+### Catálogo de clubes (público): de aquí sale el nombre con el que se da de alta un club
+GET {{baseUrl}}/api/clubs/catalog?search=lealtad
+
+### Club: vincular otro equipo (los del catálogo ya quedan vinculados al darse de alta)
+POST {{baseUrl}}/api/clubs/me/teams
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "teamId": "{{teamId}}"
+}
+
+### Club: nombrar a un técnico (devuelve el código de acceso que hay que entregarle)
+POST {{baseUrl}}/api/clubs/me/appointments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "teamId": "{{teamId}}",
+  "coachName": "Óscar Cano",
+  "email": "mister@example.com",
+  "role": "HeadCoach",
+  "validUntil": null
+}
+
+### Club: mi club (equipos y nombramientos)
+GET {{baseUrl}}/api/clubs/me
+Authorization: Bearer {{token}}
+
+### Club: acortar o prorrogar un nombramiento
+PUT {{baseUrl}}/api/clubs/me/appointments/{{appointmentId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "validUntil": "2026-12-31"
+}
+
+### Club: revocar un nombramiento
+DELETE {{baseUrl}}/api/clubs/me/appointments/{{appointmentId}}
+Authorization: Bearer {{token}}
+
+### Alta como cuerpo técnico con el código de acceso del club (crea o une a la plantilla del equipo)
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "mister@example.com",
+  "password": "Password123",
+  "displayName": "Óscar Cano",
+  "accountType": "Coach",
+  "position": null,
+  "birthDate": null,
+  "accessCode": "{{accessCode}}"
+}
+
+### Cuerpo técnico con cuenta: canjear otro código de acceso
+POST {{baseUrl}}/api/coaches/me/appointments/redeem
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "accessCode": "{{accessCode}}"
+}
+
+### Alta como jugador (solo con el código personal de su ficha; el nombre es el de la ficha y queda vinculado al crearse)
 POST {{baseUrl}}/api/auth/register
 Content-Type: application/json
 
 {
   "email": "pelayo@example.com",
   "password": "Password123",
-  "displayName": "Pelayo Fernández",
+  "displayName": null,
+  "accountType": "Player",
   "position": "Forward",
-  "birthDate": "1998-04-12"
+  "birthDate": "1998-04-12",
+  "accessCode": "{{inviteCode}}"
 }
 
 ### Login
@@ -22,67 +152,182 @@ POST {{baseUrl}}/api/auth/login
 Content-Type: application/json
 
 {
-  "email": "pelayo@example.com",
+  "email": "mister@example.com",
   "password": "Password123"
 }
 
-### Mi perfil
-GET {{baseUrl}}/api/players/me
+### Mi cuenta (jugador con su plantilla / técnico con sus plantillas)
+GET {{baseUrl}}/api/auth/me
 Authorization: Bearer {{token}}
 
 ### Ligas disponibles (nivel, categoría, grupo y temporada)
 GET {{baseUrl}}/api/competitions
 
+### Jornada en curso (o la próxima) de una liga
+GET {{baseUrl}}/api/competitions/{{competitionId}}/matchdays/current
+
+### Una jornada concreta
+GET {{baseUrl}}/api/competitions/{{competitionId}}/matchdays/6
+
 ### Equipos de una liga
 GET {{baseUrl}}/api/teams?competitionId={{competitionId}}
 
-### Ficha de un equipo (plantilla scrapeada + jugadores registrados)
+### Ficha de un equipo (plantilla publicada por el proveedor + estado de su plantilla en la plataforma)
 GET {{baseUrl}}/api/teams/{{teamId}}
 
-### Unirse a un equipo reclamando una ficha de la plantilla (rosterEntryId null si no está publicada)
-POST {{baseUrl}}/api/players/me/team
+### Cuerpo técnico: mis plantillas
+GET {{baseUrl}}/api/squads/mine
+Authorization: Bearer {{token}}
+
+### Detalle de la plantilla (staff, fichas y, para el cuerpo técnico, el código de invitación)
+GET {{baseUrl}}/api/squads/{{squadId}}
+Authorization: Bearer {{token}}
+
+### Cuerpo técnico: añadir una ficha a mano
+POST {{baseUrl}}/api/squads/{{squadId}}/players
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "teamId": "{{teamId}}",
-  "rosterEntryId": "{{rosterEntryId}}",
-  "shirtNumber": 9
+  "fullName": "Nel Suárez",
+  "position": "Defender",
+  "shirtNumber": 4
 }
 
-### Partidos de un equipo
-GET {{baseUrl}}/api/teams/{{teamId}}/matches
+### Cuerpo técnico: importar las fichas publicadas por el proveedor que falten
+POST {{baseUrl}}/api/squads/{{squadId}}/players/import
 Authorization: Bearer {{token}}
 
-### Registrar rendimiento en un partido disputado
-PUT {{baseUrl}}/api/matches/{{matchId}}/performance
+### Partidos de la plantilla (con el número de líneas registradas en cada acta)
+GET {{baseUrl}}/api/squads/{{squadId}}/matches
+Authorization: Bearer {{token}}
+
+### Acta de un partido (una línea por ficha; performance null si no está registrada)
+GET {{baseUrl}}/api/squads/{{squadId}}/matches/{{matchId}}/sheet
+Authorization: Bearer {{token}}
+
+### Cuerpo técnico: registrar el acta (idempotente; played = false borra la línea)
+PUT {{baseUrl}}/api/squads/{{squadId}}/matches/{{matchId}}/sheet
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "started": true,
-  "minutesPlayed": 90,
-  "goals": 1,
-  "assists": 1,
-  "shots": 4,
-  "shotsOnTarget": 2,
-  "keyPasses": 2,
-  "tackles": 1,
-  "interceptions": 0,
-  "saves": 0,
-  "yellowCards": 0,
-  "redCard": false,
-  "selfRating": 8,
-  "notes": "Buen partido, marqué de cabeza."
+  "entries": [
+    {
+      "squadPlayerId": "{{squadPlayerId}}",
+      "played": true,
+      "started": true,
+      "minutesPlayed": 90,
+      "goals": 1,
+      "assists": 1,
+      "shots": 4,
+      "shotsOnTarget": 2,
+      "keyPasses": 2,
+      "tackles": 1,
+      "interceptions": 0,
+      "saves": 0,
+      "yellowCards": 0,
+      "redCard": false,
+      "notes": "Gol de cabeza en el 70'."
+    }
+  ]
 }
 
-### Panel del jugador
-GET {{baseUrl}}/api/stats/dashboard
+### Comparador: acta interna frente al acta oficial de la federación (refresh=true la vuelve a descargar)
+GET {{baseUrl}}/api/squads/{{squadId}}/matches/{{matchId}}/sheet/comparison
 Authorization: Bearer {{token}}
 
-### Clasificación de una liga (sin competitionId, la de mi equipo)
+### Acta oficial de un partido (pública)
+GET {{baseUrl}}/api/matches/{{matchId}}/official-sheet
+
+### Cuerpo técnico: subir el vídeo del partido (multipart)
+POST {{baseUrl}}/api/squads/{{squadId}}/matches/{{matchId}}/video
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=tt
+
+--tt
+Content-Disposition: form-data; name="title"
+
+Partido completo
+--tt
+Content-Disposition: form-data; name="file"; filename="partido.mp4"
+Content-Type: video/mp4
+
+< ./partido.mp4
+--tt--
+
+### Vídeos del partido con el acceso del usuario
+GET {{baseUrl}}/api/matches/{{matchId}}/videos
+Authorization: Bearer {{token}}
+
+### Técnico de otra plantilla: comprar el acceso a un vídeo
+POST {{baseUrl}}/api/videos/{{videoId}}/purchase
+Authorization: Bearer {{token}}
+
+### Ticket de reproducción (después: GET /api/videos/{{videoId}}/stream?ticket=...)
+POST {{baseUrl}}/api/videos/{{videoId}}/ticket
+Authorization: Bearer {{token}}
+
+### Estadísticas de la plantilla
+GET {{baseUrl}}/api/squads/{{squadId}}/stats
+Authorization: Bearer {{token}}
+
+### Cuerpo técnico: hacer pública (o privada) la plantilla
+PUT {{baseUrl}}/api/squads/{{squadId}}/visibility
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "visibility": "Public"
+}
+
+### Club propietario o cuerpo técnico: generar un código personal para este jugador
+POST {{baseUrl}}/api/squads/{{squadId}}/players/{{squadPlayerId}}/invite-code
+Authorization: Bearer {{token}}
+
+### Jugador: consultar su código personal antes del alta (sin sesión)
+GET {{baseUrl}}/api/auth/invite/{{inviteCode}}
+
+### Jugador con cuenta y sin plantilla: consultar su código personal (solo su ficha)
+GET {{baseUrl}}/api/players/me/invite/{{inviteCode}}
+Authorization: Bearer {{token}}
+
+### Jugador con cuenta y sin plantilla: vincularse a la ficha del código (un solo uso; no se puede elegir otra; la cuenta toma el nombre de la ficha)
+POST {{baseUrl}}/api/players/me/squad
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "inviteCode": "{{inviteCode}}"
+}
+
+### Jugador: panel (individual, impacto en el equipo, comparativa con la liga)
+GET {{baseUrl}}/api/players/me/dashboard
+Authorization: Bearer {{token}}
+
+### Jugador: actas en las que aparece
+GET {{baseUrl}}/api/players/me/performances
+Authorization: Bearer {{token}}
+
+### Partido con las actas visibles de ambas plantillas
+GET {{baseUrl}}/api/matches/{{matchId}}
+
+### Clasificación de una liga (sin competitionId, la de mi plantilla)
 GET {{baseUrl}}/api/league/table?competitionId={{competitionId}}
 
-### Forzar sincronización con futbolasturiano.es (~1 minuto)
-POST {{baseUrl}}/api/admin/sync
-Authorization: Bearer {{token}}
+### Administrador: iniciar sesión (Admin:UserName / Admin:Password de user-secrets)
+POST {{baseUrl}}/api/admin/login
+Content-Type: application/json
+
+{
+  "userName": "diego",
+  "password": "PEGA_AQUI_LA_CONTRASEÑA"
+}
+
+### Administrador: trabajos, ejecuciones y últimas llamadas a webs externas
+GET {{baseUrl}}/api/admin/jobs?requests=50
+Authorization: Bearer {{adminToken}}
+
+### Administrador: lanzar ya la sincronización con futbolasturiano.es (football-data u official-sheets)
+POST {{baseUrl}}/api/admin/jobs/football-data/run
+Authorization: Bearer {{adminToken}}

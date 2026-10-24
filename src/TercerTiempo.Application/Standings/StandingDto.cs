@@ -1,6 +1,8 @@
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 
+using TercerTiempo.Application.Teams;
+
 namespace TercerTiempo.Application.Standings;
 
 public sealed record StandingDto(
@@ -20,7 +22,7 @@ public sealed record StandingDto(
 {
     public static StandingDto From(Standing standing, Team? team) =>
         new(standing.Position, standing.TeamId,
-            team?.Name ?? "Equipo desconocido", team?.ShortName ?? "???", team?.CrestUrl,
+            team?.Name ?? "Equipo desconocido", team?.ShortName ?? "???", team?.CrestLink(),
             standing.Played, standing.Won, standing.Drawn, standing.Lost,
             standing.GoalsFor, standing.GoalsAgainst, standing.GoalDifference, standing.Points);
 }

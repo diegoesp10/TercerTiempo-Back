@@ -1,9 +1,18 @@
-using TercerTiempo.Application.Sync;
+using TercerTiempo.Application.Admin;
+using TercerTiempo.Application.Clubs.Invitations;
+using TercerTiempo.Application.Jobs;
+using TercerTiempo.Application.Teams.ImportCrest;
 
 namespace TercerTiempo.Repository.Admin;
 
-/// <summary>Operaciones de administración (sincronización con el proveedor de datos).</summary>
 public interface IAdminRepository
 {
-    Task<SyncResultDto> SyncSeasonAsync(CancellationToken cancellationToken = default);
+    Task<AdminAuthResponse> LoginAsync(AdminLoginCommand command, CancellationToken cancellationToken = default);
+    Task<JobsOverviewDto> GetJobsAsync(string? provider, int? requests, CancellationToken cancellationToken = default);
+    Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default);
+    Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ClubInvitationDto>> GetClubInvitationsAsync(CancellationToken cancellationToken = default);
+    Task<ClubInvitationDto> CreateClubInvitationAsync(CreateClubInvitationCommand command, CancellationToken cancellationToken = default);
+    Task<ClubInvitationDto> RevokeClubInvitationAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<TeamCrestImportDto> ImportTeamCrestAsync(Guid teamId, string url, CancellationToken cancellationToken = default);
 }

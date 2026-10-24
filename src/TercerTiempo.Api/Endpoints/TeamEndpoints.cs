@@ -20,6 +20,34 @@ internal static class TeamEndpoints
             .WithDescription("Competición y temporada, clasificación, plantilla según el proveedor (roster, con el id que se usa para reclamar la ficha; rosterPublished indica si el proveedor la publica) y jugadores registrados en la plataforma. Público.")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{teamId:guid}/crest", async (Guid teamId, HttpContext context, ITeamsRepository teams, CancellationToken ct) =>
+            {
+                var crest = await teams.OpenCrestAsync(teamId, ct);
+                if (crest is null) return Results.NotFound();
+
+                context.Response.Headers.CacheControl = "public, max-age=86400";
+                return Results.Stream(crest.Content, crest.ContentType);
+            })
+            .WithName("GetTeamCrest")
+            .WithSummary("Escudo del equipo")
+            .WithDescription("Escudo descargado de la federación y guardado en la plataforma (crestUrl de las respuestas apunta aquí cuando existe). 404 si el equipo no tiene escudo guardado. Público.")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{teamId:guid}/roster/{entryId:guid}/photo", async (Guid teamId, Guid entryId, HttpContext context, ITeamsRepository teams, CancellationToken ct) =>
+            {
+                var photo = await teams.OpenRosterPhotoAsync(teamId, entryId, ct);
+                if (photo is null) return Results.NotFound();
+
+                context.Response.Headers.CacheControl = "public, max-age=86400";
+                return Results.Stream(photo.Content, photo.ContentType);
+            })
+            .WithName("GetRosterPhoto")
+            .WithSummary("Foto de un jugador de la plantilla")
+            .WithDescription("Foto subida por el club (photoUrl de las fichas apunta aquí cuando existe). 404 si no hay foto. Público.")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapGet("/{teamId:guid}/matches", (Guid teamId, ITeamsRepository teams, CancellationToken ct) => teams.GetMatchesAsync(teamId, ct))
             .WithName("ListTeamMatches")
             .WithSummary("Calendario y resultados del equipo")
