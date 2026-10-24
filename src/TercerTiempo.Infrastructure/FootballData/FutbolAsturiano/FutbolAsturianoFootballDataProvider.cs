@@ -25,6 +25,10 @@ internal sealed class FutbolAsturianoFootballDataProvider(
 
     private static readonly TimeSpan LiveWindow = TimeSpan.FromHours(3);
 
+    // En la jornada, un partido oculto solo se relee cuando ya ha empezado (o empieza en estas horas) y aún no tiene
+    // resultado: releer cada hora los de dentro de varios días no aporta nada (la pasada completa corrige sus fechas).
+    private static readonly TimeSpan HiddenRoundLookAhead = TimeSpan.FromHours(6);
+
     private readonly FutbolAsturianoOptions _settings = options.Value.FutbolAsturiano;
     private readonly Dictionary<string, Paged> _eventsByLeague = [];
     private readonly Dictionary<string, List<JsonElement>> _teamsByLeague = [];
@@ -34,6 +38,7 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     private readonly Dictionary<int, EventPage?> _eventPages = [];
     private readonly Dictionary<string, string> _leagueNames = [];
     private DateTimeOffset _lastRequestAt = DateTimeOffset.MinValue;
+    private MatchWindow? _window;
 
     private (int Id, string Label)? _season;
     private TimeZoneInfo? _timeZone;
@@ -84,7 +89,7 @@ internal sealed class FutbolAsturianoFootballDataProvider(
 
         // Equipos que juegan partidos de la liga pero que la web no ha etiquetado en ella: se recuperan por id.
         var known = teams.Select(t => t.ExternalId).ToHashSet();
-        var missing = (await GetEventsAsync(competitionExternalId, cancellationToken)).Items
+        var missing = (await GetEventsAsync(competitionExternalId, _window, cancellationToken)).Items
             .SelectMany(e => Json.GetIntArray(e, "teams"))
             .Select(id => id.ToString(CultureInfo.InvariantCulture))
             .Where(id => !known.Contains(id))
@@ -117,12 +122,14 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     public async Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(
         string competitionExternalId,
         IReadOnlyCollection<MatchSnapshot> known,
+        MatchWindow? window,
         CancellationToken cancellationToken)
     {
+        _window = window;
         var venues = await GetVenuesAsync(cancellationToken);
-        var events = await GetEventsAsync(competitionExternalId, cancellationToken);
+        var events = await GetEventsAsync(competitionExternalId, window, cancellationToken);
 
-        var matches = new List<MatchSnapshot>(events.Total);
+        var matches = new List<MatchSnapshot>(events.Items.Count);
         var visible = new List<VisibleEvent>(events.Items.Count);
 
         foreach (var item in events.Items)
@@ -133,6 +140,9 @@ internal sealed class FutbolAsturianoFootballDataProvider(
             var kickoff = KickoffOf(item);
 
             if (id is not null) visible.Add(new VisibleEvent(id.Value, kickoff ?? DateTimeOffset.MaxValue));
+
+            // La API se pide con un día de margen: aquí se deja exactamente la ventana (en hora de Madrid).
+            if (window is not null && (kickoff is null || !window.Contains(LocalDay(kickoff.Value)))) continue;
 
             if (id is null || teams.Count < 2 || matchday is null or < 1 || kickoff is null)
             {
@@ -166,7 +176,11 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         }
 
         if (_settings.RecoverHiddenEvents)
-            matches.AddRange(await RecoverHiddenEventsAsync(competitionExternalId, visible, events.Total, known, cancellationToken));
+        {
+            matches.AddRange(window is null
+                ? await RecoverHiddenEventsAsync(competitionExternalId, visible, events.Total, known, cancellationToken)
+                : await RefreshHiddenInWindowAsync(competitionExternalId, visible, known, window, cancellationToken));
+        }
 
         return matches;
     }
@@ -335,6 +349,68 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         return recovered;
     }
 
+    // Con una ventana de fechas no se ve el bloque entero de la liga, así que no se buscan partidos ocultos nuevos (eso
+    // lo hace la pasada completa): solo se releen los ya guardados de esos días que la API no ha devuelto y que ya han
+    // empezado o están a punto, sin resultado todavía.
+    private async Task<List<MatchSnapshot>> RefreshHiddenInWindowAsync(
+        string competitionExternalId,
+        IReadOnlyCollection<VisibleEvent> visible,
+        IReadOnlyCollection<MatchSnapshot> known,
+        MatchWindow window,
+        CancellationToken cancellationToken)
+    {
+        var returned = visible.Select(v => v.Id).ToHashSet();
+        var hidden = known
+            .Select(k => (Id: int.TryParse(k.ExternalId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : 0, Snapshot: k))
+            .Where(k => k.Id > 0 && !returned.Contains(k.Id) && window.Contains(LocalDay(k.Snapshot.KickoffAt)))
+            .ToList();
+        var due = clock.GetUtcNow() + HiddenRoundLookAhead;
+        var candidates = hidden
+            .Where(k => k.Snapshot.Status != MatchStatus.Played && k.Snapshot.KickoffAt <= due)
+            .OrderBy(k => k.Snapshot.KickoffAt)
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            if (hidden.Count > 0)
+                logger.LogInformation("futbolasturiano.es: liga {League}, {From}–{To}: {Hidden} partidos ocultos guardados en esas fechas; ninguno pendiente de resultado todavía",
+                    competitionExternalId, window.From, window.To, hidden.Count);
+            return [];
+        }
+
+        var league = await GetLeagueNameAsync(competitionExternalId, cancellationToken);
+        var season = await ResolveSeasonAsync(cancellationToken);
+        var budget = Math.Max(0, _settings.HiddenEventPagesPerLeague);
+        var refreshed = new List<MatchSnapshot>();
+        var downloaded = 0;
+
+        foreach (var (id, _) in candidates)
+        {
+            if (downloaded >= budget) break;
+
+            if (!_eventPages.TryGetValue(id, out var page))
+            {
+                var fetch = await FetchEventPageAsync(id, cancellationToken);
+                downloaded++;
+                if (fetch.Failed) continue;
+
+                page = fetch.Page;
+                _eventPages[id] = page;
+            }
+
+            if (page is null || !page.IsMatch || !page.BelongsTo(league, season.Label)) continue;
+            if (await ToSnapshotAsync(id, page, competitionExternalId, cancellationToken) is { } snapshot) refreshed.Add(snapshot);
+        }
+
+        logger.LogInformation(
+            "futbolasturiano.es: liga {League} ({Name}), {From}–{To}: {Hidden} partidos ocultos guardados en esas fechas, {Candidates} empezados o a punto sin resultado; {Refreshed} releídos ({Downloaded} páginas)",
+            competitionExternalId, league, window.From, window.To, hidden.Count, candidates.Count, refreshed.Count, downloaded);
+
+        return refreshed;
+    }
+
+    private DateOnly LocalDay(DateTimeOffset at) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, SiteTimeZone).DateTime);
+
     private async Task<MatchSnapshot?> ToSnapshotAsync(int id, EventPage page, string competitionExternalId, CancellationToken cancellationToken)
     {
         var home = await TeamIdBySlugAsync(page.HomeTeamSlug!, competitionExternalId, cancellationToken);
@@ -461,16 +537,22 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         return items;
     }
 
-    private async Task<Paged> GetEventsAsync(string competitionExternalId, CancellationToken cancellationToken)
+    // Una sincronización trabaja con una sola ventana (o ninguna): la primera lectura de cada liga se reutiliza.
+    private async Task<Paged> GetEventsAsync(string competitionExternalId, MatchWindow? window, CancellationToken cancellationToken)
     {
         if (_eventsByLeague.TryGetValue(competitionExternalId, out var cached)) return cached;
 
         var season = await ResolveSeasonAsync(cancellationToken);
 
+        // after/before filtran por "date" (hora de Madrid); se pide un día de margen a cada lado y se recorta después.
+        var dates = window is null
+            ? string.Empty
+            : $"&after={window.From.AddDays(-1):yyyy-MM-dd}T00:00:00&before={window.To.AddDays(2):yyyy-MM-dd}T00:00:00";
+
         // Orden por id (único y estable): con orderby=date los partidos que comparten fecha cambian de página entre
         // peticiones y la paginación devuelve algunos repetidos y se salta otros.
         var events = await GetPagedAsync(
-            $"wp/v2/sp_event?sp_league={competitionExternalId}&sp_season={season.Id}&orderby=id&order=asc&_fields=id,date,date_gmt,day,teams,results,sp_venue",
+            $"wp/v2/sp_event?sp_league={competitionExternalId}&sp_season={season.Id}{dates}&orderby=id&order=asc&_fields=id,date,date_gmt,day,teams,results,sp_venue",
             cancellationToken);
 
         var distinct = events.Items

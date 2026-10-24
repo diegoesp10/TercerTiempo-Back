@@ -509,6 +509,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "sync.scheduled_scope_invalid",
+                            Language = "es",
+                            Message = "La pasada automática solo puede ser la jornada en curso o la temporada completa."
+                        },
+                        new
+                        {
                             Code = "auth.email_taken",
                             Language = "es",
                             Message = "Ya existe una cuenta con ese email."
@@ -1551,6 +1557,48 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("SortOrder");
 
                     b.ToTable("Competitions", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Competitions.FootballSyncSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DaysAhead")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DaysBack")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FullSyncEveryDays")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("RostersInRound")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ScheduledScope")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FootballSyncSettings", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000002"),
+                            DaysAhead = 4,
+                            DaysBack = 3,
+                            FullSyncEveryDays = 7,
+                            RostersInRound = false,
+                            ScheduledScope = "CurrentRound",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Competitions.Season", b =>
@@ -2981,6 +3029,14 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Requests")
                         .HasColumnType("int");
+
+                    b.Property<string>("ScopeKind")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ScopeLabel")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<DateTimeOffset>("StartedAt")
                         .HasColumnType("datetimeoffset");

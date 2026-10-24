@@ -12,6 +12,9 @@ public interface IAdminRepository
     Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default);
     Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default);
     Task<LicensingSettingsDto> GetLicensingSettingsAsync(CancellationToken cancellationToken = default);
+    Task<FootballSyncSettingsDto> GetFootballSyncSettingsAsync(CancellationToken cancellationToken = default);
+    Task<FootballSyncSettingsDto> UpdateFootballSyncSettingsAsync(UpdateFootballSyncSettingsCommand command, CancellationToken cancellationToken = default);
+    Task<JobDto> RunFootballSyncAsync(RunFootballSyncCommand command, CancellationToken cancellationToken = default);
     Task<LicensingSettingsDto> UpdateLicensingSettingsAsync(UpdateLicensingSettingsCommand command, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ClubInvitationDto>> GetClubInvitationsAsync(CancellationToken cancellationToken = default);
     Task<ClubInvitationDto> CreateClubInvitationAsync(CreateClubInvitationCommand command, CancellationToken cancellationToken = default);

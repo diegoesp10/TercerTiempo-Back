@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Common.Errors;
@@ -50,7 +51,9 @@ public sealed record JobRunDto(
     DateTimeOffset? FinishedAt,
     string? Summary,
     IReadOnlyList<string> Errors,
-    int Requests);
+    int Requests,
+    [property: Description("Qué abarcó (datos de las ligas): «Jornada en curso (21 oct – 28 oct)», «Temporada completa»…")]
+    string? Scope);
 
 // Contadores del control de peticiones de cada web (hora y día en curso) y lo que se ha llamado en las últimas 24 h.
 public sealed record ScrapeSourceDto(
@@ -87,7 +90,12 @@ public enum JobLaunchResult
 public interface IJobsMonitor
 {
     Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken);
-    JobLaunchResult Launch(string job);
+
+    // parameters llega tal cual al trabajo (p. ej. el SyncScope de los datos de las ligas); null = lo de su programación.
+    JobLaunchResult Launch(string job, object? parameters = null);
+
+    // Inicio de la última sincronización de la temporada entera que terminó (bien o con algún error).
+    Task<DateTimeOffset?> LastFullFootballSyncAsync(CancellationToken cancellationToken);
 }
 
 public sealed record GetJobsOverviewQuery(string? Provider = null, int Requests = 200) : IQuery<JobsOverviewDto>;
@@ -102,16 +110,22 @@ public sealed record RunJobCommand(string Job) : ICommand<JobDto>;
 
 internal sealed class RunJobHandler(IJobsMonitor monitor) : ICommandHandler<RunJobCommand, JobDto>
 {
-    public async Task<JobDto> Handle(RunJobCommand command, CancellationToken cancellationToken)
+    public Task<JobDto> Handle(RunJobCommand command, CancellationToken cancellationToken) =>
+        JobLauncher.LaunchAsync(monitor, command.Job, null, cancellationToken);
+}
+
+internal static class JobLauncher
+{
+    public static async Task<JobDto> LaunchAsync(IJobsMonitor monitor, string job, object? parameters, CancellationToken cancellationToken)
     {
-        switch (monitor.Launch(command.Job))
+        switch (monitor.Launch(job, parameters))
         {
-            case JobLaunchResult.NotFound: throw new NotFoundException(ErrorCode.JobNotFound, command.Job);
-            case JobLaunchResult.AlreadyRunning: throw new ConflictException(ErrorCode.JobAlreadyRunning, command.Job);
-            case JobLaunchResult.Disabled: throw new ConflictException(ErrorCode.JobDisabled, command.Job);
+            case JobLaunchResult.NotFound: throw new NotFoundException(ErrorCode.JobNotFound, job);
+            case JobLaunchResult.AlreadyRunning: throw new ConflictException(ErrorCode.JobAlreadyRunning, job);
+            case JobLaunchResult.Disabled: throw new ConflictException(ErrorCode.JobDisabled, job);
         }
 
         var overview = await monitor.GetOverviewAsync(null, 1, cancellationToken);
-        return overview.Jobs.Single(j => j.Name == command.Job);
+        return overview.Jobs.Single(j => j.Name == job);
     }
 }

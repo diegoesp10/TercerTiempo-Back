@@ -93,6 +93,7 @@ public static class DependencyInjection
         services.AddScoped<IVideoShareStore, VideoShareStore>();
         services.AddScoped<ILicenseStore, LicenseStore>();
         services.AddScoped<ILicensingSettingsStore, TercerTiempo.Infrastructure.Licensing.LicensingSettingsStore>();
+        services.AddScoped<TercerTiempo.Domain.Competitions.IFootballSyncSettingsStore, FootballData.FootballSyncSettingsStore>();
     }
 
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)

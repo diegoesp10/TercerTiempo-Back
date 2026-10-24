@@ -195,6 +195,8 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST | `/api/admin/login` | Sesión del administrador (rol `Admin`); su token abre todo `/api/admin/*` |
 | GET | `/api/admin/jobs` | Trabajos en segundo plano, historial de ejecuciones, contadores de cada web y últimas llamadas |
 | POST | `/api/admin/jobs/{job}/run` | Lanzar ya `football-data` u `official-sheets` |
+| GET/PUT | `/api/admin/football-sync` | Qué descarga la sincronización automática de las ligas (jornada en curso o temporada) |
+| POST | `/api/admin/football-sync/run` | Sincronizar ya la jornada en curso, unas fechas o la temporada, de todas o algunas ligas |
 
 Las lecturas de una plantilla (`GET /api/squads/{id}`, sus partidos, actas, comparador y estadísticas) son públicas
 si la plantilla es pública y, si es privada, solo para su cuerpo técnico vigente y sus jugadores vinculados (403 en
@@ -259,6 +261,17 @@ no impide sincronizar las demás). Se elige en `appsettings.json` → `FootballD
 
 El worker `FootballDataSyncWorker` sincroniza cada `SyncIntervalMinutes` minutos (60 por defecto) contados desde la
 última ejecución guardada en `JobRuns`: arrancar la API **no** vuelve a sincronizar si no ha pasado ese tiempo.
+
+Qué descarga cada pasada está en la tabla `FootballSyncSettings` (editable en `/jobs`, `GET/PUT /api/admin/football-sync`):
+
+- **Jornada en curso** (por defecto): los partidos de hoy menos `DaysBack` a hoy más `DaysAhead` (3 y 4: de miércoles a
+  miércoles), pidiendo a `sp_event` solo esas fechas (`after`/`before`), más las clasificaciones. Los equipos solo se
+  piden si aparece uno nuevo y las plantillas solo si `RostersInRound`. De los partidos ocultos solo se releen los ya
+  guardados de esas fechas que han empezado o empiezan en 6 horas y aún no tienen resultado.
+- **Temporada completa**: lo de siempre (calendario entero, búsqueda de partidos ocultos nuevos, equipos y
+  plantillas). La pasada automática lo es cada `FullSyncEveryDays` días (7; 0 = solo a mano) o siempre, si así se fija.
+- A mano (`POST /api/admin/football-sync/run`): jornada en curso, unas fechas (hasta 366 días) o temporada completa,
+  de todas las ligas o de las elegidas, con o sin plantillas. Cada ejecución guarda su alcance en `JobRuns`.
 
 ## Trabajos en segundo plano y página /jobs
 

@@ -19,6 +19,11 @@ public sealed record CompetitionSnapshot(
     DateOnly StartsOn,
     DateOnly EndsOn);
 
+public sealed record MatchWindow(DateOnly From, DateOnly To)
+{
+    public bool Contains(DateOnly day) => day >= From && day <= To;
+}
+
 public sealed record TeamSnapshot(string ExternalId, string Name, string ShortName, string? CrestUrl);
 
 public sealed record MatchSnapshot(

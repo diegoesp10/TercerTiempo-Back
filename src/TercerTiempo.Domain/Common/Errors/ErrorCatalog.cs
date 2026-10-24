@@ -31,6 +31,7 @@ public static class ErrorCatalog
         (ErrorCode.JobNotFound, "El trabajo '{0}' no existe."),
         (ErrorCode.JobAlreadyRunning, "El trabajo '{0}' ya está en marcha."),
         (ErrorCode.JobDisabled, "El trabajo '{0}' está desactivado en la configuración."),
+        (ErrorCode.SyncScheduledScopeInvalid, "La pasada automática solo puede ser la jornada en curso o la temporada completa."),
         (ErrorCode.AuthEmailTaken, "Ya existe una cuenta con ese email."),
         (ErrorCode.AuthPositionRequired, "Indica tu posición."),
         (ErrorCode.AuthAccessCodeRequired, "Introduce el código de acceso que te ha dado tu club."),

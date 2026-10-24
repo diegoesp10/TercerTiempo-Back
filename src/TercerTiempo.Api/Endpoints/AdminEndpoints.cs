@@ -31,6 +31,26 @@ internal static class AdminEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        group.MapGet("/football-sync", (IAdminRepository admin, CancellationToken ct) => admin.GetFootballSyncSettingsAsync(ct))
+            .WithName("GetFootballSyncSettings")
+            .WithSummary("Qué descarga la sincronización de las ligas")
+            .WithDescription("La pasada automática (CurrentRound: solo la jornada en curso, de hoy menos daysBack a hoy más daysAhead; FullSeason: la temporada entera), si la jornada lleva plantillas, cada cuántos días toca la pasada completa y cuándo fue la última, la jornada en curso de hoy y las ligas sincronizadas. Solo administradores.");
+
+        group.MapPut("/football-sync", (UpdateFootballSyncSettingsCommand command, IAdminRepository admin, CancellationToken ct) => admin.UpdateFootballSyncSettingsAsync(command, ct))
+            .WithName("UpdateFootballSyncSettings")
+            .WithSummary("Cambiar la sincronización automática de las ligas")
+            .WithDescription("Se aplica desde la siguiente pasada. La pasada automática solo puede ser CurrentRound o FullSeason (unas fechas fijas se quedarían viejas). Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPost("/football-sync/run", (RunFootballSyncCommand command, IAdminRepository admin, CancellationToken ct) => admin.RunFootballSyncAsync(command, ct))
+            .WithName("RunFootballSync")
+            .WithSummary("Sincronizar ahora las ligas, eligiendo qué")
+            .WithDescription("scope: CurrentRound (la jornada en curso de los ajustes), DateRange (de from a to, hasta 366 días) o FullSeason. competitionIds limita a esas ligas (vacío = todas). includeRosters descarga también el catálogo de jugadores (por defecto: sí en la temporada completa; en la jornada, lo de los ajustes; en fechas, no). Con fechas solo se tocan los partidos de esos días, sus clasificaciones y los equipos nuevos; los partidos ocultos por la API solo se releen si ya estaban guardados. 409 si ya está en marcha. Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         group.MapGet("/licenses", (IAdminRepository admin, CancellationToken ct) => admin.GetLicensesAsync(ct))
             .WithName("GetLicensesOverview")
             .WithSummary("Licencias y cobros de todos los clubes")

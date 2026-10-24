@@ -25,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<AppointmentRedemption>();
         services.AddScoped<Licensing.ILicenseGate, Licensing.LicenseGate>();
         services.AddSingleton<Licensing.LicensingCatalogCache>();
+        services.AddScoped<Admin.FootballSyncSettingsReader>();
         services.AddScoped<Licensing.ILicensingCatalog, Licensing.LicensingCatalog>();
         services.AddScoped<Licensing.LicenseDescriber>();
         services.AddScoped<Licensing.LicenseCheckoutCompletion>();

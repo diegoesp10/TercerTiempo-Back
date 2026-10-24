@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.Sync;
+using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Infrastructure.Jobs;
 
 namespace TercerTiempo.Infrastructure.FootballData;
@@ -31,7 +32,9 @@ internal sealed class FootballDataSyncWorker(
 
                 try
                 {
-                    await scheduler.RunAsync(job.Name, manual, RunOnceAsync, stoppingToken);
+                    var scope = (manual ? scheduler.TakeParameters(job.Name) as SyncScope : null) ?? await ScheduledScopeAsync(stoppingToken);
+                    await scheduler.RunAsync(
+                        job.Name, manual, ct => RunOnceAsync(scope, ct), stoppingToken, new JobScope(scope.Kind.ToString(), scope.Describe()));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
                 {
@@ -47,19 +50,33 @@ internal sealed class FootballDataSyncWorker(
         }
     }
 
-    private async Task<JobOutcome> RunOnceAsync(CancellationToken cancellationToken)
+    private async Task<SyncScope> ScheduledScopeAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var now = clock.GetUtcNow();
+        var settings = await scope.ServiceProvider.GetRequiredService<IFootballSyncSettingsStore>().GetAsync(cancellationToken)
+            ?? FootballSyncSettings.CreateDefault(now);
+        var lastFull = await scope.ServiceProvider.GetRequiredService<IJobsMonitor>().LastFullFootballSyncAsync(cancellationToken);
+        return FootballSyncPlanner.Scheduled(settings, lastFull, now);
+    }
+
+    private async Task<JobOutcome> RunOnceAsync(SyncScope syncScope, CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<SyncSeasonCommand, SyncResultDto>>();
 
-        var result = await handler.Handle(new SyncSeasonCommand(), cancellationToken);
+        var result = await handler.Handle(new SyncSeasonCommand(syncScope), cancellationToken);
 
         logger.LogInformation(
             "Datos de fútbol sincronizados ({Provider}): {Competitions} competiciones, {Teams} equipos, {Matches} partidos, {Roster} fichas de plantilla, {Errors} errores",
             result.Provider, result.Competitions, result.Teams, result.Matches, result.RosterEntries, result.Errors.Count);
 
-        return new JobOutcome(
-            $"{result.Competitions} ligas, {result.Teams} equipos, {result.Matches} partidos, {result.Standings} filas de clasificación y {result.RosterEntries} fichas",
-            result.Errors);
+        List<string> parts = [$"{result.Competitions} ligas"];
+        if (result.Teams > 0) parts.Add($"{result.Teams} equipos");
+        parts.Add($"{result.Matches} partidos");
+        parts.Add($"{result.Standings} filas de clasificación");
+        if (syncScope.IncludeRosters) parts.Add($"{result.RosterEntries} fichas");
+
+        return new JobOutcome(string.Join(", ", parts[..^1]) + " y " + parts[^1], result.Errors);
     }
 }

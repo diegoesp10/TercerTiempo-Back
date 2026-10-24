@@ -72,8 +72,11 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
             .Select(t => new TeamSnapshot(t.Id, t.Name, t.ShortName, null))
             .ToList());
 
-    public Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(string competitionExternalId, IReadOnlyCollection<MatchSnapshot> known, CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<MatchSnapshot>>(BuildMatches(competitionExternalId, clock.GetUtcNow()));
+    public Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(
+        string competitionExternalId, IReadOnlyCollection<MatchSnapshot> known, MatchWindow? window, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<MatchSnapshot>>(BuildMatches(competitionExternalId, clock.GetUtcNow())
+            .Where(m => window is null || window.Contains(DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(m.KickoffAt, MadridTimeZone).DateTime)))
+            .ToList());
 
     public Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken)
     {

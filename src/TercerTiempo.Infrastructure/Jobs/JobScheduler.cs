@@ -15,6 +15,8 @@ internal sealed record JobDefinition(string Name, string Title, string Descripti
 
 internal sealed record JobOutcome(string Summary, IReadOnlyList<string> Errors);
 
+internal sealed record JobScope(string Kind, string Label);
+
 // Ejecución en curso: las llamadas a webs externas hechas dentro de ella quedan apuntadas a su nombre.
 internal static class JobContext
 {
@@ -88,7 +90,7 @@ internal sealed class JobScheduler
         lock (_lock) return (slot.Running, slot.Running ? null : slot.NextRunAt);
     }
 
-    public JobLaunchResult Launch(string job)
+    public JobLaunchResult Launch(string job, object? parameters = null)
     {
         if (!_slots.TryGetValue(job, out var slot)) return JobLaunchResult.NotFound;
         if (!slot.Definition.Enabled) return JobLaunchResult.Disabled;
@@ -97,9 +99,22 @@ internal sealed class JobScheduler
         {
             if (slot.Running) return JobLaunchResult.AlreadyRunning;
             slot.Triggered = true;
+            slot.Parameters = parameters;
             slot.Signal.TrySetResult();
         }
         return JobLaunchResult.Accepted;
+    }
+
+    // Lo que se pidió al lanzarlo a mano (y se olvida al leerlo); null si fue a su hora o sin indicar nada.
+    public object? TakeParameters(string job)
+    {
+        var slot = _slots[job];
+        lock (_lock)
+        {
+            var parameters = slot.Parameters;
+            slot.Parameters = null;
+            return parameters;
+        }
     }
 
     public Task WhenTriggered(string job)
@@ -177,7 +192,8 @@ internal sealed class JobScheduler
         }
     }
 
-    public async Task RunAsync(string job, bool manual, Func<CancellationToken, Task<JobOutcome>> work, CancellationToken cancellationToken)
+    public async Task RunAsync(
+        string job, bool manual, Func<CancellationToken, Task<JobOutcome>> work, CancellationToken cancellationToken, JobScope? scope = null)
     {
         var slot = _slots[job];
         lock (_lock) slot.Running = true;
@@ -189,6 +205,8 @@ internal sealed class JobScheduler
             Manual = manual,
             Status = JobRunStatus.Running,
             StartedAt = _clock.GetUtcNow(),
+            ScopeKind = scope?.Kind,
+            ScopeLabel = scope?.Label,
         };
 
         var status = JobRunStatus.Succeeded;
@@ -273,6 +291,7 @@ internal sealed class JobScheduler
         public JobDefinition Definition { get; } = definition;
         public bool Running;
         public bool Triggered;
+        public object? Parameters;
         public DateTimeOffset? NextRunAt;
         public TaskCompletionSource Signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }

@@ -110,6 +110,25 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
 
         Assert.Equal(JobLaunchResult.NotFound, scheduler.Launch("no-existe"));
     }
+
+    [LocalSqlFact]
+    public async Task What_was_asked_by_hand_reaches_the_job_once_and_the_run_keeps_its_scope()
+    {
+        await fixture.Reset();
+        var scheduler = fixture.Scheduler();
+
+        Assert.Equal(JobLaunchResult.Accepted, scheduler.Launch(JobNames.FootballData, "jornada"));
+        Assert.True(await scheduler.WaitAsync(JobNames.FootballData, DateTimeOffset.UtcNow.AddHours(1), default));
+        Assert.Equal("jornada", scheduler.TakeParameters(JobNames.FootballData));
+        Assert.Null(scheduler.TakeParameters(JobNames.FootballData));
+
+        await scheduler.RunAsync(JobNames.FootballData, true, _ => Task.FromResult(new JobOutcome("ok", [])), default,
+            new JobScope("CurrentRound", "Jornada en curso (21 oct – 28 oct)"));
+
+        await using var db = fixture.Db();
+        var run = await db.Set<JobRun>().SingleAsync();
+        Assert.Equal(("CurrentRound", "Jornada en curso (21 oct – 28 oct)"), (run.ScopeKind, run.ScopeLabel));
+    }
 }
 
 public class RunJobHandlerTests
@@ -139,7 +158,9 @@ public class RunJobHandlerTests
 
     private sealed class FakeMonitor(JobLaunchResult result) : IJobsMonitor
     {
-        public JobLaunchResult Launch(string job) => result;
+        public JobLaunchResult Launch(string job, object? parameters = null) => result;
+
+        public Task<DateTimeOffset?> LastFullFootballSyncAsync(CancellationToken cancellationToken) => Task.FromResult<DateTimeOffset?>(null);
 
         public Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken) =>
             Task.FromResult(new JobsOverviewDto(

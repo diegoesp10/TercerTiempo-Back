@@ -7,9 +7,11 @@ public interface IFootballDataProvider
     Task<IReadOnlyList<CompetitionSnapshot>> GetCompetitionsAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<TeamSnapshot>> GetTeamsAsync(string competitionExternalId, CancellationToken cancellationToken);
+    // Con window, solo los partidos de esos días (en la hora local de la web); sin ella, la temporada entera.
     Task<IReadOnlyList<MatchSnapshot>> GetMatchesAsync(
         string competitionExternalId,
         IReadOnlyCollection<MatchSnapshot> known,
+        MatchWindow? window,
         CancellationToken cancellationToken);
     Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken);
 

@@ -11,7 +11,8 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Sync;
 
-public sealed record SyncSeasonCommand : ICommand<SyncResultDto>;
+// Sin alcance, la temporada entera con plantillas.
+public sealed record SyncSeasonCommand(SyncScope? Scope = null) : ICommand<SyncResultDto>;
 
 public sealed record SyncResultDto(
     string Provider,
@@ -40,6 +41,7 @@ internal sealed class SyncSeasonHandler(
     {
         var now = clock.GetUtcNow();
         var providerName = provider.ProviderName;
+        var scope = command.Scope ?? SyncScope.FullSeason();
 
         IReadOnlyList<CompetitionSnapshot> snapshots;
         try
@@ -51,6 +53,15 @@ internal sealed class SyncSeasonHandler(
             progress.Start("datos", 0);
             progress.Finish("sin ligas: el proveedor no ha respondido", [ex.Message]);
             throw;
+        }
+
+        if (scope.CompetitionIds.Count > 0)
+        {
+            var wanted = (await competitions.GetAllAsync(cancellationToken))
+                .Where(c => scope.CompetitionIds.Contains(c.Id) && c.ExternalRef?.Provider == providerName)
+                .Select(c => c.ExternalRef!.ExternalId)
+                .ToHashSet();
+            snapshots = snapshots.Where(s => wanted.Contains(s.ExternalId)).ToList();
         }
         progress.Start("datos", snapshots.Count);
 
@@ -69,7 +80,7 @@ internal sealed class SyncSeasonHandler(
 
             try
             {
-                var counts = await SyncCompetitionAsync(snapshot, providerName, teamsByExternalId, now, cancellationToken);
+                var counts = await SyncCompetitionAsync(snapshot, providerName, teamsByExternalId, scope, now, cancellationToken);
                 await unitOfWork.SaveChangesAsync(cancellationToken);
 
                 totals.Competitions++;
@@ -104,6 +115,7 @@ internal sealed class SyncSeasonHandler(
         CompetitionSnapshot snapshot,
         string providerName,
         Dictionary<string, Team> teamsByExternalId,
+        SyncScope scope,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -139,10 +151,14 @@ internal sealed class SyncSeasonHandler(
             .OfType<MatchSnapshot>()
             .ToList();
 
-        var matchSnapshots = await provider.GetMatchesAsync(snapshot.ExternalId, known, cancellationToken);
+        var matchSnapshots = await provider.GetMatchesAsync(snapshot.ExternalId, known, scope.Window, cancellationToken);
 
-        // 3. Equipos
-        var teamSnapshots = await provider.GetTeamsAsync(snapshot.ExternalId, cancellationToken);
+        // 3. Equipos. En la jornada o unas fechas solo se piden si algún partido trae un equipo nuevo o hay que leer
+        //    plantillas: los demás ya están guardados.
+        var needTeams = scope.Window is null
+            || scope.IncludeRosters
+            || matchSnapshots.Any(m => !teamsByExternalId.ContainsKey(m.HomeTeamExternalId) || !teamsByExternalId.ContainsKey(m.AwayTeamExternalId));
+        var teamSnapshots = needTeams ? await provider.GetTeamsAsync(snapshot.ExternalId, cancellationToken) : [];
 
         foreach (var ts in teamSnapshots)
         {
@@ -209,7 +225,9 @@ internal sealed class SyncSeasonHandler(
             syncedStandings++;
         }
 
-        // 6. Plantillas
+        // 6. Plantillas (el catálogo entero de jugadores de la web: solo si se piden)
+        if (!scope.IncludeRosters) return (teamSnapshots.Count, syncedMatches, syncedStandings, 0);
+
         var rosterByTeam = (await teams.GetSeasonRosterAsync(season.Id, cancellationToken)).ToLookup(r => r.TeamId);
 
         var syncedRoster = 0;

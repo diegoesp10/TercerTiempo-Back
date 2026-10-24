@@ -10,6 +10,9 @@ internal sealed class AdminRepository(
     ICommandHandler<AdminLoginCommand, AdminAuthResponse> login,
     IQueryHandler<GetJobsOverviewQuery, JobsOverviewDto> jobs,
     ICommandHandler<RunJobCommand, JobDto> runJob,
+    IQueryHandler<GetFootballSyncSettingsQuery, FootballSyncSettingsDto> footballSyncSettings,
+    ICommandHandler<UpdateFootballSyncSettingsCommand, FootballSyncSettingsDto> updateFootballSyncSettings,
+    ICommandHandler<RunFootballSyncCommand, JobDto> runFootballSync,
     IQueryHandler<GetLicensesOverviewQuery, LicensesOverviewDto> licenses,
     IQueryHandler<GetLicensingSettingsQuery, LicensingSettingsDto> licensingSettings,
     ICommandHandler<UpdateLicensingSettingsCommand, LicensingSettingsDto> updateLicensingSettings,
@@ -26,6 +29,15 @@ internal sealed class AdminRepository(
 
     public Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default) =>
         runJob.Handle(new RunJobCommand(job), cancellationToken);
+
+    public Task<FootballSyncSettingsDto> GetFootballSyncSettingsAsync(CancellationToken cancellationToken = default) =>
+        footballSyncSettings.Handle(new GetFootballSyncSettingsQuery(), cancellationToken);
+
+    public Task<FootballSyncSettingsDto> UpdateFootballSyncSettingsAsync(UpdateFootballSyncSettingsCommand command, CancellationToken cancellationToken = default) =>
+        updateFootballSyncSettings.Handle(command, cancellationToken);
+
+    public Task<JobDto> RunFootballSyncAsync(RunFootballSyncCommand command, CancellationToken cancellationToken = default) =>
+        runFootballSync.Handle(command, cancellationToken);
 
     public Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default) =>
         licenses.Handle(new GetLicensesOverviewQuery(), cancellationToken);
