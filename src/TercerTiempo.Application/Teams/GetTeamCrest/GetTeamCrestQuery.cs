@@ -11,6 +11,6 @@ internal sealed class GetTeamCrestHandler(ITeamStore teams, ICrestStorage crests
     public async Task<CrestFile?> Handle(GetTeamCrestQuery query, CancellationToken cancellationToken)
     {
         var team = await teams.GetByIdAsync(query.TeamId, cancellationToken);
-        return team?.CrestKey is { } key ? await crests.OpenReadAsync(key, cancellationToken) : null;
+        return team is not null && team.HasVisibleCrest() ? await crests.OpenReadAsync(team.CrestKey!, cancellationToken) : null;
     }
 }

@@ -1,15 +1,23 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Infrastructure.Persistence.Stores;
 
-internal sealed class OfficialSheetStore(AppDbContext db) : IOfficialSheetStore
+internal sealed class OfficialSheetStore(AppDbContext db, IOptions<PublicSheetOptions> options) : IOfficialSheetStore
 {
-    public Task<OfficialMatchSheet?> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default) =>
+    public async Task<OfficialMatchSheet?> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default) =>
+        await GetStoredByMatchAsync(matchId, cancellationToken) is { } sheet && options.Value.Allows(sheet.Provider) ? sheet : null;
+
+    public async Task<IReadOnlyList<OfficialMatchSheet>> GetByMatchIdsAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default) =>
+        (await GetStoredByMatchIdsAsync(matchIds, cancellationToken)).Where(s => options.Value.Allows(s.Provider)).ToList();
+
+    public Task<OfficialMatchSheet?> GetStoredByMatchAsync(Guid matchId, CancellationToken cancellationToken = default) =>
         db.OfficialSheets.FirstOrDefaultAsync(s => s.MatchId == matchId, cancellationToken);
 
-    public async Task<IReadOnlyList<OfficialMatchSheet>> GetByMatchIdsAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<OfficialMatchSheet>> GetStoredByMatchIdsAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default)
     {
         var list = matchIds.Distinct().ToList();
         if (list.Count == 0) return [];

@@ -16,6 +16,11 @@ internal static class AuthEndpoints
             .WithDescription("Sin sesión. Devuelve la ficha (nombre, dorsal, posición) y la plantilla que hay detrás de un código personal vigente, para que el jugador confirme que es la suya antes de crear la cuenta. Nunca devuelve otras fichas.")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapGet("/registration-options", (IAuthRepository auth, CancellationToken ct) => auth.GetRegistrationOptionsAsync(ct))
+            .WithName("GetRegistrationOptions")
+            .WithSummary("Condiciones del alta")
+            .WithDescription("Sin sesión. clubInviteRequired = true durante la beta cerrada: el alta de un club exige en accessCode una invitación generada por el administrador.");
+
         group.MapPost("/register", (RegisterCommand command, IAuthRepository auth, CancellationToken ct) => auth.RegisterAsync(command, ct))
             .WithName("Register")
             .WithSummary("Alta en la plataforma")

@@ -28,6 +28,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Coach> Coaches => Set<Coach>();
     public DbSet<Club> Clubs => Set<Club>();
     public DbSet<ClubTeam> ClubTeams => Set<ClubTeam>();
+    public DbSet<ClubInvitation> ClubInvitations => Set<ClubInvitation>();
     public DbSet<CoachAppointment> CoachAppointments => Set<CoachAppointment>();
     public DbSet<Squad> Squads => Set<Squad>();
     public DbSet<SquadStaff> SquadStaff => Set<SquadStaff>();

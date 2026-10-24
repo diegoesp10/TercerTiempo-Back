@@ -185,6 +185,45 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("Clubs", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Clubs.ClubInvitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("ClubInvitations", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Clubs.ClubTeam", b =>
                 {
                     b.Property<Guid>("Id")
@@ -509,6 +548,30 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "auth.club_already_registered",
                             Language = "es",
                             Message = "{0} ya tiene cuenta en Tercer Tiempo."
+                        },
+                        new
+                        {
+                            Code = "auth.club_invite_required",
+                            Language = "es",
+                            Message = "Durante la beta, para dar de alta un club necesitas un código de invitación."
+                        },
+                        new
+                        {
+                            Code = "auth.club_invite_invalid",
+                            Language = "es",
+                            Message = "El código de invitación no existe, ya se ha usado o ha caducado."
+                        },
+                        new
+                        {
+                            Code = "club_invitation.not_found",
+                            Language = "es",
+                            Message = "La invitación '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "club_invitation.already_used",
+                            Language = "es",
+                            Message = "Esa invitación ya se ha usado para dar de alta un club."
                         },
                         new
                         {
@@ -2461,6 +2524,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("CrestFromClub")
+                        .HasColumnType("bit");
+
                     b.Property<string>("CrestKey")
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
@@ -2995,6 +3061,14 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Clubs.ClubInvitation", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Clubs.ClubTeam", b =>

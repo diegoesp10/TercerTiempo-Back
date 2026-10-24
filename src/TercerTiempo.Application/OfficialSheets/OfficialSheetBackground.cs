@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Application.Common;
@@ -32,9 +33,10 @@ internal static class OfficialSheetRefresh
         match.Status == MatchStatus.Played
         || (match.Status is MatchStatus.Scheduled or MatchStatus.InProgress && match.KickoffAt + TimeSpan.FromHours(2) <= now);
 
-    public static bool IsDue(OfficialMatchSheet sheet, Match match, DateTimeOffset now)
+    // Un acta oculta (de una web desactivada) se busca de nuevo en las activas, como mucho una vez al día.
+    public static bool IsDue(OfficialMatchSheet sheet, Match match, DateTimeOffset now, bool hidden = false)
     {
-        return !sheet.IsAvailable && now - sheet.CheckedAt >= PendingRecheck;
+        return (hidden || !sheet.IsAvailable) && now - sheet.CheckedAt >= PendingRecheck;
     }
 }
 
@@ -123,13 +125,18 @@ internal sealed class PlanOfficialSheetSyncHandler(
     IMatchStore matches,
     ISquadStore squads,
     IOfficialSheetStore sheets,
+    IEnumerable<IPublicSheetSource> sources,
+    IOptions<PublicSheetOptions> options,
     OfficialSheetSyncMemory memory,
     TimeProvider clock) : ICommandHandler<PlanOfficialSheetSyncCommand, IReadOnlyList<PlannedSheet>>
 {
     public async Task<IReadOnlyList<PlannedSheet>> Handle(PlanOfficialSheetSyncCommand command, CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
+        var settings = options.Value;
         var due = new List<(Match Match, bool Ours)>();
+        // Sin ninguna web activa aparte de la federación, los partidos de equipos sin plantilla no tienen dónde buscarse.
+        var othersReachable = sources.Any(s => !s.IsFederation && settings.Allows(s.Name));
 
         foreach (var competition in await competitions.GetAllAsync(cancellationToken))
         {
@@ -142,13 +149,17 @@ internal sealed class PlanOfficialSheetSyncHandler(
             if (played.Count == 0)
                 continue;
 
-            var stored = (await sheets.GetByMatchIdsAsync(played.Select(m => m.Id), cancellationToken)).ToDictionary(s => s.MatchId);
-            var pending = played.Where(m => !stored.TryGetValue(m.Id, out var sheet) || OfficialSheetRefresh.IsDue(sheet, m, now)).ToList();
+            var stored = (await sheets.GetStoredByMatchIdsAsync(played.Select(m => m.Id), cancellationToken)).ToDictionary(s => s.MatchId);
+            var pending = played
+                .Where(m => !stored.TryGetValue(m.Id, out var sheet) || OfficialSheetRefresh.IsDue(sheet, m, now, !settings.Allows(sheet.Provider)))
+                .ToList();
             if (pending.Count == 0)
                 continue;
 
             var teamsWithSquad = (await squads.GetBySeasonAsync(season.Id, cancellationToken)).Select(s => s.TeamId).ToHashSet();
-            due.AddRange(pending.Select(m => (m, teamsWithSquad.Contains(m.HomeTeamId) || teamsWithSquad.Contains(m.AwayTeamId))));
+            due.AddRange(pending
+                .Select(m => (m, teamsWithSquad.Contains(m.HomeTeamId) || teamsWithSquad.Contains(m.AwayTeamId)))
+                .Where(d => d.Item2 || othersReachable));
         }
 
         return due

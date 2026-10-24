@@ -60,7 +60,7 @@ internal sealed class UploadTeamCrestHandler(
             throw new DomainException(ErrorCode.ClubCrestInvalid);
 
         var image = new CrestImage(buffer.ToArray(), command.File.ContentType.ToLowerInvariant());
-        team.SetCrest(await crests.SaveAsync(team.Id, image, cancellationToken));
+        team.SetCrest(await crests.SaveAsync(team.Id, image, cancellationToken), fromClub: true);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new TeamCrestImportDto(team.Id, team.Name, team.CrestLink()!, image.ContentType, image.Content.Length);

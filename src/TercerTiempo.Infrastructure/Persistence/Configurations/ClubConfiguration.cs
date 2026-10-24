@@ -27,6 +27,21 @@ internal sealed class ClubConfiguration : IEntityTypeConfiguration<Club>
     }
 }
 
+internal sealed class ClubInvitationConfiguration : IEntityTypeConfiguration<ClubInvitation>
+{
+    public void Configure(EntityTypeBuilder<ClubInvitation> builder)
+    {
+        builder.ToTable("ClubInvitations");
+        builder.ConfigureAggregate();
+
+        builder.Property(i => i.Code).HasMaxLength(20).IsRequired();
+        builder.Property(i => i.Note).HasMaxLength(200);
+        builder.HasIndex(i => i.Code).IsUnique();
+
+        builder.HasOne<Club>().WithMany().HasForeignKey(i => i.ClubId).OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
 internal sealed class ClubTeamConfiguration : IEntityTypeConfiguration<ClubTeam>
 {
     public void Configure(EntityTypeBuilder<ClubTeam> builder)

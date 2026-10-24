@@ -34,6 +34,9 @@ public sealed class CrestOptions
 {
     public const string SectionName = "Crests";
 
+    // Beta cerrada: solo se muestran los escudos que sube cada club; el resto de equipos sale con sus iniciales.
+    public bool ClubUploadsOnly { get; set; }
+
     public string Directory { get; set; } = "data/crests";
 
     public string PhotosDirectory { get; set; } = "data/photos";

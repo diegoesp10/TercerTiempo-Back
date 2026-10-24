@@ -5,6 +5,8 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using FluentValidation.Results;
 using TercerTiempo.Application.Clubs;
 using TercerTiempo.Application.Clubs.Catalog;
+using TercerTiempo.Application.Clubs.Invitations;
+using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Coaches;
 using TercerTiempo.Application.Coaches.Appointments;
 using TercerTiempo.Application.Common;
@@ -14,6 +16,7 @@ using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Auth.Register;
@@ -31,7 +34,7 @@ public sealed record RegisterCommand(
     Position? Position,
     [property: Description("Opcional, formato yyyy-MM-dd. Jugadores: mínimo 14 años.")]
     DateOnly? BirthDate,
-    [property: Description("Cuerpo técnico: código de acceso que te ha entregado tu club. Jugadores: código personal de tu ficha, generado por tu club o entrenador; al crear la cuenta quedas vinculado a ella.")]
+    [property: Description("Cuerpo técnico: código de acceso que te ha entregado tu club. Jugadores: código personal de tu ficha, generado por tu club o entrenador; al crear la cuenta quedas vinculado a ella. Club: código de invitación a la beta (obligatorio si GET /api/auth/registration-options lo indica).")]
     string? AccessCode) : ICommand<AuthResponse>;
 
 internal sealed class RegisterValidator : AbstractValidator<RegisterCommand>
@@ -56,6 +59,8 @@ internal sealed class RegisterHandler(
     IIdentityService identity,
     AccountStores stores,
     AppointmentRedemption redemption,
+    IClubInvitationStore clubInvitations,
+    IOptions<RegistrationOptions> registration,
     IUnitOfWork unitOfWork,
     ITokenService tokens) : ICommandHandler<RegisterCommand, AuthResponse>
 {
@@ -74,8 +79,13 @@ internal sealed class RegisterHandler(
             invite = await InviteLookup.FindAsync(command.AccessCode!, stores.Squads, cancellationToken);
 
         ClubCatalogEntry? clubEntry = null;
+        ClubInvitation? clubInvitation = null;
         if (command.AccountType == AccountType.Club)
+        {
+            if (registration.Value.ClubInviteRequired)
+                clubInvitation = await FindClubInvitationAsync(command.AccessCode, now, cancellationToken);
             clubEntry = await FindClubAsync(command.DisplayName!, cancellationToken);
+        }
 
         var userId = await identity.CreateUserAsync(email, command.Password, cancellationToken);
 
@@ -106,6 +116,7 @@ internal sealed class RegisterHandler(
                         club.AddTeam(team.Team.Id, now);
                 }
                 stores.Clubs.Add(club);
+                clubInvitation?.Redeem(club.Id, now);
                 profileId = club.Id;
                 break;
         }
@@ -116,6 +127,18 @@ internal sealed class RegisterHandler(
         var account = await AccountResolver.ForUserAsync(userId, stores, cancellationToken);
         return new AuthResponse(token.AccessToken, token.ExpiresAt, account);
     }
+
+    private async Task<ClubInvitation> FindClubInvitationAsync(string? code, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            throw InvalidAccessCode(ErrorCode.AuthClubInviteRequired);
+
+        var invitation = await clubInvitations.GetByCodeAsync(InviteCodes.Normalize(code), cancellationToken);
+        return invitation is not null && invitation.IsUsable(now) ? invitation : throw InvalidAccessCode(ErrorCode.AuthClubInviteInvalid);
+    }
+
+    private static ValidationException InvalidAccessCode(string code) =>
+        new([new ValidationFailure(nameof(RegisterCommand.AccessCode), ErrorCatalog.Template(code)) { ErrorCode = code }]);
 
     private async Task<ClubCatalogEntry> FindClubAsync(string name, CancellationToken cancellationToken)
     {

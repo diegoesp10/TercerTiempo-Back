@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Admin;
+using TercerTiempo.Application.Clubs.Invitations;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.Teams.ImportCrest;
 
@@ -9,6 +10,9 @@ internal sealed class AdminRepository(
     ICommandHandler<AdminLoginCommand, AdminAuthResponse> login,
     IQueryHandler<GetJobsOverviewQuery, JobsOverviewDto> jobs,
     ICommandHandler<RunJobCommand, JobDto> runJob,
+    IQueryHandler<ListClubInvitationsQuery, IReadOnlyList<ClubInvitationDto>> listInvitations,
+    ICommandHandler<CreateClubInvitationCommand, ClubInvitationDto> createInvitation,
+    ICommandHandler<RevokeClubInvitationCommand, ClubInvitationDto> revokeInvitation,
     ICommandHandler<ImportTeamCrestCommand, TeamCrestImportDto> importCrest) : IAdminRepository
 {
     public Task<AdminAuthResponse> LoginAsync(AdminLoginCommand command, CancellationToken cancellationToken = default) =>
@@ -19,6 +23,15 @@ internal sealed class AdminRepository(
 
     public Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default) =>
         runJob.Handle(new RunJobCommand(job), cancellationToken);
+
+    public Task<IReadOnlyList<ClubInvitationDto>> GetClubInvitationsAsync(CancellationToken cancellationToken = default) =>
+        listInvitations.Handle(new ListClubInvitationsQuery(), cancellationToken);
+
+    public Task<ClubInvitationDto> CreateClubInvitationAsync(CreateClubInvitationCommand command, CancellationToken cancellationToken = default) =>
+        createInvitation.Handle(command, cancellationToken);
+
+    public Task<ClubInvitationDto> RevokeClubInvitationAsync(Guid id, CancellationToken cancellationToken = default) =>
+        revokeInvitation.Handle(new RevokeClubInvitationCommand(id), cancellationToken);
 
     public Task<TeamCrestImportDto> ImportTeamCrestAsync(Guid teamId, string url, CancellationToken cancellationToken = default) =>
         importCrest.Handle(new ImportTeamCrestCommand(teamId, url), cancellationToken);

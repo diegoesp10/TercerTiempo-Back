@@ -22,6 +22,9 @@ await app.Services.MigrateDatabaseAsync();
 // Rol Admin y usuario administrador de la configuración (Admin:UserName / Admin:Password en user-secrets) para /jobs.
 await app.Services.SeedAdminAsync();
 
+// Beta cerrada: solo los escudos subidos por los clubes (Crests:ClubUploadsOnly).
+app.Services.ApplyCrestPolicy();
+
 // Las actas antiguas (o sin nota) reciben la nota calculada con sus datos.
 await app.Services.RecalculateMissingRatingsAsync();
 

@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Admin;
+using TercerTiempo.Application.Clubs.Invitations;
 using TercerTiempo.Repository.Admin;
 
 namespace TercerTiempo.Api.Endpoints;
@@ -29,6 +30,24 @@ internal static class AdminEndpoints
             .WithDescription("Lo pone en marcha sin esperar a su hora (football-data u official-sheets) y devuelve su estado. Los límites de peticiones de cada web se siguen respetando. 409 si ya está en marcha o está desactivado. Solo administradores.")
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapGet("/club-invitations", (IAdminRepository admin, CancellationToken ct) => admin.GetClubInvitationsAsync(ct))
+            .WithName("GetClubInvitations")
+            .WithSummary("Invitaciones de clubes a la beta")
+            .WithDescription("Todas, de la más reciente a la más antigua, con su estado (available, used, expired, revoked) y el club que la usó. Solo administradores.");
+
+        group.MapPost("/club-invitations", (CreateClubInvitationCommand command, IAdminRepository admin, CancellationToken ct) => admin.CreateClubInvitationAsync(command, ct))
+            .WithName("CreateClubInvitation")
+            .WithSummary("Crear una invitación de club")
+            .WithDescription("Genera un código de un solo uso para que un club se dé de alta durante la beta cerrada (Registration:ClubInviteRequired). note es para el administrador; expiresInDays, opcional (1-365). Solo administradores.")
+            .ProducesValidationProblem();
+
+        group.MapPost("/club-invitations/{id:guid}/revoke", (Guid id, IAdminRepository admin, CancellationToken ct) => admin.RevokeClubInvitationAsync(id, ct))
+            .WithName("RevokeClubInvitation")
+            .WithSummary("Anular una invitación de club")
+            .WithDescription("Deja de servir para darse de alta. Una ya usada no se puede anular (422). Solo administradores.")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/teams/{teamId:guid}/crest", (Guid teamId, ImportCrestRequest request, IAdminRepository admin, CancellationToken ct) => admin.ImportTeamCrestAsync(teamId, request.Url, ct))
             .WithName("ImportTeamCrest")

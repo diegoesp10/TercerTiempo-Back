@@ -39,20 +39,23 @@ internal sealed class SyncOfficialSheetHandler(
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
 
         var now = clock.GetUtcNow();
-        var sheet = await sheets.GetByMatchAsync(match.Id, cancellationToken);
+        var sheet = await sheets.GetStoredByMatchAsync(match.Id, cancellationToken);
+        // Un acta de una web desactivada no se muestra ni cuenta como completa: se busca en las webs activas.
+        var hidden = sheet is not null && !options.Value.Allows(sheet.Provider);
 
         // Ni Force ni una petición manual deben volver a descargar un acta completa ya almacenada.
-        if (sheet is { IsAvailable: true })
+        if (sheet is { IsAvailable: true } && !hidden)
             return Result(sheet, match, OfficialSheetAvailability.Available, null);
 
+        var visible = hidden ? null : sheet;
         if (match.Status is MatchStatus.Cancelled)
-            return Result(sheet, match, OfficialSheetAvailability.Unavailable, "El partido está cancelado.");
+            return Result(visible, match, OfficialSheetAvailability.Unavailable, "El partido está cancelado.");
 
         if (match.Status is MatchStatus.Scheduled or MatchStatus.Postponed && match.KickoffAt > now)
-            return Result(sheet, match, OfficialSheetAvailability.NotPlayed, "El partido todavía no se ha jugado.");
+            return Result(visible, match, OfficialSheetAvailability.NotPlayed, "El partido todavía no se ha jugado.");
 
-        if (sheet is not null && !OfficialSheetRefresh.IsDue(sheet, match, now))
-            return Result(sheet, match, OfficialSheetAvailability.Pending, null);
+        if (sheet is not null && !OfficialSheetRefresh.IsDue(sheet, match, now, hidden))
+            return Result(visible, match, OfficialSheetAvailability.Pending, null);
 
         var (competition, season) = await Resolvers.SeasonByIdAsync(competitions, match.SeasonId, cancellationToken);
 
@@ -100,7 +103,7 @@ internal sealed class SyncOfficialSheetHandler(
         // Guarda también lo que se haya localizado por el camino (códigos de equipo y partido de la federación).
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        if (sheet is not null)
+        if (sheet is not null && !hidden)
             return Result(sheet, match, OfficialSheetAvailability.Pending,
                 unreachable ? "No se ha podido consultar alguna web de actas; se volverá a intentar." : "Todavía no se han publicado las alineaciones.");
 
@@ -115,8 +118,7 @@ internal sealed class SyncOfficialSheetHandler(
 
     private IEnumerable<IPublicSheetSource> Ordered()
     {
-        var names = options.Value.Sources is { Length: > 0 } configured ? configured : PublicSheetOptions.DefaultSources;
-        var order = names.Distinct(StringComparer.OrdinalIgnoreCase).Select((name, index) => (name, index))
+        var order = options.Value.EnabledSources.Select((name, index) => (name, index))
             .ToDictionary(x => x.name, x => x.index, StringComparer.OrdinalIgnoreCase);
         return sources.Where(s => order.ContainsKey(s.Name)).OrderBy(s => order[s.Name]);
     }

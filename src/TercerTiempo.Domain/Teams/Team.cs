@@ -14,6 +14,9 @@ public sealed class Team : AggregateRoot
 
     public string? CrestKey { get; private set; }
 
+    // El escudo lo ha subido el propio club desde su cuenta (no descargado de otra web ni importado por el admin).
+    public bool CrestFromClub { get; private set; }
+
     public DateTimeOffset? ProfileSyncedAt { get; private set; }
 
     private Team() { }
@@ -26,7 +29,11 @@ public sealed class Team : AggregateRoot
 
     public void MarkProfileChecked(DateTimeOffset now) => ProfileSyncedAt = now;
 
-    public void SetCrest(string crestKey) => CrestKey = Guard.NotEmpty(crestKey, "escudo", 80);
+    public void SetCrest(string crestKey, bool fromClub = false)
+    {
+        CrestKey = Guard.NotEmpty(crestKey, "escudo", 80);
+        CrestFromClub = fromClub;
+    }
 
     public static Team Create(string name, string shortName, ExternalRef? externalRef) =>
         new()

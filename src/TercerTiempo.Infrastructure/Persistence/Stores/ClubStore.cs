@@ -42,3 +42,17 @@ internal sealed class CoachAppointmentStore(AppDbContext db) : ICoachAppointment
 
     public void Add(CoachAppointment appointment) => db.CoachAppointments.Add(appointment);
 }
+
+internal sealed class ClubInvitationStore(AppDbContext db) : IClubInvitationStore
+{
+    public Task<ClubInvitation?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.ClubInvitations.FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
+
+    public Task<ClubInvitation?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) =>
+        db.ClubInvitations.FirstOrDefaultAsync(i => i.Code == code, cancellationToken);
+
+    public async Task<IReadOnlyList<ClubInvitation>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        await db.ClubInvitations.OrderByDescending(i => i.CreatedAt).ToListAsync(cancellationToken);
+
+    public void Add(ClubInvitation invitation) => db.ClubInvitations.Add(invitation);
+}

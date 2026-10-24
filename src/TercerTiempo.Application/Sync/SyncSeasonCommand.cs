@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Abstractions.Teams;
+using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
@@ -156,8 +157,9 @@ internal sealed class SyncSeasonHandler(
                 teamsByExternalId[ts.ExternalId] = team;
             }
 
-            // El escudo que publica el proveedor se descarga una vez y se sirve desde aquí; su URL no se guarda.
-            if (team.CrestKey is null && ts.CrestUrl is { } crestUrl
+            // El escudo que publica el proveedor se descarga una vez y se sirve desde aquí; su URL no se guarda. Con
+            // Crests:ClubUploadsOnly no se descarga: solo valen los que suben los clubes.
+            if (!TeamCrests.ClubUploadsOnly && team.CrestKey is null && ts.CrestUrl is { } crestUrl
                 && await crestDownloader.DownloadAsync(crestUrl, cancellationToken) is { } crest)
             {
                 team.SetCrest(await crests.SaveAsync(team.Id, crest, cancellationToken));

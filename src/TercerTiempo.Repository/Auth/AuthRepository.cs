@@ -4,6 +4,7 @@ using TercerTiempo.Application.Auth.GetMyAccount;
 using TercerTiempo.Application.Auth.Invite;
 using TercerTiempo.Application.Auth.Login;
 using TercerTiempo.Application.Auth.Register;
+using TercerTiempo.Application.Clubs.Invitations;
 using TercerTiempo.Application.Squads;
 
 namespace TercerTiempo.Repository.Auth;
@@ -12,7 +13,8 @@ internal sealed class AuthRepository(
     IQueryHandler<GetInviteQuery, SquadInviteDto> getInvite,
     ICommandHandler<RegisterCommand, AuthResponse> register,
     ICommandHandler<LoginCommand, AuthResponse> login,
-    IQueryHandler<GetMyAccountQuery, AccountDto> getMyAccount) : IAuthRepository
+    IQueryHandler<GetMyAccountQuery, AccountDto> getMyAccount,
+    IQueryHandler<GetRegistrationOptionsQuery, RegistrationOptionsDto> registrationOptions) : IAuthRepository
 {
     public Task<SquadInviteDto> GetInviteAsync(string inviteCode, CancellationToken cancellationToken = default) =>
         getInvite.Handle(new GetInviteQuery(inviteCode), cancellationToken);
@@ -25,4 +27,7 @@ internal sealed class AuthRepository(
 
     public Task<AccountDto> GetMyAccountAsync(CancellationToken cancellationToken = default) =>
         getMyAccount.Handle(new GetMyAccountQuery(), cancellationToken);
+
+    public Task<RegistrationOptionsDto> GetRegistrationOptionsAsync(CancellationToken cancellationToken = default) =>
+        registrationOptions.Handle(new GetRegistrationOptionsQuery(), cancellationToken);
 }

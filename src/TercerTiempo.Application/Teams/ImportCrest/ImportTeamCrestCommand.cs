@@ -44,6 +44,6 @@ internal sealed class ImportTeamCrestHandler(
         team.SetCrest(await crests.SaveAsync(team.Id, image, cancellationToken));
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new TeamCrestImportDto(team.Id, team.Name, team.CrestLink()!, image.ContentType, image.Content.Length);
+        return new TeamCrestImportDto(team.Id, team.Name, TeamCrests.Route(team.Id, team.CrestKey), image.ContentType, image.Content.Length);
     }
 }

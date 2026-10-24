@@ -85,6 +85,20 @@ public class PlayerInvitationTests
         Assert.Equal(0, f.Saves);
     }
 
+    [Theory]
+    [InlineData(null, "auth.club_invite_required")]
+    [InlineData("NOEXISTE23", "auth.club_invite_invalid")]
+    public async Task In_the_closed_beta_a_club_needs_a_valid_invitation_before_any_account_is_created(string? code, string expected)
+    {
+        var f = new Fixture();
+
+        var error = await Assert.ThrowsAsync<FluentValidation.ValidationException>(() =>
+            f.Register(clubInviteRequired: true).Handle(new("club@example.com", "Prueba1234", "CD Vallobín", AccountType.Club, null, null, code), default));
+
+        Assert.Equal(expected, Assert.Single(error.Errors).ErrorCode);
+        Assert.Equal(0, f.Saves);
+    }
+
     [Fact]
     public async Task Forged_player_id_in_json_cannot_override_the_personal_code()
     {
@@ -240,7 +254,7 @@ public class PlayerInvitationTests
         private IUnitOfWork Unit => Stub<IUnitOfWork>((_, _) => Task.FromResult(++Saves));
         public GetSquadInviteHandler Preview(ICurrentUser? user = null) => new(user ?? PlayerUser, Players, Squads, Teams, Competitions);
         public GetInviteHandler AnonymousInvite() => new(Squads, Teams, Competitions);
-        public RegisterHandler Register()
+        public RegisterHandler Register(bool clubInviteRequired = false)
         {
             var identity = Stub<IIdentityService>((_, _) => Task.FromResult(Guid.NewGuid()));
             var tokens = Stub<ITokenService>((_, args) => new AuthToken("token", DateTimeOffset.UtcNow.AddHours(1)));
@@ -252,7 +266,9 @@ public class PlayerInvitationTests
                 _ => throw new NotSupportedException(method),
             });
             var stores = new AccountStores(Players, Coaches, Clubs, appointments, Squads, Teams, Competitions, licenses, TimeProvider.System);
-            return new RegisterHandler(identity, stores, new AppointmentRedemption(appointments, Squads, Teams), Unit, tokens);
+            var invitations = Stub<TercerTiempo.Domain.Clubs.IClubInvitationStore>((_, _) => Task.FromResult<TercerTiempo.Domain.Clubs.ClubInvitation?>(null));
+            var registration = Microsoft.Extensions.Options.Options.Create(new TercerTiempo.Application.Clubs.Invitations.RegistrationOptions { ClubInviteRequired = clubInviteRequired });
+            return new RegisterHandler(identity, stores, new AppointmentRedemption(appointments, Squads, Teams), invitations, registration, Unit, tokens);
         }
         public JoinSquadAsPlayerHandler Join() => new(PlayerUser, Players, Squads, Teams, Competitions, Unit);
         public GeneratePlayerInviteCodeHandler Generate(ICurrentUser user) => new(user, Squads, Coaches, Players, Teams, Competitions, Injuries, Clubs, Unit, TimeProvider.System);

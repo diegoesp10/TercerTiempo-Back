@@ -39,6 +39,10 @@ public static class ErrorCode
     public const string AuthPasswordTooShort = "auth.password_too_short";
     public const string AuthClubNotInCatalog = "auth.club_not_in_catalog";
     public const string AuthClubAlreadyRegistered = "auth.club_already_registered";
+    public const string AuthClubInviteRequired = "auth.club_invite_required";
+    public const string AuthClubInviteInvalid = "auth.club_invite_invalid";
+    public const string ClubInvitationNotFound = "club_invitation.not_found";
+    public const string ClubInvitationAlreadyUsed = "club_invitation.already_used";
     public const string AuthPlayerAccountRequired = "auth.player_account_required";
     public const string AuthCoachAccountRequired = "auth.coach_account_required";
     public const string AuthClubAccountRequired = "auth.club_account_required";

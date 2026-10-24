@@ -19,6 +19,12 @@ public sealed class PublicSheetOptions
     // La federación bloquea la IP con pocas peticiones, así que va la última. Vacío = DefaultSources (el enlazado de
     // configuración añade a un array con valores en lugar de sustituirlos).
     public string[] Sources { get; set; } = [];
+
+    public IReadOnlyList<string> EnabledSources =>
+        (Sources is { Length: > 0 } ? Sources : DefaultSources).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    // Las actas guardadas de una web que se quita de Sources dejan de mostrarse (p. ej. BeSoccer en la beta cerrada).
+    public bool Allows(string provider) => EnabledSources.Contains(provider, StringComparer.OrdinalIgnoreCase);
 }
 
 internal sealed record SheetFetch(string Provider, string ExternalId, string? SourceUrl, OfficialSheetData? Data)

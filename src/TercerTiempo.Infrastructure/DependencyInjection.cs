@@ -85,6 +85,7 @@ public static class DependencyInjection
         services.AddScoped<IPerformanceStore, PerformanceStore>();
         services.AddScoped<IPerformanceSuggestionStore, SuggestionStore>();
         services.AddScoped<IClubStore, ClubStore>();
+        services.AddScoped<IClubInvitationStore, ClubInvitationStore>();
         services.AddScoped<ICoachAppointmentStore, CoachAppointmentStore>();
         services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
         services.AddScoped<IMatchVideoStore, MatchVideoStore>();
@@ -116,6 +117,8 @@ public static class DependencyInjection
             .ValidateOnStart();
 
         services.AddOptions<AdminOptions>().Bind(configuration.GetSection(AdminOptions.SectionName));
+        services.AddOptions<TercerTiempo.Application.Clubs.Invitations.RegistrationOptions>()
+            .Bind(configuration.GetSection(TercerTiempo.Application.Clubs.Invitations.RegistrationOptions.SectionName));
 
         services.AddScoped<IIdentityService, IdentityService>();
         services.AddSingleton<ITokenService, JwtTokenService>();
