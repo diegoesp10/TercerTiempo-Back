@@ -116,8 +116,8 @@ internal sealed class AnalyticsReports(AppDbContext db) : IAnalyticsReports
             await LabelsAsync(events.Where(e => e.Type == AnalyticsEventType.Search), top, cancellationToken),
             await LabelsAsync(events.Where(e => e.Type == AnalyticsEventType.Click), top, cancellationToken),
             entities, actors,
-            await ClubsAsync(events.Where(e => e.ActorClubId != null).Select(e => new ClubRow(e.ActorClubId!.Value, e.VisitorId)), top, cancellationToken),
-            await ClubsAsync(views.Where(e => e.SubjectClubId != null).Select(e => new ClubRow(e.SubjectClubId!.Value, e.VisitorId)), top, cancellationToken),
+            await ActorClubsAsync(events, top, cancellationToken),
+            await SubjectClubsAsync(views, top, cancellationToken),
             consentStats);
     }
 
@@ -132,12 +132,22 @@ internal sealed class AnalyticsReports(AppDbContext db) : IAnalyticsReports
         .Select(x => new AnalyticsCountDto(x.Label, x.Label, x.Count, x.Visitors))
         .ToList();
 
-    private sealed record ClubRow(Guid ClubId, string VisitorId);
+    private static async Task<IReadOnlyList<(Guid, int, int)>> ActorClubsAsync(IQueryable<AnalyticsEvent> events, int top, CancellationToken cancellationToken) =>
+        (await events
+            .Where(e => e.ActorClubId != null)
+            .GroupBy(e => e.ActorClubId!.Value)
+            .Select(g => new { ClubId = g.Key, Count = g.Count(), Visitors = g.Select(e => e.VisitorId).Distinct().Count() })
+            .OrderByDescending(x => x.Count)
+            .Take(top)
+            .ToListAsync(cancellationToken))
+        .Select(x => (x.ClubId, x.Count, x.Visitors))
+        .ToList();
 
-    private static async Task<IReadOnlyList<(Guid, int, int)>> ClubsAsync(IQueryable<ClubRow> rows, int top, CancellationToken cancellationToken) =>
-        (await rows
-            .GroupBy(r => r.ClubId)
-            .Select(g => new { ClubId = g.Key, Count = g.Count(), Visitors = g.Select(r => r.VisitorId).Distinct().Count() })
+    private static async Task<IReadOnlyList<(Guid, int, int)>> SubjectClubsAsync(IQueryable<AnalyticsEvent> events, int top, CancellationToken cancellationToken) =>
+        (await events
+            .Where(e => e.SubjectClubId != null)
+            .GroupBy(e => e.SubjectClubId!.Value)
+            .Select(g => new { ClubId = g.Key, Count = g.Count(), Visitors = g.Select(e => e.VisitorId).Distinct().Count() })
             .OrderByDescending(x => x.Count)
             .Take(top)
             .ToListAsync(cancellationToken))

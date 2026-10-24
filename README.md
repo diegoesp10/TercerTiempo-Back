@@ -273,6 +273,23 @@ Qué descarga cada pasada está en la tabla `FootballSyncSettings` (editable en 
 - A mano (`POST /api/admin/football-sync/run`): jornada en curso, unas fechas (hasta 366 días) o temporada completa,
   de todas las ligas o de las elegidas, con o sin plantillas. Cada ejecución guarda su alcance en `JobRuns`.
 
+## Temporadas
+
+La temporada de la app (`SeasonYears`, p. ej. 2026/2027) es el dato padre: cada liga tiene su temporada (`Seasons.SeasonYearId`)
+y de ella cuelgan partidos, clasificaciones, plantillas y actas. La temporada elegida viaja en la cabecera `X-Season` (id o
+nombre, `2025-2026`); sin ella, la actual. Las pasadas solo se consultan (`season.closed` al editar). La sincronización crea
+la temporada nueva y la hace actual; el administrador puede cambiarla con `PUT /api/admin/seasons/{id}/current`.
+
+## Cookies y analítica propia
+
+- `CookieDefinitions`: lo que la web guarda en el navegador (necesarias y de preferencias, exentas; analítica, con
+  consentimiento), editable desde `/jobs` → Cookies. `CookiePolicies`: versión vigente; publicar otra vuelve a preguntar.
+- `CookieConsents`: cada elección (visitante anónimo, cuenta si la había, qué aceptó y con qué versión). Sin IP ni navegador.
+- `AnalyticsEvents`: páginas vistas, búsquedas y clics, solo de quien aceptó la analítica con la versión vigente (el
+  servidor lo comprueba con el id de consentimiento; el de analítica, `tt.aid`, es otro y se borra al retirarlo). Guardan
+  quién actúa (anónimo, jugador, técnico, club y su club) y de qué equipo, liga, partido o plantilla es la página. Se
+  borran a los 13 meses. Informe en `/jobs` → Uso de la web (`GET /api/admin/analytics`), por club como actor o como página.
+
 ## Trabajos en segundo plano y página /jobs
 
 Los dos scrapeos periódicos son trabajos (`Infrastructure/Jobs/JobScheduler.cs`): `football-data` (datos de las ligas)
