@@ -76,7 +76,10 @@ internal sealed class RegisterHandler(
 
         InviteMatch? invite = null;
         if (command.AccountType == AccountType.Player)
+        {
             invite = await InviteLookup.FindAsync(command.AccessCode!, stores.Squads, cancellationToken);
+            await stores.Licenses.EnsureTeamLicensedAsync(invite.Squad.TeamId, cancellationToken);
+        }
 
         ClubCatalogEntry? clubEntry = null;
         ClubInvitation? clubInvitation = null;

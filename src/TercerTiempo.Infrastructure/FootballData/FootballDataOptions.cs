@@ -1,5 +1,3 @@
-using TercerTiempo.Domain.Competitions;
-
 namespace TercerTiempo.Infrastructure.FootballData;
 
 public sealed class FootballDataOptions
@@ -9,7 +7,6 @@ public sealed class FootballDataOptions
     public const string FutbolAsturianoProvider = "futbolasturiano";
     public const string FakeProvider = "fake";
     public const string JsonFilesProvider = "jsonfiles";
-    public const string BeSoccerProvider = "besoccer";
 
     public string Provider { get; set; } = FutbolAsturianoProvider;
 
@@ -19,7 +16,6 @@ public sealed class FootballDataOptions
 
     public FutbolAsturianoOptions FutbolAsturiano { get; set; } = new();
     public JsonFilesOptions JsonFiles { get; set; } = new();
-    public BeSoccerOptions BeSoccer { get; set; } = new();
 }
 
 public sealed class FutbolAsturianoOptions
@@ -62,22 +58,4 @@ public sealed class FutbolAsturianoOptions
 public sealed class JsonFilesOptions
 {
     public string Directory { get; set; } = "data/football";
-}
-
-public sealed class BeSoccerOptions
-{
-    public string BaseUrl { get; set; } = "https://apiclient.besoccerapps.com/scripts/api/api.php";
-    public string ApiKey { get; set; } = string.Empty;
-
-    public string CompetitionId { get; set; } = string.Empty;
-    public string CompetitionName { get; set; } = string.Empty;
-    public CompetitionLevel Level { get; set; } = CompetitionLevel.Regional;
-    public int Tier { get; set; } = 1;
-    public string? Group { get; set; }
-    public string Region { get; set; } = "Asturias";
-
-    public string Season { get; set; } = string.Empty;
-    public string SeasonLabel { get; set; } = string.Empty;
-    public DateOnly SeasonStartsOn { get; set; }
-    public DateOnly SeasonEndsOn { get; set; }
 }

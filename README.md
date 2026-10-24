@@ -256,7 +256,6 @@ no impide sincronizar las demás). Se elige en `appsettings.json` → `FootballD
 - `fake`: tres ligas ficticias generadas en memoria (sin red), con plantillas solo en dos de ellas.
 - `jsonfiles`: lee `competitions.json`, `competitions/{id}/{teams,matches,standings}.json` y
   `rosters/{teamId}.json` de `FootballData:JsonFiles:Directory`. Ideal para enchufar un scraper externo.
-- `besoccer`: esqueleto para una única liga configurada; **hay que ajustar los `req` y los campos** al plan contratado.
 
 El worker `FootballDataSyncWorker` sincroniza cada `SyncIntervalMinutes` minutos (60 por defecto) contados desde la
 última ejecución guardada en `JobRuns`: arrancar la API **no** vuelve a sincronizar si no ha pasado ese tiempo.
@@ -280,40 +279,22 @@ dotnet user-secrets set "Admin:Password" "<contraseña>" --project src/TercerTie
 Si se cambia el secreto, la contraseña guardada se sustituye en el siguiente arranque. Todo `/api/admin/*` exige ese
 token (claim `admin`).
 
-## Acta pública: BeSoccer y asturfutbol.es
+## Acta pública: asturfutbol.es
 
 Cada partido tiene un **acta pública** (alineaciones, cambios con minuto, goles y tarjetas), igual para todos, y
-además el **acta interna** que lleva el cuerpo técnico de cada club (privada). El acta pública sale de una de dos webs,
-en el orden de `OfficialSheets:Sources` (por defecto `besoccer` y después `asturfutbol`): vale la primera que la tenga
-completa, y si una web está en pausa o falla se prueba la siguiente (`SyncOfficialSheetCommand`, fuentes en
-`Application/OfficialSheets/PublicSheetSources.cs`). El acta guarda de qué web salió (`Provider`, `SourceUrl`) y puede
-cambiar de fuente mientras siga pendiente. Antes de acceder a ninguna web se consulta SQL: las actas completas no se
-vuelven a descargar.
+además el **acta interna** que lleva el cuerpo técnico de cada club (privada). El acta pública sale solo de la
+federación (`OfficialSheets:Sources` = `asturfutbol`; `SyncOfficialSheetCommand`, fuentes en
+`Application/OfficialSheets/PublicSheetSources.cs`). El acta guarda de qué web salió (`Provider`, `SourceUrl`). Antes
+de acceder a la web se consulta SQL: las actas completas no se vuelven a descargar.
 
-El proceso en segundo plano (`OfficialSheetSyncWorker`, cada `BackgroundScanMinutes` desde la última pasada guardada, lotes de `BackgroundBatch`)
-planifica primero los partidos de equipos con plantilla en la app y después todos los demás. A la federación solo van
-los primeros y los que alguien abre; el resto solo se busca en BeSoccer, que aguanta mucho más tráfico. El frontal
-consulta nuestra API y su botón «Consultar datos guardados» no fuerza el scraper.
+**BeSoccer se quitó el 24-10-2026** por riesgo legal (su aviso legal reserva sus bases de datos y prohíbe reproducir su
+contenido). Las actas que se habían bajado de allí siguen en la base pero **ocultas**: el almacén solo devuelve las de
+webs que están en `OfficialSheets:Sources`, y la descarga las sustituye por la de la federación en los partidos de
+equipos con plantilla.
 
-### BeSoccer
-
-[es.besoccer.com](https://es.besoccer.com) publica las actas de las ligas nacionales y regionales asturianas
-(`Infrastructure/OfficialSheets/BeSoccer`; su `robots.txt` permite estas páginas). Pasa por el mismo control de
-peticiones que la federación con su propia fila de contadores (`OfficialSheets:BeSoccer`: `RequestDelayMs=8000`,
-`MaxRequestsPerHour=150`, `MaxRequestsPerDay=1200`; un 403/406/429 la pausa `BlockedPauseHours`).
-
-- Competiciones: `OfficialSheets:BeSoccer:Competitions` traduce nuestra categoría a la suya (`1ª AsturFútbol` =
-  `asturias`, `2ª AsturFútbol` = `primera_regional_asturias`, `3ª AsturFútbol` = `segunda_regional_asturias`,
-  `1ª/2ª/3ª RFEF` = `primera/segunda/tercera_division_rfef`). La temporada 2026/2027 es la `2027` de sus URLs.
-- Equipos: `/competicion/equipos/{competición}/{año}/{grupo}`. El grupo se elige por los equipos en común con los
-  nuestros (su numeración no coincide con la de la federación) y cada equipo se empareja por nombre
-  (`TeamNameSimilarity`). Se guarda 30 días (`CatalogCacheDays`).
-- Partido: `/equipo/partidos/{equipo}` lista los partidos con su enlace, equipos y hora; se elige el de esos dos
-  equipos más cercano a nuestra fecha (aplazamientos incluidos, hasta 10 días). Se guarda 6 horas.
-- Acta: `/partido/{local}/{visitante}/{id}/alineaciones` (dorsal, titular o suplente, árbitro) y `/eventos` (goles,
-  tarjetas y cambios con su minuto); los jugadores se cruzan por el enlace a su ficha. Sin alineaciones el acta sigue
-  pendiente. Los nombres son cortos («M. Huelga», «Guille»): `SheetMatcher` acepta iniciales y diminutivos, y el dorsal
-  desempata.
+El proceso en segundo plano (`OfficialSheetSyncWorker`, cada `BackgroundScanMinutes` desde la última pasada guardada,
+lotes de `BackgroundBatch`) solo planifica los partidos de equipos con plantilla en la app y los que alguien abre. El
+frontal consulta nuestra API y su botón «Consultar datos guardados» no fuerza el scraper.
 
 ### asturfutbol.es
 

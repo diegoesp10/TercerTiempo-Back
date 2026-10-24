@@ -100,6 +100,23 @@ public class PlayerInvitationTests
     }
 
     [Fact]
+    public async Task Without_a_team_license_players_can_neither_register_nor_link_with_their_code()
+    {
+        var f = new Fixture { TeamLicensed = false };
+        f.Squad.GeneratePlayerInviteCode(f.Target.Id);
+        var code = f.Target.InviteCode!;
+
+        var register = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            f.Register().Handle(new("nuevo@example.com", "Prueba1234", null, AccountType.Player, null, null, code), default));
+        var join = await Assert.ThrowsAsync<ForbiddenException>(() => f.Join().Handle(new(code), default));
+
+        Assert.Equal(TercerTiempo.Domain.Common.Errors.ErrorCode.LicenseRequired, register.Code);
+        Assert.Equal(TercerTiempo.Domain.Common.Errors.ErrorCode.LicenseRequired, join.Code);
+        Assert.Empty(f.Registered);
+        Assert.Equal(0, f.Saves);
+    }
+
+    [Fact]
     public async Task Forged_player_id_in_json_cannot_override_the_personal_code()
     {
         var f = new Fixture();
@@ -254,23 +271,31 @@ public class PlayerInvitationTests
         private IUnitOfWork Unit => Stub<IUnitOfWork>((_, _) => Task.FromResult(++Saves));
         public GetSquadInviteHandler Preview(ICurrentUser? user = null) => new(user ?? PlayerUser, Players, Squads, Teams, Competitions);
         public GetInviteHandler AnonymousInvite() => new(Squads, Teams, Competitions);
+        // Sin licencia vigente del equipo, la puerta corta el alta y la vinculación de jugadores.
+        public bool TeamLicensed { get; set; } = true;
+
+        public TercerTiempo.Application.Licensing.ILicenseGate Licenses() => Stub<TercerTiempo.Application.Licensing.ILicenseGate>((method, _) => method switch
+        {
+            nameof(TercerTiempo.Application.Licensing.ILicenseGate.IsViewerLicensedAsync) => Task.FromResult(true),
+            nameof(TercerTiempo.Application.Licensing.ILicenseGate.CanAccessSquadAsync) => Task.FromResult(true),
+            nameof(TercerTiempo.Application.Licensing.ILicenseGate.EnsureTeamLicensedAsync) => TeamLicensed
+                ? Task.CompletedTask
+                : Task.FromException(new ForbiddenException(TercerTiempo.Domain.Common.Errors.ErrorCode.LicenseRequired)),
+            _ => throw new NotSupportedException(method),
+        });
+
         public RegisterHandler Register(bool clubInviteRequired = false)
         {
             var identity = Stub<IIdentityService>((_, _) => Task.FromResult(Guid.NewGuid()));
             var tokens = Stub<ITokenService>((_, args) => new AuthToken("token", DateTimeOffset.UtcNow.AddHours(1)));
             var appointments = Stub<ICoachAppointmentStore>((method, _) => throw new NotSupportedException(method));
-            var licenses = Stub<TercerTiempo.Application.Licensing.ILicenseGate>((method, _) => method switch
-            {
-                nameof(TercerTiempo.Application.Licensing.ILicenseGate.IsViewerLicensedAsync) => Task.FromResult(true),
-                nameof(TercerTiempo.Application.Licensing.ILicenseGate.CanAccessSquadAsync) => Task.FromResult(true),
-                _ => throw new NotSupportedException(method),
-            });
+            var licenses = Licenses();
             var stores = new AccountStores(Players, Coaches, Clubs, appointments, Squads, Teams, Competitions, licenses, TimeProvider.System);
             var invitations = Stub<TercerTiempo.Domain.Clubs.IClubInvitationStore>((_, _) => Task.FromResult<TercerTiempo.Domain.Clubs.ClubInvitation?>(null));
             var registration = Microsoft.Extensions.Options.Options.Create(new TercerTiempo.Application.Clubs.Invitations.RegistrationOptions { ClubInviteRequired = clubInviteRequired });
-            return new RegisterHandler(identity, stores, new AppointmentRedemption(appointments, Squads, Teams), invitations, registration, Unit, tokens);
+            return new RegisterHandler(identity, stores, new AppointmentRedemption(appointments, Squads, Teams, licenses), invitations, registration, Unit, tokens);
         }
-        public JoinSquadAsPlayerHandler Join() => new(PlayerUser, Players, Squads, Teams, Competitions, Unit);
+        public JoinSquadAsPlayerHandler Join() => new(PlayerUser, Players, Squads, Teams, Competitions, Licenses(), Unit);
         public GeneratePlayerInviteCodeHandler Generate(ICurrentUser user) => new(user, Squads, Coaches, Players, Teams, Competitions, Injuries, Clubs, Unit, TimeProvider.System);
         public Task<SquadDetailDto> Detail(ICurrentUser user) => SquadMapper.ToDetailAsync(Squad, user, TimeProvider.System, Coaches, Players, Teams, Competitions, Injuries, Clubs, default);
     }

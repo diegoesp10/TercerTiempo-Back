@@ -88,7 +88,7 @@ public class FederationDatabaseFirstTests
             Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([withSquad, others])),
             Stub<ISquadStore>((_, _) => Task.FromResult<IReadOnlyList<Squad>>([Squad.Create(ours, season.Id, Guid.NewGuid(), Now)])),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([])),
-            AllSources, Options.Create(new PublicSheetOptions()), new OfficialSheetSyncMemory(), TimeProvider.System);
+            AllSources, Options.Create(new PublicSheetOptions { Sources = ["otra-web", "asturfutbol"] }), new OfficialSheetSyncMemory(), TimeProvider.System);
         Assert.Equal([new PlannedSheet(withSquad.Id, true), new PlannedSheet(others.Id, false)], await handler.Handle(new(20), default));
     }
 
@@ -97,8 +97,9 @@ public class FederationDatabaseFirstTests
     {
         var closedBeta = new PublicSheetOptions { Sources = ["asturfutbol"] };
         Assert.True(closedBeta.Allows("asturfutbol"));
-        Assert.False(closedBeta.Allows("besoccer"));
-        Assert.True(new PublicSheetOptions().Allows("besoccer"));
+        Assert.False(closedBeta.Allows("otra-web"));
+        Assert.False(new PublicSheetOptions().Allows("otra-web"));
+        Assert.True(new PublicSheetOptions().Allows("asturfutbol"));
     }
 
     [Fact]
@@ -108,7 +109,7 @@ public class FederationDatabaseFirstTests
         var season = competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
         var match = Match.Schedule(season.Id, 1, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(-3), null, null);
         match.RecordResult(2, 1, Now.AddDays(-3).AddHours(2));
-        var hidden = OfficialMatchSheet.Create(match.Id, "besoccer", "202794664", null, Now.AddDays(-2));
+        var hidden = OfficialMatchSheet.Create(match.Id, "otra-web", "202794664", null, Now.AddDays(-2));
         hidden.Apply(ParsedFixture(), Now.AddDays(-2));
         var federation = new FakeSource("asturfutbol", isFederation: true);
         var handler = new SyncOfficialSheetHandler([federation], Options.Create(new PublicSheetOptions { Sources = ["asturfutbol"] }),
@@ -126,7 +127,7 @@ public class FederationDatabaseFirstTests
     }
 
     [Fact]
-    public async Task Without_besoccer_only_squad_matches_are_planned_including_hidden_sheets()
+    public async Task Without_other_public_sources_only_squad_matches_are_planned_including_hidden_sheets()
     {
         var competition = Competition.Create("Liga", "Primera", CompetitionLevel.Regional, 1, null, "Asturias", null);
         var season = competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
@@ -134,19 +135,19 @@ public class FederationDatabaseFirstTests
         var ours = Guid.NewGuid();
         var withSquad = Match.Schedule(season.Id, 1, Guid.NewGuid(), ours, Now.AddDays(-3), null, null);
         var others = Match.Schedule(season.Id, 1, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(-2), null, null);
-        var fromBeSoccer = OfficialMatchSheet.Create(withSquad.Id, "besoccer", "1", null, Now.AddDays(-2));
-        fromBeSoccer.Apply(ParsedFixture(), Now.AddDays(-2));
+        var fromRemovedSource = OfficialMatchSheet.Create(withSquad.Id, "otra-web", "1", null, Now.AddDays(-2));
+        fromRemovedSource.Apply(ParsedFixture(), Now.AddDays(-2));
         var handler = new PlanOfficialSheetSyncHandler(
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
             Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([withSquad, others])),
             Stub<ISquadStore>((_, _) => Task.FromResult<IReadOnlyList<Squad>>([Squad.Create(ours, season.Id, Guid.NewGuid(), Now)])),
-            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([fromBeSoccer])),
-            AllSources, Options.Create(new PublicSheetOptions { Sources = ["asturfutbol"] }), new OfficialSheetSyncMemory(), TimeProvider.System);
+            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([fromRemovedSource])),
+            AllSources, Options.Create(new PublicSheetOptions()), new OfficialSheetSyncMemory(), TimeProvider.System);
 
         Assert.Equal([new PlannedSheet(withSquad.Id, true)], await handler.Handle(new(20), default));
     }
 
-    private static readonly IPublicSheetSource[] AllSources = [new FakeSource("besoccer", isFederation: false), new FakeSource("asturfutbol", isFederation: true)];
+    private static readonly IPublicSheetSource[] AllSources = [new FakeSource("otra-web", isFederation: false), new FakeSource("asturfutbol", isFederation: true)];
 
     private static OfficialSheetData ParsedFixture()
     {

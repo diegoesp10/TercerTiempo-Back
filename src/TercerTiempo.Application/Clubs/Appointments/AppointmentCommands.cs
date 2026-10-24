@@ -60,8 +60,10 @@ internal sealed class CreateAppointmentHandler(
         if (validUntil < today)
             throw new ConflictException(ErrorCode.AppointmentValidityPast);
 
-        // El plan de la licencia limita cuántos técnicos puede tener el equipo en la temporada.
+        // Sin licencia vigente no se nombra a nadie; con ella, el plan limita cuántos técnicos tiene el equipo.
         var license = await stores.Licenses.EnsureForTeamAsync(club, command.TeamId, cancellationToken);
+        if (!license.IsActiveOn(SquadAccess.Today(stores.Clock)))
+            throw new ForbiddenException(ErrorCode.LicenseRequired);
         var limit = licensing.Value.For(license.StaffPlan).MaxStaff;
         if (await licenses.StaffCountAsync(command.TeamId, cancellationToken) >= limit)
             throw new ConflictException(ErrorCode.LicenseStaffLimit, LicenseTexts.Plan(license.StaffPlan), LicenseTexts.Staff(limit));
@@ -139,6 +141,7 @@ internal sealed class UpdateAppointmentHandler(
     {
         var club = await Resolvers.CurrentClubAsync(currentUser, stores.Clubs, cancellationToken);
         var appointment = await RevokeAppointmentHandler.AppointmentOfClubAsync(stores, club.Id, command.AppointmentId, cancellationToken);
+        await stores.Licenses.EnsureTeamLicensedAsync(appointment.TeamId, cancellationToken);
         var (_, season) = await Resolvers.SeasonByIdAsync(stores.Competitions, appointment.SeasonId, cancellationToken);
 
         if (command.ValidUntil > season.EndsOn)

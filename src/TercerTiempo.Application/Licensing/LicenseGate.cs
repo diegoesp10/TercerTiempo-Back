@@ -127,6 +127,12 @@ internal sealed class LicenseGate(
             throw new ForbiddenException(ErrorCode.LicenseRequired);
     }
 
+    public async Task EnsureTeamLicensedAsync(Guid teamId, CancellationToken cancellationToken)
+    {
+        if (await StatusForTeamAsync(teamId, cancellationToken) == LicenseStatus.Expired)
+            throw new ForbiddenException(ErrorCode.LicenseRequired);
+    }
+
     public async Task EnsurePlayerAccessAsync(ICurrentUser user, CancellationToken cancellationToken)
     {
         if (!user.IsAuthenticated || user.UserId is not { } userId) return;

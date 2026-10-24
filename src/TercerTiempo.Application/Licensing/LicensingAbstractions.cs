@@ -137,4 +137,7 @@ public interface ILicenseGate
     Task EnsureVideoAccessAsync(Guid videoId, ICurrentUser user, CancellationToken cancellationToken);
     Task EnsureSharedVideoAccessAsync(string token, CancellationToken cancellationToken);
     Task EnsurePlayerAccessAsync(ICurrentUser user, CancellationToken cancellationToken);
+
+    // Sin licencia vigente nadie del club (club, cuerpo técnico ni jugadores) puede trabajar con los datos de ese equipo.
+    Task EnsureTeamLicensedAsync(Guid teamId, CancellationToken cancellationToken);
 }

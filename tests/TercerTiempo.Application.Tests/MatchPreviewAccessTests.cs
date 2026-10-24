@@ -27,13 +27,23 @@ public class MatchPreviewAccessTests
         await Assert.ThrowsAsync<ForbiddenException>(() => Handler(AccountType.Player).Handle(new(Guid.NewGuid()), default));
     }
 
-    private static GetMatchPreviewHandler Handler(AccountType account) => new(
+    [Fact]
+    public async Task Staff_of_a_team_without_license_cannot_see_the_preview()
+    {
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() => Handler(AccountType.Coach, licensed: false).Handle(new(Guid.NewGuid()), default));
+        Assert.Equal(TercerTiempo.Domain.Common.Errors.ErrorCode.LicenseViewerRequired, error.Code);
+    }
+
+    private static GetMatchPreviewHandler Handler(AccountType account, bool licensed = true) => new(
         new User(account),
         Stub<IMatchStore>((_, _) => Task.FromResult<Match?>(null)),
         Stub<ITeamStore>((method, _) => throw new Exception($"Unexpected call: {method}")),
         Stub<IStandingStore>((method, _) => throw new Exception($"Unexpected call: {method}")),
         Stub<ICompetitionStore>((method, _) => throw new Exception($"Unexpected call: {method}")),
-        Stub<IOfficialSheetStore>((method, _) => throw new Exception($"Unexpected call: {method}")));
+        Stub<IOfficialSheetStore>((method, _) => throw new Exception($"Unexpected call: {method}")),
+        Stub<TercerTiempo.Application.Licensing.ILicenseGate>((method, _) => method == nameof(TercerTiempo.Application.Licensing.ILicenseGate.IsViewerLicensedAsync)
+            ? Task.FromResult(licensed)
+            : throw new Exception($"Unexpected call: {method}")));
 
     private sealed record User(AccountType Account) : ICurrentUser
     {

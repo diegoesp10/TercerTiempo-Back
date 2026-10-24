@@ -64,7 +64,7 @@ internal sealed class JobScheduler
                 true),
             new(JobNames.OfficialSheets,
                 "Actas públicas",
-                $"Busca las actas que faltan o toca refrescar (hasta {sheets.Value.BackgroundBatch} por pasada) en BeSoccer y asturfutbol.es, cada una con su límite de peticiones.",
+                $"Busca las actas que faltan o toca refrescar (hasta {sheets.Value.BackgroundBatch} por pasada) en asturfutbol.es, con su límite de peticiones.",
                 sheetMinutes > 0 ? TimeSpan.FromMinutes(sheetMinutes) : null,
                 TimeSpan.FromSeconds(Math.Max(0, sheets.Value.BackgroundStartDelaySeconds)),
                 sheets.Value.Enabled),

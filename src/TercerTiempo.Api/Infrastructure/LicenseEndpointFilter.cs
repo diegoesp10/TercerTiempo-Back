@@ -9,6 +9,9 @@ internal enum LicenseScope
     Video,
     SharedVideo,
     Player,
+
+    // Rutas del club sobre uno de sus equipos (/teams/{teamId}/...): fichas, fotos y escudo.
+    Team,
 }
 
 // Puerta de licencias en la API: antes de ejecutar la operación comprueba que el equipo al que pertenece el recurso
@@ -33,6 +36,9 @@ internal sealed class LicenseEndpointFilter(LicenseScope scope) : IEndpointFilte
                 break;
             case LicenseScope.SharedVideo when http.Request.RouteValues.TryGetValue("token", out var token) && token is string t:
                 await gate.EnsureSharedVideoAccessAsync(t, ct);
+                break;
+            case LicenseScope.Team when http.Request.RouteValues.TryGetValue("teamId", out var team) && Guid.TryParse(team?.ToString(), out var teamId):
+                await gate.EnsureTeamLicensedAsync(teamId, ct);
                 break;
             case LicenseScope.Player:
                 await gate.EnsurePlayerAccessAsync(user, ct);

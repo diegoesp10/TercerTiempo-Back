@@ -10,6 +10,7 @@ internal sealed class AdminRepository(
     ICommandHandler<AdminLoginCommand, AdminAuthResponse> login,
     IQueryHandler<GetJobsOverviewQuery, JobsOverviewDto> jobs,
     ICommandHandler<RunJobCommand, JobDto> runJob,
+    IQueryHandler<GetLicensesOverviewQuery, LicensesOverviewDto> licenses,
     IQueryHandler<ListClubInvitationsQuery, IReadOnlyList<ClubInvitationDto>> listInvitations,
     ICommandHandler<CreateClubInvitationCommand, ClubInvitationDto> createInvitation,
     ICommandHandler<RevokeClubInvitationCommand, ClubInvitationDto> revokeInvitation,
@@ -23,6 +24,9 @@ internal sealed class AdminRepository(
 
     public Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default) =>
         runJob.Handle(new RunJobCommand(job), cancellationToken);
+
+    public Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default) =>
+        licenses.Handle(new GetLicensesOverviewQuery(), cancellationToken);
 
     public Task<IReadOnlyList<ClubInvitationDto>> GetClubInvitationsAsync(CancellationToken cancellationToken = default) =>
         listInvitations.Handle(new ListClubInvitationsQuery(), cancellationToken);

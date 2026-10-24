@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
@@ -73,7 +74,8 @@ internal sealed class GetMatchPreviewHandler(
     ITeamStore teams,
     IStandingStore standings,
     ICompetitionStore competitions,
-    IOfficialSheetStore sheets) : IQueryHandler<GetMatchPreviewQuery, MatchPreviewDto>
+    IOfficialSheetStore sheets,
+    ILicenseGate licenses) : IQueryHandler<GetMatchPreviewQuery, MatchPreviewDto>
 {
     private const int FormMatches = 5;
     private const int MaxGoals = 8;
@@ -85,6 +87,9 @@ internal sealed class GetMatchPreviewHandler(
         // La previa es para quien prepara el partido: el cuerpo técnico y el club (sus dirigentes), siempre.
         if (currentUser.AccountType is not (AccountType.Coach or AccountType.Club))
             throw new ForbiddenException(ErrorCode.MatchPreviewStaffOnly);
+        // Y solo con un equipo con licencia vigente.
+        if (!await licenses.IsViewerLicensedAsync(currentUser, cancellationToken))
+            throw new ForbiddenException(ErrorCode.LicenseViewerRequired);
 
         var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
@@ -105,7 +110,7 @@ internal sealed class GetMatchPreviewHandler(
         var notes = new List<string>
         {
             "Las probabilidades salen de los goles a favor y en contra de esta liga (modelo de Poisson con la fuerza atacante y defensiva de cada equipo y la ventaja de jugar en casa); con pocas jornadas disputadas son orientativas.",
-            "Los jugadores en forma, los penaltis, los goles en propia y las tarjetas proceden de las actas públicas ya guardadas (federación o BeSoccer); los partidos sin acta no cuentan.",
+            "Los jugadores en forma, los penaltis, los goles en propia y las tarjetas proceden de las actas públicas de la federación ya guardadas; los partidos sin acta no cuentan.",
             "Córners, posesión y goles a balón parado (salvo penaltis) no constan en ninguna fuente pública: los apunta el cuerpo técnico en «Datos del equipo» del acta interna de cada partido y solo se ven los de su propio equipo.",
         };
 

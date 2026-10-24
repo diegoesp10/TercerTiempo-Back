@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Licensing;
 using System.ComponentModel;
 using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
@@ -28,6 +29,7 @@ internal sealed class JoinSquadAsPlayerHandler(
     ISquadStore squads,
     ITeamStore teams,
     ICompetitionStore competitions,
+    ILicenseGate licenses,
     IUnitOfWork unitOfWork) : ICommandHandler<JoinSquadAsPlayerCommand, PlayerDto>
 {
     public async Task<PlayerDto> Handle(JoinSquadAsPlayerCommand command, CancellationToken cancellationToken)
@@ -38,6 +40,7 @@ internal sealed class JoinSquadAsPlayerHandler(
             throw new ConflictException(ErrorCode.PlayerAlreadyInSquad);
 
         var (squad, entry) = await InviteLookup.FindAsync(command.InviteCode, squads, cancellationToken);
+        await licenses.EnsureTeamLicensedAsync(squad.TeamId, cancellationToken);
 
         // El nombre de la cuenta es siempre el de la ficha: el jugador nunca lo escribe.
         squad.LinkPlayer(entry.Id, player.Id);

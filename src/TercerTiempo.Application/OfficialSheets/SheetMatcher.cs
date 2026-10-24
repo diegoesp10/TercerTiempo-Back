@@ -97,7 +97,7 @@ internal static class SheetMatcher
 
         // Nombre de pila solo ("Mateo") o apellidos sin segundo nombre: todas las palabras del corto están en el largo.
         // También vale la inicial ("M. Huelga") o el diminutivo que empieza la palabra ("Guille" por Guillermo), como
-        // escriben BeSoccer y otras webs, siempre que al menos una palabra no sea una inicial.
+        // escriben algunas webs, siempre que al menos una palabra no sea una inicial.
         if (shorter.All(t => longer.Any(o => Covers(t, o))) && shorter.Any(t => t.Length > 1))
             return (shorter.Count == 1 ? 0.45 : 0.75) + shirtBonus;
 

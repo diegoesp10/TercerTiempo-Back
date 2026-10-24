@@ -1,3 +1,4 @@
+using TercerTiempo.Api.Infrastructure;
 using TercerTiempo.Application.Clubs.ManageTeams;
 using TercerTiempo.Repository.Clubs;
 
@@ -44,6 +45,7 @@ internal static class ClubEndpoints
                 return await clubs.UploadTeamCrestAsync(teamId, new CrestUpload(file.FileName, file.ContentType, file.Length, content), ct);
             })
             .DisableAntiforgery()
+            .RequireLicense(LicenseScope.Team)
             .WithName("UploadClubTeamCrest")
             .WithSummary("Cambiar el escudo de un equipo del club")
             .WithDescription("Solo cuentas de club y solo para sus equipos vinculados. multipart/form-data con el campo file (PNG, JPG, WebP, SVG o GIF hasta 2 MB). Sustituye el escudo guardado; crestUrl cambia de versión para que los clientes recarguen la imagen.")
@@ -53,6 +55,7 @@ internal static class ClubEndpoints
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/teams/{teamId:guid}/roster", (Guid teamId, RosterEntryRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.AddRosterEntryAsync(teamId, request, ct))
+            .RequireLicense(LicenseScope.Team)
             .WithName("AddClubRosterEntry")
             .WithSummary("Añadir una ficha a la plantilla de un equipo del club")
             .WithDescription("Solo cuentas de club y solo para sus equipos. La ficha se añade a la plantilla de la temporada en curso (la que se importa al crear la plantilla interna) y no la toca la sincronización con el proveedor. Devuelve la plantilla completa.")
@@ -61,6 +64,7 @@ internal static class ClubEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapPut("/teams/{teamId:guid}/roster/{entryId:guid}", (Guid teamId, Guid entryId, RosterEntryRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.UpdateRosterEntryAsync(teamId, entryId, request, ct))
+            .RequireLicense(LicenseScope.Team)
             .WithName("UpdateClubRosterEntry")
             .WithSummary("Corregir una ficha de la plantilla")
             .WithDescription("Nombre, posición y dorsal. A partir de la corrección manda el club: el proveedor ya no sobrescribe esa ficha.")
@@ -69,6 +73,7 @@ internal static class ClubEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapDelete("/teams/{teamId:guid}/roster/{entryId:guid}", (Guid teamId, Guid entryId, IClubsRepository clubs, CancellationToken ct) => clubs.RemoveRosterEntryAsync(teamId, entryId, ct))
+            .RequireLicense(LicenseScope.Team)
             .WithName("RemoveClubRosterEntry")
             .WithSummary("Retirar una ficha de la plantilla")
             .WithDescription("Las fichas del proveedor se ocultan (así no vuelven al sincronizar); las creadas por el club se borran.")
@@ -76,6 +81,7 @@ internal static class ClubEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapGet("/teams/{teamId:guid}/roster/{entryId:guid}", (Guid teamId, Guid entryId, IClubsRepository clubs, CancellationToken ct) => clubs.GetRosterEntryAsync(teamId, entryId, ct))
+            .RequireLicense(LicenseScope.Team)
             .WithName("GetClubRosterEntry")
             .WithSummary("Ficha de un jugador de la plantilla con sus actas")
             .WithDescription("Solo cuentas de club y solo para sus equipos. Devuelve la ficha con sus totales oficiales, partido a partido según las actas de la federación y, si el cuerpo técnico lleva la plantilla en Tercer Tiempo, también sus actas internas.")
@@ -88,6 +94,7 @@ internal static class ClubEndpoints
                 return await clubs.UploadRosterPhotoAsync(teamId, entryId, new CrestUpload(file.FileName, file.ContentType, file.Length, content), ct);
             })
             .DisableAntiforgery()
+            .RequireLicense(LicenseScope.Team)
             .WithName("UploadClubRosterPhoto")
             .WithSummary("Cambiar la foto de un jugador de la plantilla")
             .WithDescription("Solo cuentas de club y solo para sus equipos. multipart/form-data con el campo file (PNG, JPG o WebP hasta 2 MB). Sustituye la foto guardada y devuelve la plantilla completa.")

@@ -28,8 +28,6 @@ public static class DependencyInjection
         services.AddScoped<Licensing.LicenseCheckoutCompletion>();
         services.AddScoped<OfficialSheetLocator>();
         services.AddSingleton<OfficialSheets.OfficialSheetSyncMemory>();
-        services.AddSingleton<DirectoryTeamIndex>();
-        services.AddScoped<IPublicSheetSource, DirectorySheetSource>();
         services.AddScoped<IPublicSheetSource, FederationSheetSource>();
 
         var handlerTypes = assembly.GetTypes()

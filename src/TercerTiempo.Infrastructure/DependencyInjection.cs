@@ -27,7 +27,6 @@ using TercerTiempo.Application.Licensing;
 using TercerTiempo.Domain.Licensing;
 using TercerTiempo.Infrastructure.Licensing;
 using TercerTiempo.Infrastructure.FootballData;
-using TercerTiempo.Infrastructure.FootballData.BeSoccer;
 using TercerTiempo.Infrastructure.FootballData.Fake;
 using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.FootballData.JsonFiles;
@@ -141,11 +140,6 @@ public static class DependencyInjection
                 services.AddSingleton<IFootballDataProvider, JsonFileFootballDataProvider>();
                 break;
 
-            case FootballDataOptions.BeSoccerProvider:
-                services.AddHttpClient<BeSoccerFootballDataProvider>().LogScrapes("besoccer-datos");
-                services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<BeSoccerFootballDataProvider>());
-                break;
-
             default:
                 // Una instancia por ámbito (sincronización): cachea catálogos de temporada, estadios, posiciones y jugadores.
                 services.AddHttpClient<FutbolAsturianoFootballDataProvider>((sp, client) =>
@@ -200,25 +194,9 @@ public static class DependencyInjection
         services.AddScoped<IOfficialSheetProvider, AsturfutbolOfficialSheetProvider>();
         services.AddScoped<ITeamProfileProvider, AsturfutbolTeamProfileProvider>();
 
-        // Segunda web del acta pública (y primera en el orden por defecto: aguanta mucho más tráfico que la federación).
+        // Webs del acta pública (OfficialSheets:Sources): hoy solo la federación.
         services.AddOptions<TercerTiempo.Application.OfficialSheets.PublicSheetOptions>()
             .Bind(configuration.GetSection(TercerTiempo.Application.OfficialSheets.PublicSheetOptions.SectionName));
-        services.AddSingleton<OfficialSheets.BeSoccer.BeSoccerRequestGate>();
-        services.AddHttpClient<OfficialSheets.BeSoccer.BeSoccerClient>((sp, client) =>
-            {
-                var settings = sp.GetRequiredService<IOptions<OfficialSheetOptions>>().Value.BeSoccer;
-                client.BaseAddress = new Uri(settings.BaseUrl.EndsWith('/') ? settings.BaseUrl : settings.BaseUrl + "/");
-                client.Timeout = TimeSpan.FromSeconds(40);
-                client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
-                client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
-                client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("es-ES,es;q=0.9");
-                // Su CDN responde 403 a HttpClient por HTTP/1.1 y acepta la misma petición por HTTP/2.
-                client.DefaultRequestVersion = System.Net.HttpVersion.Version20;
-                client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
-            })
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AutomaticDecompression = System.Net.DecompressionMethods.All })
-            .LogScrapes(OfficialSheets.BeSoccer.BeSoccerDirectory.Name);
-        services.AddScoped<IMatchSheetDirectory, OfficialSheets.BeSoccer.BeSoccerDirectory>();
 
         services.AddOptions<CrestOptions>()
             .Bind(configuration.GetSection(CrestOptions.SectionName));

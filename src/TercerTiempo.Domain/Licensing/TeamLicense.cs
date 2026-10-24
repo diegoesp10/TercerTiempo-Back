@@ -292,9 +292,11 @@ public interface ILicenseStore
     Task<TeamLicense?> GetBySubscriptionAsync(string subscriptionRef, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TeamLicense>> GetByClubAsync(Guid clubId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TeamLicense>> GetRenewingAsync(string provider, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TeamLicense>> GetAllAsync(CancellationToken cancellationToken = default);
     void Add(TeamLicense license);
 
     Task<LicensePayment?> GetPaymentBySessionAsync(string sessionId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<LicensePayment>> GetPaymentsByClubAsync(Guid clubId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<LicensePayment>> GetAllPaymentsAsync(CancellationToken cancellationToken = default);
     void AddPayment(LicensePayment payment);
 }

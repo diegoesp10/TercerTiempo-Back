@@ -10,6 +10,7 @@ public interface IAdminRepository
     Task<AdminAuthResponse> LoginAsync(AdminLoginCommand command, CancellationToken cancellationToken = default);
     Task<JobsOverviewDto> GetJobsAsync(string? provider, int? requests, CancellationToken cancellationToken = default);
     Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default);
+    Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ClubInvitationDto>> GetClubInvitationsAsync(CancellationToken cancellationToken = default);
     Task<ClubInvitationDto> CreateClubInvitationAsync(CreateClubInvitationCommand command, CancellationToken cancellationToken = default);
     Task<ClubInvitationDto> RevokeClubInvitationAsync(Guid id, CancellationToken cancellationToken = default);

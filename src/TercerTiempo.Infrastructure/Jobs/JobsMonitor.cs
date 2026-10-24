@@ -93,7 +93,7 @@ internal sealed class JobsMonitor(
         var states = await db.Set<FederationRequestState>().AsNoTracking().ToDictionaryAsync(s => s.Id, cancellationToken);
 
         var settings = sheetOptions.Value;
-        var limits = new[] { settings.BeSoccerLimits, settings.AsturfutbolLimits }.ToDictionary(l => l.Provider);
+        var limits = new[] { settings.AsturfutbolLimits }.ToDictionary(l => l.Provider);
 
         var hour = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 0, 0, TimeSpan.Zero);
         var day = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);

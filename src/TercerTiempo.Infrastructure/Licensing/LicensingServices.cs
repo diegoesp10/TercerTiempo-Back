@@ -56,6 +56,9 @@ internal sealed class LicenseStore(AppDbContext db) : ILicenseStore
     public async Task<IReadOnlyList<TeamLicense>> GetRenewingAsync(string provider, CancellationToken cancellationToken = default) =>
         await db.TeamLicenses.Where(l => l.AutoRenew && l.Plan != null && l.Provider == provider).ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<TeamLicense>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        await db.TeamLicenses.AsNoTracking().ToListAsync(cancellationToken);
+
     public void Add(TeamLicense license) => db.TeamLicenses.Add(license);
 
     public Task<LicensePayment?> GetPaymentBySessionAsync(string sessionId, CancellationToken cancellationToken = default) =>
@@ -63,6 +66,9 @@ internal sealed class LicenseStore(AppDbContext db) : ILicenseStore
 
     public async Task<IReadOnlyList<LicensePayment>> GetPaymentsByClubAsync(Guid clubId, CancellationToken cancellationToken = default) =>
         await db.LicensePayments.Where(p => p.ClubId == clubId).OrderByDescending(p => p.CreatedAt).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<LicensePayment>> GetAllPaymentsAsync(CancellationToken cancellationToken = default) =>
+        await db.LicensePayments.AsNoTracking().ToListAsync(cancellationToken);
 
     public void AddPayment(LicensePayment payment) => db.LicensePayments.Add(payment);
 }

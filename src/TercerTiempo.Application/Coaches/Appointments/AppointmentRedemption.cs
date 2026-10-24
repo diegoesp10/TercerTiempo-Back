@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
@@ -7,7 +8,7 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Coaches.Appointments;
 
-internal sealed class AppointmentRedemption(ICoachAppointmentStore appointments, ISquadStore squads, ITeamStore teams)
+internal sealed class AppointmentRedemption(ICoachAppointmentStore appointments, ISquadStore squads, ITeamStore teams, ILicenseGate licenses)
 {
     public async Task<CoachAppointment> FindRedeemableAsync(string accessCode, CancellationToken cancellationToken)
     {
@@ -20,6 +21,7 @@ internal sealed class AppointmentRedemption(ICoachAppointmentStore appointments,
         if (appointment.IsRedeemed)
             throw new ConflictException(ErrorCode.AppointmentAlreadyRedeemed);
 
+        await licenses.EnsureTeamLicensedAsync(appointment.TeamId, cancellationToken);
         return appointment;
     }
 

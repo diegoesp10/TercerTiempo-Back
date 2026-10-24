@@ -55,7 +55,7 @@ internal sealed class FederationRequestStateConfiguration : IEntityTypeConfigura
 internal sealed record FederationResponse(byte[]? Content, string? ContentType);
 internal sealed record FederationReservation(FederationResponse? Cached = null, DateTimeOffset? RetryAt = null, bool Spacing = false);
 
-// Límites de una web (su fila en FederationRequestStates): asturfutbol.es, besoccer.com...
+// Límites de una web (su fila en FederationRequestStates): hoy solo asturfutbol.es.
 internal sealed record SourceLimits(string Provider, bool Enabled, int RequestDelayMs, int MaxRequestsPerHour, int MaxRequestsPerDay);
 
 internal interface IAsturfutbolRequestStore

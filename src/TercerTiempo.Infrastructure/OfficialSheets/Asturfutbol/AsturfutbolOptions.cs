@@ -17,14 +17,8 @@ public sealed class OfficialSheetOptions
 
     public AsturfutbolOptions Asturfutbol { get; set; } = new();
 
-    public global::TercerTiempo.Infrastructure.OfficialSheets.BeSoccer.BeSoccerOptions BeSoccer { get; set; } = new();
-
     internal SourceLimits AsturfutbolLimits =>
         new(AsturfutbolOfficialSheetProvider.Name, Enabled, Asturfutbol.RequestDelayMs, Asturfutbol.MaxRequestsPerHour, Asturfutbol.MaxRequestsPerDay);
-
-    internal SourceLimits BeSoccerLimits =>
-        new(global::TercerTiempo.Infrastructure.OfficialSheets.BeSoccer.BeSoccerDirectory.Name, Enabled && BeSoccer.Enabled,
-            BeSoccer.RequestDelayMs, BeSoccer.MaxRequestsPerHour, BeSoccer.MaxRequestsPerDay);
 }
 
 public sealed class AsturfutbolOptions
