@@ -60,6 +60,9 @@ internal static partial class ClubCatalog
         return Build(teams.Select(t => new CatalogTeam(t, competitionByTeam.GetValueOrDefault(t.Id))));
     }
 
+    public static ClubCatalogEntry? ForTeam(IReadOnlyList<ClubCatalogEntry> catalog, Guid teamId) =>
+        catalog.FirstOrDefault(entry => entry.Teams.Any(t => t.Team.Id == teamId));
+
     public static IReadOnlyList<ClubCatalogEntry> Build(IEnumerable<CatalogTeam> teams)
     {
         var groups = new List<Group>();

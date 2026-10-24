@@ -13,4 +13,5 @@ public interface IAuthRepository
     Task<AuthResponse> LoginAsync(LoginCommand command, CancellationToken cancellationToken = default);
     Task<AccountDto> GetMyAccountAsync(CancellationToken cancellationToken = default);
     Task<RegistrationOptionsDto> GetRegistrationOptionsAsync(CancellationToken cancellationToken = default);
+    Task<ClubInvitationLookupDto> GetClubInvitationAsync(string code, CancellationToken cancellationToken = default);
 }

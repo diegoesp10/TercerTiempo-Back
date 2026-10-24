@@ -41,6 +41,7 @@ public static class ErrorCatalog
         (ErrorCode.AuthClubAlreadyRegistered, "{0} ya tiene cuenta en Tercer Tiempo."),
         (ErrorCode.AuthClubInviteRequired, "Durante la beta, para dar de alta un club necesitas un código de invitación."),
         (ErrorCode.AuthClubInviteInvalid, "El código de invitación no existe, ya se ha usado o ha caducado."),
+        (ErrorCode.AuthClubInviteOtherClub, "Esta invitación es para {0}: el club no se puede cambiar."),
         (ErrorCode.ClubInvitationNotFound, "La invitación '{0}' no existe."),
         (ErrorCode.ClubInvitationAlreadyUsed, "Esa invitación ya se ha usado para dar de alta un club."),
         (ErrorCode.AuthPlayerAccountRequired, "Esta acción requiere una cuenta de jugador."),

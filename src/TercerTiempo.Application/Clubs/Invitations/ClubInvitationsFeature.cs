@@ -6,7 +6,8 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
-using TercerTiempo.Domain.Teams;
+using TercerTiempo.Application.Auth;
+using TercerTiempo.Application.Clubs.Catalog;
 
 namespace TercerTiempo.Application.Clubs.Invitations;
 
@@ -75,33 +76,37 @@ internal sealed class ListClubInvitationsHandler(IClubInvitationStore invitation
 }
 
 public sealed record CreateClubInvitationCommand(
-    [property: Description("Para quién es (p. ej. el nombre del club). Solo lo ve el administrador; con teamId y sin nota, el nombre del equipo.")]
+    [property: Description("Nota para el administrador; sin ella, el nombre del club.")]
     string? Note,
     [property: Description("Días que dura la invitación; sin valor, no caduca.")]
     int? ExpiresInDays,
-    [property: Description("Equipo elegido en el buscador (GET /api/admin/club-invitations/teams); opcional.")]
-    Guid? TeamId = null) : ICommand<ClubInvitationDto>;
+    [property: Description("Un equipo del club (teamId del buscador GET /api/admin/club-invitations/clubs): la invitación queda ligada a ese club y en el alta no se puede cambiar.")]
+    Guid? TeamId) : ICommand<ClubInvitationDto>;
 
 internal sealed class CreateClubInvitationValidator : AbstractValidator<CreateClubInvitationCommand>
 {
     public CreateClubInvitationValidator()
     {
         RuleFor(x => x.Note).MaximumLength(200);
+        RuleFor(x => x.TeamId).NotEmpty().WithMessage("Elige el club de la lista.");
         RuleFor(x => x.ExpiresInDays).InclusiveBetween(1, 365).When(x => x.ExpiresInDays.HasValue);
     }
 }
 
-internal sealed class CreateClubInvitationHandler(IClubInvitationStore invitations, ITeamStore teams, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class CreateClubInvitationHandler(IClubInvitationStore invitations, AccountStores stores, IUnitOfWork unitOfWork)
     : ICommandHandler<CreateClubInvitationCommand, ClubInvitationDto>
 {
     public async Task<ClubInvitationDto> Handle(CreateClubInvitationCommand command, CancellationToken cancellationToken)
     {
-        var now = clock.GetUtcNow();
-        var team = command.TeamId is { } teamId
-            ? await teams.GetByIdAsync(teamId, cancellationToken) ?? throw new NotFoundException(ErrorCode.TeamNotFound, teamId)
-            : null;
-        var note = string.IsNullOrWhiteSpace(command.Note) ? team?.Name : command.Note.Trim();
-        var invitation = ClubInvitation.Create(note, command.ExpiresInDays is { } days ? now.AddDays(days) : null, now, team?.Id);
+        var now = stores.Clock.GetUtcNow();
+        var teamId = command.TeamId!.Value;
+        var club = ClubCatalog.ForTeam(await ClubCatalog.LoadAsync(stores, cancellationToken), teamId)
+            ?? throw new NotFoundException(ErrorCode.TeamNotFound, teamId);
+        if (await stores.Clubs.GetByNormalizedNameAsync(club.NormalizedName, cancellationToken) is not null)
+            throw new ConflictException(ErrorCode.AuthClubAlreadyRegistered, club.Name);
+
+        var note = string.IsNullOrWhiteSpace(command.Note) ? club.Name : command.Note.Trim();
+        var invitation = ClubInvitation.Create(note, command.ExpiresInDays is { } days ? now.AddDays(days) : null, now, teamId);
         invitations.Add(invitation);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return ClubInvitationMapper.ToDto(invitation, null, now);

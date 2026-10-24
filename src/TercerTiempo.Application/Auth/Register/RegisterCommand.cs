@@ -87,7 +87,9 @@ internal sealed class RegisterHandler(
         {
             if (registration.Value.ClubInviteRequired)
                 clubInvitation = await FindClubInvitationAsync(command.AccessCode, now, cancellationToken);
-            clubEntry = await FindClubAsync(command.DisplayName!, cancellationToken);
+            clubEntry = clubInvitation?.TeamId is { } invitedTeam
+                ? await InvitedClubAsync(invitedTeam, command.DisplayName, cancellationToken)
+                : await FindClubAsync(command.DisplayName!, cancellationToken);
         }
 
         var userId = await identity.CreateUserAsync(email, command.Password, cancellationToken);
@@ -147,12 +149,25 @@ internal sealed class RegisterHandler(
     {
         var normalized = NameNormalizer.Normalize(name);
         var catalog = await ClubCatalog.LoadAsync(stores, cancellationToken);
-        var entry = catalog.FirstOrDefault(e => e.NormalizedName == normalized)
-            ?? throw new ValidationException([new ValidationFailure(nameof(RegisterCommand.DisplayName), ErrorCatalog.Template(ErrorCode.AuthClubNotInCatalog)) { ErrorCode = ErrorCode.AuthClubNotInCatalog }]);
-
-        if (await stores.Clubs.GetByNormalizedNameAsync(entry.NormalizedName, cancellationToken) is not null)
-            throw new ConflictException(ErrorCode.AuthClubAlreadyRegistered, entry.Name);
-
-        return entry;
+        var entry = catalog.FirstOrDefault(e => e.NormalizedName == normalized) ?? throw ClubNameError(ErrorCode.AuthClubNotInCatalog);
+        return await EnsureNotRegisteredAsync(entry, cancellationToken);
     }
+
+    // La invitación es para un club concreto: se da de alta ese y no otro, aunque llegue otro nombre.
+    private async Task<ClubCatalogEntry> InvitedClubAsync(Guid teamId, string? name, CancellationToken cancellationToken)
+    {
+        var entry = ClubCatalog.ForTeam(await ClubCatalog.LoadAsync(stores, cancellationToken), teamId)
+            ?? throw ClubNameError(ErrorCode.AuthClubNotInCatalog);
+        if (!string.IsNullOrWhiteSpace(name) && NameNormalizer.Normalize(name) != entry.NormalizedName)
+            throw ClubNameError(ErrorCode.AuthClubInviteOtherClub, entry.Name);
+        return await EnsureNotRegisteredAsync(entry, cancellationToken);
+    }
+
+    private async Task<ClubCatalogEntry> EnsureNotRegisteredAsync(ClubCatalogEntry entry, CancellationToken cancellationToken) =>
+        await stores.Clubs.GetByNormalizedNameAsync(entry.NormalizedName, cancellationToken) is null
+            ? entry
+            : throw new ConflictException(ErrorCode.AuthClubAlreadyRegistered, entry.Name);
+
+    private static ValidationException ClubNameError(string code, params object[] args) =>
+        new([new ValidationFailure(nameof(RegisterCommand.DisplayName), ErrorCatalog.Format(code, args)) { ErrorCode = code }]);
 }

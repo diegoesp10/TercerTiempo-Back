@@ -21,6 +21,12 @@ internal static class AuthEndpoints
             .WithSummary("Condiciones del alta")
             .WithDescription("Sin sesión. clubInviteRequired = true durante la beta cerrada: el alta de un club exige en accessCode una invitación generada por el administrador.");
 
+        group.MapGet("/club-invitation/{code}", (string code, IAuthRepository auth, CancellationToken ct) => auth.GetClubInvitationAsync(code, ct))
+            .WithName("GetClubInvitation")
+            .WithSummary("Consultar una invitación de club antes del alta")
+            .WithDescription("Sin sesión. Si la invitación a la beta vale, devuelve para qué club es (clubName): en el alta ese club va fijado y no se puede cambiar. 404 si no existe, ha caducado, se ha usado o se ha anulado.")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapPost("/register", (RegisterCommand command, IAuthRepository auth, CancellationToken ct) => auth.RegisterAsync(command, ct))
             .WithName("Register")
             .WithSummary("Alta en la plataforma")

@@ -42,6 +42,7 @@ public static class ErrorCode
     public const string AuthClubAlreadyRegistered = "auth.club_already_registered";
     public const string AuthClubInviteRequired = "auth.club_invite_required";
     public const string AuthClubInviteInvalid = "auth.club_invite_invalid";
+    public const string AuthClubInviteOtherClub = "auth.club_invite_other_club";
     public const string ClubInvitationNotFound = "club_invitation.not_found";
     public const string ClubInvitationAlreadyUsed = "club_invitation.already_used";
     public const string AuthPlayerAccountRequired = "auth.player_account_required";

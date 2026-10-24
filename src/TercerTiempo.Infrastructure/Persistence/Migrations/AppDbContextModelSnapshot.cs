@@ -574,6 +574,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "auth.club_invite_other_club",
+                            Language = "es",
+                            Message = "Esta invitación es para {0}: el club no se puede cambiar."
+                        },
+                        new
+                        {
                             Code = "club_invitation.not_found",
                             Language = "es",
                             Message = "La invitación '{0}' no existe."

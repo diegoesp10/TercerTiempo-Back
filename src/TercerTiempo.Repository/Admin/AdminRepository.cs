@@ -17,7 +17,7 @@ internal sealed class AdminRepository(
     IQueryHandler<GetLicensingSettingsQuery, LicensingSettingsDto> licensingSettings,
     ICommandHandler<UpdateLicensingSettingsCommand, LicensingSettingsDto> updateLicensingSettings,
     IQueryHandler<ListClubInvitationsQuery, IReadOnlyList<ClubInvitationDto>> listInvitations,
-    IQueryHandler<SearchInvitationTeamsQuery, IReadOnlyList<InvitationTeamDto>> searchInvitationTeams,
+    IQueryHandler<SearchInvitationClubsQuery, IReadOnlyList<InvitationClubDto>> searchInvitationClubs,
     ICommandHandler<CreateClubInvitationCommand, ClubInvitationDto> createInvitation,
     ICommandHandler<RevokeClubInvitationCommand, ClubInvitationDto> revokeInvitation,
     ICommandHandler<ImportTeamCrestCommand, TeamCrestImportDto> importCrest) : IAdminRepository
@@ -52,8 +52,8 @@ internal sealed class AdminRepository(
     public Task<IReadOnlyList<ClubInvitationDto>> GetClubInvitationsAsync(CancellationToken cancellationToken = default) =>
         listInvitations.Handle(new ListClubInvitationsQuery(), cancellationToken);
 
-    public Task<IReadOnlyList<InvitationTeamDto>> SearchInvitationTeamsAsync(string? query, CancellationToken cancellationToken = default) =>
-        searchInvitationTeams.Handle(new SearchInvitationTeamsQuery(query), cancellationToken);
+    public Task<IReadOnlyList<InvitationClubDto>> SearchInvitationClubsAsync(string? query, CancellationToken cancellationToken = default) =>
+        searchInvitationClubs.Handle(new SearchInvitationClubsQuery(query), cancellationToken);
 
     public Task<ClubInvitationDto> CreateClubInvitationAsync(CreateClubInvitationCommand command, CancellationToken cancellationToken = default) =>
         createInvitation.Handle(command, cancellationToken);

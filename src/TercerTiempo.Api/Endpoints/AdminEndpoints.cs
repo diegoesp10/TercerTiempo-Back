@@ -73,10 +73,10 @@ internal static class AdminEndpoints
             .WithSummary("Invitaciones de clubes a la beta")
             .WithDescription("Todas, de la más reciente a la más antigua, con su estado (available, used, expired, revoked) y el club que la usó. Solo administradores.");
 
-        group.MapGet("/club-invitations/teams", (string? q, IAdminRepository admin, CancellationToken ct) => admin.SearchInvitationTeamsAsync(q, ct))
-            .WithName("SearchInvitationTeams")
-            .WithSummary("Buscar equipos para invitar a su club")
-            .WithDescription("Hasta 20 equipos cuyo nombre contiene q (sin tildes ni mayúsculas; desde 2 letras), primero los que empiezan así, con su liga, el club que ya lo gestiona si se ha dado de alta y su invitación (la disponible o, si no, la última; también las antiguas de texto libre con su nombre exacto). Solo administradores.");
+        group.MapGet("/club-invitations/clubs", (string? q, IAdminRepository admin, CancellationToken ct) => admin.SearchInvitationClubsAsync(q, ct))
+            .WithName("SearchInvitationClubs")
+            .WithSummary("Buscar clubes para invitarlos")
+            .WithDescription("Hasta 20 clubes del catálogo cuyo nombre o el de uno de sus equipos contiene q (sin tildes ni mayúsculas; desde 2 letras), con sus equipos y ligas, la cuenta si ya se han dado de alta y su invitación (la disponible o, si no, la última). teamId es el que se manda al crear la invitación. Solo administradores.");
 
         group.MapPost("/club-invitations", (CreateClubInvitationCommand command, IAdminRepository admin, CancellationToken ct) => admin.CreateClubInvitationAsync(command, ct))
             .WithName("CreateClubInvitation")
