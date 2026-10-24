@@ -754,6 +754,24 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "cookie.invalid",
+                            Language = "es",
+                            Message = "Categoría o almacenamiento de cookie no válidos."
+                        },
+                        new
+                        {
+                            Code = "cookie.visitor_invalid",
+                            Language = "es",
+                            Message = "Identificador de visitante no válido."
+                        },
+                        new
+                        {
+                            Code = "cookie.not_found",
+                            Language = "es",
+                            Message = "La cookie '{0}' no existe."
+                        },
+                        new
+                        {
                             Code = "league.competition_required",
                             Language = "es",
                             Message = "Indica la competición (competitionId) o vincúlate a una plantilla para ver la suya."
@@ -2457,6 +2475,298 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Players", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Privacy.AnalyticsEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("ActorClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("EntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EntityType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("RouteName")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)");
+
+                    b.Property<Guid?>("SubjectClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("VisitorId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorClubId", "OccurredAt");
+
+                    b.HasIndex("EntityType", "EntityId");
+
+                    b.HasIndex("OccurredAt", "Type");
+
+                    b.HasIndex("SubjectClubId", "OccurredAt");
+
+                    b.ToTable("AnalyticsEvents", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Privacy.CookieConsent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("Analytics")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("VisitorId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("VisitorId", "CreatedAt");
+
+                    b.ToTable("CookieConsents", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Privacy.CookieDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Duration")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Storage")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("CookieDefinitions", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000101"),
+                            Category = "Necessary",
+                            Duration = "Hasta cerrar sesión",
+                            Name = "tt.token",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Mantiene la sesión iniciada (token de acceso).",
+                            SortOrder = 10,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000102"),
+                            Category = "Necessary",
+                            Duration = "Hasta cerrar sesión",
+                            Name = "tt.account",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Datos de tu cuenta para mostrar la web sin esperar a la API.",
+                            SortOrder = 20,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000103"),
+                            Category = "Necessary",
+                            Duration = "13 meses",
+                            Name = "tt.consent",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Guarda tu elección sobre las cookies para no volver a preguntarte.",
+                            SortOrder = 30,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000104"),
+                            Category = "Necessary",
+                            Duration = "Hasta cerrar la pestaña",
+                            Name = "tt.admin-session",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Sesión del panel de administración.",
+                            SortOrder = 40,
+                            Storage = "SessionStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000105"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.theme",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Tema claro u oscuro que eliges.",
+                            SortOrder = 10,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000106"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.season",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Temporada que estás consultando.",
+                            SortOrder = 20,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000107"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.my-club-first",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Si tu club sale primero en los listados.",
+                            SortOrder = 30,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000108"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.home-competition",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Última liga que has consultado en la portada.",
+                            SortOrder = 40,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000109"),
+                            Category = "Analytics",
+                            Duration = "13 meses",
+                            Name = "tt.aid",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Identificador anónimo de tu navegador para contar visitantes, páginas vistas, búsquedas y clics. Los datos se quedan en Tercer Tiempo: no se envían a terceros.",
+                            SortOrder = 10,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000110"),
+                            Category = "Analytics",
+                            Duration = "Hasta cerrar la pestaña",
+                            Name = "tt.sid",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Identificador anónimo de cada visita, para contar sesiones.",
+                            SortOrder = 20,
+                            Storage = "SessionStorage"
+                        });
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Privacy.CookiePolicy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CookiePolicies", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000003"),
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Version = "2026-10-24"
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>

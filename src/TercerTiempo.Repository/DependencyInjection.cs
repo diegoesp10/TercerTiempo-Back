@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<IVideosRepository, VideosRepository>();
         services.AddScoped<IStatsRepository, StatsRepository>();
         services.AddScoped<IAdminRepository, AdminRepository>();
+        services.AddScoped<Privacy.IPrivacyRepository, Privacy.PrivacyRepository>();
         services.AddScoped<Licensing.ILicensingRepository, Licensing.LicensingRepository>();
 
         return services;

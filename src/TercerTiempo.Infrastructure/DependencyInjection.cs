@@ -95,6 +95,9 @@ public static class DependencyInjection
         services.AddScoped<ILicensingSettingsStore, TercerTiempo.Infrastructure.Licensing.LicensingSettingsStore>();
         services.AddScoped<TercerTiempo.Domain.Competitions.IFootballSyncSettingsStore, FootballData.FootballSyncSettingsStore>();
         services.AddScoped<TercerTiempo.Domain.Competitions.ISeasonYearStore, Persistence.Stores.SeasonYearStore>();
+        services.AddScoped<TercerTiempo.Domain.Privacy.ICookieStore, Privacy.CookieStore>();
+        services.AddScoped<TercerTiempo.Domain.Privacy.IAnalyticsStore, Privacy.AnalyticsStore>();
+        services.AddScoped<TercerTiempo.Application.Privacy.IAnalyticsReports, Privacy.AnalyticsReports>();
     }
 
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)

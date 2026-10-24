@@ -16,6 +16,7 @@ public static class EndpointExtensions
         app.MapStatsEndpoints();
         app.MapAdminEndpoints();
         app.MapLicensingEndpoints();
+        app.MapPrivacyEndpoints();
 
         return app;
     }

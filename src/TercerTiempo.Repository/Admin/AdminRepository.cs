@@ -10,6 +10,10 @@ internal sealed class AdminRepository(
     ICommandHandler<AdminLoginCommand, AdminAuthResponse> login,
     IQueryHandler<GetJobsOverviewQuery, JobsOverviewDto> jobs,
     ICommandHandler<RunJobCommand, JobDto> runJob,
+    IQueryHandler<TercerTiempo.Application.Privacy.GetAnalyticsReportQuery, TercerTiempo.Application.Privacy.AnalyticsReportDto> analytics,
+    ICommandHandler<TercerTiempo.Application.Privacy.UpsertCookieCommand, TercerTiempo.Application.Privacy.CookiePolicyDto> upsertCookie,
+    ICommandHandler<TercerTiempo.Application.Privacy.DeleteCookieCommand, TercerTiempo.Application.Privacy.CookiePolicyDto> deleteCookie,
+    ICommandHandler<TercerTiempo.Application.Privacy.PublishCookiePolicyCommand, TercerTiempo.Application.Privacy.CookiePolicyDto> publishCookies,
     ICommandHandler<TercerTiempo.Application.Seasons.SetCurrentSeasonCommand, IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> setCurrentSeason,
     IQueryHandler<GetFootballSyncSettingsQuery, FootballSyncSettingsDto> footballSyncSettings,
     ICommandHandler<UpdateFootballSyncSettingsCommand, FootballSyncSettingsDto> updateFootballSyncSettings,
@@ -43,6 +47,18 @@ internal sealed class AdminRepository(
 
     public Task<IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> SetCurrentSeasonAsync(Guid seasonYearId, CancellationToken cancellationToken = default) =>
         setCurrentSeason.Handle(new TercerTiempo.Application.Seasons.SetCurrentSeasonCommand(seasonYearId), cancellationToken);
+
+    public Task<TercerTiempo.Application.Privacy.AnalyticsReportDto> GetAnalyticsAsync(TercerTiempo.Application.Privacy.GetAnalyticsReportQuery query, CancellationToken cancellationToken = default) =>
+        analytics.Handle(query, cancellationToken);
+
+    public Task<TercerTiempo.Application.Privacy.CookiePolicyDto> UpsertCookieAsync(TercerTiempo.Application.Privacy.UpsertCookieCommand command, CancellationToken cancellationToken = default) =>
+        upsertCookie.Handle(command, cancellationToken);
+
+    public Task<TercerTiempo.Application.Privacy.CookiePolicyDto> DeleteCookieAsync(Guid id, CancellationToken cancellationToken = default) =>
+        deleteCookie.Handle(new TercerTiempo.Application.Privacy.DeleteCookieCommand(id), cancellationToken);
+
+    public Task<TercerTiempo.Application.Privacy.CookiePolicyDto> PublishCookiePolicyAsync(TercerTiempo.Application.Privacy.PublishCookiePolicyCommand command, CancellationToken cancellationToken = default) =>
+        publishCookies.Handle(command, cancellationToken);
 
     public Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default) =>
         licenses.Handle(new GetLicensesOverviewQuery(), cancellationToken);

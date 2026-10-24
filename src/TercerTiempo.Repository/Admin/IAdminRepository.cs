@@ -12,6 +12,10 @@ public interface IAdminRepository
     Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default);
     Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default);
     Task<LicensingSettingsDto> GetLicensingSettingsAsync(CancellationToken cancellationToken = default);
+    Task<TercerTiempo.Application.Privacy.AnalyticsReportDto> GetAnalyticsAsync(TercerTiempo.Application.Privacy.GetAnalyticsReportQuery query, CancellationToken cancellationToken = default);
+    Task<TercerTiempo.Application.Privacy.CookiePolicyDto> UpsertCookieAsync(TercerTiempo.Application.Privacy.UpsertCookieCommand command, CancellationToken cancellationToken = default);
+    Task<TercerTiempo.Application.Privacy.CookiePolicyDto> DeleteCookieAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<TercerTiempo.Application.Privacy.CookiePolicyDto> PublishCookiePolicyAsync(TercerTiempo.Application.Privacy.PublishCookiePolicyCommand command, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> SetCurrentSeasonAsync(Guid seasonYearId, CancellationToken cancellationToken = default);
     Task<FootballSyncSettingsDto> GetFootballSyncSettingsAsync(CancellationToken cancellationToken = default);
     Task<FootballSyncSettingsDto> UpdateFootballSyncSettingsAsync(UpdateFootballSyncSettingsCommand command, CancellationToken cancellationToken = default);
