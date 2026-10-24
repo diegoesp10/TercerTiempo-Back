@@ -26,7 +26,11 @@ public sealed record TrackEventDto(
     DateTimeOffset? OccurredAt);
 
 public sealed record TrackEventsCommand(
+    [property: Description("Id de la elección de cookies (tt.consent): solo sirve para comprobar que se aceptó la analítica.")]
+    string ConsentId,
+    [property: Description("Id anónimo de analítica (tt.aid), que el navegador crea al aceptar y borra al retirarlo.")]
     string VisitorId,
+    [property: Description("Id de la visita (tt.sid).")]
     string SessionId,
     IReadOnlyList<TrackEventDto> Events) : ICommand<TrackResultDto>;
 
@@ -40,6 +44,7 @@ internal sealed class TrackEventsValidator : AbstractValidator<TrackEventsComman
 
     public TrackEventsValidator()
     {
+        RuleFor(x => x.ConsentId).Must(v => Guid.TryParse(v, out _));
         RuleFor(x => x.VisitorId).Must(v => Guid.TryParse(v, out _));
         RuleFor(x => x.SessionId).Must(v => Guid.TryParse(v, out _));
         RuleFor(x => x.Events).NotNull().Must(e => e.Count <= MaxEvents);
@@ -70,7 +75,7 @@ internal sealed class TrackEventsHandler(
 
         // Sin el consentimiento de analítica con la versión vigente no se guarda nada (el frontal ni lo envía).
         var policy = await CookieMapper.PolicyAsync(cookies, clock, cancellationToken);
-        var consent = await cookies.GetLatestConsentAsync(command.VisitorId.ToLowerInvariant(), cancellationToken);
+        var consent = await cookies.GetLatestConsentAsync(command.ConsentId.ToLowerInvariant(), cancellationToken);
         if (consent is null || !consent.Analytics || consent.PolicyVersion != policy.Version)
             return new TrackResultDto(0);
 

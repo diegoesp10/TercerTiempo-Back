@@ -82,7 +82,7 @@ public class PrivacyTests
             Stub<IUnitOfWork>((_, _) => Task.FromResult(1)),
             new FixedClock(Now));
 
-        return handler.Handle(new TrackEventsCommand(_visitor, Guid.NewGuid().ToString(),
+        return handler.Handle(new TrackEventsCommand(_visitor, Guid.NewGuid().ToString(), Guid.NewGuid().ToString(),
         [
             new TrackEventDto(AnalyticsEventType.PageView, "/equipos/x?tab=1", "team", null, teamId is null ? null : AnalyticsEntity.Team, teamId, Now.AddSeconds(-5)),
             new TrackEventDto(AnalyticsEventType.Search, "/equipos", "teams", "  caudal ", null, null, null),
