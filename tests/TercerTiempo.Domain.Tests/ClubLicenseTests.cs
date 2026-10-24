@@ -3,11 +3,11 @@ using TercerTiempo.Domain.Licensing;
 
 namespace TercerTiempo.Domain.Tests;
 
-public class TeamLicenseTests
+public class ClubLicenseTests
 {
     private static readonly DateOnly Linked = TestData.Today;
 
-    private static TeamLicense NewLicense() => TeamLicense.Start(Guid.NewGuid(), TestData.HomeTeamId, Linked, 30, TestData.Now);
+    private static ClubLicense NewLicense() => ClubLicense.Start(Guid.NewGuid(), Linked, 30, TestData.Now);
 
     [Fact]
     public void Trial_works_as_premium_until_a_plan_is_chosen()
@@ -40,8 +40,8 @@ public class TeamLicenseTests
         license.Subscribe(LicensePlan.Basic, BillingInterval.Monthly, "mock", null, null, TestData.Now);
         var trialEnd = license.TrialEndsOn;
 
-        Assert.Equal(LicenseStatus.Active, license.StatusOn(trialEnd.AddDays(TeamLicense.RenewalGraceDays)));
-        Assert.Equal(LicenseStatus.Expired, license.StatusOn(trialEnd.AddDays(TeamLicense.RenewalGraceDays + 1)));
+        Assert.Equal(LicenseStatus.Active, license.StatusOn(trialEnd.AddDays(ClubLicense.RenewalGraceDays)));
+        Assert.Equal(LicenseStatus.Expired, license.StatusOn(trialEnd.AddDays(ClubLicense.RenewalGraceDays + 1)));
 
         license.CancelRenewal(TestData.Now);
         Assert.Equal(LicenseStatus.Expired, license.StatusOn(trialEnd.AddDays(1)));

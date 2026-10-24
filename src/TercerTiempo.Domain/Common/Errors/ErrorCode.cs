@@ -97,7 +97,8 @@ public static class ErrorCode
     public const string ClubTeamNotLinked = "club.team_not_linked";
     public const string ClubTeamAlreadyInClub = "club.team_already_in_club";
     public const string ClubTeamNotInClub = "club.team_not_in_club";
-    public const string ClubTeamNameMismatch = "club.team_name_mismatch";
+    public const string ClubTeamNotFilial = "club.team_not_filial";
+    public const string ClubLastTeam = "club.last_team";
     public const string ClubTeamLinkedElsewhere = "club.team_linked_elsewhere";
     public const string ClubCrestOwnTeamsOnly = "club.crest_own_teams_only";
     public const string ClubCrestInvalid = "club.crest_invalid";

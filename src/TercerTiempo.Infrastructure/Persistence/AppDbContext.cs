@@ -47,7 +47,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<OfficialSheetLine> OfficialSheetLines => Set<OfficialSheetLine>();
     public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();
     public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
-    public DbSet<TeamLicense> TeamLicenses => Set<TeamLicense>();
+    public DbSet<ClubLicense> ClubLicenses => Set<ClubLicense>();
     public DbSet<LicensingSettings> LicensingSettings => Set<LicensingSettings>();
     public DbSet<TercerTiempo.Domain.Privacy.CookieDefinition> CookieDefinitions => Set<TercerTiempo.Domain.Privacy.CookieDefinition>();
     public DbSet<TercerTiempo.Domain.Privacy.CookiePolicy> CookiePolicies => Set<TercerTiempo.Domain.Privacy.CookiePolicy>();

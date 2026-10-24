@@ -40,9 +40,8 @@ public sealed class StripeOptions
 
 public sealed record CheckoutRequest(
     Guid ClubId,
-    Guid TeamId,
     Guid LicenseId,
-    string TeamName,
+    string ClubName,
     LicensePlan Plan,
     BillingInterval Interval,
     int PeriodPriceCents,
@@ -98,10 +97,10 @@ public interface ILicensePaymentGateway
 }
 
 // Puerta de licencias: decide si una plantilla, un vídeo o el panel de un jugador están accesibles según la licencia
-// del equipo (y la del espectador cuando mira datos de otro equipo). No sustituye a los permisos de cada acción.
+// del club del equipo (y la del espectador cuando mira datos de otro equipo). No sustituye a los permisos de cada acción.
 public interface ILicenseGate
 {
-    Task<TeamLicense> EnsureForTeamAsync(Club club, Guid teamId, CancellationToken cancellationToken);
+    Task<ClubLicense> EnsureForClubAsync(Club club, CancellationToken cancellationToken);
     Task<LicenseStatus> StatusForTeamAsync(Guid teamId, CancellationToken cancellationToken);
     Task<bool> IsViewerLicensedAsync(ICurrentUser user, CancellationToken cancellationToken);
     Task<bool> CanAccessSquadAsync(Squad squad, ICurrentUser user, CancellationToken cancellationToken);

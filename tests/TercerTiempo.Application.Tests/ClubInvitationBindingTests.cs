@@ -5,7 +5,9 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Auth.Register;
 using TercerTiempo.Application.Coaches.Appointments;
+using TercerTiempo.Application.Clubs.GetMyClub;
 using TercerTiempo.Application.Clubs.Invitations;
+using TercerTiempo.Application.Clubs.ManageTeams;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
@@ -74,6 +76,32 @@ public class ClubInvitationBindingTests
         Assert.False(new CreateClubInvitationValidator().Validate(new CreateClubInvitationCommand("Barcia", 30, null)).IsValid);
     }
 
+    [Fact]
+    public async Task The_club_license_only_takes_filials_of_the_same_club()
+    {
+        var userId = Guid.NewGuid();
+        var club = Club.Register(userId, "Caudal Deportivo", DateTimeOffset.UtcNow);
+        club.AddTeam(_caudal.Id, DateTimeOffset.UtcNow);
+        _clubs.Add(club);
+        var user = Stub<ICurrentUser>((method, _) => method switch
+        {
+            "get_IsAuthenticated" => true,
+            "get_UserId" => userId,
+            _ => null,
+        });
+
+        var mine = await new GetMyClubHandler(user, Stores()).Handle(new GetMyClubQuery(), default);
+        Assert.Equal([_caudalB.Id], mine.AvailableFilials.Select(f => f.TeamId));
+
+        var add = new AddClubTeamHandler(user, Stores(), Stub<IUnitOfWork>((_, _) => Task.FromResult(1)));
+        var other = await Assert.ThrowsAsync<DomainException>(() => add.Handle(new AddClubTeamCommand(_barcia.Id), default));
+        Assert.Equal(ErrorCode.ClubTeamNotFilial, other.Code);
+
+        var updated = await add.Handle(new AddClubTeamCommand(_caudalB.Id), default);
+        Assert.Equal([_caudal.Id, _caudalB.Id], updated.Teams.Select(t => t.TeamId));
+        Assert.Empty(updated.AvailableFilials);
+    }
+
     private Task<AuthResponse> Register(string code, string club)
     {
         var stores = Stores();
@@ -112,8 +140,8 @@ public class ClubInvitationBindingTests
             _ => Task.FromResult<IReadOnlyList<Team>>([]),
         }),
         Empty<TercerTiempo.Domain.Competitions.ICompetitionStore>(),
-        Stub<TercerTiempo.Application.Licensing.ILicenseGate>((method, args) => method == nameof(TercerTiempo.Application.Licensing.ILicenseGate.EnsureForTeamAsync)
-            ? Task.FromResult(TercerTiempo.Domain.Licensing.TeamLicense.Start(((Club)args![0]!).Id, (Guid)args[1]!, DateOnly.FromDateTime(DateTime.UtcNow), 30, DateTimeOffset.UtcNow))
+        Stub<TercerTiempo.Application.Licensing.ILicenseGate>((method, args) => method == nameof(TercerTiempo.Application.Licensing.ILicenseGate.EnsureForClubAsync)
+            ? Task.FromResult(TercerTiempo.Domain.Licensing.ClubLicense.Start(((Club)args![0]!).Id, DateOnly.FromDateTime(DateTime.UtcNow), 30, DateTimeOffset.UtcNow))
             : throw new NotSupportedException(method)),
         TimeProvider.System,
         new NoSeasons());

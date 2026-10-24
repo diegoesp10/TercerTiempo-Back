@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Licensing;
-using TercerTiempo.Domain.Teams;
 using TercerTiempo.Infrastructure.Persistence;
 using TercerTiempo.Infrastructure.Persistence.Configurations;
 
@@ -41,25 +40,22 @@ internal sealed class MockLicensePaymentGateway : ILicensePaymentGateway
 
 internal sealed class LicenseStore(AppDbContext db) : ILicenseStore
 {
-    public Task<TeamLicense?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        db.TeamLicenses.FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
+    public Task<ClubLicense?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.ClubLicenses.FirstOrDefaultAsync(l => l.Id == id, cancellationToken);
 
-    public Task<TeamLicense?> GetByTeamAsync(Guid teamId, CancellationToken cancellationToken = default) =>
-        db.TeamLicenses.FirstOrDefaultAsync(l => l.TeamId == teamId, cancellationToken);
+    public Task<ClubLicense?> GetByClubAsync(Guid clubId, CancellationToken cancellationToken = default) =>
+        db.ClubLicenses.FirstOrDefaultAsync(l => l.ClubId == clubId, cancellationToken);
 
-    public Task<TeamLicense?> GetBySubscriptionAsync(string subscriptionRef, CancellationToken cancellationToken = default) =>
-        db.TeamLicenses.FirstOrDefaultAsync(l => l.SubscriptionRef == subscriptionRef, cancellationToken);
+    public Task<ClubLicense?> GetBySubscriptionAsync(string subscriptionRef, CancellationToken cancellationToken = default) =>
+        db.ClubLicenses.FirstOrDefaultAsync(l => l.SubscriptionRef == subscriptionRef, cancellationToken);
 
-    public async Task<IReadOnlyList<TeamLicense>> GetByClubAsync(Guid clubId, CancellationToken cancellationToken = default) =>
-        await db.TeamLicenses.Where(l => l.ClubId == clubId).ToListAsync(cancellationToken);
+    public async Task<IReadOnlyList<ClubLicense>> GetRenewingAsync(string provider, CancellationToken cancellationToken = default) =>
+        await db.ClubLicenses.Where(l => l.AutoRenew && l.Plan != null && l.Provider == provider).ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<TeamLicense>> GetRenewingAsync(string provider, CancellationToken cancellationToken = default) =>
-        await db.TeamLicenses.Where(l => l.AutoRenew && l.Plan != null && l.Provider == provider).ToListAsync(cancellationToken);
+    public async Task<IReadOnlyList<ClubLicense>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        await db.ClubLicenses.AsNoTracking().ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<TeamLicense>> GetAllAsync(CancellationToken cancellationToken = default) =>
-        await db.TeamLicenses.AsNoTracking().ToListAsync(cancellationToken);
-
-    public void Add(TeamLicense license) => db.TeamLicenses.Add(license);
+    public void Add(ClubLicense license) => db.ClubLicenses.Add(license);
 
     public Task<LicensePayment?> GetPaymentBySessionAsync(string sessionId, CancellationToken cancellationToken = default) =>
         db.LicensePayments.FirstOrDefaultAsync(p => p.SessionId == sessionId, cancellationToken);
@@ -73,11 +69,11 @@ internal sealed class LicenseStore(AppDbContext db) : ILicenseStore
     public void AddPayment(LicensePayment payment) => db.LicensePayments.Add(payment);
 }
 
-internal sealed class TeamLicenseConfiguration : IEntityTypeConfiguration<TeamLicense>
+internal sealed class ClubLicenseConfiguration : IEntityTypeConfiguration<ClubLicense>
 {
-    public void Configure(EntityTypeBuilder<TeamLicense> builder)
+    public void Configure(EntityTypeBuilder<ClubLicense> builder)
     {
-        builder.ToTable("TeamLicenses");
+        builder.ToTable("ClubLicenses");
         builder.ConfigureAggregate();
         builder.Ignore(l => l.ValidUntil);
         builder.Ignore(l => l.IsRenewing);
@@ -94,10 +90,8 @@ internal sealed class TeamLicenseConfiguration : IEntityTypeConfiguration<TeamLi
         builder.Property(l => l.SubscriptionRef).HasMaxLength(120);
 
         builder.HasOne<Club>().WithMany().HasForeignKey(l => l.ClubId).OnDelete(DeleteBehavior.Cascade);
-        builder.HasOne<Team>().WithMany().HasForeignKey(l => l.TeamId).OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasIndex(l => l.TeamId).IsUnique();
-        builder.HasIndex(l => l.ClubId);
+        builder.HasIndex(l => l.ClubId).IsUnique();
         builder.HasIndex(l => l.SubscriptionRef);
     }
 }
@@ -118,7 +112,7 @@ internal sealed class LicensePaymentConfiguration : IEntityTypeConfiguration<Lic
         builder.Property(p => p.Plan).HasConversion<string>().HasMaxLength(20);
         builder.Property(p => p.Interval).HasConversion<string>().HasMaxLength(20);
 
-        builder.HasOne<TeamLicense>().WithMany().HasForeignKey(p => p.LicenseId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<ClubLicense>().WithMany().HasForeignKey(p => p.LicenseId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Club>().WithMany().HasForeignKey(p => p.ClubId).OnDelete(DeleteBehavior.NoAction);
 
         builder.HasIndex(p => p.SessionId).IsUnique();

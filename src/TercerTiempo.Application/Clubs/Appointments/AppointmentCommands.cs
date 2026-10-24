@@ -61,8 +61,8 @@ internal sealed class CreateAppointmentHandler(
         if (validUntil < today)
             throw new ConflictException(ErrorCode.AppointmentValidityPast);
 
-        // Sin licencia vigente no se nombra a nadie; con ella, el plan limita cuántos técnicos tiene el equipo.
-        var license = await stores.Licenses.EnsureForTeamAsync(club, command.TeamId, cancellationToken);
+        // Sin licencia vigente no se nombra a nadie; con ella, el plan limita cuántos técnicos tiene cada equipo del club.
+        var license = await stores.Licenses.EnsureForClubAsync(club, cancellationToken);
         if (!license.IsActiveOn(SquadAccess.Today(stores.Clock)))
             throw new ForbiddenException(ErrorCode.LicenseRequired);
         var limit = (await licensing.GetAsync(cancellationToken)).For(license.StaffPlan).MaxStaff;

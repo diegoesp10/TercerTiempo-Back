@@ -10,10 +10,10 @@ public class LicensesOverviewTests
     private static readonly DateOnly Today = new(2026, 10, 24);
     private static readonly LicensingSettings Settings = LicensingSettings.CreateDefault(Now);
 
-    private static AdminLicenseDto Row(TeamLicense license, DateOnly? today = null) =>
-        GetLicensesOverviewHandler.ToDto(license, Settings, today ?? Today, new Dictionary<Guid, string>(), new Dictionary<Guid, string>(), (0, null));
+    private static AdminLicenseDto Row(ClubLicense license, DateOnly? today = null) =>
+        GetLicensesOverviewHandler.ToDto(license, Settings, today ?? Today, new Dictionary<Guid, string>(), new Dictionary<Guid, IReadOnlyList<string>>(), (0, null));
 
-    private static TeamLicense Started(int daysAgo) => TeamLicense.Start(Guid.NewGuid(), Guid.NewGuid(), Today.AddDays(-daysAgo), 30, Now);
+    private static ClubLicense Started(int daysAgo) => ClubLicense.Start(Guid.NewGuid(), Today.AddDays(-daysAgo), 30, Now);
 
     [Fact]
     public void A_trial_owes_nothing_and_shows_whether_a_plan_was_chosen()

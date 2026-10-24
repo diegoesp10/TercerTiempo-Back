@@ -67,6 +67,12 @@ internal static partial class ClubCatalog
     public static ClubCatalogEntry? ForTeam(IReadOnlyList<ClubCatalogEntry> catalog, Guid teamId) =>
         catalog.FirstOrDefault(entry => entry.Teams.Any(t => t.Team.Id == teamId));
 
+    // El club del catálogo de una cuenta de club: el de su nombre (se elige del catálogo al darse de alta) o, si el
+    // proveedor lo ha renombrado, el de alguno de sus equipos.
+    public static ClubCatalogEntry? ForClub(IReadOnlyList<ClubCatalogEntry> catalog, Domain.Clubs.Club club) =>
+        catalog.FirstOrDefault(entry => entry.NormalizedName == club.NormalizedName)
+        ?? club.Teams.Select(t => ForTeam(catalog, t.TeamId)).FirstOrDefault(entry => entry is not null);
+
     public static IReadOnlyList<ClubCatalogEntry> Build(IEnumerable<CatalogTeam> teams)
     {
         var groups = new List<Group>();

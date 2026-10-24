@@ -12,6 +12,6 @@ internal sealed class GetMyClubHandler(ICurrentUser currentUser, AccountStores s
     public async Task<ClubDto> Handle(GetMyClubQuery query, CancellationToken cancellationToken)
     {
         var club = await Resolvers.CurrentClubAsync(currentUser, stores.Clubs, cancellationToken);
-        return await ClubMapper.ToDtoAsync(club, stores, cancellationToken);
+        return await ClubMapper.ToDtoAsync(club, stores, cancellationToken, withFilials: true);
     }
 }

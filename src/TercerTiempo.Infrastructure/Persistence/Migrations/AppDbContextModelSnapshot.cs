@@ -868,15 +868,21 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
-                            Code = "club.team_name_mismatch",
+                            Code = "club.team_not_filial",
                             Language = "es",
-                            Message = "{0} no se corresponde con el nombre del club ({1})."
+                            Message = "{0} no es un equipo del {1}: la licencia del club solo cubre su primer equipo y sus filiales."
                         },
                         new
                         {
                             Code = "club.team_linked_elsewhere",
                             Language = "es",
                             Message = "Ese equipo ya está vinculado a otro club."
+                        },
+                        new
+                        {
+                            Code = "club.last_team",
+                            Language = "es",
+                            Message = "El club tiene que conservar al menos un equipo."
                         },
                         new
                         {
@@ -1362,13 +1368,13 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "license.staff_limit",
                             Language = "es",
-                            Message = "La licencia {0} admite {1} en el cuerpo técnico y este equipo ya está completo. Revoca algún nombramiento o pasa a Premium."
+                            Message = "La licencia {0} admite {1} en el cuerpo técnico de cada equipo y este ya está completo. Revoca algún nombramiento o pasa a Premium."
                         },
                         new
                         {
                             Code = "license.plan_too_small",
                             Language = "es",
-                            Message = "Este equipo tiene {0} en el cuerpo técnico y la licencia {1} admite {2}. Revoca nombramientos antes de elegirla."
+                            Message = "{0} tiene {1} en el cuerpo técnico y la licencia {2} por equipo. Revoca nombramientos antes de elegirla."
                         },
                         new
                         {
@@ -1711,6 +1717,67 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("SeasonYears", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.ClubLicense", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AutoRenew")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CustomerRef")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Interval")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("NextInterval")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("NextPlan")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateOnly?>("PaidUntil")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Plan")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("SubscriptionRef")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateOnly>("TrialEndsOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId")
+                        .IsUnique();
+
+                    b.HasIndex("SubscriptionRef");
+
+                    b.ToTable("ClubLicenses", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePayment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1771,9 +1838,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
-
-                    b.Property<Guid>("TeamId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -1873,72 +1937,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             TrialDays = 30,
                             UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         });
-                });
-
-            modelBuilder.Entity("TercerTiempo.Domain.Licensing.TeamLicense", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("AutoRenew")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("ClubId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("CustomerRef")
-                        .HasMaxLength(120)
-                        .HasColumnType("nvarchar(120)");
-
-                    b.Property<string>("Interval")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("NextInterval")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("NextPlan")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<DateOnly?>("PaidUntil")
-                        .HasColumnType("date");
-
-                    b.Property<string>("Plan")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("Provider")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
-
-                    b.Property<string>("SubscriptionRef")
-                        .HasMaxLength(120)
-                        .HasColumnType("nvarchar(120)");
-
-                    b.Property<Guid>("TeamId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateOnly>("TrialEndsOn")
-                        .HasColumnType("date");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClubId");
-
-                    b.HasIndex("SubscriptionRef");
-
-                    b.HasIndex("TeamId")
-                        .IsUnique();
-
-                    b.ToTable("TeamLicenses", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Matches.Match", b =>
@@ -3756,6 +3754,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Navigation("OfficialRef");
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.ClubLicense", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePayment", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
@@ -3764,7 +3771,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
-                    b.HasOne("TercerTiempo.Domain.Licensing.TeamLicense", null)
+                    b.HasOne("TercerTiempo.Domain.Licensing.ClubLicense", null)
                         .WithMany()
                         .HasForeignKey("LicenseId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -3777,21 +3784,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .WithMany("Plans")
                         .HasForeignKey("SettingsId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("TercerTiempo.Domain.Licensing.TeamLicense", b =>
-                {
-                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
-                        .WithMany()
-                        .HasForeignKey("ClubId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
-                        .WithMany()
-                        .HasForeignKey("TeamId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

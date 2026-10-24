@@ -24,8 +24,8 @@ internal static class ClubEndpoints
 
         group.MapPost("/teams", (ClubTeamRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.AddTeamAsync(request.TeamId, ct))
             .WithName("AddClubTeam")
-            .WithSummary("Vincular otro equipo al club")
-            .WithDescription("Los equipos del club quedan vinculados al darse de alta; esto es para los que no se reconocieron por el nombre. Uno de los equipos publicados por el proveedor (GET /api/teams), cuyo nombre se corresponda con el del club. Un equipo solo puede pertenecer a un club.")
+            .WithSummary("Añadir un filial a la licencia del club")
+            .WithDescription("El primer equipo y los filiales del club quedan vinculados al darse de alta; esto es para un filial que aparece después (availableFilials de GET /api/clubs/me). Solo equipos del mismo club del catálogo: la licencia del club no cubre equipos de otros clubes. Un equipo solo puede pertenecer a un club.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -34,8 +34,8 @@ internal static class ClubEndpoints
 
         group.MapDelete("/teams/{teamId:guid}", (Guid teamId, IClubsRepository clubs, CancellationToken ct) => clubs.RemoveTeamAsync(teamId, ct))
             .WithName("RemoveClubTeam")
-            .WithSummary("Desvincular un equipo del club")
-            .WithDescription("Los nombramientos ya emitidos para ese equipo no cambian.")
+            .WithSummary("Quitar un filial de la licencia del club")
+            .WithDescription("Deja de estar cubierto por la licencia del club. Los nombramientos ya emitidos para ese equipo no cambian. El club conserva al menos un equipo.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 

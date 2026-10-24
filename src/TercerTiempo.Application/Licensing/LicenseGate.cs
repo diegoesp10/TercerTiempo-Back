@@ -24,31 +24,28 @@ internal sealed class LicenseGate(
     private readonly Dictionary<Guid, LicenseStatus> _statusCache = [];
     private bool? _viewerLicensed;
 
-    public async Task<TeamLicense> EnsureForTeamAsync(Club club, Guid teamId, CancellationToken cancellationToken)
+    public async Task<ClubLicense> EnsureForClubAsync(Club club, CancellationToken cancellationToken)
     {
-        if (await licenses.GetByTeamAsync(teamId, cancellationToken) is { } existing)
+        if (await licenses.GetByClubAsync(club.Id, cancellationToken) is { } existing)
             return existing;
 
-        // La prueba cuenta desde que el club vinculó el equipo, no desde la primera consulta.
-        var linkedOn = club.Teams.FirstOrDefault(t => t.TeamId == teamId)?.AddedAt ?? clock.GetUtcNow();
+        // La prueba cuenta desde que el club vinculó su primer equipo, no desde la primera consulta.
+        var startedAt = club.Teams.Count > 0 ? club.Teams.Min(t => t.AddedAt) : club.RegisteredAt;
         var trialDays = (await catalog.GetAsync(cancellationToken)).TrialDays;
-        var license = TeamLicense.Start(club.Id, teamId, DateOnly.FromDateTime(linkedOn.UtcDateTime), trialDays, clock.GetUtcNow());
+        var license = ClubLicense.Start(club.Id, DateOnly.FromDateTime(startedAt.UtcDateTime), trialDays, clock.GetUtcNow());
         licenses.Add(license);
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        _statusCache[teamId] = license.StatusOn(SquadAccess.Today(clock));
         return license;
     }
 
+    // Un equipo está cubierto por la licencia del club que lo tiene vinculado; sin club, no tiene licencia.
     public async Task<LicenseStatus> StatusForTeamAsync(Guid teamId, CancellationToken cancellationToken)
     {
         if (_statusCache.TryGetValue(teamId, out var cached)) return cached;
 
-        var today = SquadAccess.Today(clock);
-        var license = await licenses.GetByTeamAsync(teamId, cancellationToken);
-        if (license is null && await clubs.GetByTeamAsync(teamId, cancellationToken) is { } club)
-            license = await EnsureForTeamAsync(club, teamId, cancellationToken);
-
-        var status = license?.StatusOn(today) ?? LicenseStatus.Expired;
+        var club = await clubs.GetByTeamAsync(teamId, cancellationToken);
+        var license = club is null ? null : await EnsureForClubAsync(club, cancellationToken);
+        var status = license?.StatusOn(SquadAccess.Today(clock)) ?? LicenseStatus.Expired;
         _statusCache[teamId] = status;
         return status;
     }
@@ -66,11 +63,7 @@ internal sealed class LicenseGate(
         var today = SquadAccess.Today(clock);
 
         if (user.ClubId is { } clubId && await clubs.GetByIdAsync(clubId, cancellationToken) is { } club)
-        {
-            foreach (var team in club.Teams)
-                if (await StatusForTeamAsync(team.TeamId, cancellationToken) != LicenseStatus.Expired) return true;
-            return false;
-        }
+            return (await EnsureForClubAsync(club, cancellationToken)).IsActiveOn(today);
 
         if (user.CoachId is { } coachId)
         {

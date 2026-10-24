@@ -3,15 +3,15 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Auth;
+using TercerTiempo.Application.Clubs.Catalog;
 using TercerTiempo.Application.Common;
-using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Clubs.ManageTeams;
 
 public sealed record AddClubTeamCommand(
-    [property: Description("Id del equipo (GET /api/teams?competitionId=...).")]
+    [property: Description("Id de un filial del club sin vincular (availableFilials de GET /api/clubs/me).")]
     Guid TeamId) : ICommand<ClubDto>;
 
 internal sealed class AddClubTeamValidator : AbstractValidator<AddClubTeamCommand>
@@ -19,13 +19,13 @@ internal sealed class AddClubTeamValidator : AbstractValidator<AddClubTeamComman
     public AddClubTeamValidator() => RuleFor(x => x.TeamId).NotEmpty();
 }
 
+// La licencia es del club y cubre su primer equipo y sus filiales: solo se vinculan equipos del mismo club del
+// catálogo (los que se agrupan con él por el nombre), nunca otro club.
 internal sealed class AddClubTeamHandler(
     ICurrentUser currentUser,
     AccountStores stores,
     IUnitOfWork unitOfWork) : ICommandHandler<AddClubTeamCommand, ClubDto>
 {
-    private const double MinimumSimilarity = 0.5;
-
     public async Task<ClubDto> Handle(AddClubTeamCommand command, CancellationToken cancellationToken)
     {
         var club = await Resolvers.CurrentClubAsync(currentUser, stores.Clubs, cancellationToken);
@@ -33,8 +33,9 @@ internal sealed class AddClubTeamHandler(
         var team = await stores.Teams.GetByIdAsync(command.TeamId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.TeamNotFound, command.TeamId);
 
-        if (TeamNameSimilarity.Score(club.Name, team.Name) < MinimumSimilarity)
-            throw new DomainException(ErrorCode.ClubTeamNameMismatch, team.Name, club.Name);
+        var entry = ClubCatalog.ForClub(await ClubCatalog.LoadAsync(stores, cancellationToken), club);
+        if (entry is null || entry.Teams.All(t => t.Team.Id != team.Id))
+            throw new DomainException(ErrorCode.ClubTeamNotFilial, team.Name, club.Name);
 
         if (await stores.Clubs.GetByTeamAsync(command.TeamId, cancellationToken) is { } owner && owner.Id != club.Id)
             throw new ConflictException(ErrorCode.ClubTeamLinkedElsewhere);
@@ -42,7 +43,7 @@ internal sealed class AddClubTeamHandler(
         club.AddTeam(command.TeamId, stores.Clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await ClubMapper.ToDtoAsync(club, stores, cancellationToken);
+        return await ClubMapper.ToDtoAsync(club, stores, cancellationToken, withFilials: true);
     }
 }
 
@@ -65,6 +66,6 @@ internal sealed class RemoveClubTeamHandler(
         club.RemoveTeam(command.TeamId);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await ClubMapper.ToDtoAsync(club, stores, cancellationToken);
+        return await ClubMapper.ToDtoAsync(club, stores, cancellationToken, withFilials: true);
     }
 }

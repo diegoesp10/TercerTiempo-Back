@@ -42,11 +42,10 @@ internal sealed class StripeLicensePaymentGateway(HttpClient http, IOptions<Lice
             new("tax_id_collection[enabled]", "true"),
             new("line_items[0][quantity]", "1"),
             new("metadata[license_id]", request.LicenseId.ToString()),
-            new("metadata[team_id]", request.TeamId.ToString()),
             new("metadata[club_id]", request.ClubId.ToString()),
             new("subscription_data[metadata][license_id]", request.LicenseId.ToString()),
-            new("subscription_data[metadata][team_id]", request.TeamId.ToString()),
-            new("subscription_data[description]", $"Licencia {LicenseName(request.Plan)} · {request.TeamName}"),
+            new("subscription_data[metadata][club_id]", request.ClubId.ToString()),
+            new("subscription_data[description]", $"Licencia {LicenseName(request.Plan)} · {request.ClubName}"),
         };
 
         if (plan.StripePriceId(request.Interval) is { Length: > 0 } priceId)
