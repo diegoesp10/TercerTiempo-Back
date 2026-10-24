@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Common;
@@ -90,12 +89,12 @@ internal sealed class GetLicensesOverviewHandler(
     ILicenseStore licenses,
     IClubStore clubs,
     ITeamStore teams,
-    IOptions<LicensingOptions> options,
+    ILicensingCatalog catalog,
     TimeProvider clock) : IQueryHandler<GetLicensesOverviewQuery, LicensesOverviewDto>
 {
     public async Task<LicensesOverviewDto> Handle(GetLicensesOverviewQuery query, CancellationToken cancellationToken)
     {
-        var settings = options.Value;
+        var settings = await catalog.GetAsync(cancellationToken);
         var today = SquadAccess.Today(clock);
         var all = await licenses.GetAllAsync(cancellationToken);
         var payments = await licenses.GetAllPaymentsAsync(cancellationToken);
@@ -149,7 +148,7 @@ internal sealed class GetLicensesOverviewHandler(
 
     internal static AdminLicenseDto ToDto(
         TeamLicense license,
-        LicensingOptions settings,
+        LicensingSettings settings,
         DateOnly today,
         IReadOnlyDictionary<Guid, string> clubNames,
         IReadOnlyDictionary<Guid, string> teamNames,

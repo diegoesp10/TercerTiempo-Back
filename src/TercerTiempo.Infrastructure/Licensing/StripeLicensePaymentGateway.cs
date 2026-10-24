@@ -16,7 +16,7 @@ namespace TercerTiempo.Infrastructure.Licensing;
 //   de la configuración) y, si al equipo le queda prueba o periodo pagado, trial_end para no cobrar hasta entonces.
 // - Renovaciones, cancelaciones y cobros fallidos: los gestiona Stripe y avisa por webhook (invoice.paid,
 //   customer.subscription.deleted); la licencia guarda el id de la suscripción y la de la licencia va en su metadata.
-internal sealed class StripeLicensePaymentGateway(HttpClient http, IOptions<LicensingOptions> options, TimeProvider clock) : ILicensePaymentGateway
+internal sealed class StripeLicensePaymentGateway(HttpClient http, IOptions<LicensingOptions> options, ILicensingCatalog catalog, TimeProvider clock) : ILicensePaymentGateway
 {
     // Stripe exige que trial_end esté al menos 48 h en el futuro.
     private static readonly TimeSpan MinimumTrial = TimeSpan.FromHours(49);
@@ -29,7 +29,7 @@ internal sealed class StripeLicensePaymentGateway(HttpClient http, IOptions<Lice
 
     public async Task<CheckoutSession> BeginCheckoutAsync(CheckoutRequest request, CancellationToken cancellationToken)
     {
-        var plan = options.Value.For(request.Plan);
+        var plan = (await catalog.GetAsync(cancellationToken)).For(request.Plan);
         var form = new List<KeyValuePair<string, string>>
         {
             new("mode", "subscription"),
@@ -123,7 +123,8 @@ internal sealed class StripeLicensePaymentGateway(HttpClient http, IOptions<Lice
             new("proration_behavior", "none"),
             new("items[0][id]", item.GetProperty("id").GetString()!),
         };
-        if (options.Value.For(plan).StripePriceId(interval) is { Length: > 0 } priceId)
+        var settings = await catalog.GetAsync(cancellationToken);
+        if (settings.For(plan).StripePriceId(interval) is { Length: > 0 } priceId)
         {
             form.Add(new("items[0][price]", priceId));
         }
@@ -131,8 +132,8 @@ internal sealed class StripeLicensePaymentGateway(HttpClient http, IOptions<Lice
         {
             var product = item.GetProperty("price").GetProperty("product");
             form.Add(new("items[0][price_data][product]", product.ValueKind == JsonValueKind.Object ? Text(product, "id")! : product.GetString()!));
-            form.Add(new("items[0][price_data][currency]", options.Value.Currency.ToLowerInvariant()));
-            form.Add(new("items[0][price_data][unit_amount]", options.Value.PriceCents(plan, interval).ToString(CultureInfo.InvariantCulture)));
+            form.Add(new("items[0][price_data][currency]", settings.Currency.ToLowerInvariant()));
+            form.Add(new("items[0][price_data][unit_amount]", settings.PriceCents(plan, interval).ToString(CultureInfo.InvariantCulture)));
             form.Add(new("items[0][price_data][recurring][interval]", interval == BillingInterval.Yearly ? "year" : "month"));
         }
 
@@ -171,7 +172,7 @@ internal sealed class StripeLicensePaymentGateway(HttpClient http, IOptions<Lice
 
                 return new InvoicePaidEvent(
                     Text(data, "id")!, subscriptionRef, licenseId, Text(data, "billing_reason") ?? string.Empty,
-                    data.GetProperty("amount_paid").GetInt32(), (Text(data, "currency") ?? options.Value.Currency).ToUpperInvariant(), periodEnd);
+                    data.GetProperty("amount_paid").GetInt32(), (Text(data, "currency") ?? LicensingSettings.DefaultCurrency).ToUpperInvariant(), periodEnd);
 
             case "customer.subscription.deleted":
                 return new SubscriptionEndedEvent(Text(data, "id")!);

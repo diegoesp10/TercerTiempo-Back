@@ -48,6 +48,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();
     public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
     public DbSet<TeamLicense> TeamLicenses => Set<TeamLicense>();
+    public DbSet<LicensingSettings> LicensingSettings => Set<LicensingSettings>();
     public DbSet<LicensePayment> LicensePayments => Set<LicensePayment>();
     public DbSet<VideoPurchase> VideoPurchases => Set<VideoPurchase>();
     public DbSet<VideoUploadSession> VideoUploads => Set<VideoUploadSession>();

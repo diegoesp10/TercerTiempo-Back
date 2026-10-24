@@ -8,7 +8,7 @@ public class LicensesOverviewTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 24, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateOnly Today = new(2026, 10, 24);
-    private static readonly LicensingOptions Settings = new();
+    private static readonly LicensingSettings Settings = LicensingSettings.CreateDefault(Now);
 
     private static AdminLicenseDto Row(TeamLicense license, DateOnly? today = null) =>
         GetLicensesOverviewHandler.ToDto(license, Settings, today ?? Today, new Dictionary<Guid, string>(), new Dictionary<Guid, string>(), (0, null));

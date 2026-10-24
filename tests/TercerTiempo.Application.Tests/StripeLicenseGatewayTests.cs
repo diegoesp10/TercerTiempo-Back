@@ -13,7 +13,16 @@ public class StripeLicenseGatewayTests
     private static StripeLicensePaymentGateway Gateway() => new(
         new HttpClient(),
         Options.Create(new LicensingOptions { Stripe = new StripeOptions { WebhookSecret = Secret } }),
+        new FixedCatalog(),
         new FixedClock(Now));
+
+    private sealed class FixedCatalog : ILicensingCatalog
+    {
+        public Task<TercerTiempo.Domain.Licensing.LicensingSettings> GetAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(TercerTiempo.Domain.Licensing.LicensingSettings.CreateDefault(Now));
+
+        public void Invalidate() { }
+    }
 
     private static string Header(string payload, DateTimeOffset at) =>
         $"t={at.ToUnixTimeSeconds()},v1={StripeSignature.Compute(payload, at.ToUnixTimeSeconds(), Secret)}";

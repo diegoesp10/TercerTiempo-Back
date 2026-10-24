@@ -177,6 +177,9 @@ public static class ErrorCode
     public const string LicenseViewerRequired = "license.viewer_required";
     public const string LicenseNotFound = "license.not_found";
     public const string LicensePlanInvalid = "license.plan_invalid";
+    public const string LicensingCurrencyInvalid = "licensing.currency_invalid";
+    public const string LicensingPlanOrder = "licensing.plan_order";
+    public const string LicensingStripePriceInvalid = "licensing.stripe_price_invalid";
     public const string LicenseStaffLimit = "license.staff_limit";
     public const string LicensePlanTooSmall = "license.plan_too_small";
     public const string LicenseSubscriptionActive = "license.subscription_active";

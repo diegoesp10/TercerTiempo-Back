@@ -1295,6 +1295,24 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "licensing.currency_invalid",
+                            Language = "es",
+                            Message = "La moneda '{0}' no es un código ISO de tres letras (EUR)."
+                        },
+                        new
+                        {
+                            Code = "licensing.plan_order",
+                            Language = "es",
+                            Message = "Premium no puede admitir menos técnicos que Básica."
+                        },
+                        new
+                        {
+                            Code = "licensing.stripe_price_invalid",
+                            Language = "es",
+                            Message = "'{0}' no es un precio de Stripe: sus ids empiezan por price_."
+                        },
+                        new
+                        {
                             Code = "license.staff_limit",
                             Language = "es",
                             Message = "La licencia {0} admite {1} en el cuerpo técnico y este equipo ya está completo. Revoca algún nombramiento o pasa a Premium."
@@ -1641,6 +1659,94 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("LicensePayments", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePlanSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("MaxStaff")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MonthlyPriceCents")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Plan")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("SettingsId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("StripeMonthlyPriceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("StripeYearlyPriceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("YearlyPriceCents")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SettingsId", "Plan")
+                        .IsUnique();
+
+                    b.ToTable("LicensePlanSettings", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000011"),
+                            MaxStaff = 1,
+                            MonthlyPriceCents = 990,
+                            Plan = "Basic",
+                            SettingsId = new Guid("01a16f00-0000-7000-8000-000000000001"),
+                            YearlyPriceCents = 9900
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000012"),
+                            MaxStaff = 6,
+                            MonthlyPriceCents = 1990,
+                            Plan = "Premium",
+                            SettingsId = new Guid("01a16f00-0000-7000-8000-000000000001"),
+                            YearlyPriceCents = 19900
+                        });
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensingSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<int>("TrialDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("LicensingSettings", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000001"),
+                            Currency = "EUR",
+                            TrialDays = 30,
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.TeamLicense", b =>
@@ -3226,6 +3332,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePlanSettings", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Licensing.LicensingSettings", null)
+                        .WithMany("Plans")
+                        .HasForeignKey("SettingsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.TeamLicense", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
@@ -3824,6 +3939,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("TercerTiempo.Domain.Competitions.Competition", b =>
                 {
                     b.Navigation("Seasons");
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensingSettings", b =>
+                {
+                    b.Navigation("Plans");
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.OfficialSheets.OfficialMatchSheet", b =>

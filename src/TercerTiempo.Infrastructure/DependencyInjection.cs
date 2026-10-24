@@ -92,6 +92,7 @@ public static class DependencyInjection
         services.AddScoped<IVideoUploadStore, VideoUploadStore>();
         services.AddScoped<IVideoShareStore, VideoShareStore>();
         services.AddScoped<ILicenseStore, LicenseStore>();
+        services.AddScoped<ILicensingSettingsStore, TercerTiempo.Infrastructure.Licensing.LicensingSettingsStore>();
     }
 
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)

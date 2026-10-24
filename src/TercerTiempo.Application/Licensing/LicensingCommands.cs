@@ -145,14 +145,15 @@ internal sealed class LicenseDescriber(
     ISquadStore squads,
     ICompetitionStore competitions,
     ICoachAppointmentStore appointments,
+    ILicensingCatalog catalog,
     IOptions<LicensingOptions> options,
     TimeProvider clock)
 {
-    public LicensingCatalogDto Catalog()
+    public async Task<LicensingCatalogDto> CatalogAsync(CancellationToken cancellationToken)
     {
-        var o = options.Value;
+        var o = await catalog.GetAsync(cancellationToken);
         LicensePlanDto Plan(LicensePlan plan) => new(plan, o.For(plan).MonthlyPriceCents, o.For(plan).YearlyPriceCents, o.For(plan).MaxStaff);
-        return new([Plan(LicensePlan.Basic), Plan(LicensePlan.Premium)], o.Currency, o.TrialDays, TeamLicense.RenewalGraceDays, o.Provider);
+        return new([Plan(LicensePlan.Basic), Plan(LicensePlan.Premium)], o.Currency, o.TrialDays, TeamLicense.RenewalGraceDays, options.Value.Provider);
     }
 
     // Nombramientos de la temporada en curso que ocupan plaza: vigentes o pendientes de canjear.
@@ -169,7 +170,7 @@ internal sealed class LicenseDescriber(
     public async Task EnsureStaffFitsAsync(Guid teamId, LicensePlan plan, CancellationToken cancellationToken)
     {
         var count = await StaffCountAsync(teamId, cancellationToken);
-        var limit = options.Value.For(plan).MaxStaff;
+        var limit = (await catalog.GetAsync(cancellationToken)).For(plan).MaxStaff;
         if (count > limit)
             throw new ConflictException(ErrorCode.LicensePlanTooSmall, LicenseTexts.Staff(count), LicenseTexts.Plan(plan), LicenseTexts.Staff(limit));
     }
@@ -177,7 +178,7 @@ internal sealed class LicenseDescriber(
     public async Task<TeamLicenseDto> DescribeAsync(TeamLicense license, CancellationToken cancellationToken)
     {
         var today = SquadAccess.Today(clock);
-        var o = options.Value;
+        var o = await catalog.GetAsync(cancellationToken);
         var team = await teams.GetByIdAsync(license.TeamId, cancellationToken);
         var season = (await competitions.GetByTeamAsync(license.TeamId, cancellationToken))?.CurrentSeason;
         var squad = season is null ? null : await squads.GetByTeamAndSeasonAsync(license.TeamId, season.Id, cancellationToken);
@@ -240,7 +241,7 @@ internal sealed class LicenseCheckoutCompletion(
 internal sealed class GetLicensingCatalogHandler(LicenseDescriber describer) : IQueryHandler<GetLicensingCatalogQuery, LicensingCatalogDto>
 {
     public Task<LicensingCatalogDto> Handle(GetLicensingCatalogQuery query, CancellationToken cancellationToken) =>
-        Task.FromResult(describer.Catalog());
+        describer.CatalogAsync(cancellationToken);
 }
 
 internal sealed class GetLicensingStatusHandler(
@@ -277,7 +278,7 @@ internal sealed class GetLicensingStatusHandler(
             list.Add(await describer.DescribeAsync(license, cancellationToken));
         }
 
-        return new LicensingStatusDto(await gate.IsViewerLicensedAsync(currentUser, cancellationToken), list, describer.Catalog());
+        return new LicensingStatusDto(await gate.IsViewerLicensedAsync(currentUser, cancellationToken), list, await describer.CatalogAsync(cancellationToken));
     }
 
     private async Task<TeamLicense?> LicenseOfAsync(Guid teamId, CancellationToken cancellationToken)
@@ -326,7 +327,7 @@ internal sealed class BeginLicenseCheckoutHandler(
     ITeamStore teams,
     ILicensePaymentGateway gateway,
     LicenseDescriber describer,
-    IOptions<LicensingOptions> options,
+    ILicensingCatalog catalog,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<BeginLicenseCheckoutCommand, LicenseCheckoutDto>
 {
@@ -341,7 +342,7 @@ internal sealed class BeginLicenseCheckoutHandler(
 
         // Lo que queda de prueba o de un periodo ya pagado no se pierde: el primer cobro llega al acabarse.
         var deferUntil = license.IsActiveOn(today) ? license.ValidUntil : (DateOnly?)null;
-        var o = options.Value;
+        var o = await catalog.GetAsync(cancellationToken);
         var price = o.PriceCents(command.Plan, command.Interval);
         var team = await teams.GetByIdAsync(license.TeamId, cancellationToken);
 
@@ -521,7 +522,7 @@ internal sealed class HandleLicenseWebhookHandler(
 internal sealed class RenewDueLicensesHandler(
     ILicenseStore licenses,
     ILicensePaymentGateway gateway,
-    IOptions<LicensingOptions> options,
+    ILicensingCatalog catalog,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<RenewDueLicensesCommand, int>
 {
@@ -531,7 +532,7 @@ internal sealed class RenewDueLicensesHandler(
 
         var today = SquadAccess.Today(clock);
         var now = clock.GetUtcNow();
-        var o = options.Value;
+        var o = await catalog.GetAsync(cancellationToken);
         var renewed = 0;
 
         foreach (var license in await licenses.GetRenewingAsync(gateway.Provider, cancellationToken))

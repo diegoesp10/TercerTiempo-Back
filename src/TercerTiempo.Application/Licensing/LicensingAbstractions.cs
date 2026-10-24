@@ -5,44 +5,16 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Licensing;
 
+// Configuración del entorno: qué pasarela se usa y cómo se conecta con Stripe (secretos y URLs de vuelta). Los precios,
+// la prueba y los técnicos de cada plan están en la base de datos (LicensingSettings) y se editan en la administración.
 public sealed class LicensingOptions
 {
     public const string SectionName = "Licensing";
 
-    public string Currency { get; set; } = "EUR";
-
-    public int TrialDays { get; set; } = 30;
-
     // «mock» (pago simulado, sin cobro real) o «stripe».
     public string Provider { get; set; } = "mock";
 
-    public LicensePlanOptions Basic { get; set; } = new() { MonthlyPriceCents = 990, YearlyPriceCents = 9900, MaxStaff = 1 };
-
-    public LicensePlanOptions Premium { get; set; } = new() { MonthlyPriceCents = 1990, YearlyPriceCents = 19900, MaxStaff = 6 };
-
     public StripeOptions Stripe { get; set; } = new();
-
-    public LicensePlanOptions For(LicensePlan plan) => plan == LicensePlan.Premium ? Premium : Basic;
-
-    public int PriceCents(LicensePlan plan, BillingInterval interval) =>
-        interval == BillingInterval.Yearly ? For(plan).YearlyPriceCents : For(plan).MonthlyPriceCents;
-}
-
-public sealed class LicensePlanOptions
-{
-    public int MonthlyPriceCents { get; set; }
-
-    public int YearlyPriceCents { get; set; }
-
-    // Técnicos (nombramientos vigentes o pendientes de canjear) que admite el equipo en la temporada.
-    public int MaxStaff { get; set; }
-
-    // Precios recurrentes de Stripe (price_...) de cada periodo.
-    public string StripeMonthlyPriceId { get; set; } = string.Empty;
-
-    public string StripeYearlyPriceId { get; set; } = string.Empty;
-
-    public string StripePriceId(BillingInterval interval) => interval == BillingInterval.Yearly ? StripeYearlyPriceId : StripeMonthlyPriceId;
 }
 
 public sealed class StripeOptions

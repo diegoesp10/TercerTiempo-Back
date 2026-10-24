@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
@@ -19,7 +18,7 @@ internal sealed class LicenseGate(
     IVideoShareStore shares,
     IPlayerStore players,
     IUnitOfWork unitOfWork,
-    IOptions<LicensingOptions> options,
+    ILicensingCatalog catalog,
     TimeProvider clock) : ILicenseGate
 {
     private readonly Dictionary<Guid, LicenseStatus> _statusCache = [];
@@ -32,7 +31,8 @@ internal sealed class LicenseGate(
 
         // La prueba cuenta desde que el club vinculó el equipo, no desde la primera consulta.
         var linkedOn = club.Teams.FirstOrDefault(t => t.TeamId == teamId)?.AddedAt ?? clock.GetUtcNow();
-        var license = TeamLicense.Start(club.Id, teamId, DateOnly.FromDateTime(linkedOn.UtcDateTime), options.Value.TrialDays, clock.GetUtcNow());
+        var trialDays = (await catalog.GetAsync(cancellationToken)).TrialDays;
+        var license = TeamLicense.Start(club.Id, teamId, DateOnly.FromDateTime(linkedOn.UtcDateTime), trialDays, clock.GetUtcNow());
         licenses.Add(license);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         _statusCache[teamId] = license.StatusOn(SquadAccess.Today(clock));

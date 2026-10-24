@@ -24,6 +24,8 @@ public static class DependencyInjection
         services.AddSingleton<ISyncProgress, SyncProgress>();
         services.AddScoped<AppointmentRedemption>();
         services.AddScoped<Licensing.ILicenseGate, Licensing.LicenseGate>();
+        services.AddSingleton<Licensing.LicensingCatalogCache>();
+        services.AddScoped<Licensing.ILicensingCatalog, Licensing.LicensingCatalog>();
         services.AddScoped<Licensing.LicenseDescriber>();
         services.AddScoped<Licensing.LicenseCheckoutCompletion>();
         services.AddScoped<OfficialSheetLocator>();

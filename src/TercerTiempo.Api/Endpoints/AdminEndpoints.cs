@@ -36,6 +36,18 @@ internal static class AdminEndpoints
             .WithSummary("Licencias y cobros de todos los clubes")
             .WithDescription("Cada licencia con su estado de cobro (trial, trial-plan, active, grace, unpaid, cancelled, trial-ended), si da acceso, el plan, la próxima renovación y su importe, lo que debe y desde cuándo, y lo cobrado; un resumen (en prueba, al día, en gracia, impagadas, lo que se debe, lo cobrado y el ingreso mensual recurrente) y los últimos pagos. Solo administradores.");
 
+        group.MapGet("/licensing-settings", (IAdminRepository admin, CancellationToken ct) => admin.GetLicensingSettingsAsync(ct))
+            .WithName("GetLicensingSettings")
+            .WithSummary("Planes, precios y prueba de las licencias")
+            .WithDescription("Moneda, días de prueba y, por plan (Basic, Premium), precio mensual y anual en céntimos con IVA, técnicos admitidos e ids de precio de Stripe. provider es la pasarela del entorno (configuración, no editable aquí). Solo administradores.");
+
+        group.MapPut("/licensing-settings", (UpdateLicensingSettingsCommand command, IAdminRepository admin, CancellationToken ct) => admin.UpdateLicensingSettingsAsync(command, ct))
+            .WithName("UpdateLicensingSettings")
+            .WithSummary("Cambiar planes, precios y prueba de las licencias")
+            .WithDescription("Sustituye la moneda, los días de prueba y los dos planes. Vale para las altas, pruebas y renovaciones nuevas: las suscripciones ya creadas en Stripe siguen cobrando su precio hasta que se cambie su renovación (con la pasarela simulada, la próxima renovación ya cobra el precio nuevo). Premium no puede admitir menos técnicos que Básica; los ids de Stripe empiezan por price_. Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
         group.MapGet("/club-invitations", (IAdminRepository admin, CancellationToken ct) => admin.GetClubInvitationsAsync(ct))
             .WithName("GetClubInvitations")
             .WithSummary("Invitaciones de clubes a la beta")

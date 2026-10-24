@@ -40,7 +40,7 @@ internal sealed class CreateAppointmentHandler(
     ICurrentUser currentUser,
     AccountStores stores,
     LicenseDescriber licenses,
-    IOptions<LicensingOptions> licensing,
+    ILicensingCatalog licensing,
     IUnitOfWork unitOfWork) : ICommandHandler<CreateAppointmentCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(CreateAppointmentCommand command, CancellationToken cancellationToken)
@@ -64,7 +64,7 @@ internal sealed class CreateAppointmentHandler(
         var license = await stores.Licenses.EnsureForTeamAsync(club, command.TeamId, cancellationToken);
         if (!license.IsActiveOn(SquadAccess.Today(stores.Clock)))
             throw new ForbiddenException(ErrorCode.LicenseRequired);
-        var limit = licensing.Value.For(license.StaffPlan).MaxStaff;
+        var limit = (await licensing.GetAsync(cancellationToken)).For(license.StaffPlan).MaxStaff;
         if (await licenses.StaffCountAsync(command.TeamId, cancellationToken) >= limit)
             throw new ConflictException(ErrorCode.LicenseStaffLimit, LicenseTexts.Plan(license.StaffPlan), LicenseTexts.Staff(limit));
 

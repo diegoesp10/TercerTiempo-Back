@@ -11,6 +11,8 @@ internal sealed class AdminRepository(
     IQueryHandler<GetJobsOverviewQuery, JobsOverviewDto> jobs,
     ICommandHandler<RunJobCommand, JobDto> runJob,
     IQueryHandler<GetLicensesOverviewQuery, LicensesOverviewDto> licenses,
+    IQueryHandler<GetLicensingSettingsQuery, LicensingSettingsDto> licensingSettings,
+    ICommandHandler<UpdateLicensingSettingsCommand, LicensingSettingsDto> updateLicensingSettings,
     IQueryHandler<ListClubInvitationsQuery, IReadOnlyList<ClubInvitationDto>> listInvitations,
     ICommandHandler<CreateClubInvitationCommand, ClubInvitationDto> createInvitation,
     ICommandHandler<RevokeClubInvitationCommand, ClubInvitationDto> revokeInvitation,
@@ -27,6 +29,12 @@ internal sealed class AdminRepository(
 
     public Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default) =>
         licenses.Handle(new GetLicensesOverviewQuery(), cancellationToken);
+
+    public Task<LicensingSettingsDto> GetLicensingSettingsAsync(CancellationToken cancellationToken = default) =>
+        licensingSettings.Handle(new GetLicensingSettingsQuery(), cancellationToken);
+
+    public Task<LicensingSettingsDto> UpdateLicensingSettingsAsync(UpdateLicensingSettingsCommand command, CancellationToken cancellationToken = default) =>
+        updateLicensingSettings.Handle(command, cancellationToken);
 
     public Task<IReadOnlyList<ClubInvitationDto>> GetClubInvitationsAsync(CancellationToken cancellationToken = default) =>
         listInvitations.Handle(new ListClubInvitationsQuery(), cancellationToken);
