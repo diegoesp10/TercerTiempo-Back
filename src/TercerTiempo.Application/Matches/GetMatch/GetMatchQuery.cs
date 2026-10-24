@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
@@ -47,8 +48,12 @@ internal sealed class GetMatchHandler(
             if (visible)
             {
                 var playerMap = squad.Players.ToDictionary(p => p.Id);
+                var photos = await SquadMapper.PhotoLinksAsync(squad, teams, cancellationToken);
                 entries = (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken))
-                    .Select(p => PerformanceMapper.ToDto(p, playerMap.GetValueOrDefault(p.SquadPlayerId)))
+                    .Select(p => PerformanceMapper.ToDto(p, playerMap.GetValueOrDefault(p.SquadPlayerId)) with
+                    {
+                        PlayerPhotoUrl = playerMap.GetValueOrDefault(p.SquadPlayerId)?.RosterEntryId is { } rosterId ? photos.GetValueOrDefault(rosterId) : null,
+                    })
                     .OrderByDescending(p => p.Started)
                     .ThenByDescending(p => p.MinutesPlayed)
                     .ThenBy(p => p.ShirtNumber ?? int.MaxValue)

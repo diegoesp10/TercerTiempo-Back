@@ -72,6 +72,7 @@ public sealed record AdminLicenseDto(
 public sealed record AdminLicensePaymentDto(
     Guid Id,
     string ClubName,
+    Guid TeamId,
     string TeamName,
     LicensePaymentKind Kind,
     LicensePlan Plan,
@@ -139,6 +140,7 @@ internal sealed class GetLicensesOverviewHandler(
             .Select(p => new AdminLicensePaymentDto(
                 p.Id,
                 clubNames.GetValueOrDefault(p.ClubId, "Club eliminado"),
+                p.TeamId,
                 teamNames.GetValueOrDefault(p.TeamId, "Equipo desconocido"),
                 p.Kind, p.Plan, p.Interval, p.AmountCents, p.PeriodPriceCents, p.Status, p.Provider, p.CreatedAt, p.PaidAt))
             .ToList();

@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Teams;
 using System.ComponentModel;
 using System.Security.Cryptography;
 using FluentValidation;
@@ -35,7 +36,9 @@ public sealed record SharedVideoDto(
     MatchDto Match,
     string ContentType,
     long SizeBytes,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    Guid TeamId,
+    string? TeamCrestUrl);
 
 public sealed record SetVideoVisibilityCommand(
     Guid VideoId,
@@ -216,9 +219,10 @@ internal sealed class GetSharedVideoHandler(
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, video.MatchId);
         var teamMap = (await teams.GetByIdsAsync([match.HomeTeamId, match.AwayTeamId], cancellationToken)).ToDictionary(t => t.Id);
 
+        var team = teamMap.GetValueOrDefault(video.TeamId);
         return new SharedVideoDto(
-            video.Id, video.Title, video.Part, teamMap.GetValueOrDefault(video.TeamId)?.Name ?? "Equipo",
-            MatchMapper.ToDto(match, teamMap), video.ContentType, video.SizeBytes, link.ExpiresAt);
+            video.Id, video.Title, video.Part, team?.Name ?? "Equipo",
+            MatchMapper.ToDto(match, teamMap), video.ContentType, video.SizeBytes, link.ExpiresAt, video.TeamId, team?.CrestLink());
     }
 }
 

@@ -1,3 +1,5 @@
+using TercerTiempo.Domain.Common;
+using TercerTiempo.Application.Teams;
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
@@ -42,7 +44,8 @@ public sealed record TeamPreviewDto(
 
 public sealed record VenueRecordDto(string Label, int Played, int Won, int Drawn, int Lost, int GoalsFor, int GoalsAgainst);
 
-public sealed record FormResultDto(Guid MatchId, int Matchday, string OpponentName, bool Home, int GoalsFor, int GoalsAgainst, string Outcome);
+public sealed record FormResultDto(
+    Guid MatchId, int Matchday, string OpponentName, bool Home, int GoalsFor, int GoalsAgainst, string Outcome, Guid OpponentId, string? OpponentCrestUrl);
 
 public sealed record PreviewPlayerDto(
     string Name,
@@ -55,7 +58,9 @@ public sealed record PreviewPlayerDto(
     int YellowCards,
     int RedCards,
     int GoalsLastThree,
-    double FormScore);
+    double FormScore,
+    [property: System.ComponentModel.Description("Foto de su ficha en la plantilla del equipo (mismo nombre), si la tiene.")]
+    string? PhotoUrl);
 
 public sealed record SetPiecesDto(int PenaltyGoalsFor, int PenaltyGoalsAgainst, int OwnGoalsFor, int OwnGoalsAgainst, int YellowCards, int RedCards);
 
@@ -145,7 +150,8 @@ internal sealed class GetMatchPreviewHandler(
         var form = mine.TakeLast(FormMatches)
             .Select(m => new FormResultDto(
                 m.Id, m.Matchday, teamMap.GetValueOrDefault(m.OpponentOf(teamId))?.Name ?? "Rival", m.IsHome(teamId),
-                m.GoalsFor(teamId) ?? 0, m.GoalsAgainst(teamId) ?? 0, Outcome(m, teamId)))
+                m.GoalsFor(teamId) ?? 0, m.GoalsAgainst(teamId) ?? 0, Outcome(m, teamId),
+                m.OpponentOf(teamId), teamMap.GetValueOrDefault(m.OpponentOf(teamId))?.CrestLink()))
             .ToList();
 
         var (players, setPieces, sheetsCount) = await PlayersFromSheetsAsync(teamId, mine, cancellationToken);
@@ -205,10 +211,17 @@ internal sealed class GetMatchPreviewHandler(
             }
         }
 
+        // Las actas solo traen nombres: la foto sale de la ficha de la plantilla con el mismo nombre.
+        var photos = (await teams.GetRosterAsync(teamId, ordered[0].SeasonId, cancellationToken))
+            .Where(e => e.PhotoKey is not null)
+            .GroupBy(e => e.NormalizedName)
+            .ToDictionary(g => g.Key, g => g.First().PhotoLink());
+
         var players = totals.Values
             .Select(a => new PreviewPlayerDto(
                 a.Name, a.ShirtNumber, a.Matches, a.Started, a.Minutes, a.Goals, a.PenaltyGoals, a.Yellow, a.Red, a.GoalsLastThree,
-                Math.Round(a.Goals * 3 + a.GoalsLastThree * 2 + a.Minutes / 90.0 * 0.5 + a.Started * 0.3, 1)))
+                Math.Round(a.Goals * 3 + a.GoalsLastThree * 2 + a.Minutes / 90.0 * 0.5 + a.Started * 0.3, 1),
+                photos.GetValueOrDefault(NameNormalizer.Normalize(a.Name))))
             .OrderByDescending(p => p.FormScore)
             .ThenByDescending(p => p.Minutes)
             .Take(8)

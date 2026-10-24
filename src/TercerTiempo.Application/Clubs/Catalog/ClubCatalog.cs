@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Teams;
 using System.ComponentModel;
 using System.Text.RegularExpressions;
 using TercerTiempo.Application.Abstractions.Messaging;
@@ -11,7 +12,9 @@ namespace TercerTiempo.Application.Clubs.Catalog;
 public sealed record ClubCatalogDto(
     string Name,
     bool Registered,
-    IReadOnlyList<ClubCatalogTeamDto> Teams);
+    IReadOnlyList<ClubCatalogTeamDto> Teams,
+    [property: Description("Escudo del primer equipo del club.")]
+    string? CrestUrl = null);
 
 public sealed record ClubCatalogTeamDto(Guid Id, string Name, string? CompetitionName);
 
@@ -34,7 +37,8 @@ internal sealed class GetClubCatalogHandler(AccountStores stores) : IQueryHandle
             .Select(entry => new ClubCatalogDto(
                 entry.Name,
                 registered.Contains(entry.NormalizedName),
-                entry.Teams.Select(t => new ClubCatalogTeamDto(t.Team.Id, t.Team.Name, t.CompetitionName)).ToList()))
+                entry.Teams.Select(t => new ClubCatalogTeamDto(t.Team.Id, t.Team.Name, t.CompetitionName)).ToList(),
+                entry.Teams[0].Team.CrestLink()))
             .ToList();
     }
 }
