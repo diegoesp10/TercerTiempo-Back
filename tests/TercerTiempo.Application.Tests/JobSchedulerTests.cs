@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Jobs;
+using TercerTiempo.Application.Licensing;
 using TercerTiempo.Infrastructure.FootballData;
 using TercerTiempo.Infrastructure.Jobs;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
@@ -167,6 +168,7 @@ public sealed class JobSqlFixture : IAsyncLifetime
     internal JobScheduler Scheduler() => new(
         Options.Create(new FootballDataOptions { SyncIntervalMinutes = 60 }),
         Options.Create(new OfficialSheetOptions { BackgroundScanMinutes = 60, BackgroundStartDelaySeconds = 5 }),
+        Options.Create(new LicensingOptions()),
         _services.GetRequiredService<IServiceScopeFactory>(),
         TimeProvider.System,
         NullLogger<JobScheduler>.Instance);

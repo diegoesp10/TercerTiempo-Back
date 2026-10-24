@@ -1226,9 +1226,39 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
-                            Code = "license.months_invalid",
+                            Code = "license.plan_invalid",
                             Language = "es",
-                            Message = "Puedes pagar entre 1 y {0} meses."
+                            Message = "Plan o periodo de facturación no válido."
+                        },
+                        new
+                        {
+                            Code = "license.staff_limit",
+                            Language = "es",
+                            Message = "La licencia {0} admite {1} en el cuerpo técnico y este equipo ya está completo. Revoca algún nombramiento o pasa a Premium."
+                        },
+                        new
+                        {
+                            Code = "license.plan_too_small",
+                            Language = "es",
+                            Message = "Este equipo tiene {0} en el cuerpo técnico y la licencia {1} admite {2}. Revoca nombramientos antes de elegirla."
+                        },
+                        new
+                        {
+                            Code = "license.subscription_active",
+                            Language = "es",
+                            Message = "Este equipo ya tiene una suscripción que se renueva sola: cambia su plan o cancela la renovación."
+                        },
+                        new
+                        {
+                            Code = "license.no_subscription",
+                            Language = "es",
+                            Message = "Este equipo no tiene una suscripción que gestionar."
+                        },
+                        new
+                        {
+                            Code = "license.webhook_invalid",
+                            Language = "es",
+                            Message = "Aviso de la pasarela de pago no válido."
                         },
                         new
                         {
@@ -1493,6 +1523,16 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("nvarchar(3)");
 
+                    b.Property<string>("Interval")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<Guid>("LicenseId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1501,6 +1541,14 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset?>("PaidAt")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("PeriodPriceCents")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Plan")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("Provider")
                         .IsRequired()
@@ -1537,14 +1585,45 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("AutoRenew")
+                        .HasColumnType("bit");
+
                     b.Property<Guid>("ClubId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("CustomerRef")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Interval")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("NextInterval")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("NextPlan")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<DateOnly?>("PaidUntil")
                         .HasColumnType("date");
+
+                    b.Property<string>("Plan")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("SubscriptionRef")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
 
                     b.Property<Guid>("TeamId")
                         .HasColumnType("uniqueidentifier");
@@ -1558,6 +1637,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ClubId");
+
+                    b.HasIndex("SubscriptionRef");
 
                     b.HasIndex("TeamId")
                         .IsUnique();

@@ -1,9 +1,11 @@
 using System.ComponentModel;
 using FluentValidation;
+using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Licensing;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Squads;
@@ -37,6 +39,8 @@ internal sealed class CreateAppointmentValidator : AbstractValidator<CreateAppoi
 internal sealed class CreateAppointmentHandler(
     ICurrentUser currentUser,
     AccountStores stores,
+    LicenseDescriber licenses,
+    IOptions<LicensingOptions> licensing,
     IUnitOfWork unitOfWork) : ICommandHandler<CreateAppointmentCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(CreateAppointmentCommand command, CancellationToken cancellationToken)
@@ -55,6 +59,12 @@ internal sealed class CreateAppointmentHandler(
 
         if (validUntil < today)
             throw new ConflictException(ErrorCode.AppointmentValidityPast);
+
+        // El plan de la licencia limita cuántos técnicos puede tener el equipo en la temporada.
+        var license = await stores.Licenses.EnsureForTeamAsync(club, command.TeamId, cancellationToken);
+        var limit = licensing.Value.For(license.StaffPlan).MaxStaff;
+        if (await licenses.StaffCountAsync(command.TeamId, cancellationToken) >= limit)
+            throw new ConflictException(ErrorCode.LicenseStaffLimit, LicenseTexts.Plan(license.StaffPlan), LicenseTexts.Staff(limit));
 
         var appointment = CoachAppointment.Create(
             club.Id, command.TeamId, season.Id, command.CoachName, command.Email, command.Role, today, validUntil, stores.Clock.GetUtcNow());

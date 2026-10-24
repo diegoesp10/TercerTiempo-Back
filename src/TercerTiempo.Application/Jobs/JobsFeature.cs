@@ -8,6 +8,7 @@ public static class JobNames
 {
     public const string FootballData = "football-data";
     public const string OfficialSheets = "official-sheets";
+    public const string LicenseRenewals = "license-renewals";
 }
 
 public static class JobRunStatus

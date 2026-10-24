@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Application.Jobs;
+using TercerTiempo.Application.Licensing;
 using TercerTiempo.Infrastructure.FootballData;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
@@ -42,6 +43,7 @@ internal sealed class JobScheduler
     public JobScheduler(
         IOptions<FootballDataOptions> football,
         IOptions<OfficialSheetOptions> sheets,
+        IOptions<LicensingOptions> licensing,
         IServiceScopeFactory scopes,
         TimeProvider clock,
         ILogger<JobScheduler> logger)
@@ -66,6 +68,12 @@ internal sealed class JobScheduler
                 sheetMinutes > 0 ? TimeSpan.FromMinutes(sheetMinutes) : null,
                 TimeSpan.FromSeconds(Math.Max(0, sheets.Value.BackgroundStartDelaySeconds)),
                 sheets.Value.Enabled),
+            new(JobNames.LicenseRenewals,
+                "Renovaciones de licencias",
+                "Cobra (sin cobro real) el periodo siguiente de las suscripciones de licencia que llegan a su día de renovación. Solo con la pasarela simulada; con Stripe las renueva su webhook.",
+                TimeSpan.FromMinutes(60),
+                TimeSpan.FromSeconds(30),
+                licensing.Value.Provider == "mock"),
         ];
         _slots = definitions.ToDictionary(d => d.Name, d => new Slot(d));
     }

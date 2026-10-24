@@ -172,7 +172,12 @@ public static class ErrorCode
     public const string LicenseRequired = "license.required";
     public const string LicenseViewerRequired = "license.viewer_required";
     public const string LicenseNotFound = "license.not_found";
-    public const string LicenseMonthsInvalid = "license.months_invalid";
+    public const string LicensePlanInvalid = "license.plan_invalid";
+    public const string LicenseStaffLimit = "license.staff_limit";
+    public const string LicensePlanTooSmall = "license.plan_too_small";
+    public const string LicenseSubscriptionActive = "license.subscription_active";
+    public const string LicenseNoSubscription = "license.no_subscription";
+    public const string LicenseWebhookInvalid = "license.webhook_invalid";
     public const string LicensePaymentNotFound = "license.payment_not_found";
     public const string LicensePaymentAlreadyPaid = "license.payment_already_paid";
     public const string LicensePaymentCancelled = "license.payment_cancelled";

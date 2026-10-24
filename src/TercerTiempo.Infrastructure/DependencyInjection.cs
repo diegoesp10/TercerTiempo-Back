@@ -239,10 +239,23 @@ public static class DependencyInjection
         services.AddOptions<VideoOptions>()
             .Bind(configuration.GetSection(VideoOptions.SectionName));
 
-        // Licencias por equipo: precio, prueba y pasarela. De momento solo existe la pasarela simulada.
+        // Licencias por equipo: planes, precios, prueba y pasarela («mock» = pago simulado, «stripe»).
         services.AddOptions<LicensingOptions>()
             .Bind(configuration.GetSection(LicensingOptions.SectionName));
-        services.AddSingleton<ILicensePaymentGateway, MockLicensePaymentGateway>();
+        if (configuration.GetValue<string>($"{LicensingOptions.SectionName}:Provider") == "stripe")
+        {
+            services.AddHttpClient<ILicensePaymentGateway, StripeLicensePaymentGateway>((sp, client) =>
+            {
+                var stripe = sp.GetRequiredService<IOptions<LicensingOptions>>().Value.Stripe;
+                client.BaseAddress = new Uri(stripe.ApiBaseUrl.EndsWith('/') ? stripe.ApiBaseUrl : stripe.ApiBaseUrl + "/");
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
+        }
+        else
+        {
+            services.AddSingleton<ILicensePaymentGateway, MockLicensePaymentGateway>();
+        }
+        services.AddHostedService<LicenseRenewalWorker>();
 
         services.AddMemoryCache();
         services.AddSingleton<IVideoStorage, FileSystemVideoStorage>();

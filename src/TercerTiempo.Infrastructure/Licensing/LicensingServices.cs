@@ -10,19 +10,33 @@ using TercerTiempo.Infrastructure.Persistence.Configurations;
 namespace TercerTiempo.Infrastructure.Licensing;
 
 // Pasarela simulada: no cobra nada. Devuelve una "sesión" que el frontal muestra como página de pago de prueba y que
-// se confirma con un clic. Stripe sustituirá esta clase (Checkout Session + verificación por webhook) sin tocar el resto.
+// se confirma con un clic; las renovaciones las cobra el trabajo de renovaciones. Stripe ocupa su sitio con
+// Licensing:Provider = "stripe" sin tocar el resto.
 internal sealed class MockLicensePaymentGateway : ILicensePaymentGateway
 {
     public string Provider => "mock";
 
-    public Task<CheckoutSession> BeginCheckoutAsync(Guid clubId, Guid teamId, int months, int amountCents, string currency, CancellationToken cancellationToken)
+    public bool RenewsByWebhook => false;
+
+    public Task<CheckoutSession> BeginCheckoutAsync(CheckoutRequest request, CancellationToken cancellationToken)
     {
         var sessionId = $"mock_{Guid.NewGuid():N}";
         return Task.FromResult(new CheckoutSession(sessionId, $"/pago/{sessionId}"));
     }
 
-    public Task<bool> ConfirmAsync(string sessionId, CancellationToken cancellationToken) =>
-        Task.FromResult(sessionId.StartsWith("mock_", StringComparison.Ordinal));
+    public Task<CheckoutResult> GetCheckoutAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        var completed = sessionId.StartsWith("mock_", StringComparison.Ordinal);
+        return Task.FromResult(new CheckoutResult(completed, completed ? $"mocksub_{sessionId[5..]}" : null, null, null));
+    }
+
+    public Task CancelRenewalAsync(string subscriptionRef, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task ResumeRenewalAsync(string subscriptionRef, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task ChangeRenewalAsync(string subscriptionRef, LicensePlan plan, BillingInterval interval, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public LicenseWebhookEvent? ParseWebhook(string payload, string? signature) => null;
 }
 
 internal sealed class LicenseStore(AppDbContext db) : ILicenseStore
@@ -33,8 +47,14 @@ internal sealed class LicenseStore(AppDbContext db) : ILicenseStore
     public Task<TeamLicense?> GetByTeamAsync(Guid teamId, CancellationToken cancellationToken = default) =>
         db.TeamLicenses.FirstOrDefaultAsync(l => l.TeamId == teamId, cancellationToken);
 
+    public Task<TeamLicense?> GetBySubscriptionAsync(string subscriptionRef, CancellationToken cancellationToken = default) =>
+        db.TeamLicenses.FirstOrDefaultAsync(l => l.SubscriptionRef == subscriptionRef, cancellationToken);
+
     public async Task<IReadOnlyList<TeamLicense>> GetByClubAsync(Guid clubId, CancellationToken cancellationToken = default) =>
         await db.TeamLicenses.Where(l => l.ClubId == clubId).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<TeamLicense>> GetRenewingAsync(string provider, CancellationToken cancellationToken = default) =>
+        await db.TeamLicenses.Where(l => l.AutoRenew && l.Plan != null && l.Provider == provider).ToListAsync(cancellationToken);
 
     public void Add(TeamLicense license) => db.TeamLicenses.Add(license);
 
@@ -54,12 +74,25 @@ internal sealed class TeamLicenseConfiguration : IEntityTypeConfiguration<TeamLi
         builder.ToTable("TeamLicenses");
         builder.ConfigureAggregate();
         builder.Ignore(l => l.ValidUntil);
+        builder.Ignore(l => l.IsRenewing);
+        builder.Ignore(l => l.RenewsOn);
+        builder.Ignore(l => l.EffectivePlan);
+        builder.Ignore(l => l.StaffPlan);
+
+        builder.Property(l => l.Plan).HasConversion<string>().HasMaxLength(20);
+        builder.Property(l => l.Interval).HasConversion<string>().HasMaxLength(20);
+        builder.Property(l => l.NextPlan).HasConversion<string>().HasMaxLength(20);
+        builder.Property(l => l.NextInterval).HasConversion<string>().HasMaxLength(20);
+        builder.Property(l => l.Provider).HasMaxLength(40);
+        builder.Property(l => l.CustomerRef).HasMaxLength(120);
+        builder.Property(l => l.SubscriptionRef).HasMaxLength(120);
 
         builder.HasOne<Club>().WithMany().HasForeignKey(l => l.ClubId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Team>().WithMany().HasForeignKey(l => l.TeamId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(l => l.TeamId).IsUnique();
         builder.HasIndex(l => l.ClubId);
+        builder.HasIndex(l => l.SubscriptionRef);
     }
 }
 
@@ -75,6 +108,9 @@ internal sealed class LicensePaymentConfiguration : IEntityTypeConfiguration<Lic
         builder.Property(p => p.Provider).HasMaxLength(40).IsRequired();
         builder.Property(p => p.SessionId).HasMaxLength(120).IsRequired();
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
+        builder.Property(p => p.Kind).HasConversion<string>().HasMaxLength(20);
+        builder.Property(p => p.Plan).HasConversion<string>().HasMaxLength(20);
+        builder.Property(p => p.Interval).HasConversion<string>().HasMaxLength(20);
 
         builder.HasOne<TeamLicense>().WithMany().HasForeignKey(p => p.LicenseId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Club>().WithMany().HasForeignKey(p => p.ClubId).OnDelete(DeleteBehavior.NoAction);
