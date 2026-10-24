@@ -211,6 +211,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid?>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset?>("UsedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -220,6 +223,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Code")
                         .IsUnique();
+
+                    b.HasIndex("TeamId");
 
                     b.ToTable("ClubInvitations", (string)null);
                 });
@@ -3230,6 +3235,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
                         .WithMany()
                         .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
+                        .WithMany()
+                        .HasForeignKey("TeamId")
                         .OnDelete(DeleteBehavior.SetNull);
                 });
 

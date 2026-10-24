@@ -39,6 +39,7 @@ internal sealed class ClubInvitationConfiguration : IEntityTypeConfiguration<Clu
         builder.HasIndex(i => i.Code).IsUnique();
 
         builder.HasOne<Club>().WithMany().HasForeignKey(i => i.ClubId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<Team>().WithMany().HasForeignKey(i => i.TeamId).OnDelete(DeleteBehavior.SetNull);
     }
 }
 

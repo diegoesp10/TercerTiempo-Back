@@ -6,6 +6,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
+using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Clubs.Invitations;
 
@@ -32,6 +33,7 @@ public sealed record ClubInvitationDto(
     Guid Id,
     string Code,
     string? Note,
+    Guid? TeamId,
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? ExpiresAt,
@@ -45,6 +47,7 @@ internal static class ClubInvitationMapper
         invitation.Id,
         invitation.Code,
         invitation.Note,
+        invitation.TeamId,
         invitation.UsedAt is not null ? "used" : invitation.RevokedAt is not null ? "revoked" : invitation.IsUsable(now) ? "available" : "expired",
         invitation.CreatedAt,
         invitation.ExpiresAt,
@@ -72,10 +75,12 @@ internal sealed class ListClubInvitationsHandler(IClubInvitationStore invitation
 }
 
 public sealed record CreateClubInvitationCommand(
-    [property: Description("Para quién es (p. ej. el nombre del club). Solo lo ve el administrador.")]
+    [property: Description("Para quién es (p. ej. el nombre del club). Solo lo ve el administrador; con teamId y sin nota, el nombre del equipo.")]
     string? Note,
     [property: Description("Días que dura la invitación; sin valor, no caduca.")]
-    int? ExpiresInDays) : ICommand<ClubInvitationDto>;
+    int? ExpiresInDays,
+    [property: Description("Equipo elegido en el buscador (GET /api/admin/club-invitations/teams); opcional.")]
+    Guid? TeamId = null) : ICommand<ClubInvitationDto>;
 
 internal sealed class CreateClubInvitationValidator : AbstractValidator<CreateClubInvitationCommand>
 {
@@ -86,13 +91,17 @@ internal sealed class CreateClubInvitationValidator : AbstractValidator<CreateCl
     }
 }
 
-internal sealed class CreateClubInvitationHandler(IClubInvitationStore invitations, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class CreateClubInvitationHandler(IClubInvitationStore invitations, ITeamStore teams, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<CreateClubInvitationCommand, ClubInvitationDto>
 {
     public async Task<ClubInvitationDto> Handle(CreateClubInvitationCommand command, CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
-        var invitation = ClubInvitation.Create(command.Note?.Trim(), command.ExpiresInDays is { } days ? now.AddDays(days) : null, now);
+        var team = command.TeamId is { } teamId
+            ? await teams.GetByIdAsync(teamId, cancellationToken) ?? throw new NotFoundException(ErrorCode.TeamNotFound, teamId)
+            : null;
+        var note = string.IsNullOrWhiteSpace(command.Note) ? team?.Name : command.Note.Trim();
+        var invitation = ClubInvitation.Create(note, command.ExpiresInDays is { } days ? now.AddDays(days) : null, now, team?.Id);
         invitations.Add(invitation);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return ClubInvitationMapper.ToDto(invitation, null, now);

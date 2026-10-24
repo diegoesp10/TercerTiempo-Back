@@ -11,6 +11,9 @@ public sealed class ClubInvitation : AggregateRoot
 
     public string Code { get; private set; } = string.Empty;
     public string? Note { get; private set; }
+
+    // Equipo para el que se hizo (elegido en el buscador del administrador); null en las de texto libre.
+    public Guid? TeamId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? ExpiresAt { get; private set; }
     public DateTimeOffset? UsedAt { get; private set; }
@@ -19,12 +22,13 @@ public sealed class ClubInvitation : AggregateRoot
 
     private ClubInvitation() { }
 
-    public static ClubInvitation Create(string? note, DateTimeOffset? expiresAt, DateTimeOffset now) =>
+    public static ClubInvitation Create(string? note, DateTimeOffset? expiresAt, DateTimeOffset now, Guid? teamId = null) =>
         new()
         {
             Id = NewId(),
             Code = InviteCodes.Generate(CodeLength),
             Note = string.IsNullOrWhiteSpace(note) ? null : Guard.NotEmpty(note, "nota", 200),
+            TeamId = teamId,
             CreatedAt = now,
             ExpiresAt = expiresAt,
         };
