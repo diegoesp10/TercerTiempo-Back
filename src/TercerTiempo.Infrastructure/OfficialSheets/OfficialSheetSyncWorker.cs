@@ -10,11 +10,17 @@ using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Infrastructure.Jobs;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
+using TercerTiempo.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using TercerTiempo.Domain.OfficialSheets;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets;
 
-internal sealed class OfficialSheetQueue : IOfficialSheetQueue
+internal sealed class OfficialSheetQueue : IOfficialSheetQueue, ISheetDownloadSignal
 {
+    private readonly Lock _batchLock = new();
+    private TaskCompletionSource _batch = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     private readonly Channel<Guid> _channel = Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = true });
     private readonly ConcurrentDictionary<Guid, byte> _queued = new();
 
@@ -29,11 +35,29 @@ internal sealed class OfficialSheetQueue : IOfficialSheetQueue
     public ValueTask<bool> WaitAsync(CancellationToken cancellationToken) => _channel.Reader.WaitToReadAsync(cancellationToken);
 
     public DateTimeOffset? PausedUntil { get; set; }
+
+    // Hay actas nuevas pedidas desde la administración (ver SheetDownloads).
+    public void Signal()
+    {
+        lock (_batchLock) _batch.TrySetResult();
+    }
+
+    public Task WhenBatch()
+    {
+        lock (_batchLock) return _batch.Task;
+    }
+
+    public void ResetBatchSignal()
+    {
+        lock (_batchLock)
+            if (_batch.Task.IsCompleted) _batch = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 }
 
 // Descarga las actas públicas en segundo plano y las guarda en la base de datos, para que abrir un partido no espere a
-// las webs externas. Atiende primero los partidos que piden los usuarios (cola) y, cada BackgroundScanMinutes desde la
-// última pasada guardada (no al arrancar), recorre las temporadas en curso buscando actas que falten o toque refrescar.
+// las webs externas. Atiende primero los partidos que piden los usuarios (cola), después las actas pedidas desde la
+// administración (tabla SheetDownloads, que sobrevive a los reinicios) y, cada BackgroundScanMinutes desde la última
+// pasada guardada (no al arrancar), recorre las temporadas en curso buscando actas que falten o toque refrescar.
 internal sealed class OfficialSheetSyncWorker(
     IServiceScopeFactory scopeFactory,
     OfficialSheetQueue queue,
@@ -51,6 +75,7 @@ internal sealed class OfficialSheetSyncWorker(
         DateTimeOffset? nextScan;
         try
         {
+            await RestoreStateAsync(stoppingToken);
             nextScan = await scheduler.FirstDueAsync(job.Name, stoppingToken);
             if (nextScan is not null) logger.LogInformation("Próxima pasada de actas: {Due}", nextScan);
         }
@@ -64,6 +89,11 @@ internal sealed class OfficialSheetSyncWorker(
             try
             {
                 await DrainQueueAsync(stoppingToken);
+
+                queue.ResetBatchSignal();
+                if (await NextRequestedAsync(stoppingToken) is not null)
+                    await scheduler.RunAsync(job.Name, true, DrainRequestedAsync, stoppingToken,
+                        new JobScope("Requested", "Actas pedidas desde la administración"));
 
                 var manual = scheduler.TryConsumeTrigger(job.Name);
                 if (manual || clock.GetUtcNow() >= nextScan)
@@ -89,7 +119,7 @@ internal sealed class OfficialSheetSyncWorker(
                 }
 
                 var queued = queue.WaitAsync(timeout.Token).AsTask();
-                await Task.WhenAny(queued, scheduler.WhenTriggered(job.Name));
+                await Task.WhenAny(queued, scheduler.WhenTriggered(job.Name), queue.WhenBatch());
                 await timeout.CancelAsync();
                 try { await queued; }
                 catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested) { }
@@ -113,6 +143,104 @@ internal sealed class OfficialSheetSyncWorker(
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }
         }
+    }
+
+    // Tras un reinicio: lo que quedó a medias vuelve a la cola y la pausa de la federación guardada en la base de datos se
+    // conoce desde el principio (si no, abrir un partido diría que el acta se descarga enseguida).
+    private async Task RestoreStateAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ISheetDownloadStore>().ResetInterruptedAsync(cancellationToken);
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var paused = await db.Set<FederationRequestState>().AsNoTracking()
+            .Where(s => s.Id == AsturfutbolOfficialSheetProvider.Name)
+            .Select(s => s.PausedUntil)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (paused > clock.GetUtcNow()) queue.PausedUntil = paused;
+    }
+
+    private async Task<Guid?> NextRequestedAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<ISheetDownloadStore>().NextPendingAsync(cancellationToken);
+    }
+
+    private async Task MarkAsync(Guid matchId, string status, string? detail, CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ISheetDownloadStore>().MarkAsync(matchId, status, detail, clock.GetUtcNow(), cancellationToken);
+    }
+
+    // Las actas pedidas desde la administración, en su orden, siempre por detrás de lo que abren los usuarios. Si la
+    // federación corta, el partido vuelve a la cola y la ejecución queda en pausa; se sigue al acabar la pausa.
+    private async Task<JobOutcome> DrainRequestedAsync(CancellationToken cancellationToken)
+    {
+        var runId = JobContext.RunId;
+        var counts = new Dictionary<string, int>();
+        var errors = new List<string>();
+
+        while (await NextRequestedAsync(cancellationToken) is { } matchId)
+        {
+            await DrainQueueAsync(cancellationToken);
+            JobContext.RunId = runId;
+
+            await MarkAsync(matchId, SheetDownloadStatus.Downloading, null, cancellationToken);
+            string status;
+            string? detail;
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<SyncOfficialSheetCommand, OfficialSheetDto>>();
+                var sheet = await handler.Handle(new SyncOfficialSheetCommand(matchId, Background: true, FederationAllowed: true, StopWhenThrottled: true), cancellationToken);
+                (status, detail) = Describe(sheet);
+                if (status == SheetDownloadStatus.Failed) errors.Add($"Partido {matchId}: {detail}");
+            }
+            catch (ProviderThrottledException ex)
+            {
+                await MarkAsync(matchId, SheetDownloadStatus.Pending,
+                    ex.RetryAt is { } until ? $"En espera: la federación está en pausa hasta {until.ToLocalTime():dd/MM HH:mm}" : "En espera de la federación",
+                    CancellationToken.None);
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await MarkAsync(matchId, SheetDownloadStatus.Pending, null, CancellationToken.None);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "No se pudo descargar el acta pedida del partido {MatchId}", matchId);
+                (status, detail) = (SheetDownloadStatus.Failed, ex.Message);
+                errors.Add($"Partido {matchId}: {ex.Message}");
+            }
+
+            await MarkAsync(matchId, status, detail, cancellationToken);
+            counts[status] = counts.GetValueOrDefault(status) + 1;
+        }
+
+        var done = counts.GetValueOrDefault(SheetDownloadStatus.Done);
+        var missing = counts.GetValueOrDefault(SheetDownloadStatus.Missing);
+        var failed = counts.GetValueOrDefault(SheetDownloadStatus.Failed);
+        return new JobOutcome($"{done} actas guardadas, {missing} aún sin publicar, {failed} con error", errors);
+    }
+
+    private static (string Status, string? Detail) Describe(OfficialSheetDto sheet)
+    {
+        if (sheet.Status == OfficialSheetAvailability.Pending && sheet.Message is null)
+            return (SheetDownloadStatus.Missing, "Ya se comprobó hace menos de un día y aún no estaba publicada");
+        if (sheet.Status == OfficialSheetAvailability.Pending && sheet.Message?.StartsWith("No se ha podido", StringComparison.Ordinal) == true)
+            return (SheetDownloadStatus.Failed, sheet.Message);
+        if (sheet.Status != OfficialSheetAvailability.Available)
+            return (SheetDownloadStatus.Missing, sheet.Message ?? "La federación aún no la ha publicado");
+
+        var players = (sheet.Home?.Starters.Count ?? 0) + (sheet.Home?.Bench.Count ?? 0) + (sheet.Away?.Starters.Count ?? 0) + (sheet.Away?.Bench.Count ?? 0);
+        var goals = sheet.Events.Count(e => e.Type is OfficialEventType.Goal or OfficialEventType.PenaltyGoal or OfficialEventType.OwnGoal);
+        var cards = sheet.Events.Count(e => e.Type is OfficialEventType.YellowCard or OfficialEventType.SecondYellow or OfficialEventType.RedCard);
+        List<string> parts = [$"{players} jugadores"];
+        if (goals > 0) parts.Add(goals == 1 ? "1 gol" : $"{goals} goles");
+        if (cards > 0) parts.Add(cards == 1 ? "1 tarjeta" : $"{cards} tarjetas");
+        if (!string.IsNullOrWhiteSpace(sheet.Referee)) parts.Add($"árbitro {sheet.Referee}");
+        return (SheetDownloadStatus.Done, string.Join(" · ", parts));
     }
 
     private async Task DrainQueueAsync(CancellationToken cancellationToken)

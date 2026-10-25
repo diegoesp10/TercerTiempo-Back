@@ -20,6 +20,8 @@ public interface IAdminRepository
     Task<FootballSyncSettingsDto> GetFootballSyncSettingsAsync(CancellationToken cancellationToken = default);
     Task<FootballSyncSettingsDto> UpdateFootballSyncSettingsAsync(UpdateFootballSyncSettingsCommand command, CancellationToken cancellationToken = default);
     Task<JobDto> RunFootballSyncAsync(RunFootballSyncCommand command, CancellationToken cancellationToken = default);
+    Task<LiveDownloadsDto> GetLiveDownloadsAsync(CancellationToken cancellationToken = default);
+    Task<int> CancelSheetDownloadsAsync(bool onlyFinished, CancellationToken cancellationToken = default);
     Task<LicensingSettingsDto> UpdateLicensingSettingsAsync(UpdateLicensingSettingsCommand command, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ClubInvitationDto>> GetClubInvitationsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InvitationClubDto>> SearchInvitationClubsAsync(string? query, CancellationToken cancellationToken = default);

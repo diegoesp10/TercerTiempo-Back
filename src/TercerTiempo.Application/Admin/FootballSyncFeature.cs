@@ -114,7 +114,9 @@ public sealed record RunFootballSyncCommand(
     [property: Description("Ligas a sincronizar (ids de competición); vacío o null = todas.")]
     IReadOnlyList<Guid>? CompetitionIds,
     [property: Description("Descargar también las plantillas (catálogo entero de jugadores). Por defecto: sí en la temporada completa; en la jornada, lo de los ajustes; en fechas, no.")]
-    bool? IncludeRosters) : ICommand<JobDto>;
+    bool? IncludeRosters,
+    [property: Description("Encolar también las actas de la federación de los partidos ya jugados del alcance que no estén guardadas. Se descargan después, al ritmo que permite asturfutbol.es (20 por hora, 60 al día).")]
+    bool IncludeSheets = false) : ICommand<JobDto>;
 
 internal sealed class RunFootballSyncValidator : AbstractValidator<RunFootballSyncCommand>
 {
@@ -163,6 +165,6 @@ internal sealed class RunFootballSyncHandler(
             _ => SyncScope.FullSeason(ids, command.IncludeRosters ?? true),
         };
 
-        return await JobLauncher.LaunchAsync(monitor, JobNames.FootballData, scope, cancellationToken);
+        return await JobLauncher.LaunchAsync(monitor, JobNames.FootballData, scope with { IncludeSheets = command.IncludeSheets }, cancellationToken);
     }
 }

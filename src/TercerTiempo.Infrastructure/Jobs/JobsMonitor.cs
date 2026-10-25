@@ -28,6 +28,9 @@ internal sealed class JobsMonitor(
             .Select(r => (DateTimeOffset?)r.StartedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
+    public async Task<ScrapeSourceDto?> SourceAsync(string provider, CancellationToken cancellationToken) =>
+        (await SourcesAsync(clock.GetUtcNow(), cancellationToken)).FirstOrDefault(s => s.Provider == provider);
+
     public async Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();

@@ -57,6 +57,16 @@ internal static class AdminEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        group.MapGet("/live-downloads", (IAdminRepository admin, CancellationToken ct) => admin.GetLiveDownloadsAsync(ct))
+            .WithName("GetLiveDownloads")
+            .WithSummary("Descargas en directo")
+            .WithDescription("Lo que está descargando (o descargó por última vez) la sincronización de las ligas: cada liga con su fase y sus cifras y los últimos partidos, equipos, clasificaciones y plantillas tocados. Y la cola de actas pedidas a la federación: cada partido con su estado, los límites de asturfutbol.es (hora y día), la pausa si la hay y cuándo terminaría. Solo administradores.");
+
+        group.MapPost("/sheet-downloads/cancel", (bool? onlyFinished, IAdminRepository admin, CancellationToken ct) => admin.CancelSheetDownloadsAsync(onlyFinished ?? false, ct))
+            .WithName("CancelSheetDownloads")
+            .WithSummary("Vaciar la cola de actas")
+            .WithDescription("Quita de la cola las actas pendientes (onlyFinished=true: solo limpia la lista de las ya terminadas). Devuelve cuántas filas se quitan. Solo administradores.");
+
         group.MapGet("/licenses", (IAdminRepository admin, CancellationToken ct) => admin.GetLicensesAsync(ct))
             .WithName("GetLicensesOverview")
             .WithSummary("Licencias y cobros de todos los clubes")

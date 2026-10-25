@@ -11,7 +11,8 @@ public sealed record SyncScope(
     DateOnly? From,
     DateOnly? To,
     IReadOnlyList<Guid> CompetitionIds,
-    bool IncludeRosters)
+    bool IncludeRosters,
+    bool IncludeSheets = false)
 {
     private static readonly CultureInfo Spanish = CultureInfo.GetCultureInfo("es-ES");
 
@@ -38,6 +39,7 @@ public sealed record SyncScope(
         if (CompetitionIds.Count > 0) text += CompetitionIds.Count == 1 ? " · 1 liga" : $" · {CompetitionIds.Count} ligas";
         if (Kind == SyncScopeKind.FullSeason && !IncludeRosters) text += " · sin plantillas";
         if (Kind != SyncScopeKind.FullSeason && IncludeRosters) text += " · con plantillas";
+        if (IncludeSheets) text += " · con actas";
         return text;
     }
 

@@ -94,6 +94,9 @@ public interface IJobsMonitor
     // parameters llega tal cual al trabajo (p. ej. el SyncScope de los datos de las ligas); null = lo de su programación.
     JobLaunchResult Launch(string job, object? parameters = null);
 
+    // Contadores y pausa de una web con límite de peticiones (asturfutbol); null si no se conoce.
+    Task<ScrapeSourceDto?> SourceAsync(string provider, CancellationToken cancellationToken);
+
     // Inicio de la última sincronización de la temporada entera que terminó (bien o con algún error).
     Task<DateTimeOffset?> LastFullFootballSyncAsync(CancellationToken cancellationToken);
 }

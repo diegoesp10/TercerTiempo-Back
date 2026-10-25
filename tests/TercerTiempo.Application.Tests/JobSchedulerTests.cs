@@ -161,6 +161,7 @@ public class RunJobHandlerTests
         public JobLaunchResult Launch(string job, object? parameters = null) => result;
 
         public Task<DateTimeOffset?> LastFullFootballSyncAsync(CancellationToken cancellationToken) => Task.FromResult<DateTimeOffset?>(null);
+        public Task<ScrapeSourceDto?> SourceAsync(string provider, CancellationToken cancellationToken) => Task.FromResult<ScrapeSourceDto?>(null);
 
         public Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken) =>
             Task.FromResult(new JobsOverviewDto(

@@ -168,6 +168,8 @@ public static class DependencyInjection
         // Actas oficiales: cola en memoria y proceso en segundo plano que las descarga y guarda.
         services.AddSingleton<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>();
         services.AddSingleton<TercerTiempo.Application.OfficialSheets.IOfficialSheetQueue>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
+        services.AddSingleton<TercerTiempo.Application.OfficialSheets.ISheetDownloadSignal>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
+        services.AddScoped<TercerTiempo.Application.OfficialSheets.ISheetDownloadStore, TercerTiempo.Infrastructure.OfficialSheets.SheetDownloadStore>();
         services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetSyncWorker>();
     }
 

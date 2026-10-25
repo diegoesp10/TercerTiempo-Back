@@ -18,6 +18,8 @@ internal sealed class AdminRepository(
     IQueryHandler<GetFootballSyncSettingsQuery, FootballSyncSettingsDto> footballSyncSettings,
     ICommandHandler<UpdateFootballSyncSettingsCommand, FootballSyncSettingsDto> updateFootballSyncSettings,
     ICommandHandler<RunFootballSyncCommand, JobDto> runFootballSync,
+    IQueryHandler<GetLiveDownloadsQuery, LiveDownloadsDto> liveDownloads,
+    ICommandHandler<TercerTiempo.Application.OfficialSheets.CancelSheetDownloadsCommand, int> cancelSheetDownloads,
     IQueryHandler<GetLicensesOverviewQuery, LicensesOverviewDto> licenses,
     IQueryHandler<GetLicensingSettingsQuery, LicensingSettingsDto> licensingSettings,
     ICommandHandler<UpdateLicensingSettingsCommand, LicensingSettingsDto> updateLicensingSettings,
@@ -44,6 +46,12 @@ internal sealed class AdminRepository(
 
     public Task<JobDto> RunFootballSyncAsync(RunFootballSyncCommand command, CancellationToken cancellationToken = default) =>
         runFootballSync.Handle(command, cancellationToken);
+
+    public Task<LiveDownloadsDto> GetLiveDownloadsAsync(CancellationToken cancellationToken = default) =>
+        liveDownloads.Handle(new GetLiveDownloadsQuery(), cancellationToken);
+
+    public Task<int> CancelSheetDownloadsAsync(bool onlyFinished, CancellationToken cancellationToken = default) =>
+        cancelSheetDownloads.Handle(new TercerTiempo.Application.OfficialSheets.CancelSheetDownloadsCommand(onlyFinished), cancellationToken);
 
     public Task<IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> SetCurrentSeasonAsync(Guid seasonYearId, CancellationToken cancellationToken = default) =>
         setCurrentSeason.Handle(new TercerTiempo.Application.Seasons.SetCurrentSeasonCommand(seasonYearId), cancellationToken);

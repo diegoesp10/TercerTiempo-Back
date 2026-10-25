@@ -3544,6 +3544,42 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("FederationRequestStates", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Infrastructure.OfficialSheets.SheetDownload", b =>
+                {
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("MatchId");
+
+                    b.HasIndex("Status", "Sequence");
+
+                    b.ToTable("SheetDownloads", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", null)
@@ -4358,6 +4394,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
                         .WithMany()
                         .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Infrastructure.OfficialSheets.SheetDownload", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

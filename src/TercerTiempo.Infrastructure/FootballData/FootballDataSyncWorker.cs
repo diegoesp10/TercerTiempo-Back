@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Jobs;
+using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Sync;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Infrastructure.Jobs;
@@ -76,7 +77,16 @@ internal sealed class FootballDataSyncWorker(
         parts.Add($"{result.Matches} partidos");
         parts.Add($"{result.Standings} filas de clasificación");
         if (syncScope.IncludeRosters) parts.Add($"{result.RosterEntries} fichas");
+        var summary = string.Join(", ", parts[..^1]) + " y " + parts[^1];
 
-        return new JobOutcome(string.Join(", ", parts[..^1]) + " y " + parts[^1], result.Errors);
+        // Las actas van después de los partidos: así entran también los que acaba de descubrir esta pasada.
+        if (syncScope.IncludeSheets)
+        {
+            var queued = await scope.ServiceProvider.GetRequiredService<ICommandHandler<RequestSheetDownloadsCommand, int>>()
+                .Handle(new RequestSheetDownloadsCommand(syncScope), cancellationToken);
+            summary += queued == 0 ? ". Ninguna acta pendiente" : $". {queued} actas en cola para la federación";
+        }
+
+        return new JobOutcome(summary, result.Errors);
     }
 }
