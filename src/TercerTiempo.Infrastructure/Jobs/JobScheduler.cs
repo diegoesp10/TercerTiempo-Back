@@ -73,8 +73,8 @@ internal sealed class JobScheduler
             new(JobNames.LicenseRenewals,
                 "Renovaciones de licencias",
                 "Cobra (sin cobro real) el periodo siguiente de las suscripciones de licencia que llegan a su día de renovación. Solo con la pasarela simulada; con Stripe las renueva su webhook.",
-                TimeSpan.FromMinutes(60),
-                TimeSpan.FromSeconds(30),
+                TimeSpan.FromMinutes(1440),
+                TimeSpan.FromSeconds(60),
                 licensing.Value.Provider == "mock"),
         ];
         _slots = definitions.ToDictionary(d => d.Name, d => new Slot(d));
