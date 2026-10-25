@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<Clubs.Roster.RosterStores>();
         services.AddScoped<IErrorMessageResolver, ErrorMessageResolver>();
         services.AddSingleton<ISyncProgress, SyncProgress>();
+        services.AddSingleton<Search.SearchIndexHolder>();
         services.AddScoped<AppointmentRedemption>();
         services.AddScoped<Licensing.ILicenseGate, Licensing.LicenseGate>();
         services.AddSingleton<Licensing.LicensingCatalogCache>();

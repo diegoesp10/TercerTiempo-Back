@@ -163,6 +163,7 @@ public static class DependencyInjection
         // Trabajos en segundo plano: cuándo tocan, su historial y el lanzamiento a mano desde /jobs.
         services.AddSingleton<JobScheduler>();
         services.AddScoped<IJobsMonitor, JobsMonitor>();
+        services.AddScoped<TercerTiempo.Application.Search.ISearchCorpusSource, Search.SearchCorpusSource>();
         services.AddHostedService<FootballDataSyncWorker>();
 
         // Actas oficiales: cola en memoria y proceso en segundo plano que las descarga y guarda.

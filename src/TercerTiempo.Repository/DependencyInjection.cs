@@ -18,6 +18,7 @@ public static class DependencyInjection
     public static IServiceCollection AddRepositoryLayer(this IServiceCollection services)
     {
         services.AddScoped<IAuthRepository, AuthRepository>();
+        services.AddScoped<Search.ISearchRepository, Search.SearchRepository>();
         services.AddScoped<IPlayersRepository, PlayersRepository>();
         services.AddScoped<ICoachesRepository, CoachesRepository>();
         services.AddScoped<IClubsRepository, ClubsRepository>();
