@@ -94,7 +94,9 @@ public sealed record LicenseCheckoutDto(
     DateOnly FirstChargeOn,
     string Currency,
     string Provider,
-    PaymentStatus Status);
+    PaymentStatus Status,
+    [property: Description("Avisos de la pasarela de esta licencia desde que se abrió el pago (la cola de eventos), del más reciente al primero.")]
+    IReadOnlyList<PaymentEventDto>? Events = null);
 
 public sealed record GetLicensingCatalogQuery : IQuery<LicensingCatalogDto>;
 
@@ -383,6 +385,7 @@ internal sealed class GetLicenseCheckoutHandler(
     ILicenseStore licenses,
     IClubStore clubs,
     ILicensePaymentGateway gateway,
+    IPaymentEventInbox inbox,
     LicenseDescriber describer) : IQueryHandler<GetLicenseCheckoutQuery, LicenseCheckoutDto>
 {
     public async Task<LicenseCheckoutDto> Handle(GetLicenseCheckoutQuery query, CancellationToken cancellationToken)
@@ -392,7 +395,10 @@ internal sealed class GetLicenseCheckoutHandler(
         if (payment is null || payment.ClubId != club.Id)
             throw new NotFoundException(ErrorCode.LicensePaymentNotFound, query.SessionId);
         var license = await licenses.GetByIdAsync(payment.LicenseId, cancellationToken);
-        return await describer.DescribeAsync(payment, license, gateway.Provider == "mock" ? $"/pago/{payment.SessionId}" : string.Empty, cancellationToken);
+        var dto = await describer.DescribeAsync(payment, license, gateway.Provider == "mock" ? $"/pago/{payment.SessionId}" : string.Empty, cancellationToken);
+        // La página de pago enseña cómo avanzan los avisos de la pasarela (el alta, el primer cobro).
+        var events = await inbox.ListAsync(20, payment.LicenseId, payment.CreatedAt.AddMinutes(-1), cancellationToken);
+        return dto with { Events = events };
     }
 }
 
@@ -480,94 +486,43 @@ internal sealed class ResumeLicenseRenewalHandler(
     }
 }
 
-// Avisos de la pasarela: alta completada, factura cobrada (renovaciones) y suscripción terminada.
+// Aviso de la pasarela (webhook de Stripe): se comprueba la firma y se guarda en la cola de eventos; lo aplica después
+// el proceso de la cola, con reintentos. Así Stripe recibe su respuesta enseguida y un fallo al aplicarlo no lo pierde.
 internal sealed class HandleLicenseWebhookHandler(
-    ILicenseStore licenses,
     ILicensePaymentGateway gateway,
-    LicenseCheckoutCompletion completion,
-    IUnitOfWork unitOfWork,
-    TimeProvider clock) : ICommandHandler<HandleLicenseWebhookCommand, bool>
+    IPaymentEventInbox inbox,
+    IPaymentEventSignal signal) : ICommandHandler<HandleLicenseWebhookCommand, bool>
 {
     public async Task<bool> Handle(HandleLicenseWebhookCommand command, CancellationToken cancellationToken)
     {
-        var now = clock.GetUtcNow();
-        switch (gateway.ParseWebhook(command.Payload, command.Signature))
-        {
-            case CheckoutCompletedEvent completed:
-                if (await licenses.GetPaymentBySessionAsync(completed.SessionId, cancellationToken) is not { } payment) return false;
-                await completion.CompleteAsync(payment, cancellationToken);
-                return true;
-
-            case InvoicePaidEvent invoice:
-                var license = invoice.LicenseId is { } licenseId ? await licenses.GetByIdAsync(licenseId, cancellationToken) : null;
-                license ??= await licenses.GetBySubscriptionAsync(invoice.SubscriptionRef, cancellationToken);
-                if (license is null || invoice.AmountCents == 0) return false;
-                if (await licenses.GetPaymentBySessionAsync(invoice.InvoiceId, cancellationToken) is not null) return false;
-
-                // La primera factura de una suscripción sin prueba ya está apuntada como el pago del alta.
-                if (invoice.BillingReason == "subscription_create")
-                {
-                    license.RecordPaidPeriod(invoice.PeriodEnd, now);
-                }
-                else
-                {
-                    license.RecordRenewal(invoice.PeriodEnd, now);
-                    var renewal = LicensePayment.Begin(
-                        license, LicensePaymentKind.Renewal, license.EffectivePlan, license.Interval ?? BillingInterval.Monthly,
-                        invoice.AmountCents, invoice.AmountCents, invoice.Currency, gateway.Provider, invoice.InvoiceId, now);
-                    renewal.MarkPaid(now);
-                    licenses.AddPayment(renewal);
-                }
-                await unitOfWork.SaveChangesAsync(cancellationToken);
-                return true;
-
-            case SubscriptionEndedEvent ended:
-                if (await licenses.GetBySubscriptionAsync(ended.SubscriptionRef, cancellationToken) is not { } endedLicense) return false;
-                endedLicense.EndSubscription(now);
-                await unitOfWork.SaveChangesAsync(cancellationToken);
-                return true;
-
-            default:
-                return false;
-        }
+        var received = gateway.ReadWebhook(command.Payload, command.Signature);
+        var added = await inbox.AddAsync(new PaymentEventInput(gateway.Provider, received.ExternalId, received.Type, command.Payload, null), cancellationToken);
+        if (added) signal.Signal();
+        return added;
     }
 }
 
-// Renovaciones con la pasarela simulada: cobra (sin cobro real) el periodo siguiente de las suscripciones que han
-// llegado a su día de renovación, como haría Stripe. Con Stripe no hace nada: avisa su webhook.
+// Renovaciones con la pasarela simulada: al llegar el día de renovación de una suscripción, la pasarela simulada genera
+// en la cola el mismo aviso que mandaría Stripe (factura cobrada) y la cola lo aplica. Con Stripe no hace nada: cobra
+// Stripe y avisa su webhook.
 internal sealed class RenewDueLicensesHandler(
     ILicenseStore licenses,
     ILicensePaymentGateway gateway,
-    ILicensingCatalog catalog,
-    IUnitOfWork unitOfWork,
+    IPaymentSimulator simulator,
     TimeProvider clock) : ICommandHandler<RenewDueLicensesCommand, int>
 {
     public async Task<int> Handle(RenewDueLicensesCommand command, CancellationToken cancellationToken)
     {
-        if (gateway.RenewsByWebhook) return 0;
+        if (gateway.RenewsByWebhook || !simulator.Enabled) return 0;
 
         var today = SquadAccess.Today(clock);
-        var now = clock.GetUtcNow();
-        var o = await catalog.GetAsync(cancellationToken);
         var renewed = 0;
-
         foreach (var license in await licenses.GetRenewingAsync(gateway.Provider, cancellationToken))
         {
             if (license.RenewsOn is not { } due || due > today) continue;
-
-            var plan = license.NextPlan ?? license.EffectivePlan;
-            var interval = license.NextInterval ?? license.Interval ?? BillingInterval.Monthly;
-            var price = o.PriceCents(plan, interval);
-
-            var payment = LicensePayment.Begin(
-                license, LicensePaymentKind.Renewal, plan, interval, price, price, o.Currency, gateway.Provider, $"mockinv_{Guid.NewGuid():N}", now);
-            payment.MarkPaid(now);
-            licenses.AddPayment(payment);
-            license.RecordRenewal(license.RenewalPeriodEnd(interval, today), now);
+            await simulator.EmitAsync(license, SimulatedLicenseEvent.RenewalPaid, cancellationToken);
             renewed++;
         }
-
-        if (renewed > 0) await unitOfWork.SaveChangesAsync(cancellationToken);
         return renewed;
     }
 }

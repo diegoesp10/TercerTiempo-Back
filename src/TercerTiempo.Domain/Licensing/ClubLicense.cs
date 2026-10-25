@@ -203,6 +203,9 @@ public enum PaymentStatus
     Pending = 1,
     Paid = 2,
     Cancelled = 3,
+    // Cobro rechazado (tarjeta denegada, sin fondos...): la pasarela lo reintenta y, si se agotan los intentos, da la
+    // suscripción por terminada.
+    Failed = 4,
 }
 
 public enum LicensePaymentKind
@@ -262,7 +265,18 @@ public sealed class LicensePayment : AggregateRoot
         };
     }
 
+    // Motivo del rechazo de un cobro fallido, tal como lo da la pasarela.
+    public string? FailureReason { get; private set; }
+
     public bool IsPaid => Status == PaymentStatus.Paid;
+
+    public void MarkFailed(string reason)
+    {
+        if (Status == PaymentStatus.Paid)
+            throw new DomainException(ErrorCode.LicensePaymentAlreadyPaid);
+        Status = PaymentStatus.Failed;
+        FailureReason = Guard.NotEmpty(reason, "motivo", 300);
+    }
 
     public void MarkPaid(DateTimeOffset now)
     {

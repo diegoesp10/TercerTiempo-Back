@@ -183,6 +183,7 @@ public static class ErrorCatalog
         (ErrorCode.LicensingStripePriceInvalid, "'{0}' no es un precio de Stripe: sus ids empiezan por price_."),
         (ErrorCode.LicenseStaffLimit, "La licencia {0} admite {1} en el cuerpo técnico de cada equipo y este ya está completo. Revoca algún nombramiento o pasa a Premium."),
         (ErrorCode.LicensePlanTooSmall, "{0} tiene {1} en el cuerpo técnico y la licencia {2} por equipo. Revoca nombramientos antes de elegirla."),
+        (ErrorCode.LicenseSimulatorDisabled, "La simulación de pagos solo funciona con la pasarela simulada (Licensing:Provider = mock)."),
         (ErrorCode.LicenseSubscriptionActive, "Este equipo ya tiene una suscripción que se renueva sola: cambia su plan o cancela la renovación."),
         (ErrorCode.LicenseNoSubscription, "Este equipo no tiene una suscripción que gestionar."),
         (ErrorCode.LicenseWebhookInvalid, "Aviso de la pasarela de pago no válido."),

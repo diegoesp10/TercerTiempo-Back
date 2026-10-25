@@ -8,36 +8,6 @@ using TercerTiempo.Infrastructure.Persistence.Configurations;
 
 namespace TercerTiempo.Infrastructure.Licensing;
 
-// Pasarela simulada: no cobra nada. Devuelve una "sesión" que el frontal muestra como página de pago de prueba y que
-// se confirma con un clic; las renovaciones las cobra el trabajo de renovaciones. Stripe ocupa su sitio con
-// Licensing:Provider = "stripe" sin tocar el resto.
-internal sealed class MockLicensePaymentGateway : ILicensePaymentGateway
-{
-    public string Provider => "mock";
-
-    public bool RenewsByWebhook => false;
-
-    public Task<CheckoutSession> BeginCheckoutAsync(CheckoutRequest request, CancellationToken cancellationToken)
-    {
-        var sessionId = $"mock_{Guid.NewGuid():N}";
-        return Task.FromResult(new CheckoutSession(sessionId, $"/pago/{sessionId}"));
-    }
-
-    public Task<CheckoutResult> GetCheckoutAsync(string sessionId, CancellationToken cancellationToken)
-    {
-        var completed = sessionId.StartsWith("mock_", StringComparison.Ordinal);
-        return Task.FromResult(new CheckoutResult(completed, completed ? $"mocksub_{sessionId[5..]}" : null, null, null));
-    }
-
-    public Task CancelRenewalAsync(string subscriptionRef, CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task ResumeRenewalAsync(string subscriptionRef, CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task ChangeRenewalAsync(string subscriptionRef, LicensePlan plan, BillingInterval interval, CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public LicenseWebhookEvent? ParseWebhook(string payload, string? signature) => null;
-}
-
 internal sealed class LicenseStore(AppDbContext db) : ILicenseStore
 {
     public Task<ClubLicense?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>

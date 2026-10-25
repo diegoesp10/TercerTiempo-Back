@@ -31,7 +31,9 @@ public sealed record LicensesOverviewDto(
     IReadOnlyList<AdminLicenseDto> Licenses,
     IReadOnlyList<AdminLicensePaymentDto> Payments,
     string Currency,
-    DateOnly Today);
+    DateOnly Today,
+    [property: System.ComponentModel.Description("Pasarela en uso: mock (simulada, con simulador) o stripe.")]
+    string Provider = "mock");
 
 public sealed record LicensesSummaryDto(
     int Total,
@@ -80,7 +82,8 @@ public sealed record AdminLicensePaymentDto(
     PaymentStatus Status,
     string Provider,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? PaidAt);
+    DateTimeOffset? PaidAt,
+    string? FailureReason = null);
 
 public sealed record GetLicensesOverviewQuery(int Payments = 100) : IQuery<LicensesOverviewDto>;
 
@@ -89,6 +92,7 @@ internal sealed class GetLicensesOverviewHandler(
     IClubStore clubs,
     ITeamStore teams,
     ILicensingCatalog catalog,
+    ILicensePaymentGateway gateway,
     TimeProvider clock) : IQueryHandler<GetLicensesOverviewQuery, LicensesOverviewDto>
 {
     public async Task<LicensesOverviewDto> Handle(GetLicensesOverviewQuery query, CancellationToken cancellationToken)
@@ -145,10 +149,10 @@ internal sealed class GetLicensesOverviewHandler(
             .Select(p => new AdminLicensePaymentDto(
                 p.Id,
                 clubNames.GetValueOrDefault(p.ClubId, "Club eliminado"),
-                p.Kind, p.Plan, p.Interval, p.AmountCents, p.PeriodPriceCents, p.Status, p.Provider, p.CreatedAt, p.PaidAt))
+                p.Kind, p.Plan, p.Interval, p.AmountCents, p.PeriodPriceCents, p.Status, p.Provider, p.CreatedAt, p.PaidAt, p.FailureReason))
             .ToList();
 
-        return new LicensesOverviewDto(summary, rows, recent, settings.Currency, today);
+        return new LicensesOverviewDto(summary, rows, recent, settings.Currency, today, gateway.Provider);
     }
 
     internal static AdminLicenseDto ToDto(

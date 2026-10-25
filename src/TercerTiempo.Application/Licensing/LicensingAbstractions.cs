@@ -70,7 +70,21 @@ public sealed record InvoicePaidEvent(
     string Currency,
     DateOnly PeriodEnd) : LicenseWebhookEvent;
 
+// Cobro rechazado de una factura de la suscripción; la pasarela lo reintentará hasta NextAttemptAt (null = ya no).
+public sealed record InvoicePaymentFailedEvent(
+    string InvoiceId,
+    string SubscriptionRef,
+    Guid? LicenseId,
+    int AmountCents,
+    string Currency,
+    int AttemptCount,
+    DateTimeOffset? NextAttemptAt,
+    string Reason) : LicenseWebhookEvent;
+
 public sealed record SubscriptionEndedEvent(string SubscriptionRef) : LicenseWebhookEvent;
+
+// Aviso recibido y con la firma comprobada: se guarda en la cola de eventos y se aplica después.
+public sealed record ReceivedWebhook(string ExternalId, string Type);
 
 // Pasarela de pago de las licencias: suscripciones mensuales o anuales. La simulada confirma todo con un clic y cobra
 // las renovaciones con un trabajo en segundo plano; la de Stripe usa Checkout en modo suscripción y sus webhooks.
@@ -92,8 +106,9 @@ public interface ILicensePaymentGateway
     // Cambia el precio de la suscripción a partir de la próxima renovación (sin prorratear).
     Task ChangeRenewalAsync(string subscriptionRef, LicensePlan plan, BillingInterval interval, CancellationToken cancellationToken);
 
-    // Valida la firma y traduce el aviso; null si no es un evento que importe. Lanza si la firma no es válida.
-    LicenseWebhookEvent? ParseWebhook(string payload, string? signature);
+    // Comprueba la firma del aviso y lee su id y su tipo. Lanza si la firma no es válida (la simulada nunca recibe
+    // avisos de fuera: sus eventos los genera ella misma en la cola).
+    ReceivedWebhook ReadWebhook(string payload, string? signature);
 }
 
 // Puerta de licencias: decide si una plantilla, un vídeo o el panel de un jugador están accesibles según la licencia

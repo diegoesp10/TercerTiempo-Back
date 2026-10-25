@@ -19,6 +19,9 @@ internal sealed class AdminRepository(
     ICommandHandler<UpdateFootballSyncSettingsCommand, FootballSyncSettingsDto> updateFootballSyncSettings,
     ICommandHandler<RunFootballSyncCommand, JobDto> runFootballSync,
     IQueryHandler<GetLiveDownloadsQuery, LiveDownloadsDto> liveDownloads,
+    IQueryHandler<TercerTiempo.Application.Licensing.ListPaymentEventsQuery, IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> paymentEvents,
+    ICommandHandler<TercerTiempo.Application.Licensing.RetryPaymentEventCommand, bool> retryPaymentEvent,
+    ICommandHandler<TercerTiempo.Application.Licensing.SimulateLicenseEventCommand, string> simulateLicenseEvent,
     ICommandHandler<TercerTiempo.Application.OfficialSheets.CancelSheetDownloadsCommand, int> cancelSheetDownloads,
     IQueryHandler<GetLicensesOverviewQuery, LicensesOverviewDto> licenses,
     IQueryHandler<GetLicensingSettingsQuery, LicensingSettingsDto> licensingSettings,
@@ -67,6 +70,15 @@ internal sealed class AdminRepository(
 
     public Task<TercerTiempo.Application.Privacy.CookiePolicyDto> PublishCookiePolicyAsync(TercerTiempo.Application.Privacy.PublishCookiePolicyCommand command, CancellationToken cancellationToken = default) =>
         publishCookies.Handle(command, cancellationToken);
+
+    public Task<IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> GetPaymentEventsAsync(Guid? licenseId, int? max, CancellationToken cancellationToken = default) =>
+        paymentEvents.Handle(new TercerTiempo.Application.Licensing.ListPaymentEventsQuery(licenseId, max ?? 100), cancellationToken);
+
+    public Task<bool> RetryPaymentEventAsync(Guid id, CancellationToken cancellationToken = default) =>
+        retryPaymentEvent.Handle(new TercerTiempo.Application.Licensing.RetryPaymentEventCommand(id), cancellationToken);
+
+    public Task<string> SimulateLicenseEventAsync(Guid licenseId, TercerTiempo.Application.Licensing.SimulatedLicenseEvent kind, CancellationToken cancellationToken = default) =>
+        simulateLicenseEvent.Handle(new TercerTiempo.Application.Licensing.SimulateLicenseEventCommand(licenseId, kind), cancellationToken);
 
     public Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default) =>
         licenses.Handle(new GetLicensesOverviewQuery(), cancellationToken);

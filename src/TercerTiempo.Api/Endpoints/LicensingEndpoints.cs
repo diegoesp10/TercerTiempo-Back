@@ -42,7 +42,14 @@ internal static class LicensingEndpoints
         group.MapPost("/checkout/{sessionId}/confirm", (string sessionId, ILicensingRepository licensing, CancellationToken ct) => licensing.ConfirmPaymentAsync(sessionId, ct))
             .WithName("ConfirmLicensePayment")
             .WithSummary("Confirmar un pago")
-            .WithDescription("Pregunta a la pasarela por la sesión y, si está completada, da de alta la suscripción del club. Con Stripe es la vuelta del club tras pagar (el webhook hace lo mismo, lo que llegue antes); con la pasarela simulada se confirma siempre. Repetirlo no cambia nada.")
+            .WithDescription("Pregunta a la pasarela por la sesión y, si está completada, da de alta la suscripción del club. Con Stripe es la vuelta del club tras pagar (el webhook hace lo mismo desde la cola de eventos, lo que llegue antes); con la pasarela simulada, después de pagar en su página. 409 si aún no está pagada. Repetirlo no cambia nada.")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/checkout/{sessionId}/simulate", (string sessionId, SimulatedPaymentRequest request, ILicensingRepository licensing, CancellationToken ct) => licensing.SimulatePaymentAsync(sessionId, request, ct))
+            .WithName("SimulateLicensePayment")
+            .WithSummary("Pagar en la pasarela simulada")
+            .WithDescription("Solo con Licensing:Provider = mock y solo el club del pago. Hace de Stripe Checkout con sus tarjetas de prueba: Succeeded completa la sesión y deja en la cola de eventos los mismos avisos que mandaría Stripe (checkout.session.completed y, si se cobra ya, invoice.paid); el resto la rechaza con el código de Stripe (card_declined, insufficient_funds, expired_card, authentication_failed). No se envían datos de tarjeta.")
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
@@ -63,7 +70,8 @@ internal static class LicensingEndpoints
             .WithSummary("Reactivar la renovación")
             .WithDescription("Solo clubes, mientras la licencia sigue vigente: vuelve a renovarse con el mismo plan.");
 
-        // Avisos de Stripe: el cuerpo se lee tal cual porque la firma se calcula sobre él.
+        // Avisos de Stripe: el cuerpo se lee tal cual porque la firma se calcula sobre él. Se guardan en la cola de eventos y
+        // se responde enseguida; los aplica el proceso de la cola, con reintentos.
         group.MapPost("/stripe/webhook", async (HttpRequest request, ILicensingRepository licensing, CancellationToken ct) =>
             {
                 using var reader = new StreamReader(request.Body);

@@ -191,6 +191,7 @@ public static class ErrorCode
     public const string LicensingStripePriceInvalid = "licensing.stripe_price_invalid";
     public const string LicenseStaffLimit = "license.staff_limit";
     public const string LicensePlanTooSmall = "license.plan_too_small";
+    public const string LicenseSimulatorDisabled = "license.simulator_disabled";
     public const string LicenseSubscriptionActive = "license.subscription_active";
     public const string LicenseNoSubscription = "license.no_subscription";
     public const string LicenseWebhookInvalid = "license.webhook_invalid";

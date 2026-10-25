@@ -11,6 +11,9 @@ public interface IAdminRepository
     Task<JobsOverviewDto> GetJobsAsync(string? provider, int? requests, CancellationToken cancellationToken = default);
     Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default);
     Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> GetPaymentEventsAsync(Guid? licenseId, int? max, CancellationToken cancellationToken = default);
+    Task<bool> RetryPaymentEventAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<string> SimulateLicenseEventAsync(Guid licenseId, TercerTiempo.Application.Licensing.SimulatedLicenseEvent kind, CancellationToken cancellationToken = default);
     Task<LicensingSettingsDto> GetLicensingSettingsAsync(CancellationToken cancellationToken = default);
     Task<TercerTiempo.Application.Privacy.AnalyticsReportDto> GetAnalyticsAsync(TercerTiempo.Application.Privacy.GetAnalyticsReportQuery query, CancellationToken cancellationToken = default);
     Task<TercerTiempo.Application.Privacy.CookiePolicyDto> UpsertCookieAsync(TercerTiempo.Application.Privacy.UpsertCookieCommand command, CancellationToken cancellationToken = default);

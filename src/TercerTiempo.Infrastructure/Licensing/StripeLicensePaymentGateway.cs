@@ -15,7 +15,8 @@ namespace TercerTiempo.Infrastructure.Licensing;
 // - Alta: Checkout Session en modo suscripción, con el precio del plan (price_... configurado o, si falta, el importe
 //   de la configuración) y, si al equipo le queda prueba o periodo pagado, trial_end para no cobrar hasta entonces.
 // - Renovaciones, cancelaciones y cobros fallidos: los gestiona Stripe y avisa por webhook (invoice.paid,
-//   customer.subscription.deleted); la licencia guarda el id de la suscripción y la de la licencia va en su metadata.
+//   invoice.payment_failed, customer.subscription.deleted); la licencia guarda el id de la suscripción y la de la
+//   licencia va en su metadata. Los avisos entran en la cola de eventos y se aplican desde allí (StripeEvents).
 internal sealed class StripeLicensePaymentGateway(HttpClient http, IOptions<LicensingOptions> options, ILicensingCatalog catalog, TimeProvider clock) : ILicensePaymentGateway
 {
     // Stripe exige que trial_end esté al menos 48 h en el futuro.
@@ -139,46 +140,23 @@ internal sealed class StripeLicensePaymentGateway(HttpClient http, IOptions<Lice
         using var _ = await SendAsync(HttpMethod.Post, path, form, cancellationToken);
     }
 
+    public ReceivedWebhook ReadWebhook(string payload, string? signature)
+    {
+        Verify(payload, signature);
+        return StripeEvents.Read(payload);
+    }
+
+    // Firma comprobada y evento traducido (lo que hace la cola al aplicarlo); null si no es un evento que importe.
     public LicenseWebhookEvent? ParseWebhook(string payload, string? signature)
+    {
+        Verify(payload, signature);
+        return StripeEvents.Parse(payload);
+    }
+
+    private void Verify(string payload, string? signature)
     {
         if (!StripeSignature.IsValid(payload, signature, Stripe.WebhookSecret, clock.GetUtcNow(), TimeSpan.FromSeconds(Stripe.WebhookToleranceSeconds)))
             throw new DomainException(ErrorCode.LicenseWebhookInvalid);
-
-        using var json = JsonDocument.Parse(payload);
-        var type = Text(json.RootElement, "type");
-        var data = json.RootElement.GetProperty("data").GetProperty("object");
-
-        switch (type)
-        {
-            case "checkout.session.completed" when Text(data, "mode") == "subscription":
-                return new CheckoutCompletedEvent(Text(data, "id")!);
-
-            case "invoice.paid":
-                // Hasta la API 2025-03 la suscripción y su metadata colgaban de la factura; después, de «parent».
-                var details = data.TryGetProperty("parent", out var parent) && parent.ValueKind == JsonValueKind.Object
-                    && parent.TryGetProperty("subscription_details", out var parentDetails) && parentDetails.ValueKind == JsonValueKind.Object
-                    ? parentDetails
-                    : data.TryGetProperty("subscription_details", out var legacyDetails) ? legacyDetails : default;
-                var subscriptionRef = Text(data, "subscription") ?? (details.ValueKind == JsonValueKind.Object ? Text(details, "subscription") : null);
-                if (subscriptionRef is null) return null;
-
-                Guid? licenseId = details.ValueKind == JsonValueKind.Object
-                    && details.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object
-                    && Guid.TryParse(Text(metadata, "license_id"), out var id) ? id : null;
-
-                var line = data.GetProperty("lines").GetProperty("data")[0];
-                var periodEnd = DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeSeconds(line.GetProperty("period").GetProperty("end").GetInt64()).UtcDateTime);
-
-                return new InvoicePaidEvent(
-                    Text(data, "id")!, subscriptionRef, licenseId, Text(data, "billing_reason") ?? string.Empty,
-                    data.GetProperty("amount_paid").GetInt32(), (Text(data, "currency") ?? LicensingSettings.DefaultCurrency).ToUpperInvariant(), periodEnd);
-
-            case "customer.subscription.deleted":
-                return new SubscriptionEndedEvent(Text(data, "id")!);
-
-            default:
-                return null;
-        }
     }
 
     private async Task<JsonDocument> SendAsync(HttpMethod method, string path, IEnumerable<KeyValuePair<string, string>>? form, CancellationToken cancellationToken)

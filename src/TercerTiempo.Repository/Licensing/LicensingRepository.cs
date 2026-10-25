@@ -17,7 +17,12 @@ public interface ILicensingRepository
     Task<ClubLicenseDto> CancelRenewalAsync(CancellationToken cancellationToken = default);
     Task<ClubLicenseDto> ResumeRenewalAsync(CancellationToken cancellationToken = default);
     Task<bool> HandleWebhookAsync(string payload, string? signature, CancellationToken cancellationToken = default);
+    Task<SimulatedPaymentDto> SimulatePaymentAsync(string sessionId, SimulatedPaymentRequest request, CancellationToken cancellationToken = default);
 }
+
+public sealed record SimulatedPaymentRequest(
+    [property: Description("Resultado de la tarjeta de prueba: Succeeded, Declined, InsufficientFunds, ExpiredCard o AuthenticationFailed.")]
+    SimulatedPaymentOutcome Outcome);
 
 public sealed record LicensePlanRequest(
     [property: Description("Basic (1 técnico) o Premium (cuerpo técnico ampliado).")]
@@ -35,7 +40,8 @@ internal sealed class LicensingRepository(
     ICommandHandler<ChangeLicenseRenewalCommand, ClubLicenseDto> changeRenewal,
     ICommandHandler<CancelLicenseRenewalCommand, ClubLicenseDto> cancelRenewal,
     ICommandHandler<ResumeLicenseRenewalCommand, ClubLicenseDto> resumeRenewal,
-    ICommandHandler<HandleLicenseWebhookCommand, bool> handleWebhook) : ILicensingRepository
+    ICommandHandler<HandleLicenseWebhookCommand, bool> handleWebhook,
+    ICommandHandler<SimulateCheckoutPaymentCommand, SimulatedPaymentDto> simulatePayment) : ILicensingRepository
 {
     public Task<LicensingCatalogDto> GetCatalogAsync(CancellationToken cancellationToken = default) =>
         getCatalog.Handle(new GetLicensingCatalogQuery(), cancellationToken);
@@ -66,4 +72,7 @@ internal sealed class LicensingRepository(
 
     public Task<bool> HandleWebhookAsync(string payload, string? signature, CancellationToken cancellationToken = default) =>
         handleWebhook.Handle(new HandleLicenseWebhookCommand(payload, signature), cancellationToken);
+
+    public Task<SimulatedPaymentDto> SimulatePaymentAsync(string sessionId, SimulatedPaymentRequest request, CancellationToken cancellationToken = default) =>
+        simulatePayment.Handle(new SimulateCheckoutPaymentCommand(sessionId, request.Outcome), cancellationToken);
 }

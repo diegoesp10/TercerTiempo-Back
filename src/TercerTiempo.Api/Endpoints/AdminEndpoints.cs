@@ -67,6 +67,25 @@ internal static class AdminEndpoints
             .WithSummary("Vaciar la cola de actas")
             .WithDescription("Quita de la cola las actas pendientes (onlyFinished=true: solo limpia la lista de las ya terminadas). Devuelve cuántas filas se quitan. Solo administradores.");
 
+        group.MapGet("/payment-events", (Guid? licenseId, int? max, IAdminRepository admin, CancellationToken ct) => admin.GetPaymentEventsAsync(licenseId, max, ct))
+            .WithName("ListPaymentEvents")
+            .WithSummary("Cola de eventos de la pasarela")
+            .WithDescription("Los avisos de la pasarela (webhooks de Stripe o eventos de la simulada) del más reciente al primero: tipo, estado (pending, processed, ignored, failed), intentos, próximo reintento, error y qué hicieron en la licencia. licenseId filtra por licencia. Solo administradores.");
+
+        group.MapPost("/payment-events/{id:guid}/retry", (Guid id, IAdminRepository admin, CancellationToken ct) => admin.RetryPaymentEventAsync(id, ct))
+            .WithName("RetryPaymentEvent")
+            .WithSummary("Reintentar un evento de la pasarela")
+            .WithDescription("Lo vuelve a poner en la cola para aplicarlo ya (por ejemplo, uno fallido tras arreglar la causa). Solo administradores.")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/licenses/{licenseId:guid}/simulate", async (Guid licenseId, SimulateLicenseEventRequest request, IAdminRepository admin, CancellationToken ct) =>
+            new SimulateLicenseEventResponse(await admin.SimulateLicenseEventAsync(licenseId, request.Event, ct)))
+            .WithName("SimulateLicenseEvent")
+            .WithSummary("Simular un aviso de la pasarela")
+            .WithDescription("Solo con la pasarela simulada y licencias con suscripción. RenewalPaid: cobra la renovación que toca (invoice.paid); RenewalFailed: la rechaza (invoice.payment_failed, con su intento y el siguiente reintento); SubscriptionDeleted: da la suscripción por terminada (customer.subscription.deleted). Deja el evento en la cola, como haría Stripe. Solo administradores.")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         group.MapGet("/licenses", (IAdminRepository admin, CancellationToken ct) => admin.GetLicensesAsync(ct))
             .WithName("GetLicensesOverview")
             .WithSummary("Licencias y cobros de todos los clubes")
@@ -118,3 +137,7 @@ internal static class AdminEndpoints
         return app;
     }
 }
+
+internal sealed record SimulateLicenseEventRequest(TercerTiempo.Application.Licensing.SimulatedLicenseEvent Event);
+
+internal sealed record SimulateLicenseEventResponse(string Summary);

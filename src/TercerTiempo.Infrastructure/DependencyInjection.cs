@@ -242,12 +242,21 @@ public static class DependencyInjection
                 client.BaseAddress = new Uri(stripe.ApiBaseUrl.EndsWith('/') ? stripe.ApiBaseUrl : stripe.ApiBaseUrl + "/");
                 client.Timeout = TimeSpan.FromSeconds(30);
             });
+            services.AddScoped<IPaymentSimulator, DisabledPaymentSimulator>();
         }
         else
         {
-            services.AddSingleton<ILicensePaymentGateway, MockLicensePaymentGateway>();
+            services.AddScoped<MockPaymentGateway>();
+            services.AddScoped<ILicensePaymentGateway>(sp => sp.GetRequiredService<MockPaymentGateway>());
+            services.AddScoped<IPaymentSimulator>(sp => sp.GetRequiredService<MockPaymentGateway>());
         }
         services.AddHostedService<LicenseRenewalWorker>();
+
+        // Cola de avisos de la pasarela (webhooks de Stripe o eventos de la simulada) y el proceso que los aplica.
+        services.AddScoped<IPaymentEventInbox, PaymentEventInbox>();
+        services.AddSingleton<PaymentEventSignal>();
+        services.AddSingleton<IPaymentEventSignal>(sp => sp.GetRequiredService<PaymentEventSignal>());
+        services.AddHostedService<PaymentEventWorker>();
 
         services.AddMemoryCache();
         services.AddSingleton<IVideoStorage, FileSystemVideoStorage>();
