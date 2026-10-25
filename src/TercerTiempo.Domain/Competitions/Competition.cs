@@ -49,7 +49,7 @@ public sealed class Competition : AggregateRoot
         SortOrder = (int)level * 1000 + Tier * 20 + (int.TryParse(Group, out var number) ? Math.Min(number, 19) : 0);
     }
 
-    public Season AddSeason(string label, DateOnly startsOn, DateOnly endsOn, ExternalRef? externalRef)
+    public Season AddSeason(string label, DateOnly startsOn, DateOnly endsOn, ExternalRef? externalRef, Guid seasonYearId = default)
     {
         if (endsOn <= startsOn)
             throw new DomainException(ErrorCode.CompetitionSeasonDates);
@@ -57,12 +57,22 @@ public sealed class Competition : AggregateRoot
         if (_seasons.Any(s => s.Label.Equals(label, StringComparison.OrdinalIgnoreCase)))
             throw new DomainException(ErrorCode.CompetitionSeasonExists, label);
 
-        var season = Season.Create(Id, label, startsOn, endsOn, externalRef);
+        var season = Season.Create(Id, seasonYearId, label, startsOn, endsOn, externalRef);
         _seasons.Add(season);
         return season;
     }
 
     public Season? CurrentSeason => _seasons.FirstOrDefault(s => s.IsCurrent);
+
+    // La temporada de esta liga dentro de la temporada de la app; null si la liga no se jugó (o no se sigue) ese año.
+    public Season? SeasonIn(Guid seasonYearId) => _seasons.FirstOrDefault(s => s.SeasonYearId == seasonYearId);
+
+    // Una temporada creada antes de que existiera la temporada de la app se cuelga de ella al sincronizar.
+    public void LinkSeasonYear(Guid seasonId, Guid seasonYearId)
+    {
+        var season = _seasons.FirstOrDefault(s => s.Id == seasonId) ?? throw new DomainException(ErrorCode.CompetitionSeasonMismatch);
+        season.MoveTo(seasonYearId);
+    }
 
     public void MarkCurrent(Guid seasonId)
     {

@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using TercerTiempo.Application.Auth;
+using TercerTiempo.Application.Clubs.Catalog;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Squads;
@@ -10,8 +12,13 @@ namespace TercerTiempo.Application.Clubs;
 public sealed record ClubDto(
     Guid Id,
     string Name,
+    [property: Description("Equipos que cubre la licencia del club: el primer equipo y sus filiales.")]
     IReadOnlyList<ClubTeamDto> Teams,
-    IReadOnlyList<AppointmentDto> Appointments);
+    IReadOnlyList<AppointmentDto> Appointments,
+    [property: Description("Filiales del club (mismo club del catálogo) que aún no están vinculados y se pueden añadir a la licencia. Solo en GET /api/clubs/me y al vincular o desvincular.")]
+    IReadOnlyList<ClubFilialDto> AvailableFilials);
+
+public sealed record ClubFilialDto(Guid TeamId, string TeamName, string? TeamCrestUrl, string? CompetitionName);
 
 public sealed record ClubTeamDto(
     Guid TeamId,
@@ -25,9 +32,9 @@ public sealed record ClubTeamDto(
     DateOnly? SeasonEndsOn,
     Guid? SquadId,
     int ActiveAppointments,
-    [property: System.ComponentModel.Description("Estado de la licencia del equipo: Trial, Active o Expired.")]
+    [property: Description("Estado de la licencia del club, que cubre a este equipo: Trial, Active o Expired.")]
     Domain.Licensing.LicenseStatus License,
-    [property: System.ComponentModel.Description("Último día con acceso a los datos privados del equipo.")]
+    [property: Description("Último día con acceso a los datos privados del equipo.")]
     DateOnly LicenseValidUntil);
 
 public sealed record AppointmentDto(
@@ -50,20 +57,21 @@ public sealed record AppointmentDto(
 
 internal static class ClubMapper
 {
-    public static async Task<ClubDto> ToDtoAsync(Club club, AccountStores stores, CancellationToken cancellationToken)
+    public static async Task<ClubDto> ToDtoAsync(Club club, AccountStores stores, CancellationToken cancellationToken, bool withFilials = false)
     {
         var today = SquadAccess.Today(stores.Clock);
         var appointments = await stores.Appointments.GetByClubAsync(club.Id, cancellationToken);
+        var license = await stores.Licenses.EnsureForClubAsync(club, cancellationToken);
 
+        var year = await stores.Seasons.SelectedAsync(cancellationToken);
         var teamsDto = new List<ClubTeamDto>();
         foreach (var clubTeam in club.Teams.OrderBy(t => t.AddedAt))
         {
             var team = await stores.Teams.GetByIdAsync(clubTeam.TeamId, cancellationToken);
             if (team is null) continue;
 
-            var license = await stores.Licenses.EnsureForTeamAsync(club, team.Id, cancellationToken);
-            var competition = await stores.Competitions.GetByTeamAsync(team.Id, cancellationToken);
-            var season = competition?.CurrentSeason;
+            var competition = await stores.Competitions.GetByTeamAsync(team.Id, year?.Id, cancellationToken);
+            var season = competition is null ? null : Resolvers.SeasonFor(competition, year);
             var squad = season is null ? null : await stores.Squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
 
             teamsDto.Add(new ClubTeamDto(
@@ -78,7 +86,19 @@ internal static class ClubMapper
         foreach (var appointment in appointments.OrderByDescending(a => a.CreatedAt))
             appointmentsDto.Add(await ToDtoAsync(appointment, stores, today, cancellationToken));
 
-        return new ClubDto(club.Id, club.Name, teamsDto, appointmentsDto);
+        return new ClubDto(club.Id, club.Name, teamsDto, appointmentsDto, withFilials ? await AvailableFilialsAsync(club, stores, cancellationToken) : []);
+    }
+
+    private static async Task<IReadOnlyList<ClubFilialDto>> AvailableFilialsAsync(Club club, AccountStores stores, CancellationToken cancellationToken)
+    {
+        var entry = ClubCatalog.ForClub(await ClubCatalog.LoadAsync(stores, cancellationToken), club);
+        var result = new List<ClubFilialDto>();
+        foreach (var candidate in entry?.Teams ?? [])
+        {
+            if (club.Manages(candidate.Team.Id) || await stores.Clubs.GetByTeamAsync(candidate.Team.Id, cancellationToken) is not null) continue;
+            result.Add(new ClubFilialDto(candidate.Team.Id, candidate.Team.Name, candidate.Team.CrestLink(), candidate.CompetitionName));
+        }
+        return result;
     }
 
     public static async Task<AppointmentDto> ToDtoAsync(CoachAppointment appointment, AccountStores stores, DateOnly today, CancellationToken cancellationToken)

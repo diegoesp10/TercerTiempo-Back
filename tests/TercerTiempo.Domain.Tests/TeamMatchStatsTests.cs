@@ -50,6 +50,21 @@ public class TeamMatchStatsTests
     }
 
     [Fact]
+    public void Penalty_goals_are_set_piece_goals_and_cannot_exceed_the_penalties()
+    {
+        var (squad, coachId) = TestData.NewSquad();
+        var match = TestData.PlayedMatch(home: 2, away: 1);
+
+        var stats = TeamMatchStats.Record(squad, match, coachId,
+            Data() with { PenaltiesFor = 2, PenaltyGoalsFor = 1, ThrowInsFor = 24, ThrowInsAgainst = 19 }, TestData.Now);
+        Assert.Equal((2, 1, 24, 19), (stats.PenaltiesFor, stats.PenaltyGoalsFor, stats.ThrowInsFor, stats.ThrowInsAgainst));
+
+        // Más goles de penalti que penaltis, o que goles a balón parado (1).
+        Assert.Throws<DomainException>(() => stats.Update(squad, match, coachId, Data() with { PenaltiesFor = 0, PenaltyGoalsFor = 1 }, TestData.Now));
+        Assert.Throws<DomainException>(() => stats.Update(squad, match, coachId, Data() with { PenaltiesFor = 3, PenaltyGoalsFor = 2 }, TestData.Now));
+    }
+
+    [Fact]
     public void Updating_overwrites_the_previous_data()
     {
         var (squad, coachId) = TestData.NewSquad();

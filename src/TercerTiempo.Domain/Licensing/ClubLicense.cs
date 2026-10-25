@@ -10,8 +10,8 @@ public enum LicenseStatus
     Expired = 3,
 }
 
-// Planes de la licencia. Los dos dan las mismas funciones a la plantilla entera; cambia el tamaño del cuerpo técnico
-// que puede tener el equipo (los límites y precios están en la configuración).
+// Planes de la licencia. Los dos dan las mismas funciones a todos los equipos del club; cambia el tamaño del cuerpo
+// técnico que puede tener cada equipo (los límites y precios están en la configuración).
 public enum LicensePlan
 {
     Basic = 1,
@@ -29,18 +29,18 @@ public static class BillingIntervals
     public static int Months(this BillingInterval interval) => interval == BillingInterval.Yearly ? 12 : 1;
 }
 
-// Licencia de uso por equipo: la compra el club que gestiona el equipo. Empieza con un periodo de prueba (con todo lo
-// de Premium) y después se paga como suscripción mensual o anual que se renueva sola hasta que el club la cancela.
-// Sin licencia vigente, el club, el cuerpo técnico y los jugadores del equipo pierden el acceso a sus datos privados
-// (que se conservan), no a los datos públicos de la federación.
-public sealed class TeamLicense : AggregateRoot
+// Licencia de uso de un club: una por club, al precio del plan, cubre el primer equipo y todas sus filiales (los equipos
+// que tiene vinculados), cada uno con su propio cupo de técnicos según el plan. Empieza con un periodo de prueba (con
+// todo lo de Premium) y después se paga como suscripción mensual o anual que se renueva sola hasta que el club la
+// cancela. Sin licencia vigente, el club, el cuerpo técnico y los jugadores de sus equipos pierden el acceso a los datos
+// privados (que se conservan), no a los datos públicos de la federación.
+public sealed class ClubLicense : AggregateRoot
 {
     // Días de cortesía tras el fin de lo pagado mientras se cobra la renovación (la pasarela reintenta los cobros
     // fallidos durante unos días antes de dar la suscripción por perdida).
     public const int RenewalGraceDays = 3;
 
     public Guid ClubId { get; private set; }
-    public Guid TeamId { get; private set; }
     public DateOnly TrialEndsOn { get; private set; }
     public DateOnly? PaidUntil { get; private set; }
 
@@ -61,16 +61,15 @@ public sealed class TeamLicense : AggregateRoot
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    private TeamLicense() { }
+    private ClubLicense() { }
 
-    public static TeamLicense Start(Guid clubId, Guid teamId, DateOnly startedOn, int trialDays, DateTimeOffset now)
+    public static ClubLicense Start(Guid clubId, DateOnly startedOn, int trialDays, DateTimeOffset now)
     {
         Guard.InRange(trialDays, 0, 365, "días de prueba");
-        return new TeamLicense
+        return new ClubLicense
         {
             Id = NewId(),
             ClubId = Guard.NotEmpty(clubId, nameof(clubId)),
-            TeamId = Guard.NotEmpty(teamId, nameof(teamId)),
             TrialEndsOn = startedOn.AddDays(trialDays),
             CreatedAt = now,
             UpdatedAt = now,
@@ -92,7 +91,7 @@ public sealed class TeamLicense : AggregateRoot
     // Día del próximo cobro de la suscripción: el siguiente al último con acceso.
     public DateOnly? RenewsOn => IsRenewing ? ValidUntil.AddDays(1) : null;
 
-    // Plan con el que funciona el equipo: el contratado o, mientras no hay ninguno (la prueba), Premium.
+    // Plan con el que funciona el club: el contratado o, mientras no hay ninguno (la prueba), Premium.
     public LicensePlan EffectivePlan => Plan ?? LicensePlan.Premium;
 
     // Plan que limita el cuerpo técnico: si hay un cambio pedido, el más pequeño de los dos, para no llegar a la
@@ -220,7 +219,6 @@ public sealed class LicensePayment : AggregateRoot
 {
     public Guid LicenseId { get; private set; }
     public Guid ClubId { get; private set; }
-    public Guid TeamId { get; private set; }
     public LicensePaymentKind Kind { get; private set; }
     public LicensePlan Plan { get; private set; }
     public BillingInterval Interval { get; private set; }
@@ -239,7 +237,7 @@ public sealed class LicensePayment : AggregateRoot
     private LicensePayment() { }
 
     public static LicensePayment Begin(
-        TeamLicense license, LicensePaymentKind kind, LicensePlan plan, BillingInterval interval, int amountCents, int periodPriceCents,
+        ClubLicense license, LicensePaymentKind kind, LicensePlan plan, BillingInterval interval, int amountCents, int periodPriceCents,
         string currency, string provider, string sessionId, DateTimeOffset now)
     {
         if (!Enum.IsDefined(plan) || !Enum.IsDefined(interval)) throw new DomainException(ErrorCode.LicensePlanInvalid);
@@ -250,7 +248,6 @@ public sealed class LicensePayment : AggregateRoot
             Id = NewId(),
             LicenseId = license.Id,
             ClubId = license.ClubId,
-            TeamId = license.TeamId,
             Kind = kind,
             Plan = plan,
             Interval = interval,
@@ -287,13 +284,12 @@ public sealed class LicensePayment : AggregateRoot
 
 public interface ILicenseStore
 {
-    Task<TeamLicense?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-    Task<TeamLicense?> GetByTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
-    Task<TeamLicense?> GetBySubscriptionAsync(string subscriptionRef, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<TeamLicense>> GetByClubAsync(Guid clubId, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<TeamLicense>> GetRenewingAsync(string provider, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<TeamLicense>> GetAllAsync(CancellationToken cancellationToken = default);
-    void Add(TeamLicense license);
+    Task<ClubLicense?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<ClubLicense?> GetByClubAsync(Guid clubId, CancellationToken cancellationToken = default);
+    Task<ClubLicense?> GetBySubscriptionAsync(string subscriptionRef, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ClubLicense>> GetRenewingAsync(string provider, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ClubLicense>> GetAllAsync(CancellationToken cancellationToken = default);
+    void Add(ClubLicense license);
 
     Task<LicensePayment?> GetPaymentBySessionAsync(string sessionId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<LicensePayment>> GetPaymentsByClubAsync(Guid clubId, CancellationToken cancellationToken = default);

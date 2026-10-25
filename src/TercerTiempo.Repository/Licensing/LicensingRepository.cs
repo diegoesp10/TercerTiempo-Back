@@ -9,13 +9,13 @@ public interface ILicensingRepository
 {
     Task<LicensingCatalogDto> GetCatalogAsync(CancellationToken cancellationToken = default);
     Task<LicensingStatusDto> GetStatusAsync(CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<TeamLicenseDto>> ListClubLicensesAsync(CancellationToken cancellationToken = default);
-    Task<LicenseCheckoutDto> BeginCheckoutAsync(Guid teamId, LicensePlanRequest request, CancellationToken cancellationToken = default);
+    Task<ClubLicenseDto> GetClubLicenseAsync(CancellationToken cancellationToken = default);
+    Task<LicenseCheckoutDto> BeginCheckoutAsync(LicensePlanRequest request, CancellationToken cancellationToken = default);
     Task<LicenseCheckoutDto> GetCheckoutAsync(string sessionId, CancellationToken cancellationToken = default);
-    Task<TeamLicenseDto> ConfirmPaymentAsync(string sessionId, CancellationToken cancellationToken = default);
-    Task<TeamLicenseDto> ChangeRenewalAsync(Guid teamId, LicensePlanRequest request, CancellationToken cancellationToken = default);
-    Task<TeamLicenseDto> CancelRenewalAsync(Guid teamId, CancellationToken cancellationToken = default);
-    Task<TeamLicenseDto> ResumeRenewalAsync(Guid teamId, CancellationToken cancellationToken = default);
+    Task<ClubLicenseDto> ConfirmPaymentAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task<ClubLicenseDto> ChangeRenewalAsync(LicensePlanRequest request, CancellationToken cancellationToken = default);
+    Task<ClubLicenseDto> CancelRenewalAsync(CancellationToken cancellationToken = default);
+    Task<ClubLicenseDto> ResumeRenewalAsync(CancellationToken cancellationToken = default);
     Task<bool> HandleWebhookAsync(string payload, string? signature, CancellationToken cancellationToken = default);
 }
 
@@ -28,13 +28,13 @@ public sealed record LicensePlanRequest(
 internal sealed class LicensingRepository(
     IQueryHandler<GetLicensingCatalogQuery, LicensingCatalogDto> getCatalog,
     IQueryHandler<GetLicensingStatusQuery, LicensingStatusDto> getStatus,
-    IQueryHandler<ListClubLicensesQuery, IReadOnlyList<TeamLicenseDto>> listClubLicenses,
+    IQueryHandler<GetClubLicenseQuery, ClubLicenseDto> getClubLicense,
     ICommandHandler<BeginLicenseCheckoutCommand, LicenseCheckoutDto> beginCheckout,
     IQueryHandler<GetLicenseCheckoutQuery, LicenseCheckoutDto> getCheckout,
-    ICommandHandler<ConfirmLicensePaymentCommand, TeamLicenseDto> confirmPayment,
-    ICommandHandler<ChangeLicenseRenewalCommand, TeamLicenseDto> changeRenewal,
-    ICommandHandler<CancelLicenseRenewalCommand, TeamLicenseDto> cancelRenewal,
-    ICommandHandler<ResumeLicenseRenewalCommand, TeamLicenseDto> resumeRenewal,
+    ICommandHandler<ConfirmLicensePaymentCommand, ClubLicenseDto> confirmPayment,
+    ICommandHandler<ChangeLicenseRenewalCommand, ClubLicenseDto> changeRenewal,
+    ICommandHandler<CancelLicenseRenewalCommand, ClubLicenseDto> cancelRenewal,
+    ICommandHandler<ResumeLicenseRenewalCommand, ClubLicenseDto> resumeRenewal,
     ICommandHandler<HandleLicenseWebhookCommand, bool> handleWebhook) : ILicensingRepository
 {
     public Task<LicensingCatalogDto> GetCatalogAsync(CancellationToken cancellationToken = default) =>
@@ -43,26 +43,26 @@ internal sealed class LicensingRepository(
     public Task<LicensingStatusDto> GetStatusAsync(CancellationToken cancellationToken = default) =>
         getStatus.Handle(new GetLicensingStatusQuery(), cancellationToken);
 
-    public Task<IReadOnlyList<TeamLicenseDto>> ListClubLicensesAsync(CancellationToken cancellationToken = default) =>
-        listClubLicenses.Handle(new ListClubLicensesQuery(), cancellationToken);
+    public Task<ClubLicenseDto> GetClubLicenseAsync(CancellationToken cancellationToken = default) =>
+        getClubLicense.Handle(new GetClubLicenseQuery(), cancellationToken);
 
-    public Task<LicenseCheckoutDto> BeginCheckoutAsync(Guid teamId, LicensePlanRequest request, CancellationToken cancellationToken = default) =>
-        beginCheckout.Handle(new BeginLicenseCheckoutCommand(teamId, request.Plan, request.Interval), cancellationToken);
+    public Task<LicenseCheckoutDto> BeginCheckoutAsync(LicensePlanRequest request, CancellationToken cancellationToken = default) =>
+        beginCheckout.Handle(new BeginLicenseCheckoutCommand(request.Plan, request.Interval), cancellationToken);
 
     public Task<LicenseCheckoutDto> GetCheckoutAsync(string sessionId, CancellationToken cancellationToken = default) =>
         getCheckout.Handle(new GetLicenseCheckoutQuery(sessionId), cancellationToken);
 
-    public Task<TeamLicenseDto> ConfirmPaymentAsync(string sessionId, CancellationToken cancellationToken = default) =>
+    public Task<ClubLicenseDto> ConfirmPaymentAsync(string sessionId, CancellationToken cancellationToken = default) =>
         confirmPayment.Handle(new ConfirmLicensePaymentCommand(sessionId), cancellationToken);
 
-    public Task<TeamLicenseDto> ChangeRenewalAsync(Guid teamId, LicensePlanRequest request, CancellationToken cancellationToken = default) =>
-        changeRenewal.Handle(new ChangeLicenseRenewalCommand(teamId, request.Plan, request.Interval), cancellationToken);
+    public Task<ClubLicenseDto> ChangeRenewalAsync(LicensePlanRequest request, CancellationToken cancellationToken = default) =>
+        changeRenewal.Handle(new ChangeLicenseRenewalCommand(request.Plan, request.Interval), cancellationToken);
 
-    public Task<TeamLicenseDto> CancelRenewalAsync(Guid teamId, CancellationToken cancellationToken = default) =>
-        cancelRenewal.Handle(new CancelLicenseRenewalCommand(teamId), cancellationToken);
+    public Task<ClubLicenseDto> CancelRenewalAsync(CancellationToken cancellationToken = default) =>
+        cancelRenewal.Handle(new CancelLicenseRenewalCommand(), cancellationToken);
 
-    public Task<TeamLicenseDto> ResumeRenewalAsync(Guid teamId, CancellationToken cancellationToken = default) =>
-        resumeRenewal.Handle(new ResumeLicenseRenewalCommand(teamId), cancellationToken);
+    public Task<ClubLicenseDto> ResumeRenewalAsync(CancellationToken cancellationToken = default) =>
+        resumeRenewal.Handle(new ResumeLicenseRenewalCommand(), cancellationToken);
 
     public Task<bool> HandleWebhookAsync(string payload, string? signature, CancellationToken cancellationToken = default) =>
         handleWebhook.Handle(new HandleLicenseWebhookCommand(payload, signature), cancellationToken);

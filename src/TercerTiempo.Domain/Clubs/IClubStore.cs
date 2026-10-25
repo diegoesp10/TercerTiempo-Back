@@ -3,6 +3,7 @@ namespace TercerTiempo.Domain.Clubs;
 public interface IClubStore
 {
     Task<Club?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Club>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<Club?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 
     Task<Club?> GetByNormalizedNameAsync(string normalizedName, CancellationToken cancellationToken = default);

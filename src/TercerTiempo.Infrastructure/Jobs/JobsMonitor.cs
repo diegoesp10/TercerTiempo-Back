@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.Sync;
+using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
 
@@ -16,7 +17,19 @@ internal sealed class JobsMonitor(
 {
     private const int RunsShown = 60;
 
-    public JobLaunchResult Launch(string job) => scheduler.Launch(job);
+    public JobLaunchResult Launch(string job, object? parameters = null) => scheduler.Launch(job, parameters);
+
+    public Task<DateTimeOffset?> LastFullFootballSyncAsync(CancellationToken cancellationToken) =>
+        db.Set<JobRun>().AsNoTracking()
+            .Where(r => r.Job == JobNames.FootballData
+                && r.ScopeKind == nameof(SyncScopeKind.FullSeason)
+                && (r.Status == JobRunStatus.Succeeded || r.Status == JobRunStatus.Partial))
+            .OrderByDescending(r => r.StartedAt)
+            .Select(r => (DateTimeOffset?)r.StartedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public async Task<ScrapeSourceDto?> SourceAsync(string provider, CancellationToken cancellationToken) =>
+        (await SourcesAsync(clock.GetUtcNow(), cancellationToken)).FirstOrDefault(s => s.Provider == provider);
 
     public async Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken)
     {
@@ -130,5 +143,6 @@ internal sealed class JobsMonitor(
         run.FinishedAt,
         run.Summary,
         string.IsNullOrEmpty(run.Errors) ? [] : run.Errors.Split('\n'),
-        run.Requests);
+        run.Requests,
+        run.ScopeLabel);
 }

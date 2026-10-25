@@ -95,6 +95,9 @@ public class CoachAppointmentTests
         Assert.True(club.Manages(TestData.HomeTeamId));
         Assert.Throws<DomainException>(() => club.AddTeam(TestData.HomeTeamId, TestData.Now));
 
+        // El club conserva al menos un equipo: se quita un filial, no el último.
+        Assert.Throws<DomainException>(() => club.RemoveTeam(TestData.HomeTeamId));
+        club.AddTeam(TestData.AwayTeamId, TestData.Now);
         club.RemoveTeam(TestData.HomeTeamId);
         Assert.False(club.Manages(TestData.HomeTeamId));
         Assert.Throws<DomainException>(() => club.RemoveTeam(TestData.HomeTeamId));

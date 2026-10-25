@@ -11,11 +11,12 @@ public sealed record ListTeamMatchesQuery(Guid TeamId) : IQuery<IReadOnlyList<Ma
 internal sealed class ListTeamMatchesHandler(
     ICompetitionStore competitions,
     IMatchStore matches,
-    ITeamStore teams) : IQueryHandler<ListTeamMatchesQuery, IReadOnlyList<MatchDto>>
+    ITeamStore teams,
+    Seasons.ISeasonContext seasons) : IQueryHandler<ListTeamMatchesQuery, IReadOnlyList<MatchDto>>
 {
     public async Task<IReadOnlyList<MatchDto>> Handle(ListTeamMatchesQuery query, CancellationToken cancellationToken)
     {
-        var (_, season) = await Resolvers.SeasonOfTeamAsync(competitions, query.TeamId, cancellationToken);
+        var (_, season) = await Resolvers.SeasonOfTeamAsync(competitions, seasons, query.TeamId, cancellationToken);
 
         var list = await matches.GetTeamMatchesAsync(season.Id, query.TeamId, cancellationToken);
 

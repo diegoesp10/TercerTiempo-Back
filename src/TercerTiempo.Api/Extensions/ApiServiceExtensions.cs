@@ -1,6 +1,9 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 using TercerTiempo.Api.Infrastructure;
 using TercerTiempo.Application.Abstractions.Identity;
@@ -14,6 +17,7 @@ public static class ApiServiceExtensions
     {
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
+        services.Replace(ServiceDescriptor.Scoped<TercerTiempo.Application.Seasons.ISeasonRequest, SeasonRequest>());
 
         services.ConfigureHttpJsonOptions(options =>
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -25,6 +29,17 @@ public static class ApiServiceExtensions
         AddCors(services, configuration);
 
         services.AddOpenApiDocs(configuration);
+
+        services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
+
+        // Detrás de un proxy (Nginx del frontal en Docker): la IP y el esquema del visitante llegan en X-Forwarded-*.
+        // El proxy está en la red interna de Docker, así que no se limita a una lista de direcciones conocidas.
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.KnownIPNetworks.Clear();
+            options.KnownProxies.Clear();
+        });
 
         return services;
     }
@@ -53,9 +68,18 @@ public static class ApiServiceExtensions
                 };
             });
 
-        services.AddAuthorization(options => options.AddPolicy(AuthClaims.AdminPolicy, policy => policy
-            .RequireAuthenticatedUser()
-            .RequireClaim(AuthClaims.Admin, "true")));
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy(AuthClaims.AdminPolicy, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireClaim(AuthClaims.Admin, "true"));
+
+            // Las rutas de las cuentas no aceptan el token del administrador: son sesiones distintas que no conviven.
+            options.DefaultPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => !context.User.HasClaim(AuthClaims.Admin, "true"))
+                .Build();
+        });
     }
 
     private static void AddCors(IServiceCollection services, IConfiguration configuration)

@@ -36,7 +36,8 @@ public sealed record PerformanceDto(
     int BallLosses = 0,
     int Recoveries = 0,
     int PassesCompleted = 0,
-    int PassesAttempted = 0);
+    int PassesAttempted = 0,
+    string? PlayerPhotoUrl = null);
 
 public sealed record PerformanceWithMatchDto(PerformanceDto Performance, MatchDto Match);
 

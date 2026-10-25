@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Common;
@@ -50,8 +49,8 @@ public sealed record AdminLicenseDto(
     Guid Id,
     Guid ClubId,
     string ClubName,
-    Guid TeamId,
-    string TeamName,
+    [property: System.ComponentModel.Description("Equipos que cubre la licencia: el primer equipo y sus filiales.")]
+    IReadOnlyList<string> TeamNames,
     string State,
     bool HasAccess,
     LicensePlan EffectivePlan,
@@ -73,7 +72,6 @@ public sealed record AdminLicenseDto(
 public sealed record AdminLicensePaymentDto(
     Guid Id,
     string ClubName,
-    string TeamName,
     LicensePaymentKind Kind,
     LicensePlan Plan,
     BillingInterval Interval,
@@ -90,21 +88,29 @@ internal sealed class GetLicensesOverviewHandler(
     ILicenseStore licenses,
     IClubStore clubs,
     ITeamStore teams,
-    IOptions<LicensingOptions> options,
+    ILicensingCatalog catalog,
     TimeProvider clock) : IQueryHandler<GetLicensesOverviewQuery, LicensesOverviewDto>
 {
     public async Task<LicensesOverviewDto> Handle(GetLicensesOverviewQuery query, CancellationToken cancellationToken)
     {
-        var settings = options.Value;
+        var settings = await catalog.GetAsync(cancellationToken);
         var today = SquadAccess.Today(clock);
         var all = await licenses.GetAllAsync(cancellationToken);
         var payments = await licenses.GetAllPaymentsAsync(cancellationToken);
 
-        var teamNames = (await teams.GetByIdsAsync(all.Select(l => l.TeamId).Concat(payments.Select(p => p.TeamId)).Distinct(), cancellationToken))
-            .ToDictionary(t => t.Id, t => t.Name);
         var clubNames = new Dictionary<Guid, string>();
+        var clubTeams = new Dictionary<Guid, IReadOnlyList<Guid>>();
         foreach (var clubId in all.Select(l => l.ClubId).Concat(payments.Select(p => p.ClubId)).Distinct())
-            clubNames[clubId] = (await clubs.GetByIdAsync(clubId, cancellationToken))?.Name ?? "Club eliminado";
+        {
+            var club = await clubs.GetByIdAsync(clubId, cancellationToken);
+            clubNames[clubId] = club?.Name ?? "Club eliminado";
+            clubTeams[clubId] = club?.Teams.OrderBy(t => t.AddedAt).Select(t => t.TeamId).ToList() ?? [];
+        }
+        var teamNameById = (await teams.GetByIdsAsync(clubTeams.Values.SelectMany(ids => ids).Distinct(), cancellationToken))
+            .ToDictionary(t => t.Id, t => t.Name);
+        var teamNames = clubTeams.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<string>)pair.Value.Select(id => teamNameById.GetValueOrDefault(id)).OfType<string>().ToList());
 
         var paidByLicense = payments.Where(p => p.IsPaid).GroupBy(p => p.LicenseId)
             .ToDictionary(g => g.Key, g => (Total: g.Sum(p => p.AmountCents), Last: g.Max(p => p.PaidAt)));
@@ -113,7 +119,6 @@ internal sealed class GetLicensesOverviewHandler(
             .Select(license => ToDto(license, settings, today, clubNames, teamNames, paidByLicense.GetValueOrDefault(license.Id)))
             .OrderBy(r => StateOrder(r.State))
             .ThenBy(r => r.ClubName)
-            .ThenBy(r => r.TeamName)
             .ToList();
 
         var monthly = all
@@ -140,7 +145,6 @@ internal sealed class GetLicensesOverviewHandler(
             .Select(p => new AdminLicensePaymentDto(
                 p.Id,
                 clubNames.GetValueOrDefault(p.ClubId, "Club eliminado"),
-                teamNames.GetValueOrDefault(p.TeamId, "Equipo desconocido"),
                 p.Kind, p.Plan, p.Interval, p.AmountCents, p.PeriodPriceCents, p.Status, p.Provider, p.CreatedAt, p.PaidAt))
             .ToList();
 
@@ -148,11 +152,11 @@ internal sealed class GetLicensesOverviewHandler(
     }
 
     internal static AdminLicenseDto ToDto(
-        TeamLicense license,
-        LicensingOptions settings,
+        ClubLicense license,
+        LicensingSettings settings,
         DateOnly today,
         IReadOnlyDictionary<Guid, string> clubNames,
-        IReadOnlyDictionary<Guid, string> teamNames,
+        IReadOnlyDictionary<Guid, IReadOnlyList<string>> teamNames,
         (int Total, DateTimeOffset? Last) paid)
     {
         var status = license.StatusOn(today);
@@ -168,8 +172,7 @@ internal sealed class GetLicensesOverviewHandler(
             license.Id,
             license.ClubId,
             clubNames.GetValueOrDefault(license.ClubId, "Club eliminado"),
-            license.TeamId,
-            teamNames.GetValueOrDefault(license.TeamId, "Equipo desconocido"),
+            teamNames.GetValueOrDefault(license.ClubId, []),
             state,
             status != LicenseStatus.Expired,
             license.EffectivePlan,
@@ -189,7 +192,7 @@ internal sealed class GetLicensesOverviewHandler(
             license.Provider);
     }
 
-    private static string StateOf(TeamLicense license, LicenseStatus status, DateOnly today) => status switch
+    private static string StateOf(ClubLicense license, LicenseStatus status, DateOnly today) => status switch
     {
         LicenseStatus.Trial => license.Plan is null ? LicenseBillingState.Trial : LicenseBillingState.TrialWithPlan,
         LicenseStatus.Active when license.RenewsOn is { } renews && renews <= today => LicenseBillingState.Grace,

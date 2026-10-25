@@ -290,7 +290,7 @@ public class PlayerInvitationTests
             var tokens = Stub<ITokenService>((_, args) => new AuthToken("token", DateTimeOffset.UtcNow.AddHours(1)));
             var appointments = Stub<ICoachAppointmentStore>((method, _) => throw new NotSupportedException(method));
             var licenses = Licenses();
-            var stores = new AccountStores(Players, Coaches, Clubs, appointments, Squads, Teams, Competitions, licenses, TimeProvider.System);
+            var stores = new AccountStores(Players, Coaches, Clubs, appointments, Squads, Teams, Competitions, licenses, TimeProvider.System, new NoSeasons());
             var invitations = Stub<TercerTiempo.Domain.Clubs.IClubInvitationStore>((_, _) => Task.FromResult<TercerTiempo.Domain.Clubs.ClubInvitation?>(null));
             var registration = Microsoft.Extensions.Options.Options.Create(new TercerTiempo.Application.Clubs.Invitations.RegistrationOptions { ClubInviteRequired = clubInviteRequired });
             return new RegisterHandler(identity, stores, new AppointmentRedemption(appointments, Squads, Teams, licenses), invitations, registration, Unit, tokens);

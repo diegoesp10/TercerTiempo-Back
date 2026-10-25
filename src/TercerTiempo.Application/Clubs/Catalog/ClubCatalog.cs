@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Teams;
 using System.ComponentModel;
 using System.Text.RegularExpressions;
 using TercerTiempo.Application.Abstractions.Messaging;
@@ -11,7 +12,9 @@ namespace TercerTiempo.Application.Clubs.Catalog;
 public sealed record ClubCatalogDto(
     string Name,
     bool Registered,
-    IReadOnlyList<ClubCatalogTeamDto> Teams);
+    IReadOnlyList<ClubCatalogTeamDto> Teams,
+    [property: Description("Escudo del primer equipo del club.")]
+    string? CrestUrl = null);
 
 public sealed record ClubCatalogTeamDto(Guid Id, string Name, string? CompetitionName);
 
@@ -34,7 +37,8 @@ internal sealed class GetClubCatalogHandler(AccountStores stores) : IQueryHandle
             .Select(entry => new ClubCatalogDto(
                 entry.Name,
                 registered.Contains(entry.NormalizedName),
-                entry.Teams.Select(t => new ClubCatalogTeamDto(t.Team.Id, t.Team.Name, t.CompetitionName)).ToList()))
+                entry.Teams.Select(t => new ClubCatalogTeamDto(t.Team.Id, t.Team.Name, t.CompetitionName)).ToList(),
+                entry.Teams[0].Team.CrestLink()))
             .ToList();
     }
 }
@@ -59,6 +63,15 @@ internal static partial class ClubCatalog
         var teams = await stores.Teams.GetAllAsync(cancellationToken);
         return Build(teams.Select(t => new CatalogTeam(t, competitionByTeam.GetValueOrDefault(t.Id))));
     }
+
+    public static ClubCatalogEntry? ForTeam(IReadOnlyList<ClubCatalogEntry> catalog, Guid teamId) =>
+        catalog.FirstOrDefault(entry => entry.Teams.Any(t => t.Team.Id == teamId));
+
+    // El club del catálogo de una cuenta de club: el de su nombre (se elige del catálogo al darse de alta) o, si el
+    // proveedor lo ha renombrado, el de alguno de sus equipos.
+    public static ClubCatalogEntry? ForClub(IReadOnlyList<ClubCatalogEntry> catalog, Domain.Clubs.Club club) =>
+        catalog.FirstOrDefault(entry => entry.NormalizedName == club.NormalizedName)
+        ?? club.Teams.Select(t => ForTeam(catalog, t.TeamId)).FirstOrDefault(entry => entry is not null);
 
     public static IReadOnlyList<ClubCatalogEntry> Build(IEnumerable<CatalogTeam> teams)
     {

@@ -1,0 +1,52 @@
+# Entorno de desarrollo: la API en Development (referencia /docs, errores detallados, clave JWT de desarrollo de
+# appsettings.Development.json). La base de datos es una de dos (Start-Docker.ps1 -Database):
+#   Local      el SQL Server de Windows del equipo (la misma base que usa Visual Studio), por host.docker.internal con
+#              un login SQL (scripts/local-sql-login.sql); no se levanta ningún SQL en Docker.
+#   Container  un SQL Server propio en el contenedor tercer-tiempo-db (perfil "container-db"), accesible desde SSMS en
+#              127.0.0.1:${TT_SQL_PORT}.
+# Las variables salen de .env.development, que Start-Docker.ps1 genera la primera vez.
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.development}"
+      Admin__Password: "${TT_ADMIN_PASSWORD:-}"
+      # Minutos entre scrapeos automáticos (0 = solo a mano desde /jobs). Con la base local, Start-Docker.ps1 los pone a
+      # 0 para no duplicar los de la API de Visual Studio, que comparte la misma base.
+      FootballData__SyncIntervalMinutes: "${TT_SYNC_MINUTES:-60}"
+      OfficialSheets__BackgroundScanMinutes: "${TT_SHEETS_MINUTES:-60}"
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
+
+  db:
+    profiles:
+      - container-db
+    image: "${TT_SQL_IMAGE:-mcr.microsoft.com/mssql/server:2022-latest}"
+    container_name: tercer-tiempo-db
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: "${TT_SQL_PASSWORD:-}"
+      TZ: Europe/Madrid
+      # SQL Server se queda con casi toda la memoria que ve si no se le limita.
+      MSSQL_MEMORY_LIMIT_MB: "${TT_SQL_MEMORY_MB:-1024}"
+    mem_limit: "${TT_SQL_CONTAINER_MEMORY:-1536m}"
+    ports:
+      - "127.0.0.1:${TT_SQL_PORT:-14333}:1433"
+    volumes:
+      - sql-data:/var/opt/mssql
+    networks:
+      - tercertiempo
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  sql-data:
+    name: tercer-tiempo-dev-sql

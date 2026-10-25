@@ -47,7 +47,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<OfficialSheetLine> OfficialSheetLines => Set<OfficialSheetLine>();
     public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();
     public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
-    public DbSet<TeamLicense> TeamLicenses => Set<TeamLicense>();
+    public DbSet<ClubLicense> ClubLicenses => Set<ClubLicense>();
+    public DbSet<LicensingSettings> LicensingSettings => Set<LicensingSettings>();
+    public DbSet<TercerTiempo.Domain.Privacy.CookieDefinition> CookieDefinitions => Set<TercerTiempo.Domain.Privacy.CookieDefinition>();
+    public DbSet<TercerTiempo.Domain.Privacy.CookiePolicy> CookiePolicies => Set<TercerTiempo.Domain.Privacy.CookiePolicy>();
+    public DbSet<TercerTiempo.Domain.Privacy.CookieConsent> CookieConsents => Set<TercerTiempo.Domain.Privacy.CookieConsent>();
+    public DbSet<TercerTiempo.Domain.Privacy.AnalyticsEvent> AnalyticsEvents => Set<TercerTiempo.Domain.Privacy.AnalyticsEvent>();
+    public DbSet<TercerTiempo.Domain.Competitions.SeasonYear> SeasonYears => Set<TercerTiempo.Domain.Competitions.SeasonYear>();
+    public DbSet<TercerTiempo.Domain.Competitions.FootballSyncSettings> FootballSyncSettings => Set<TercerTiempo.Domain.Competitions.FootballSyncSettings>();
     public DbSet<LicensePayment> LicensePayments => Set<LicensePayment>();
     public DbSet<VideoPurchase> VideoPurchases => Set<VideoPurchase>();
     public DbSet<VideoUploadSession> VideoUploads => Set<VideoUploadSession>();

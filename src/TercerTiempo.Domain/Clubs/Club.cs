@@ -53,6 +53,8 @@ public sealed class Club : AggregateRoot
     {
         var team = _teams.FirstOrDefault(t => t.TeamId == teamId)
             ?? throw new DomainException(ErrorCode.ClubTeamNotInClub);
+        if (_teams.Count == 1)
+            throw new DomainException(ErrorCode.ClubLastTeam);
 
         _teams.Remove(team);
     }

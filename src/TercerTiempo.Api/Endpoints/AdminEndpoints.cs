@@ -31,15 +31,68 @@ internal static class AdminEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        group.MapPut("/seasons/{seasonYearId:guid}/current", (Guid seasonYearId, IAdminRepository admin, CancellationToken ct) => admin.SetCurrentSeasonAsync(seasonYearId, ct))
+            .WithName("SetCurrentSeason")
+            .WithSummary("Cambiar la temporada actual")
+            .WithDescription("La temporada actual es la que ve quien no elige otra y la única en la que se puede editar (plantillas de club, nombramientos). La sincronización la cambia sola al empezar una temporada nueva. Solo administradores.")
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapGet("/football-sync", (IAdminRepository admin, CancellationToken ct) => admin.GetFootballSyncSettingsAsync(ct))
+            .WithName("GetFootballSyncSettings")
+            .WithSummary("Qué descarga la sincronización de las ligas")
+            .WithDescription("La pasada automática (CurrentRound: solo la jornada en curso, de hoy menos daysBack a hoy más daysAhead; FullSeason: la temporada entera), si la jornada lleva plantillas, cada cuántos días toca la pasada completa y cuándo fue la última, la jornada en curso de hoy y las ligas sincronizadas. Solo administradores.");
+
+        group.MapPut("/football-sync", (UpdateFootballSyncSettingsCommand command, IAdminRepository admin, CancellationToken ct) => admin.UpdateFootballSyncSettingsAsync(command, ct))
+            .WithName("UpdateFootballSyncSettings")
+            .WithSummary("Cambiar la sincronización automática de las ligas")
+            .WithDescription("Se aplica desde la siguiente pasada. La pasada automática solo puede ser CurrentRound o FullSeason (unas fechas fijas se quedarían viejas). Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPost("/football-sync/run", (RunFootballSyncCommand command, IAdminRepository admin, CancellationToken ct) => admin.RunFootballSyncAsync(command, ct))
+            .WithName("RunFootballSync")
+            .WithSummary("Sincronizar ahora las ligas, eligiendo qué")
+            .WithDescription("scope: CurrentRound (la jornada en curso de los ajustes), DateRange (de from a to, hasta 366 días) o FullSeason. competitionIds limita a esas ligas (vacío = todas). includeRosters descarga también el catálogo de jugadores (por defecto: sí en la temporada completa; en la jornada, lo de los ajustes; en fechas, no). Con fechas solo se tocan los partidos de esos días, sus clasificaciones y los equipos nuevos; los partidos ocultos por la API solo se releen si ya estaban guardados. 409 si ya está en marcha. Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapGet("/live-downloads", (IAdminRepository admin, CancellationToken ct) => admin.GetLiveDownloadsAsync(ct))
+            .WithName("GetLiveDownloads")
+            .WithSummary("Descargas en directo")
+            .WithDescription("Lo que está descargando (o descargó por última vez) la sincronización de las ligas: cada liga con su fase y sus cifras y los últimos partidos, equipos, clasificaciones y plantillas tocados. Y la cola de actas pedidas a la federación: cada partido con su estado, los límites de asturfutbol.es (hora y día), la pausa si la hay y cuándo terminaría. Solo administradores.");
+
+        group.MapPost("/sheet-downloads/cancel", (bool? onlyFinished, IAdminRepository admin, CancellationToken ct) => admin.CancelSheetDownloadsAsync(onlyFinished ?? false, ct))
+            .WithName("CancelSheetDownloads")
+            .WithSummary("Vaciar la cola de actas")
+            .WithDescription("Quita de la cola las actas pendientes (onlyFinished=true: solo limpia la lista de las ya terminadas). Devuelve cuántas filas se quitan. Solo administradores.");
+
         group.MapGet("/licenses", (IAdminRepository admin, CancellationToken ct) => admin.GetLicensesAsync(ct))
             .WithName("GetLicensesOverview")
             .WithSummary("Licencias y cobros de todos los clubes")
             .WithDescription("Cada licencia con su estado de cobro (trial, trial-plan, active, grace, unpaid, cancelled, trial-ended), si da acceso, el plan, la próxima renovación y su importe, lo que debe y desde cuándo, y lo cobrado; un resumen (en prueba, al día, en gracia, impagadas, lo que se debe, lo cobrado y el ingreso mensual recurrente) y los últimos pagos. Solo administradores.");
 
+        group.MapGet("/licensing-settings", (IAdminRepository admin, CancellationToken ct) => admin.GetLicensingSettingsAsync(ct))
+            .WithName("GetLicensingSettings")
+            .WithSummary("Planes, precios y prueba de las licencias")
+            .WithDescription("Moneda, días de prueba y, por plan (Basic, Premium), precio mensual y anual en céntimos con IVA, técnicos admitidos e ids de precio de Stripe. provider es la pasarela del entorno (configuración, no editable aquí). Solo administradores.");
+
+        group.MapPut("/licensing-settings", (UpdateLicensingSettingsCommand command, IAdminRepository admin, CancellationToken ct) => admin.UpdateLicensingSettingsAsync(command, ct))
+            .WithName("UpdateLicensingSettings")
+            .WithSummary("Cambiar planes, precios y prueba de las licencias")
+            .WithDescription("Sustituye la moneda, los días de prueba y los dos planes. Vale para las altas, pruebas y renovaciones nuevas: las suscripciones ya creadas en Stripe siguen cobrando su precio hasta que se cambie su renovación (con la pasarela simulada, la próxima renovación ya cobra el precio nuevo). Premium no puede admitir menos técnicos que Básica; los ids de Stripe empiezan por price_. Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
         group.MapGet("/club-invitations", (IAdminRepository admin, CancellationToken ct) => admin.GetClubInvitationsAsync(ct))
             .WithName("GetClubInvitations")
             .WithSummary("Invitaciones de clubes a la beta")
             .WithDescription("Todas, de la más reciente a la más antigua, con su estado (available, used, expired, revoked) y el club que la usó. Solo administradores.");
+
+        group.MapGet("/club-invitations/clubs", (string? q, IAdminRepository admin, CancellationToken ct) => admin.SearchInvitationClubsAsync(q, ct))
+            .WithName("SearchInvitationClubs")
+            .WithSummary("Buscar clubes para invitarlos")
+            .WithDescription("Hasta 20 clubes del catálogo cuyo nombre o el de uno de sus equipos contiene q (sin tildes ni mayúsculas; desde 2 letras), con sus equipos y ligas, la cuenta si ya se han dado de alta y su invitación (la disponible o, si no, la última). teamId es el que se manda al crear la invitación. Solo administradores.");
 
         group.MapPost("/club-invitations", (CreateClubInvitationCommand command, IAdminRepository admin, CancellationToken ct) => admin.CreateClubInvitationAsync(command, ct))
             .WithName("CreateClubInvitation")

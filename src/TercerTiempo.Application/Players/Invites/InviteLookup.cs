@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Teams;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Domain.Common.Errors;
@@ -24,6 +25,7 @@ internal static class InviteLookup
         var team = await teams.GetByIdAsync(match.Squad.TeamId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.TeamNotFound, match.Squad.TeamId);
         var (competition, season) = await Resolvers.SeasonOfSquadAsync(competitions, match.Squad, cancellationToken);
-        return new SquadInviteDto(match.Squad.Id, team.Name, competition.Name, season.Label, SquadMapper.ToPlayerDto(match.Entry, null));
+        return new SquadInviteDto(
+            match.Squad.Id, team.Name, competition.Name, season.Label, SquadMapper.ToPlayerDto(match.Entry, null), team.Id, team.CrestLink());
     }
 }

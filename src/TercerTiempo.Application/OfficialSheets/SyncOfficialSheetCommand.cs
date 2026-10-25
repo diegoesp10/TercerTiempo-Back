@@ -15,7 +15,10 @@ namespace TercerTiempo.Application.OfficialSheets;
 // Completa el acta pública desde el proceso en segundo plano (Background = true). Se consultan las webs en el orden de
 // OfficialSheets:Sources y vale la primera que la tenga completa; FederationAllowed = false se salta la federación.
 // Force se conserva por compatibilidad; nunca evita la lectura previa de SQL ni los límites de descarga.
-public sealed record SyncOfficialSheetCommand(Guid MatchId, bool Force = false, bool Background = false, bool FederationAllowed = true) : ICommand<OfficialSheetDto>;
+// StopWhenThrottled: si una web está en pausa no se sigue con la siguiente, se lanza la pausa (la cola pedida desde la
+// administración espera a que acabe en lugar de dar el acta por no publicada).
+public sealed record SyncOfficialSheetCommand(
+    Guid MatchId, bool Force = false, bool Background = false, bool FederationAllowed = true, bool StopWhenThrottled = false) : ICommand<OfficialSheetDto>;
 
 internal sealed class SyncOfficialSheetValidator : AbstractValidator<SyncOfficialSheetCommand>
 {
@@ -70,14 +73,15 @@ internal sealed class SyncOfficialSheetHandler(
             {
                 fetch = await source.FetchAsync(match, competition, season, sheet, cancellationToken);
             }
-            catch (ProviderThrottledException ex)
+            catch (ProviderThrottledException ex) when (!command.StopWhenThrottled)
             {
                 // Esa web está en pausa: se prueba la siguiente; esta volverá a intentarse en la próxima comprobación.
                 logger.LogInformation("{Provider}: en pausa ({Message}); se prueba la siguiente web para el partido {MatchId}", source.Name, ex.Message, match.Id);
                 unreachable = true;
                 continue;
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested
+                && !(ex is ProviderThrottledException && command.StopWhenThrottled))
             {
                 logger.LogWarning(ex, "{Provider}: no se pudo consultar el acta del partido {MatchId}", source.Name, match.Id);
                 unreachable = true;

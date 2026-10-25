@@ -73,4 +73,6 @@ public sealed record SquadInviteDto(
     string TeamName,
     string CompetitionName,
     string SeasonLabel,
-    SquadPlayerDto Player);
+    SquadPlayerDto Player,
+    Guid TeamId,
+    string? TeamCrestUrl);

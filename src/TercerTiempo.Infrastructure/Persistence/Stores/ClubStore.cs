@@ -8,6 +8,9 @@ internal sealed class ClubStore(AppDbContext db) : IClubStore
     public Task<Club?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         db.Clubs.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
+    public async Task<IReadOnlyList<Club>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        await db.Clubs.AsNoTracking().OrderBy(c => c.Name).ToListAsync(cancellationToken);
+
     public Task<Club?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
         db.Clubs.FirstOrDefaultAsync(c => c.UserId == userId, cancellationToken);
 

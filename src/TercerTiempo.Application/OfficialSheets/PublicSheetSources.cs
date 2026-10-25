@@ -23,7 +23,7 @@ public sealed class PublicSheetOptions
     public IReadOnlyList<string> EnabledSources =>
         (Sources is { Length: > 0 } ? Sources : DefaultSources).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-    // Las actas guardadas de una web que se quita de Sources dejan de mostrarse (p. ej. las que se bajaron de BeSoccer, que ya no se usa).
+    // Las actas guardadas de una web que se quita de Sources dejan de mostrarse.
     public bool Allows(string provider) => EnabledSources.Contains(provider, StringComparer.OrdinalIgnoreCase);
 }
 

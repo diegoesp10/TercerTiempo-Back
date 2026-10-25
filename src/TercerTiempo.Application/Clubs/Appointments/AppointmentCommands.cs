@@ -40,7 +40,7 @@ internal sealed class CreateAppointmentHandler(
     ICurrentUser currentUser,
     AccountStores stores,
     LicenseDescriber licenses,
-    IOptions<LicensingOptions> licensing,
+    ILicensingCatalog licensing,
     IUnitOfWork unitOfWork) : ICommandHandler<CreateAppointmentCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(CreateAppointmentCommand command, CancellationToken cancellationToken)
@@ -50,7 +50,8 @@ internal sealed class CreateAppointmentHandler(
         if (!club.Manages(command.TeamId))
             throw new ForbiddenException(ErrorCode.ClubTeamNotLinked);
 
-        var (_, season) = await Resolvers.SeasonOfTeamAsync(stores.Competitions, command.TeamId, cancellationToken);
+        await stores.Seasons.EnsureEditableAsync(cancellationToken);
+        var (_, season) = await Resolvers.SeasonOfTeamAsync(stores.Competitions, stores.Seasons, command.TeamId, cancellationToken);
         var today = SquadAccess.Today(stores.Clock);
         var validUntil = command.ValidUntil ?? season.EndsOn;
 
@@ -60,11 +61,11 @@ internal sealed class CreateAppointmentHandler(
         if (validUntil < today)
             throw new ConflictException(ErrorCode.AppointmentValidityPast);
 
-        // Sin licencia vigente no se nombra a nadie; con ella, el plan limita cuántos técnicos tiene el equipo.
-        var license = await stores.Licenses.EnsureForTeamAsync(club, command.TeamId, cancellationToken);
+        // Sin licencia vigente no se nombra a nadie; con ella, el plan limita cuántos técnicos tiene cada equipo del club.
+        var license = await stores.Licenses.EnsureForClubAsync(club, cancellationToken);
         if (!license.IsActiveOn(SquadAccess.Today(stores.Clock)))
             throw new ForbiddenException(ErrorCode.LicenseRequired);
-        var limit = licensing.Value.For(license.StaffPlan).MaxStaff;
+        var limit = (await licensing.GetAsync(cancellationToken)).For(license.StaffPlan).MaxStaff;
         if (await licenses.StaffCountAsync(command.TeamId, cancellationToken) >= limit)
             throw new ConflictException(ErrorCode.LicenseStaffLimit, LicenseTexts.Plan(license.StaffPlan), LicenseTexts.Staff(limit));
 

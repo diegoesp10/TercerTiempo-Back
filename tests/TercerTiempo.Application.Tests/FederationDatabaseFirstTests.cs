@@ -147,6 +147,95 @@ public class FederationDatabaseFirstTests
         Assert.Equal([new PlannedSheet(withSquad.Id, true)], await handler.Handle(new(20), default));
     }
 
+    [Fact]
+    public async Task Requested_sheets_are_the_played_matches_of_the_scope_without_a_saved_sheet_in_round_order()
+    {
+        var competition = Competition.Create("Liga", "Primera", CompetitionLevel.Regional, 1, null, "Asturias", null);
+        var season = competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
+        competition.MarkCurrent(season.Id);
+        var other = Competition.Create("Otra", "Segunda", CompetitionLevel.Regional, 2, null, "Asturias", null);
+        var otherSeason = other.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
+        other.MarkCurrent(otherSeason.Id);
+
+        var (saved, sheet) = CompletedSheet(season.Id);
+        var round2 = Match.Schedule(season.Id, 2, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(-3), null, null);
+        var round1 = Match.Schedule(season.Id, 1, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(-10), null, null);
+        var future = Match.Schedule(season.Id, 3, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(4), null, null);
+        var cancelled = Match.Schedule(season.Id, 1, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(-10), null, null);
+        cancelled.Cancel();
+        var otherLeague = Match.Schedule(otherSeason.Id, 1, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(-3), null, null);
+
+        List<Guid> requested = [];
+        var signalled = false;
+        var handler = new RequestSheetDownloadsHandler(
+            Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition, other])),
+            Stub<IMatchStore>((_, args) => Task.FromResult<IReadOnlyList<Match>>(
+                (Guid)args![0]! == season.Id ? [saved, round2, round1, future, cancelled] : [otherLeague])),
+            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([sheet])),
+            Stub<ISheetDownloadStore>((method, args) =>
+            {
+                requested.AddRange((IReadOnlyList<Guid>)args![0]!);
+                return Task.FromResult(requested.Count);
+            }),
+            new FakeSignal(() => signalled = true),
+            TimeProvider.System);
+
+        var scope = TercerTiempo.Application.Sync.SyncScope.FullSeason([competition.Id]) with { IncludeSheets = true };
+        Assert.Equal(2, await handler.Handle(new(scope), default));
+        Assert.Equal([round1.Id, round2.Id], requested);
+        Assert.True(signalled);
+    }
+
+    [Fact]
+    public async Task A_requested_sheet_waits_for_a_paused_federation_instead_of_giving_up()
+    {
+        var competition = Competition.Create("Liga", "Primera", CompetitionLevel.Regional, 1, null, "Asturias", null);
+        var season = competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
+        var match = Match.Schedule(season.Id, 1, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(-2), null, null);
+        SyncOfficialSheetHandler Handler() => new(
+            [new ThrottledSource()], Options.Create(new PublicSheetOptions()),
+            Stub<IMatchStore>((_, _) => Task.FromResult<Match?>(match)),
+            Stub<ICompetitionStore>((_, _) => Task.FromResult<Competition?>(competition)),
+            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<OfficialMatchSheet?>(null)),
+            Stub<TercerTiempo.Domain.Common.IUnitOfWork>((_, _) => Task.FromResult(0)),
+            new OfficialSheetSyncMemory(), TimeProvider.System, NullLogger<SyncOfficialSheetHandler>.Instance);
+
+        // La pasada general sigue (y lo intentará otro día); la cola pedida se para hasta que acabe la pausa.
+        Assert.Equal(OfficialSheetAvailability.Pending, (await Handler().Handle(new(match.Id, Background: true), default)).Status);
+        var paused = await Assert.ThrowsAsync<ProviderThrottledException>(() => Handler().Handle(new(match.Id, Background: true, StopWhenThrottled: true), default));
+        Assert.Equal(Now.AddHours(5), paused.RetryAt);
+    }
+
+    private sealed class ThrottledSource : IPublicSheetSource
+    {
+        public string Name => "asturfutbol";
+        public bool IsFederation => true;
+
+        public Task<SheetFetch?> FetchAsync(Match match, Competition competition, Season season, OfficialMatchSheet? current, CancellationToken cancellationToken) =>
+            throw new ProviderThrottledException("asturfutbol", "En pausa", Now.AddHours(5));
+    }
+
+    [Fact]
+    public void Queue_estimate_respects_the_hourly_and_daily_limits_of_the_federation()
+    {
+        var start = new DateTimeOffset(2026, 10, 25, 10, 0, 0, TimeSpan.Zero);
+
+        // 20 por hora: 30 peticiones son una hora entera y diez más de la siguiente.
+        var finish = TercerTiempo.Application.Admin.GetLiveDownloadsHandler.EstimateFinish(30, start, null, null, 0, 20, 0, 60);
+        Assert.Equal(start.AddHours(1).AddMinutes(5), finish);
+
+        // Con el tope del día gastado, se sigue al día siguiente; con pausa, desde su final.
+        Assert.Equal(new DateTimeOffset(2026, 10, 26, 0, 2, 30, TimeSpan.Zero),
+            TercerTiempo.Application.Admin.GetLiveDownloadsHandler.EstimateFinish(5, start, null, null, 0, 20, 60, 60));
+        Assert.Equal(start.AddHours(5).AddSeconds(30),
+            TercerTiempo.Application.Admin.GetLiveDownloadsHandler.EstimateFinish(1, start, start.AddHours(5), null, 18, 20, 59, 60));
+    }
+
+    private sealed class FakeSignal(Action onSignal) : ISheetDownloadSignal
+    {
+        public void Signal() => onSignal();
+    }
+
     private static readonly IPublicSheetSource[] AllSources = [new FakeSource("otra-web", isFederation: false), new FakeSource("asturfutbol", isFederation: true)];
 
     private static OfficialSheetData ParsedFixture()

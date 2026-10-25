@@ -14,8 +14,12 @@ internal sealed class AuthRepository(
     ICommandHandler<RegisterCommand, AuthResponse> register,
     ICommandHandler<LoginCommand, AuthResponse> login,
     IQueryHandler<GetMyAccountQuery, AccountDto> getMyAccount,
-    IQueryHandler<GetRegistrationOptionsQuery, RegistrationOptionsDto> registrationOptions) : IAuthRepository
+    IQueryHandler<GetRegistrationOptionsQuery, RegistrationOptionsDto> registrationOptions,
+    IQueryHandler<GetClubInvitationQuery, ClubInvitationLookupDto> clubInvitation) : IAuthRepository
 {
+    public Task<ClubInvitationLookupDto> GetClubInvitationAsync(string code, CancellationToken cancellationToken = default) =>
+        clubInvitation.Handle(new GetClubInvitationQuery(code), cancellationToken);
+
     public Task<SquadInviteDto> GetInviteAsync(string inviteCode, CancellationToken cancellationToken = default) =>
         getInvite.Handle(new GetInviteQuery(inviteCode), cancellationToken);
 

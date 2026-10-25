@@ -92,6 +92,12 @@ public static class DependencyInjection
         services.AddScoped<IVideoUploadStore, VideoUploadStore>();
         services.AddScoped<IVideoShareStore, VideoShareStore>();
         services.AddScoped<ILicenseStore, LicenseStore>();
+        services.AddScoped<ILicensingSettingsStore, TercerTiempo.Infrastructure.Licensing.LicensingSettingsStore>();
+        services.AddScoped<TercerTiempo.Domain.Competitions.IFootballSyncSettingsStore, FootballData.FootballSyncSettingsStore>();
+        services.AddScoped<TercerTiempo.Domain.Competitions.ISeasonYearStore, Persistence.Stores.SeasonYearStore>();
+        services.AddScoped<TercerTiempo.Domain.Privacy.ICookieStore, Privacy.CookieStore>();
+        services.AddScoped<TercerTiempo.Domain.Privacy.IAnalyticsStore, Privacy.AnalyticsStore>();
+        services.AddScoped<TercerTiempo.Application.Privacy.IAnalyticsReports, Privacy.AnalyticsReports>();
     }
 
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)
@@ -162,6 +168,8 @@ public static class DependencyInjection
         // Actas oficiales: cola en memoria y proceso en segundo plano que las descarga y guarda.
         services.AddSingleton<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>();
         services.AddSingleton<TercerTiempo.Application.OfficialSheets.IOfficialSheetQueue>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
+        services.AddSingleton<TercerTiempo.Application.OfficialSheets.ISheetDownloadSignal>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
+        services.AddScoped<TercerTiempo.Application.OfficialSheets.ISheetDownloadStore, TercerTiempo.Infrastructure.OfficialSheets.SheetDownloadStore>();
         services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetSyncWorker>();
     }
 

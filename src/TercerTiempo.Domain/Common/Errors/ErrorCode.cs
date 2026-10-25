@@ -32,6 +32,7 @@ public static class ErrorCode
     public const string JobNotFound = "job.not_found";
     public const string JobAlreadyRunning = "job.already_running";
     public const string JobDisabled = "job.disabled";
+    public const string SyncScheduledScopeInvalid = "sync.scheduled_scope_invalid";
     public const string AuthEmailTaken = "auth.email_taken";
     public const string AuthPositionRequired = "auth.position_required";
     public const string AuthAccessCodeRequired = "auth.access_code_required";
@@ -41,6 +42,7 @@ public static class ErrorCode
     public const string AuthClubAlreadyRegistered = "auth.club_already_registered";
     public const string AuthClubInviteRequired = "auth.club_invite_required";
     public const string AuthClubInviteInvalid = "auth.club_invite_invalid";
+    public const string AuthClubInviteOtherClub = "auth.club_invite_other_club";
     public const string ClubInvitationNotFound = "club_invitation.not_found";
     public const string ClubInvitationAlreadyUsed = "club_invitation.already_used";
     public const string AuthPlayerAccountRequired = "auth.player_account_required";
@@ -72,6 +74,11 @@ public static class ErrorCode
     public const string CompetitionSeasonDates = "competition.season_dates";
     public const string CompetitionSeasonExists = "competition.season_exists";
     public const string CompetitionSeasonMismatch = "competition.season_mismatch";
+    public const string SeasonNotFound = "season.not_found";
+    public const string SeasonClosed = "season.closed";
+    public const string CookieInvalid = "cookie.invalid";
+    public const string CookieVisitorInvalid = "cookie.visitor_invalid";
+    public const string CookieNotFound = "cookie.not_found";
     public const string LeagueCompetitionRequired = "league.competition_required";
     public const string MatchdayNotFound = "matchday.not_found";
     public const string MatchNotFound = "match.not_found";
@@ -90,7 +97,8 @@ public static class ErrorCode
     public const string ClubTeamNotLinked = "club.team_not_linked";
     public const string ClubTeamAlreadyInClub = "club.team_already_in_club";
     public const string ClubTeamNotInClub = "club.team_not_in_club";
-    public const string ClubTeamNameMismatch = "club.team_name_mismatch";
+    public const string ClubTeamNotFilial = "club.team_not_filial";
+    public const string ClubLastTeam = "club.last_team";
     public const string ClubTeamLinkedElsewhere = "club.team_linked_elsewhere";
     public const string ClubCrestOwnTeamsOnly = "club.crest_own_teams_only";
     public const string ClubCrestInvalid = "club.crest_invalid";
@@ -163,6 +171,7 @@ public static class ErrorCode
     public const string SheetShotsOnTarget = "sheet.shots_on_target";
     public const string SheetPassesCompleted = "sheet.passes_completed";
     public const string TeamStatsSetPieceGoals = "team_stats.set_piece_goals";
+    public const string TeamStatsPenaltyGoals = "team_stats.penalty_goals";
     public const string SheetTwoYellows = "sheet.two_yellows";
     public const string SheetNoMinutes = "sheet.no_minutes";
     public const string SheetNotesTooLong = "sheet.notes_too_long";
@@ -177,6 +186,9 @@ public static class ErrorCode
     public const string LicenseViewerRequired = "license.viewer_required";
     public const string LicenseNotFound = "license.not_found";
     public const string LicensePlanInvalid = "license.plan_invalid";
+    public const string LicensingCurrencyInvalid = "licensing.currency_invalid";
+    public const string LicensingPlanOrder = "licensing.plan_order";
+    public const string LicensingStripePriceInvalid = "licensing.stripe_price_invalid";
     public const string LicenseStaffLimit = "license.staff_limit";
     public const string LicensePlanTooSmall = "license.plan_too_small";
     public const string LicenseSubscriptionActive = "license.subscription_active";

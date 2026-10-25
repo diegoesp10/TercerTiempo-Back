@@ -1,0 +1,44 @@
+# Entorno de publicación: la API en Production (sin /docs, errores sin detalle) con todos los secretos fuera del
+# repositorio, en .env.production (ver .env.example). La base de datos es externa (TT_DB_CONNECTION) o, con el perfil
+# "database", un SQL Server en este mismo equipo sin puertos publicados:
+#   docker compose -f compose.yaml -f compose.production.yaml --env-file .env.production --profile database up -d
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.production}"
+      Jwt__Key: "${TT_JWT_KEY:?Falta TT_JWT_KEY en .env.production (al menos 32 caracteres)}"
+      Admin__Password: "${TT_ADMIN_PASSWORD:?Falta TT_ADMIN_PASSWORD en .env.production}"
+      Cors__AllowedOrigins__0: "${TT_PUBLIC_URL:?Falta TT_PUBLIC_URL en .env.production}"
+      Licensing__Provider: "${TT_LICENSING_PROVIDER:-mock}"
+      Licensing__Stripe__SecretKey: "${TT_STRIPE_SECRET_KEY:-}"
+      Licensing__Stripe__WebhookSecret: "${TT_STRIPE_WEBHOOK_SECRET:-}"
+
+  db:
+    profiles:
+      - database
+    image: "${TT_SQL_IMAGE:-mcr.microsoft.com/mssql/server:2022-latest}"
+    container_name: tercer-tiempo-db
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "${TT_SQL_EDITION:-Express}"
+      MSSQL_SA_PASSWORD: "${TT_SQL_PASSWORD:-}"
+      TZ: Europe/Madrid
+      # SQL Server se queda con casi toda la memoria que ve si no se le limita.
+      MSSQL_MEMORY_LIMIT_MB: "${TT_SQL_MEMORY_MB:-2048}"
+    mem_limit: "${TT_SQL_CONTAINER_MEMORY:-2560m}"
+    volumes:
+      - sql-data:/var/opt/mssql
+    networks:
+      - tercertiempo
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  sql-data:
+    name: tercer-tiempo-sql

@@ -211,6 +211,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid?>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset?>("UsedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -220,6 +223,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Code")
                         .IsUnique();
+
+                    b.HasIndex("TeamId");
 
                     b.ToTable("ClubInvitations", (string)null);
                 });
@@ -509,6 +514,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "sync.scheduled_scope_invalid",
+                            Language = "es",
+                            Message = "La pasada automática solo puede ser la jornada en curso o la temporada completa."
+                        },
+                        new
+                        {
                             Code = "auth.email_taken",
                             Language = "es",
                             Message = "Ya existe una cuenta con ese email."
@@ -560,6 +571,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "auth.club_invite_invalid",
                             Language = "es",
                             Message = "El código de invitación no existe, ya se ha usado o ha caducado."
+                        },
+                        new
+                        {
+                            Code = "auth.club_invite_other_club",
+                            Language = "es",
+                            Message = "Esta invitación es para {0}: el club no se puede cambiar."
                         },
                         new
                         {
@@ -725,6 +742,36 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "season.not_found",
+                            Language = "es",
+                            Message = "La temporada '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "season.closed",
+                            Language = "es",
+                            Message = "La temporada {0} está cerrada: solo se puede consultar. Cambia a la temporada actual ({1}) para editar."
+                        },
+                        new
+                        {
+                            Code = "cookie.invalid",
+                            Language = "es",
+                            Message = "Categoría o almacenamiento de cookie no válidos."
+                        },
+                        new
+                        {
+                            Code = "cookie.visitor_invalid",
+                            Language = "es",
+                            Message = "Identificador de visitante no válido."
+                        },
+                        new
+                        {
+                            Code = "cookie.not_found",
+                            Language = "es",
+                            Message = "La cookie '{0}' no existe."
+                        },
+                        new
+                        {
                             Code = "league.competition_required",
                             Language = "es",
                             Message = "Indica la competición (competitionId) o vincúlate a una plantilla para ver la suya."
@@ -821,15 +868,21 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
-                            Code = "club.team_name_mismatch",
+                            Code = "club.team_not_filial",
                             Language = "es",
-                            Message = "{0} no se corresponde con el nombre del club ({1})."
+                            Message = "{0} no es un equipo del {1}: la licencia del club solo cubre su primer equipo y sus filiales."
                         },
                         new
                         {
                             Code = "club.team_linked_elsewhere",
                             Language = "es",
                             Message = "Ese equipo ya está vinculado a otro club."
+                        },
+                        new
+                        {
+                            Code = "club.last_team",
+                            Language = "es",
+                            Message = "El club tiene que conservar al menos un equipo."
                         },
                         new
                         {
@@ -1211,6 +1264,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "team_stats.penalty_goals",
+                            Language = "es",
+                            Message = "Los goles de penalti no pueden superar los penaltis ni los goles a balón parado."
+                        },
+                        new
+                        {
                             Code = "sheet.two_yellows",
                             Language = "es",
                             Message = "Dos amarillas implican expulsión: marca la tarjeta roja."
@@ -1295,15 +1354,33 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "licensing.currency_invalid",
+                            Language = "es",
+                            Message = "La moneda '{0}' no es un código ISO de tres letras (EUR)."
+                        },
+                        new
+                        {
+                            Code = "licensing.plan_order",
+                            Language = "es",
+                            Message = "Premium no puede admitir menos técnicos que Básica."
+                        },
+                        new
+                        {
+                            Code = "licensing.stripe_price_invalid",
+                            Language = "es",
+                            Message = "'{0}' no es un precio de Stripe: sus ids empiezan por price_."
+                        },
+                        new
+                        {
                             Code = "license.staff_limit",
                             Language = "es",
-                            Message = "La licencia {0} admite {1} en el cuerpo técnico y este equipo ya está completo. Revoca algún nombramiento o pasa a Premium."
+                            Message = "La licencia {0} admite {1} en el cuerpo técnico de cada equipo y este ya está completo. Revoca algún nombramiento o pasa a Premium."
                         },
                         new
                         {
                             Code = "license.plan_too_small",
                             Language = "es",
-                            Message = "Este equipo tiene {0} en el cuerpo técnico y la licencia {1} admite {2}. Revoca nombramientos antes de elegirla."
+                            Message = "{0} tiene {1} en el cuerpo técnico y la licencia {2} por equipo. Revoca nombramientos antes de elegirla."
                         },
                         new
                         {
@@ -1535,6 +1612,48 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("Competitions", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Competitions.FootballSyncSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DaysAhead")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DaysBack")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FullSyncEveryDays")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("RostersInRound")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ScheduledScope")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FootballSyncSettings", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000002"),
+                            DaysAhead = 4,
+                            DaysBack = 3,
+                            FullSyncEveryDays = 7,
+                            RostersInRound = false,
+                            ScheduledScope = "CurrentRound",
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        });
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Competitions.Season", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1554,6 +1673,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<Guid>("SeasonYearId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateOnly>("StartsOn")
                         .HasColumnType("date");
 
@@ -1564,7 +1686,102 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("CompetitionId", "Label")
                         .IsUnique();
 
+                    b.HasIndex("SeasonYearId", "CompetitionId")
+                        .IsUnique();
+
                     b.ToTable("Seasons", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Competitions.SeasonYear", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("EndsOn")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateOnly>("StartsOn")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsCurrent")
+                        .IsUnique()
+                        .HasFilter("[IsCurrent] = 1");
+
+                    b.HasIndex("Label")
+                        .IsUnique();
+
+                    b.ToTable("SeasonYears", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.ClubLicense", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AutoRenew")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CustomerRef")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Interval")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("NextInterval")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("NextPlan")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateOnly?>("PaidUntil")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Plan")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("SubscriptionRef")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateOnly>("TrialEndsOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId")
+                        .IsUnique();
+
+                    b.HasIndex("SubscriptionRef");
+
+                    b.ToTable("ClubLicenses", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePayment", b =>
@@ -1628,9 +1845,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<Guid>("TeamId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ClubId");
@@ -1643,70 +1857,92 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("LicensePayments", (string)null);
                 });
 
-            modelBuilder.Entity("TercerTiempo.Domain.Licensing.TeamLicense", b =>
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePlanSettings", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<bool>("AutoRenew")
-                        .HasColumnType("bit");
+                    b.Property<int>("MaxStaff")
+                        .HasColumnType("int");
 
-                    b.Property<Guid>("ClubId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("CustomerRef")
-                        .HasMaxLength(120)
-                        .HasColumnType("nvarchar(120)");
-
-                    b.Property<string>("Interval")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("NextInterval")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("NextPlan")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<DateOnly?>("PaidUntil")
-                        .HasColumnType("date");
+                    b.Property<int>("MonthlyPriceCents")
+                        .HasColumnType("int");
 
                     b.Property<string>("Plan")
+                        .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<string>("Provider")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
-
-                    b.Property<string>("SubscriptionRef")
-                        .HasMaxLength(120)
-                        .HasColumnType("nvarchar(120)");
-
-                    b.Property<Guid>("TeamId")
+                    b.Property<Guid>("SettingsId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateOnly>("TrialEndsOn")
-                        .HasColumnType("date");
+                    b.Property<string>("StripeMonthlyPriceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("StripeYearlyPriceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("YearlyPriceCents")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SettingsId", "Plan")
+                        .IsUnique();
+
+                    b.ToTable("LicensePlanSettings", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000011"),
+                            MaxStaff = 1,
+                            MonthlyPriceCents = 990,
+                            Plan = "Basic",
+                            SettingsId = new Guid("01a16f00-0000-7000-8000-000000000001"),
+                            YearlyPriceCents = 9900
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000012"),
+                            MaxStaff = 6,
+                            MonthlyPriceCents = 1990,
+                            Plan = "Premium",
+                            SettingsId = new Guid("01a16f00-0000-7000-8000-000000000001"),
+                            YearlyPriceCents = 19900
+                        });
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensingSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<int>("TrialDays")
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ClubId");
+                    b.ToTable("LicensingSettings", (string)null);
 
-                    b.HasIndex("SubscriptionRef");
-
-                    b.HasIndex("TeamId")
-                        .IsUnique();
-
-                    b.ToTable("TeamLicenses", (string)null);
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000001"),
+                            Currency = "EUR",
+                            TrialDays = 30,
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Matches.Match", b =>
@@ -1755,6 +1991,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("SeasonId", "AwayTeamId");
 
                     b.HasIndex("SeasonId", "HomeTeamId");
+
+                    b.HasIndex("SeasonId", "KickoffAt");
 
                     b.HasIndex("SeasonId", "Matchday");
 
@@ -2158,6 +2396,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("OffsidesFor")
                         .HasColumnType("int");
 
+                    b.Property<int>("PenaltiesAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PenaltiesFor")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PenaltyGoalsAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PenaltyGoalsFor")
+                        .HasColumnType("int");
+
                     b.Property<int?>("PossessionPct")
                         .HasColumnType("int");
 
@@ -2184,6 +2434,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("SquadId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ThrowInsAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ThrowInsFor")
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
@@ -2241,6 +2497,298 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Players", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Privacy.AnalyticsEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("ActorClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("EntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EntityType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("RouteName")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)");
+
+                    b.Property<Guid?>("SubjectClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("VisitorId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorClubId", "OccurredAt");
+
+                    b.HasIndex("EntityType", "EntityId");
+
+                    b.HasIndex("OccurredAt", "Type");
+
+                    b.HasIndex("SubjectClubId", "OccurredAt");
+
+                    b.ToTable("AnalyticsEvents", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Privacy.CookieConsent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("Analytics")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("VisitorId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("nvarchar(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("VisitorId", "CreatedAt");
+
+                    b.ToTable("CookieConsents", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Privacy.CookieDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Duration")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Storage")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("CookieDefinitions", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000101"),
+                            Category = "Necessary",
+                            Duration = "Hasta cerrar sesión",
+                            Name = "tt.token",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Mantiene la sesión iniciada (token de acceso).",
+                            SortOrder = 10,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000102"),
+                            Category = "Necessary",
+                            Duration = "Hasta cerrar sesión",
+                            Name = "tt.account",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Datos de tu cuenta para mostrar la web sin esperar a la API.",
+                            SortOrder = 20,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000103"),
+                            Category = "Necessary",
+                            Duration = "13 meses",
+                            Name = "tt.consent",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Guarda tu elección sobre las cookies para no volver a preguntarte.",
+                            SortOrder = 30,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000104"),
+                            Category = "Necessary",
+                            Duration = "Hasta cerrar la pestaña",
+                            Name = "tt.admin-session",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Sesión del panel de administración.",
+                            SortOrder = 40,
+                            Storage = "SessionStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000105"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.theme",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Tema claro u oscuro que eliges.",
+                            SortOrder = 10,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000106"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.season",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Temporada que estás consultando.",
+                            SortOrder = 20,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000107"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.my-club-first",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Si tu club sale primero en los listados.",
+                            SortOrder = 30,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000108"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.home-competition",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Última liga que has consultado en la portada.",
+                            SortOrder = 40,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000109"),
+                            Category = "Analytics",
+                            Duration = "13 meses",
+                            Name = "tt.aid",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Identificador anónimo de tu navegador para contar visitantes, páginas vistas, búsquedas y clics. Los datos se quedan en Tercer Tiempo: no se envían a terceros.",
+                            SortOrder = 10,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000110"),
+                            Category = "Analytics",
+                            Duration = "Hasta cerrar la pestaña",
+                            Name = "tt.sid",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Identificador anónimo de cada visita, para contar sesiones.",
+                            SortOrder = 20,
+                            Storage = "SessionStorage"
+                        });
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Privacy.CookiePolicy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CookiePolicies", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000003"),
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Version = "2026-10-24"
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>
@@ -2876,6 +3424,14 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("Requests")
                         .HasColumnType("int");
 
+                    b.Property<string>("ScopeKind")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ScopeLabel")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<DateTimeOffset>("StartedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -3012,6 +3568,42 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("FederationRequestStates", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Infrastructure.OfficialSheets.SheetDownload", b =>
+                {
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("MatchId");
+
+                    b.HasIndex("Status", "Sequence");
+
+                    b.ToTable("SheetDownloads", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", null)
@@ -3068,6 +3660,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
                         .WithMany()
                         .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
+                        .WithMany()
+                        .HasForeignKey("TeamId")
                         .OnDelete(DeleteBehavior.SetNull);
                 });
 
@@ -3152,6 +3749,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("TercerTiempo.Domain.Competitions.SeasonYear", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonYearId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.OwnsOne("TercerTiempo.Domain.Common.ExternalRef", "ExternalRef", b1 =>
                         {
                             b1.Property<Guid>("SeasonId")
@@ -3211,6 +3814,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Navigation("OfficialRef");
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.ClubLicense", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePayment", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
@@ -3219,25 +3831,19 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
-                    b.HasOne("TercerTiempo.Domain.Licensing.TeamLicense", null)
+                    b.HasOne("TercerTiempo.Domain.Licensing.ClubLicense", null)
                         .WithMany()
                         .HasForeignKey("LicenseId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("TercerTiempo.Domain.Licensing.TeamLicense", b =>
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePlanSettings", b =>
                 {
-                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
-                        .WithMany()
-                        .HasForeignKey("ClubId")
+                    b.HasOne("TercerTiempo.Domain.Licensing.LicensingSettings", null)
+                        .WithMany("Plans")
+                        .HasForeignKey("SettingsId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
-                        .WithMany()
-                        .HasForeignKey("TeamId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
@@ -3816,6 +4422,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Infrastructure.OfficialSheets.SheetDownload", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Clubs.Club", b =>
                 {
                     b.Navigation("Teams");
@@ -3824,6 +4439,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("TercerTiempo.Domain.Competitions.Competition", b =>
                 {
                     b.Navigation("Seasons");
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensingSettings", b =>
+                {
+                    b.Navigation("Plans");
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.OfficialSheets.OfficialMatchSheet", b =>

@@ -31,7 +31,15 @@ public sealed record TeamMatchStatsDto(
     int SetPieceGoalsFor,
     int SetPieceGoalsAgainst,
     string? Notes,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    [property: Description("Penaltis a favor (lanzados por el equipo) y en contra.")]
+    int PenaltiesFor,
+    int PenaltiesAgainst,
+    [property: Description("Goles de penalti: son parte de los goles a balón parado.")]
+    int PenaltyGoalsFor,
+    int PenaltyGoalsAgainst,
+    int ThrowInsFor,
+    int ThrowInsAgainst);
 
 // Lo que envía el cuerpo técnico; «For» es su equipo y «Against» el rival.
 public sealed record TeamMatchStatsInput(
@@ -48,11 +56,18 @@ public sealed record TeamMatchStatsInput(
     int FoulsReceived,
     int SetPieceGoalsFor,
     int SetPieceGoalsAgainst,
-    string? Notes)
+    string? Notes,
+    int PenaltiesFor = 0,
+    int PenaltiesAgainst = 0,
+    int PenaltyGoalsFor = 0,
+    int PenaltyGoalsAgainst = 0,
+    int ThrowInsFor = 0,
+    int ThrowInsAgainst = 0)
 {
     public TeamMatchStatsData ToData() => new(
         PossessionPct, CornersFor, CornersAgainst, ShotsFor, ShotsAgainst, ShotsOnTargetFor, ShotsOnTargetAgainst,
-        OffsidesFor, OffsidesAgainst, FoulsCommitted, FoulsReceived, SetPieceGoalsFor, SetPieceGoalsAgainst, Notes);
+        OffsidesFor, OffsidesAgainst, FoulsCommitted, FoulsReceived, SetPieceGoalsFor, SetPieceGoalsAgainst, Notes,
+        PenaltiesFor, PenaltiesAgainst, PenaltyGoalsFor, PenaltyGoalsAgainst, ThrowInsFor, ThrowInsAgainst);
 }
 
 public sealed record TeamMatchStatsRowDto(MatchDto Match, TeamMatchStatsDto Stats);
@@ -71,7 +86,13 @@ public sealed record TeamStatsAveragesDto(
     double FoulsCommitted,
     double FoulsReceived,
     int SetPieceGoalsFor,
-    int SetPieceGoalsAgainst);
+    int SetPieceGoalsAgainst,
+    int PenaltiesFor,
+    int PenaltiesAgainst,
+    int PenaltyGoalsFor,
+    int PenaltyGoalsAgainst,
+    double ThrowInsFor,
+    double ThrowInsAgainst);
 
 public sealed record SquadTeamStatsDto(int MatchesRecorded, TeamStatsAveragesDto? Averages, IReadOnlyList<TeamMatchStatsRowDto> Matches);
 
@@ -80,7 +101,7 @@ internal static class TeamMatchStatsMapper
     public static TeamMatchStatsDto ToDto(TeamMatchStats s) => new(
         s.PossessionPct, s.CornersFor, s.CornersAgainst, s.ShotsFor, s.ShotsAgainst, s.ShotsOnTargetFor, s.ShotsOnTargetAgainst,
         s.OffsidesFor, s.OffsidesAgainst, s.FoulsCommitted, s.FoulsReceived, s.SetPieceGoalsFor, s.SetPieceGoalsAgainst,
-        s.Notes, s.UpdatedAt);
+        s.Notes, s.UpdatedAt, s.PenaltiesFor, s.PenaltiesAgainst, s.PenaltyGoalsFor, s.PenaltyGoalsAgainst, s.ThrowInsFor, s.ThrowInsAgainst);
 
     public static TeamStatsAveragesDto? Averages(IReadOnlyCollection<TeamMatchStats> all)
     {
@@ -96,7 +117,10 @@ internal static class TeamMatchStatsMapper
             Avg(s => s.ShotsOnTargetFor), Avg(s => s.ShotsOnTargetAgainst),
             Avg(s => s.OffsidesFor), Avg(s => s.OffsidesAgainst),
             Avg(s => s.FoulsCommitted), Avg(s => s.FoulsReceived),
-            all.Sum(s => s.SetPieceGoalsFor), all.Sum(s => s.SetPieceGoalsAgainst));
+            all.Sum(s => s.SetPieceGoalsFor), all.Sum(s => s.SetPieceGoalsAgainst),
+            all.Sum(s => s.PenaltiesFor), all.Sum(s => s.PenaltiesAgainst),
+            all.Sum(s => s.PenaltyGoalsFor), all.Sum(s => s.PenaltyGoalsAgainst),
+            Avg(s => s.ThrowInsFor), Avg(s => s.ThrowInsAgainst));
     }
 }
 
@@ -126,6 +150,12 @@ internal sealed class RecordTeamMatchStatsValidator : AbstractValidator<RecordTe
             RuleFor(x => x.Stats.FoulsReceived).InclusiveBetween(0, 100);
             RuleFor(x => x.Stats.SetPieceGoalsFor).InclusiveBetween(0, 30);
             RuleFor(x => x.Stats.SetPieceGoalsAgainst).InclusiveBetween(0, 30);
+            RuleFor(x => x.Stats.PenaltiesFor).InclusiveBetween(0, 20);
+            RuleFor(x => x.Stats.PenaltiesAgainst).InclusiveBetween(0, 20);
+            RuleFor(x => x.Stats.PenaltyGoalsFor).InclusiveBetween(0, 20);
+            RuleFor(x => x.Stats.PenaltyGoalsAgainst).InclusiveBetween(0, 20);
+            RuleFor(x => x.Stats.ThrowInsFor).InclusiveBetween(0, 150);
+            RuleFor(x => x.Stats.ThrowInsAgainst).InclusiveBetween(0, 150);
             RuleFor(x => x.Stats.Notes).MaximumLength(TeamMatchStatsData.MaxNotesLength);
         });
     }

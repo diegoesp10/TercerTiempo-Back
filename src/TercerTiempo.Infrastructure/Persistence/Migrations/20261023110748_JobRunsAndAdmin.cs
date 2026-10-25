@@ -83,9 +83,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                 table: "ScrapeRequests",
                 columns: new[] { "Provider", "At" });
 
-            // Punto de partida del historial: la base ya tiene los datos cargados, así que la primera ejecución
-            // automática de cada trabajo llega un intervalo después de aplicar esta migración y no al arrancar.
+            // Punto de partida del historial en una base que ya tiene los datos cargados: la primera ejecución
+            // automática de cada trabajo llega un intervalo después de aplicar esta migración y no al arrancar. Una
+            // base nueva (sin partidos) no lo lleva, para que la primera sincronización la llene enseguida.
             migrationBuilder.Sql("""
+                IF EXISTS (SELECT 1 FROM [Matches])
                 INSERT INTO [JobRuns] ([Id], [Job], [Manual], [Status], [StartedAt], [FinishedAt], [Summary], [Errors], [Requests])
                 VALUES
                     (NEWID(), 'football-data', 0, 'succeeded', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), 'Punto de partida: datos cargados antes de llevar el historial', NULL, 0),
