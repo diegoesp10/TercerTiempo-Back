@@ -52,6 +52,9 @@ internal sealed class IdentityService(UserManager<ApplicationUser> userManager) 
         var user = await userManager.FindByEmailAsync(email);
         if (user is null) return null;
 
+        // El administrador solo entra por /api/admin/login: su sesión nunca es la de una cuenta de club, técnico o jugador.
+        if (await userManager.IsInRoleAsync(user, AuthClaims.AdminRole)) return null;
+
         return await userManager.CheckPasswordAsync(user, password) ? user.Id : null;
     }
 

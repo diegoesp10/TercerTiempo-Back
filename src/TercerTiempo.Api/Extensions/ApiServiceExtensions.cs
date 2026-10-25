@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -67,9 +68,18 @@ public static class ApiServiceExtensions
                 };
             });
 
-        services.AddAuthorization(options => options.AddPolicy(AuthClaims.AdminPolicy, policy => policy
-            .RequireAuthenticatedUser()
-            .RequireClaim(AuthClaims.Admin, "true")));
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy(AuthClaims.AdminPolicy, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireClaim(AuthClaims.Admin, "true"));
+
+            // Las rutas de las cuentas no aceptan el token del administrador: son sesiones distintas que no conviven.
+            options.DefaultPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => !context.User.HasClaim(AuthClaims.Admin, "true"))
+                .Build();
+        });
     }
 
     private static void AddCors(IServiceCollection services, IConfiguration configuration)
