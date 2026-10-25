@@ -1264,6 +1264,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "team_stats.penalty_goals",
+                            Language = "es",
+                            Message = "Los goles de penalti no pueden superar los penaltis ni los goles a balón parado."
+                        },
+                        new
+                        {
                             Code = "sheet.two_yellows",
                             Language = "es",
                             Message = "Dos amarillas implican expulsión: marca la tarjeta roja."
@@ -2390,6 +2396,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("OffsidesFor")
                         .HasColumnType("int");
 
+                    b.Property<int>("PenaltiesAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PenaltiesFor")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PenaltyGoalsAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PenaltyGoalsFor")
+                        .HasColumnType("int");
+
                     b.Property<int?>("PossessionPct")
                         .HasColumnType("int");
 
@@ -2416,6 +2434,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("SquadId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ThrowInsAgainst")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ThrowInsFor")
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");

@@ -6,7 +6,8 @@ using TercerTiempo.Domain.Squads;
 namespace TercerTiempo.Domain.Performances;
 
 // Datos colectivos del partido que no trae ningún acta pública (esta solo recoge alineaciones, cambios, goles y
-// tarjetas): los apunta el cuerpo técnico, desde el punto de vista de su equipo («a favor» y «en contra»).
+// tarjetas): los apunta el cuerpo técnico, desde el punto de vista de su equipo («a favor» y «en contra»). Los goles de
+// penalti son parte de los goles a balón parado.
 public sealed record TeamMatchStatsData(
     int? PossessionPct,
     int CornersFor,
@@ -21,7 +22,13 @@ public sealed record TeamMatchStatsData(
     int FoulsReceived,
     int SetPieceGoalsFor,
     int SetPieceGoalsAgainst,
-    string? Notes)
+    string? Notes,
+    int PenaltiesFor = 0,
+    int PenaltiesAgainst = 0,
+    int PenaltyGoalsFor = 0,
+    int PenaltyGoalsAgainst = 0,
+    int ThrowInsFor = 0,
+    int ThrowInsAgainst = 0)
 {
     public const int MaxNotesLength = 2000;
 
@@ -40,12 +47,21 @@ public sealed record TeamMatchStatsData(
         Guard.NotNegative(FoulsReceived, "faltas recibidas");
         Guard.NotNegative(SetPieceGoalsFor, "goles a balón parado a favor");
         Guard.NotNegative(SetPieceGoalsAgainst, "goles a balón parado en contra");
+        Guard.NotNegative(PenaltiesFor, "penaltis a favor");
+        Guard.NotNegative(PenaltiesAgainst, "penaltis en contra");
+        Guard.NotNegative(PenaltyGoalsFor, "goles de penalti a favor");
+        Guard.NotNegative(PenaltyGoalsAgainst, "goles de penalti en contra");
+        Guard.NotNegative(ThrowInsFor, "saques de banda a favor");
+        Guard.NotNegative(ThrowInsAgainst, "saques de banda en contra");
 
         if (ShotsOnTargetFor > ShotsFor || ShotsOnTargetAgainst > ShotsAgainst)
             throw new DomainException(ErrorCode.SheetShotsOnTarget);
 
         if (goalsFor is { } scored && SetPieceGoalsFor > scored || goalsAgainst is { } conceded && SetPieceGoalsAgainst > conceded)
             throw new DomainException(ErrorCode.TeamStatsSetPieceGoals);
+
+        if (PenaltyGoalsFor > Math.Min(PenaltiesFor, SetPieceGoalsFor) || PenaltyGoalsAgainst > Math.Min(PenaltiesAgainst, SetPieceGoalsAgainst))
+            throw new DomainException(ErrorCode.TeamStatsPenaltyGoals);
 
         if (Notes is { Length: > MaxNotesLength })
             throw new DomainException(ErrorCode.SheetNotesTooLong, MaxNotesLength);
@@ -70,6 +86,12 @@ public sealed class TeamMatchStats : AggregateRoot
     public int FoulsReceived { get; private set; }
     public int SetPieceGoalsFor { get; private set; }
     public int SetPieceGoalsAgainst { get; private set; }
+    public int PenaltiesFor { get; private set; }
+    public int PenaltiesAgainst { get; private set; }
+    public int PenaltyGoalsFor { get; private set; }
+    public int PenaltyGoalsAgainst { get; private set; }
+    public int ThrowInsFor { get; private set; }
+    public int ThrowInsAgainst { get; private set; }
     public string? Notes { get; private set; }
 
     public Guid RecordedByCoachId { get; private set; }
@@ -105,6 +127,12 @@ public sealed class TeamMatchStats : AggregateRoot
         FoulsReceived = data.FoulsReceived;
         SetPieceGoalsFor = data.SetPieceGoalsFor;
         SetPieceGoalsAgainst = data.SetPieceGoalsAgainst;
+        PenaltiesFor = data.PenaltiesFor;
+        PenaltiesAgainst = data.PenaltiesAgainst;
+        PenaltyGoalsFor = data.PenaltyGoalsFor;
+        PenaltyGoalsAgainst = data.PenaltyGoalsAgainst;
+        ThrowInsFor = data.ThrowInsFor;
+        ThrowInsAgainst = data.ThrowInsAgainst;
         Notes = string.IsNullOrWhiteSpace(data.Notes) ? null : data.Notes.Trim();
         RecordedByCoachId = Guard.NotEmpty(coachId, nameof(coachId));
         UpdatedAt = now;
