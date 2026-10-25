@@ -13,6 +13,10 @@ public sealed class Player : AggregateRoot
     public DateTimeOffset RegisteredAt { get; private set; }
     public string? PhotoKey { get; private set; }
 
+    // El jugador deja ver a cualquier cuenta con sesión su perfil completo (actas de Tercer Tiempo de su plantilla, nota,
+    // asistencias...); sin esto, fuera de su club solo se ve la ficha básica con las actas oficiales.
+    public bool PublicProfile { get; private set; }
+
     private Player() { }
 
     public static Player Register(Guid userId, string displayName, Position position, DateOnly? birthDate, DateTimeOffset now)
@@ -43,6 +47,8 @@ public sealed class Player : AggregateRoot
     public void SetPhoto(string photoKey) => PhotoKey = Guard.NotEmpty(photoKey, nameof(photoKey), 100);
 
     public void ClearPhoto() => PhotoKey = null;
+
+    public void SetPublicProfile(bool isPublic) => PublicProfile = isPublic;
 
     public void UpdateProfile(string displayName, Position position, DateOnly? birthDate)
     {

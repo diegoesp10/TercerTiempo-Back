@@ -55,43 +55,63 @@ internal sealed class GetClubRosterEntryHandler(
     {
         var (seasonId, _) = await ClubRoster.ContextAsync(query.TeamId, currentUser, stores, cancellationToken, write: false);
         var entry = await ClubRoster.EntryAsync(query.TeamId, seasonId, query.EntryId, stores.Teams, cancellationToken);
+        var details = await RosterEntryDetails.BuildAsync(query.TeamId, seasonId, entry, roster, stores.Squads, performances, cancellationToken);
 
-        var allEntries = await stores.Teams.GetRosterAsync(query.TeamId, seasonId, cancellationToken);
-        var appearances = await RosterSummary.AppearancesAsync(query.TeamId, seasonId, allEntries, roster.Matches, roster.Sheets, cancellationToken);
-        var mine = appearances[entry.Id];
+        return new RosterEntryDetailDto(details.Entry, details.Official, details.Internal, RosterEntryDetails.InternalStats(details.Internal), details.Player is not null);
+    }
+}
 
-        var matches = await roster.Matches.GetTeamMatchesAsync(seasonId, query.TeamId, cancellationToken);
+// La ficha de un jugador con todo lo que hay de él en la temporada: actas oficiales (públicas) y actas de Tercer
+// Tiempo de su cuerpo técnico (internas). La comparten la ficha del club y la ficha pública.
+internal static class RosterEntryDetails
+{
+    public sealed record Details(
+        RosterEntryDto Entry,
+        IReadOnlyList<RosterOfficialAppearanceDto> Official,
+        IReadOnlyList<RosterInternalAppearanceDto> Internal,
+        Squad? Squad,
+        SquadPlayer? Player);
+
+    public static async Task<Details> BuildAsync(
+        Guid teamId, Guid seasonId, RosterEntry entry, RosterStores roster, ISquadStore squads, IPerformanceStore performances, CancellationToken cancellationToken)
+    {
+        var allEntries = await roster.Teams.GetRosterAsync(teamId, seasonId, cancellationToken);
+        var appearances = await RosterSummary.AppearancesAsync(teamId, seasonId, allEntries, roster.Matches, roster.Sheets, cancellationToken);
+        var mine = appearances.GetValueOrDefault(entry.Id) ?? [];
+
+        var matches = await roster.Matches.GetTeamMatchesAsync(seasonId, teamId, cancellationToken);
         var teamIds = matches.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();
-        var teams = (await stores.Teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
+        var teams = (await roster.Teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
 
         var official = mine
             .OrderByDescending(a => a.Match.Matchday)
             .Select(a => new RosterOfficialAppearanceDto(MatchMapper.ToDto(a.Match, teams), a.Home, OfficialSheetMapper.ToDto(a.Line)))
             .ToList();
 
-        var (internalRows, player) = await InternalAsync(query.TeamId, seasonId, entry, allEntries, matches, teams, cancellationToken);
+        var (squad, player) = await SquadPlayerAsync(teamId, seasonId, entry, allEntries, squads, cancellationToken);
+        var internalRows = new List<RosterInternalAppearanceDto>();
+        if (player is not null)
+        {
+            var byMatch = matches.ToDictionary(m => m.Id);
+            internalRows = (await performances.GetBySquadPlayerAsync(player.Id, cancellationToken))
+                .Where(p => byMatch.ContainsKey(p.MatchId))
+                .Select(p => (Match: byMatch[p.MatchId], Performance: p))
+                .OrderByDescending(x => x.Match.Matchday)
+                .Select(x => new RosterInternalAppearanceDto(
+                    MatchMapper.ToDto(x.Match, teams), x.Match.HomeTeamId == teamId, PerformanceMapper.ToDto(x.Performance, player)))
+                .ToList();
+        }
 
-        return new RosterEntryDetailDto(
-            RosterEntryDto.From(entry, RosterSummary.Stats(mine)),
-            official,
-            internalRows,
-            InternalStats(internalRows),
-            player is not null);
+        return new Details(RosterEntryDto.From(entry, RosterSummary.Stats(mine)), official, internalRows, squad, player);
     }
 
     // La ficha enlaza con el jugador de la plantilla interna por id (si se importó de aquí) o, si no, por el mismo
     // cruce de nombre y dorsal que se usa con las actas oficiales.
-    private async Task<(List<RosterInternalAppearanceDto> Rows, SquadPlayer? Player)> InternalAsync(
-        Guid teamId,
-        Guid seasonId,
-        RosterEntry entry,
-        IReadOnlyList<RosterEntry> allEntries,
-        IReadOnlyList<Domain.Matches.Match> matches,
-        IReadOnlyDictionary<Guid, Team> teams,
-        CancellationToken cancellationToken)
+    private static async Task<(Squad? Squad, SquadPlayer? Player)> SquadPlayerAsync(
+        Guid teamId, Guid seasonId, RosterEntry entry, IReadOnlyList<RosterEntry> allEntries, ISquadStore squads, CancellationToken cancellationToken)
     {
-        var squad = await stores.Squads.GetByTeamAndSeasonAsync(teamId, seasonId, cancellationToken);
-        if (squad is null) return ([], null);
+        var squad = await squads.GetByTeamAndSeasonAsync(teamId, seasonId, cancellationToken);
+        if (squad is null) return (null, null);
 
         var player = squad.Players.FirstOrDefault(p => p.RosterEntryId == entry.Id);
         if (player is null)
@@ -100,22 +120,10 @@ internal sealed class GetClubRosterEntryHandler(
             var byName = SheetMatcher.MatchPlayers(candidates, squad.ActivePlayers);
             byName.TryGetValue(entry.Id, out player);
         }
-
-        if (player is null) return ([], null);
-
-        var byMatch = matches.ToDictionary(m => m.Id);
-        var rows = (await performances.GetBySquadPlayerAsync(player.Id, cancellationToken))
-            .Where(p => byMatch.ContainsKey(p.MatchId))
-            .Select(p => (Match: byMatch[p.MatchId], Performance: p))
-            .OrderByDescending(x => x.Match.Matchday)
-            .Select(x => new RosterInternalAppearanceDto(
-                MatchMapper.ToDto(x.Match, teams), x.Match.HomeTeamId == teamId, PerformanceMapper.ToDto(x.Performance, player)))
-            .ToList();
-
-        return (rows, player);
+        return (squad, player);
     }
 
-    private static RosterInternalStatsDto? InternalStats(IReadOnlyList<RosterInternalAppearanceDto> rows)
+    public static RosterInternalStatsDto? InternalStats(IReadOnlyList<RosterInternalAppearanceDto> rows)
     {
         var played = rows.Select(r => r.Performance).Where(p => p.MinutesPlayed > 0).ToList();
         if (played.Count == 0) return null;

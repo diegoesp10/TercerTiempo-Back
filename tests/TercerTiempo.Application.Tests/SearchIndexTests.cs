@@ -77,7 +77,7 @@ public class SearchIndexTests
     public void Players_are_found_by_any_name_and_shirt_number_and_lead_to_their_team()
     {
         var hit = Index().Search("alvarez 10", Stranger, null).Hits[0];
-        Assert.Equal((SearchTypes.Player, $"/equipos/{Roces}?jugador={PepeEntry}"), (hit.Doc.Type, hit.Link));
+        Assert.Equal((SearchTypes.Player, $"/equipos/{Roces}/jugadores/{PepeEntry}"), (hit.Doc.Type, hit.Link));
         Assert.Contains("TSK Roces", hit.Doc.Subtitle);
     }
 

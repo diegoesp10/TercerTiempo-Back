@@ -14,7 +14,9 @@ public sealed record PlayerDto(
     DateOnly? BirthDate,
     PlayerSquadDto? Squad,
     [property: System.ComponentModel.Description("Foto subida por el propio jugador (recortada, fondo transparente).")]
-    string? PhotoUrl = null);
+    string? PhotoUrl = null,
+    [property: System.ComponentModel.Description("true si su perfil completo se puede ver desde fuera de su club (con sesión).")]
+    bool PublicProfile = false);
 
 public sealed record PlayerSquadDto(
     Guid SquadId,
@@ -29,7 +31,9 @@ public sealed record PlayerSquadDto(
     Guid SeasonId,
     string SeasonLabel,
     int? ShirtNumber,
-    SquadVisibility Visibility);
+    SquadVisibility Visibility,
+    [property: System.ComponentModel.Description("Su ficha en la plantilla publicada del equipo (para enlazar su ficha pública); null si no la tiene.")]
+    Guid? RosterEntryId = null);
 
 internal static class PlayerMapper
 {
@@ -45,10 +49,10 @@ internal static class PlayerMapper
                 team.Id, team.Name, team.ShortName, team.CrestLink(),
                 competition.Id, competition.Name, competition.Level,
                 season.Id, season.Label,
-                entry.ShirtNumber, squad.Visibility);
+                entry.ShirtNumber, squad.Visibility, entry.RosterEntryId);
         }
 
-        return new PlayerDto(player.Id, player.DisplayName, player.Position, player.BirthDate, squadDto, Photos.PlayerPhotos.PhotoLink(player));
+        return new PlayerDto(player.Id, player.DisplayName, player.Position, player.BirthDate, squadDto, Photos.PlayerPhotos.PhotoLink(player), player.PublicProfile);
     }
 
     public static async Task<PlayerDto> ToDtoAsync(

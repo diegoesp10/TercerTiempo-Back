@@ -16,6 +16,7 @@ public interface IPlayersRepository
     Task<IReadOnlyList<PerformanceWithMatchDto>> GetMyPerformancesAsync(CancellationToken cancellationToken = default);
     Task<PlayerDto> UploadPhotoAsync(Application.Clubs.ManageTeams.CrestUpload file, CancellationToken cancellationToken = default);
     Task<PlayerDto> DeletePhotoAsync(CancellationToken cancellationToken = default);
+    Task<PlayerDto> SetPublicProfileAsync(bool isPublic, CancellationToken cancellationToken = default);
     Task<Application.Abstractions.Teams.CrestFile?> OpenPhotoAsync(Guid playerId, CancellationToken cancellationToken = default);
     Task<SuggestionDto> SuggestAsync(SuggestPerformanceCommand command, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SuggestionDto>> ListMySuggestionsAsync(CancellationToken cancellationToken = default);

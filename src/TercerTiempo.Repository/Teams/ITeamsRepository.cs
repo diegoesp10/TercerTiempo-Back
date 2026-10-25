@@ -12,4 +12,5 @@ public interface ITeamsRepository
 
     Task<CrestFile?> OpenCrestAsync(Guid teamId, CancellationToken cancellationToken = default);
     Task<CrestFile?> OpenRosterPhotoAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default);
+    Task<Application.Players.Card.PlayerCardDto> GetPlayerCardAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default);
 }

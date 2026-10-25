@@ -54,6 +54,14 @@ internal static class TeamEndpoints
             .WithDescription("Todos los partidos de la temporada en curso ordenados por jornada. Si se envía token, myPerformanceId indica en cuáles ya has registrado rendimiento. Público.")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{teamId:guid}/roster/{entryId:guid}", (Guid teamId, Guid entryId, ITeamsRepository teams, CancellationToken ct) => teams.GetPlayerCardAsync(teamId, entryId, ct))
+            .RequireAuthorization()
+            .WithName("GetPlayerCard")
+            .WithSummary("Ficha de un jugador")
+            .WithDescription("Para cualquier cuenta con sesión (club, técnico o jugador). Datos de la ficha, equipo y temporada, y sus partidos según las actas oficiales. El perfil completo (actas de Tercer Tiempo de su cuerpo técnico, con asistencias de gol y nota) solo llega a su club y su plantilla o, si el jugador lo ha hecho público desde su cuenta, a todos (sin las observaciones del técnico).")
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         return app;
     }
 }

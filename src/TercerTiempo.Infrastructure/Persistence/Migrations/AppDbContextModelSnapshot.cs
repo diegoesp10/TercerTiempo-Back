@@ -2483,6 +2483,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<bool>("PublicProfile")
+                        .HasColumnType("bit");
+
                     b.Property<DateTimeOffset>("RegisteredAt")
                         .HasColumnType("datetimeoffset");
 

@@ -22,7 +22,8 @@ internal sealed class PlayersRepository(
     ICommandHandler<Application.Players.Photos.DeleteMyPhotoCommand, PlayerDto> deletePhoto,
     IQueryHandler<Application.Players.Photos.OpenPlayerPhotoQuery, Application.Abstractions.Teams.CrestFile?> openPhoto,
     ICommandHandler<SuggestPerformanceCommand, SuggestionDto> suggest,
-    IQueryHandler<ListMySuggestionsQuery, IReadOnlyList<SuggestionDto>> listSuggestions) : IPlayersRepository
+    IQueryHandler<ListMySuggestionsQuery, IReadOnlyList<SuggestionDto>> listSuggestions,
+    ICommandHandler<Application.Players.Card.SetMyPublicProfileCommand, PlayerDto> setPublicProfile) : IPlayersRepository
 {
     public Task<SquadInviteDto> GetInviteAsync(string inviteCode, CancellationToken cancellationToken = default) =>
         getInvite.Handle(new GetSquadInviteQuery(inviteCode), cancellationToken);
@@ -41,6 +42,9 @@ internal sealed class PlayersRepository(
 
     public Task<PlayerDto> UploadPhotoAsync(Application.Clubs.ManageTeams.CrestUpload file, CancellationToken cancellationToken = default) =>
         uploadPhoto.Handle(new Application.Players.Photos.UploadMyPhotoCommand(file), cancellationToken);
+
+    public Task<PlayerDto> SetPublicProfileAsync(bool isPublic, CancellationToken cancellationToken = default) =>
+        setPublicProfile.Handle(new Application.Players.Card.SetMyPublicProfileCommand(isPublic), cancellationToken);
 
     public Task<PlayerDto> DeletePhotoAsync(CancellationToken cancellationToken = default) =>
         deletePhoto.Handle(new Application.Players.Photos.DeleteMyPhotoCommand(), cancellationToken);

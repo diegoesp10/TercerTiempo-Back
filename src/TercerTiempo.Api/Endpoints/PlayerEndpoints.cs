@@ -38,6 +38,12 @@ internal static class PlayerEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
+        group.MapPut("/public-profile", (PublicProfileRequest request, IPlayersRepository players, CancellationToken ct) => players.SetPublicProfileAsync(request.Public, ct))
+            .WithName("SetMyPublicProfile")
+            .WithSummary("Hacer público mi perfil completo")
+            .WithDescription("Solo jugadores. public=true: cualquier cuenta con sesión ve tu perfil completo (actas de Tercer Tiempo, asistencias de gol, nota; sin las observaciones del técnico); public=false: solo tu club y tu plantilla. La ficha básica con las actas oficiales se ve siempre.")
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
         group.MapDelete("/photo", (IPlayersRepository players, CancellationToken ct) => players.DeletePhotoAsync(ct))
             .WithName("DeleteMyPhoto")
             .WithSummary("Quitar mi foto");
@@ -95,3 +101,5 @@ internal static class PlayerEndpoints
         return app;
     }
 }
+
+internal sealed record PublicProfileRequest(bool Public);

@@ -15,7 +15,8 @@ internal sealed class TeamsRepository(
     IQueryHandler<GetTeamQuery, TeamDetailDto> getTeam,
     IQueryHandler<ListTeamMatchesQuery, IReadOnlyList<MatchDto>> listMatches,
     IQueryHandler<GetTeamCrestQuery, CrestFile?> getCrest,
-    IQueryHandler<GetRosterPhotoQuery, CrestFile?> getRosterPhoto) : ITeamsRepository
+    IQueryHandler<GetRosterPhotoQuery, CrestFile?> getRosterPhoto,
+    IQueryHandler<Application.Players.Card.GetPlayerCardQuery, Application.Players.Card.PlayerCardDto> getPlayerCard) : ITeamsRepository
 {
     public Task<IReadOnlyList<TeamSummaryDto>> ListAsync(Guid competitionId, CancellationToken cancellationToken = default) =>
         listTeams.Handle(new ListTeamsQuery(competitionId), cancellationToken);
@@ -31,4 +32,7 @@ internal sealed class TeamsRepository(
 
     public Task<CrestFile?> OpenRosterPhotoAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default) =>
         getRosterPhoto.Handle(new GetRosterPhotoQuery(teamId, entryId), cancellationToken);
+
+    public Task<Application.Players.Card.PlayerCardDto> GetPlayerCardAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default) =>
+        getPlayerCard.Handle(new Application.Players.Card.GetPlayerCardQuery(teamId, entryId), cancellationToken);
 }
