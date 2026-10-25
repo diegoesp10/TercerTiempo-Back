@@ -65,11 +65,13 @@ public static class DependencyInjection
         // SQL Server. Varios agregados cargan dos colecciones a la vez (plantilla: staff y fichas; acta oficial: líneas y
         // sucesos): en consultas separadas se evita el producto cartesiano de una sola JOIN. Reintentos ante errores
         // transitorios (arranque del servidor, cortes breves de red).
-        services.AddDbContext<AppDbContext>(options =>
-            options.UseSqlServer(connectionString, sql => sql
+        services.AddSingleton<Search.SearchIndexInvalidator>();
+        services.AddDbContext<AppDbContext>((sp, options) => options
+            .UseSqlServer(connectionString, sql => sql
                 .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
                 .EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorNumbersToAdd: null)
-                .CommandTimeout(60)));
+                .CommandTimeout(60))
+            .AddInterceptors(sp.GetRequiredService<Search.SearchIndexInvalidator>()));
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
 
         services.AddScoped<IPlayerStore, PlayerStore>();

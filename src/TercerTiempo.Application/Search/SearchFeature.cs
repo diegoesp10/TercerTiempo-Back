@@ -50,8 +50,9 @@ public sealed record SearchQuery(
     [property: Description("Resultados por tipo (1-50; por defecto 6).")]
     int? Limit) : IQuery<SearchResultsDto>;
 
-// El índice se comparte entre peticiones y se rehace en segundo plano cuando pasa su vigencia (o se avisa de que han
-// cambiado los datos); mientras tanto se sigue buscando en el anterior.
+// El índice se comparte entre peticiones. Si han cambiado los datos que enlaza (plantillas, fichas, clubes...) la
+// siguiente búsqueda espera al índice nuevo, para no llevar a una plantilla que ya no existe; si solo ha pasado su
+// vigencia, se rehace en segundo plano y mientras tanto se sigue buscando en el anterior.
 public sealed class SearchIndexHolder(IServiceScopeFactory scopes, TimeProvider clock, ILogger<SearchIndexHolder> logger)
 {
     private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(5);
@@ -62,27 +63,24 @@ public sealed class SearchIndexHolder(IServiceScopeFactory scopes, TimeProvider 
     internal async Task<SearchIndex> GetAsync(CancellationToken cancellationToken)
     {
         var current = _index;
-        if (current is null)
+        if (current is null || _stale)
         {
-            await RebuildAsync(cancellationToken);
+            await RebuildAsync(cancellationToken, wait: true);
             return _index!;
         }
 
-        if (_stale || clock.GetUtcNow() - current.BuiltAt > MaxAge) _ = Task.Run(() => RebuildAsync(CancellationToken.None));
+        if (clock.GetUtcNow() - current.BuiltAt > MaxAge) _ = Task.Run(() => RebuildAsync(CancellationToken.None, wait: false));
         return current;
     }
 
-    // Los datos han cambiado (sincronización de las ligas, fichas nuevas): la próxima búsqueda rehace el índice.
+    // Los datos han cambiado (sincronización de las ligas, plantillas, fichas): la próxima búsqueda rehace el índice.
     public void Invalidate() => _stale = true;
 
-    private async Task RebuildAsync(CancellationToken cancellationToken)
+    private async Task RebuildAsync(CancellationToken cancellationToken, bool wait)
     {
-        if (!await _building.WaitAsync(0, cancellationToken))
-        {
-            // Ya lo está rehaciendo otra petición: la primera vez se espera a que acabe.
-            if (_index is null) { await _building.WaitAsync(cancellationToken); _building.Release(); }
-            return;
-        }
+        // En segundo plano, si ya lo está rehaciendo otra petición no hace falta otra vez; si se espera, se espera a esa.
+        if (wait) await _building.WaitAsync(cancellationToken);
+        else if (!await _building.WaitAsync(0, cancellationToken)) return;
         try
         {
             if (_index is not null && !_stale && clock.GetUtcNow() - _index.BuiltAt <= MaxAge) return;
