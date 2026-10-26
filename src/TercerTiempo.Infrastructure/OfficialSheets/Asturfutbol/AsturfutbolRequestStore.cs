@@ -28,6 +28,22 @@ internal sealed class FederationRequestState
     public int HourRequests { get; set; }
     public DateTimeOffset DayStartedAt { get; set; }
     public int DayRequests { get; set; }
+    // Tanda en curso: peticiones seguidas desde el último descanso y la última que salió.
+    public int BurstRequests { get; set; }
+    public DateTimeOffset? LastRequestAt { get; set; }
+    // Cambia cada vez que toca empezar con una sesión nueva (cookies vacías); cada proceso lo compara con el suyo.
+    public int SessionEpoch { get; set; }
+    // Por qué está en pausa (PauseKinds) y el detalle para la administración.
+    public string? PauseKind { get; set; }
+    public string? PauseReason { get; set; }
+}
+
+internal static class PauseKinds
+{
+    public const string Rest = "rest";
+    public const string Session = "session";
+    public const string Blocked = "blocked";
+    public const string Error = "error";
 }
 
 internal sealed class FederationHttpCacheConfiguration : IEntityTypeConfiguration<FederationHttpCache>
@@ -49,20 +65,27 @@ internal sealed class FederationRequestStateConfiguration : IEntityTypeConfigura
         b.ToTable("FederationRequestStates");
         b.HasKey(x => x.Id);
         b.Property(x => x.Id).HasMaxLength(50);
+        b.Property(x => x.PauseKind).HasMaxLength(20);
+        b.Property(x => x.PauseReason).HasMaxLength(500);
     }
 }
 
 internal sealed record FederationResponse(byte[]? Content, string? ContentType);
-internal sealed record FederationReservation(FederationResponse? Cached = null, DateTimeOffset? RetryAt = null, bool Spacing = false);
+internal sealed record FederationReservation(FederationResponse? Cached = null, DateTimeOffset? RetryAt = null, bool Spacing = false, int SessionEpoch = 0);
 
-// Límites de una web (su fila en FederationRequestStates): hoy solo asturfutbol.es.
-internal sealed record SourceLimits(string Provider, bool Enabled, int RequestDelayMs, int MaxRequestsPerHour, int MaxRequestsPerDay);
+// Pausa de una web y su motivo; Kind es uno de PauseKinds.
+internal sealed record ProviderPause(DateTimeOffset Until, string Kind, string Reason, bool NewSession = false);
+
+// Límites de una web (su fila en FederationRequestStates): hoy solo asturfutbol.es. Además de los topes por hora y por
+// día, las peticiones van en tandas de MaxRequestsPerBurst con un descanso de BurstRestMinutes entre una y otra.
+internal sealed record SourceLimits(
+    string Provider, bool Enabled, int RequestDelayMs, int MaxRequestsPerHour, int MaxRequestsPerDay, int MaxRequestsPerBurst = 0, int BurstRestMinutes = 0);
 
 internal interface IAsturfutbolRequestStore
 {
     Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct);
     Task CompleteAsync(string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct);
-    Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, bool pauseProvider, CancellationToken ct);
+    Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, ProviderPause? pause, CancellationToken ct);
 }
 
 // Cada operación usa un contexto propio: reservar una llamada nunca guarda cambios de los agregados del solicitante.
@@ -98,15 +121,40 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
             if (state.HourRequests >= limits.MaxRequestsPerHour) return new(RetryAt: hour.AddHours(1));
             if (state.NextRequestAt > now) return new(RetryAt: state.NextRequestAt, Spacing: true);
 
+            // Tras un descanso (o tanto tiempo sin pedir nada como un descanso) empieza otra tanda con una sesión nueva. Los
+            // saltos de una redirección son parte de la misma página: no se corta a mitad ni se cambia de sesión.
+            var rest = TimeSpan.FromMinutes(Math.Max(1, limits.BurstRestMinutes));
+            if (!redirect && limits.MaxRequestsPerBurst > 0)
+            {
+                if (state.BurstRequests > 0 && (state.LastRequestAt is null || now - state.LastRequestAt >= rest))
+                {
+                    state.BurstRequests = 0;
+                    state.SessionEpoch++;
+                }
+                if (state.BurstRequests >= limits.MaxRequestsPerBurst)
+                {
+                    state.PausedUntil = now + rest;
+                    state.PauseKind = PauseKinds.Rest;
+                    state.PauseReason = $"Descanso tras una tanda de {state.BurstRequests} peticiones; la siguiente empieza con una sesión nueva.";
+                    state.BurstRequests = 0;
+                    state.SessionEpoch++;
+                    await db.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                    return new(RetryAt: state.PausedUntil);
+                }
+            }
+
             state.HourRequests++;
             state.DayRequests++;
+            state.BurstRequests++;
+            state.LastRequestAt = now;
             state.NextRequestAt = now.AddMilliseconds(Math.Max(1000, limits.RequestDelayMs));
             if (cached is null) { cached = new() { Key = key, Url = url }; db.Add(cached); }
             cached.LeaseId = lease;
             cached.LeaseUntil = now.AddMinutes(5);
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
-            return new FederationReservation();
+            return new FederationReservation(SessionEpoch: state.SessionEpoch);
         });
     }
 
@@ -125,7 +173,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, bool pauseProvider, CancellationToken ct)
+    public async Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, ProviderPause? pause, CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -141,7 +189,17 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
             cached.NextAttemptAt = retryAt;
             cached.LeaseId = null;
             cached.LeaseUntil = null;
-            if (pauseProvider && (state.PausedUntil is null || state.PausedUntil < retryAt)) state.PausedUntil = retryAt;
+            if (pause is not null && (state.PausedUntil is null || state.PausedUntil < pause.Until))
+            {
+                state.PausedUntil = pause.Until;
+                state.PauseKind = pause.Kind;
+                state.PauseReason = pause.Reason.Length > 500 ? pause.Reason[..500] : pause.Reason;
+            }
+            if (pause?.NewSession == true)
+            {
+                state.BurstRequests = 0;
+                state.SessionEpoch++;
+            }
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
         });
@@ -151,4 +209,28 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
 internal sealed class AsturfutbolRequestGate
 {
     public SemaphoreSlim Semaphore { get; } = new(1, 1);
+}
+
+// Cookies de la sesión con la federación (las comparte el HttpClientHandler) y las páginas que ha servido bien. Cuando
+// la base de datos dice que toca sesión nueva (otra época), se tiran las cookies y la siguiente petición vuelve a pasar
+// por NLogin como cualquier visita nueva.
+internal sealed class AsturfutbolSession
+{
+    private int _epoch = int.MinValue;
+
+    public System.Net.CookieContainer Cookies { get; } = new();
+    public int PagesServed { get; private set; }
+
+    public void Use(int epoch)
+    {
+        if (epoch == _epoch) return;
+        if (_epoch != int.MinValue)
+        {
+            foreach (System.Net.Cookie cookie in Cookies.GetAllCookies()) cookie.Expired = true;
+            PagesServed = 0;
+        }
+        _epoch = epoch;
+    }
+
+    public void Served() => PagesServed++;
 }

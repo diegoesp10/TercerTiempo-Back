@@ -18,13 +18,18 @@ public sealed record SheetQueueDto(
     int Done,
     int Missing,
     int Failed,
-    [property: Description("La federación tiene en pausa las descargas hasta entonces (bloqueo o tope de peticiones).")]
+    [property: Description("Las descargas de la federación esperan hasta entonces (descanso, sesión cortada, bloqueo o tope de peticiones).")]
     DateTimeOffset? PausedUntil,
+    [property: Description("Por qué: rest (descanso entre tandas), session (la web cerró la sesión; no es un bloqueo), blocked (bloqueo), error (la web falla), hour o day (tope de peticiones).")]
+    string? PauseKind,
+    string? PauseReason,
     int HourRequests,
     int MaxPerHour,
     int DayRequests,
     int MaxPerDay,
     DateTimeOffset? NextRequestAt,
+    int BurstRequests,
+    int? MaxPerBurst,
     [property: Description("Peticiones que faltan para las actas en cola (una por acta y una por jornada que no esté en caché).")]
     int RequestsNeeded,
     [property: Description("Cuándo terminaría la cola al ritmo que permiten los límites de la federación (aproximado).")]
@@ -100,6 +105,14 @@ internal sealed class GetLiveDownloadsHandler(
 
         var source = await monitor.SourceAsync(Federation, cancellationToken);
         var pausedUntil = source?.PausedUntil ?? (queue.PausedUntil > now ? queue.PausedUntil : null);
+        var maxHour = source?.MaxPerHour ?? 20;
+        var maxDay = source?.MaxPerDay ?? 60;
+        // Sin pausa guardada, la espera de la cola viene de los topes de peticiones.
+        var pauseKind = source?.PausedUntil is not null ? source.PauseKind
+            : pausedUntil is null ? null
+            : (source?.DayRequests ?? 0) >= maxDay ? "day"
+            : (source?.HourRequests ?? 0) >= maxHour ? "hour"
+            : null;
         var pending = rows.Where(r => r.Status is SheetDownloadStatus.Pending or SheetDownloadStatus.Downloading).ToList();
 
         // Una petición por acta y otra por cada jornada distinta (la página de la jornada se guarda un día en caché).
@@ -110,10 +123,9 @@ internal sealed class GetLiveDownloadsHandler(
             .Distinct()
             .Count();
 
-        var maxHour = source?.MaxPerHour ?? 20;
-        var maxDay = source?.MaxPerDay ?? 60;
         var estimated = needed == 0 ? (DateTimeOffset?)null : EstimateFinish(
-            needed, now, pausedUntil, source?.NextRequestAt, source?.HourRequests ?? 0, maxHour, source?.DayRequests ?? 0, maxDay);
+            needed, now, pausedUntil, source?.NextRequestAt, source?.HourRequests ?? 0, maxHour, source?.DayRequests ?? 0, maxDay,
+            source?.MaxPerBurst ?? 0, source?.BurstRestMinutes ?? 0);
 
         var sheets = new SheetQueueDto(
             rows.Count(r => r.Status == SheetDownloadStatus.Pending),
@@ -122,8 +134,12 @@ internal sealed class GetLiveDownloadsHandler(
             rows.Count(r => r.Status == SheetDownloadStatus.Missing),
             rows.Count(r => r.Status == SheetDownloadStatus.Failed),
             pausedUntil,
+            pauseKind,
+            source?.PausedUntil is not null ? source.PauseReason : null,
             source?.HourRequests ?? 0, maxHour, source?.DayRequests ?? 0, maxDay,
             source?.NextRequestAt,
+            source?.BurstRequests ?? 0,
+            source?.MaxPerBurst,
             needed,
             estimated,
             items);
@@ -132,9 +148,10 @@ internal sealed class GetLiveDownloadsHandler(
     }
 
     // Recorre las horas que vienen gastando lo que permiten los topes por hora y por día (en UTC, como los contadores).
+    // Con tandas, cada hora rinde lo que cabe en tandas de maxBurst separadas por su descanso.
     internal static DateTimeOffset? EstimateFinish(
         int requests, DateTimeOffset now, DateTimeOffset? pausedUntil, DateTimeOffset? nextRequestAt,
-        int hourUsed, int maxHour, int dayUsed, int maxDay)
+        int hourUsed, int maxHour, int dayUsed, int maxDay, int maxBurst = 0, int restMinutes = 0)
     {
         if (maxHour <= 0 || maxDay <= 0) return null;
 
@@ -143,6 +160,11 @@ internal sealed class GetLiveDownloadsHandler(
         if (nextRequestAt > at) at = nextRequestAt.Value;
 
         var perHour = Math.Min(maxHour, (int)(TimeSpan.FromHours(1) / RequestSpacing));
+        if (maxBurst > 0)
+        {
+            var cycle = RequestSpacing * maxBurst + TimeSpan.FromMinutes(Math.Max(1, restMinutes));
+            perHour = Math.Min(perHour, Math.Max(1, (int)(maxBurst * (TimeSpan.FromHours(1) / cycle))));
+        }
         for (var guard = 0; guard < 24 * 400; guard++)
         {
             var hourStart = new DateTimeOffset(at.Year, at.Month, at.Day, at.Hour, 0, 0, TimeSpan.Zero);

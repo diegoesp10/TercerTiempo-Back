@@ -180,6 +180,7 @@ public static class DependencyInjection
     {
         services.AddSingleton<IAsturfutbolRequestStore, SqlAsturfutbolRequestStore>();
         services.AddSingleton<AsturfutbolRequestGate>();
+        services.AddSingleton<AsturfutbolSession>();
         services.AddOptions<OfficialSheetOptions>()
             .Bind(configuration.GetSection(OfficialSheetOptions.SectionName));
 
@@ -192,10 +193,10 @@ public static class DependencyInjection
                 client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
                 client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
             })
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            .ConfigurePrimaryHttpMessageHandler(sp => new HttpClientHandler
             {
                 UseCookies = true,
-                CookieContainer = new System.Net.CookieContainer(),
+                CookieContainer = sp.GetRequiredService<AsturfutbolSession>().Cookies,
                 AllowAutoRedirect = false,
                 AutomaticDecompression = System.Net.DecompressionMethods.All,
             })

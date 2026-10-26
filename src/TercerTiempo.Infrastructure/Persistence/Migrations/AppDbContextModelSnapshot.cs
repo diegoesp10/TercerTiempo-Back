@@ -3684,6 +3684,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<int>("BurstRequests")
+                        .HasColumnType("int");
+
                     b.Property<int>("DayRequests")
                         .HasColumnType("int");
 
@@ -3696,11 +3699,25 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("HourStartedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("LastRequestAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset>("NextRequestAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("PauseKind")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("PauseReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTimeOffset?>("PausedUntil")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("SessionEpoch")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 

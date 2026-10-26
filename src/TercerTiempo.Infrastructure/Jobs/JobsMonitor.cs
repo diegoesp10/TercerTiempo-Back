@@ -128,11 +128,23 @@ internal sealed class JobsMonitor(
                     state?.NextRequestAt > now ? state.NextRequestAt : null,
                     seen?.Count ?? 0,
                     seen?.Failed ?? 0,
-                    seen?.Last);
+                    seen?.Last,
+                    state?.PausedUntil > now ? state.PauseKind : null,
+                    state?.PausedUntil > now ? state.PauseReason : null,
+                    BurstInProgress(state, limit, now),
+                    limit is { MaxRequestsPerBurst: > 0 } ? limit.MaxRequestsPerBurst : null,
+                    limit is { MaxRequestsPerBurst: > 0 } ? limit.BurstRestMinutes : null);
             })
             .OrderBy(s => s.Provider)
             .ToList();
     }
+
+    // La tanda sigue abierta mientras no haya pasado un descanso entero desde la última petición.
+    private static int BurstInProgress(FederationRequestState? state, SourceLimits? limit, DateTimeOffset now) =>
+        state is null || limit is not { MaxRequestsPerBurst: > 0 } || state.LastRequestAt is null
+            || now - state.LastRequestAt >= TimeSpan.FromMinutes(Math.Max(1, limit.BurstRestMinutes))
+            ? 0
+            : state.BurstRequests;
 
     private static JobRunDto ToDto(JobRun run) => new(
         run.Id,

@@ -66,7 +66,14 @@ public sealed record ScrapeSourceDto(
     DateTimeOffset? NextRequestAt,
     int Last24h,
     int Failed24h,
-    DateTimeOffset? LastRequestAt);
+    DateTimeOffset? LastRequestAt,
+    [property: Description("Motivo de la pausa: rest (descanso entre tandas), session (la web cerró la sesión, no es un bloqueo), blocked (bloqueo) o error (la web falla).")]
+    string? PauseKind = null,
+    string? PauseReason = null,
+    [property: Description("Peticiones de la tanda en curso; al llegar a MaxPerBurst se descansa BurstRestMinutes y se sigue con una sesión nueva.")]
+    int BurstRequests = 0,
+    int? MaxPerBurst = null,
+    int? BurstRestMinutes = null);
 
 public sealed record ScrapeRequestDto(
     long Id,

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
@@ -13,6 +14,7 @@ internal sealed class AsturfutbolClient(
     ILogger<AsturfutbolClient> logger,
     IAsturfutbolRequestStore store,
     AsturfutbolRequestGate gate,
+    AsturfutbolSession session,
     TimeProvider clock)
 {
     private readonly OfficialSheetOptions _options = options.Value;
@@ -58,6 +60,7 @@ internal sealed class AsturfutbolClient(
                     throw new ProviderThrottledException(AsturfutbolOfficialSheetProvider.Name,
                         $"Descarga de la federación aplazada hasta {retry:O}; se conservan los datos guardados.", retry);
                 }
+                session.Use(reservation.SessionEpoch);
 
                 HttpResponseMessage response;
                 try
@@ -67,7 +70,7 @@ internal sealed class AsturfutbolClient(
                 catch (Exception ex) when (ex is HttpRequestException || ex is OperationCanceledException && !ct.IsCancellationRequested)
                 {
                     var retryAt = clock.GetUtcNow().AddMinutes(Math.Max(1, _options.Asturfutbol.FailureRetryMinutes));
-                    await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, null, retryAt, false, ct);
+                    await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, null, retryAt, null, ct);
                     throw new HttpRequestException("No se pudo consultar la federación; el intento queda aplazado en la base de datos.", ex);
                 }
 
@@ -78,7 +81,7 @@ internal sealed class AsturfutbolClient(
                     {
                         if (response.Headers.Location is not { } location || ++redirects > 5)
                         {
-                            await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, now.AddHours(1), false, ct);
+                            await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, now.AddHours(1), null, ct);
                             throw new HttpRequestException("Redirección de la federación no válida.");
                         }
                         uri = new Uri(uri, location);
@@ -100,7 +103,11 @@ internal sealed class AsturfutbolClient(
                         var blocked = status is 403 or 429;
                         var pauseProvider = blocked || status >= 500 || response.Headers.RetryAfter is not null;
                         var retryAt = RetryAt(response, blocked);
-                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, retryAt, pauseProvider, ct);
+                        var pause = pauseProvider
+                            ? new ProviderPause(retryAt, blocked ? PauseKinds.Blocked : PauseKinds.Error,
+                                blocked ? $"La federación respondió {status} (acceso denegado o demasiadas peticiones)." : $"La federación respondió {status}.")
+                            : null;
+                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, retryAt, pause, ct);
                         logger.LogWarning("La federación respondió {Status}; sin reintentos inmediatos, próximo intento a partir de {RetryAt}", status, retryAt);
                         if (pauseProvider) throw new ProviderThrottledException(AsturfutbolOfficialSheetProvider.Name,
                             $"La federación respondió {status}; todas las descargas quedan en pausa hasta {retryAt:O}.", retryAt);
@@ -111,22 +118,20 @@ internal sealed class AsturfutbolClient(
                     try { content = await response.Content.ReadAsByteArrayAsync(ct); }
                     catch (Exception ex) when (ex is HttpRequestException || ex is OperationCanceledException && !ct.IsCancellationRequested)
                     {
-                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, clock.GetUtcNow().AddMinutes(Math.Max(1, _options.Asturfutbol.FailureRetryMinutes)), false, ct);
+                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, clock.GetUtcNow().AddMinutes(Math.Max(1, _options.Asturfutbol.FailureRetryMinutes)), null, ct);
                         throw;
                     }
                     var contentType = response.Content.Headers.ContentType?.ToString();
                     var text = html ? Decode(content, contentType) : null;
-                    if (content.Length == 0 || html && (string.IsNullOrWhiteSpace(text)
-                        || text!.Contains("No se ha aceptado el cookie", StringComparison.OrdinalIgnoreCase)
-                        || text.Contains("<title>Access Denied", StringComparison.OrdinalIgnoreCase)
-                        || text.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase)
-                        || text.Contains("cf-chl-", StringComparison.OrdinalIgnoreCase)))
+                    if (Rejection(content, text) is { } rejection)
                     {
-                        var retryAt = clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.BlockedPauseHours));
-                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, retryAt, true, ct);
-                        throw new ProviderThrottledException(AsturfutbolOfficialSheetProvider.Name,
-                            "La federación devolvió una página vacía o rechazó la sesión; se pausan todas las descargas.", retryAt);
+                        var pause = Pause(rejection);
+                        logger.LogWarning("La federación rechazó {Url} ({Kind}) tras {Pages} páginas servidas en esta sesión: {Reason}. Respuesta: {Snippet}",
+                            uri, pause.Kind, session.PagesServed, pause.Reason, Snippet(text));
+                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, pause.Until, pause, ct);
+                        throw new ProviderThrottledException(AsturfutbolOfficialSheetProvider.Name, $"{pause.Reason} Se retoma a partir de {pause.Until:O}.", pause.Until);
                     }
+                    session.Served();
                     var result = new FederationResponse(content, contentType);
                     await store.CompleteAsync(key, result, clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.CacheHours)), ct);
                     return result;
@@ -134,6 +139,47 @@ internal sealed class AsturfutbolClient(
             }
         }
         finally { gate.Semaphore.Release(); }
+    }
+
+    private enum RejectionKind { SessionLost, Blocked }
+
+    private sealed record PageRejection(RejectionKind Kind, string What);
+
+    // Respuestas 200 que no son la página: sin sesión ("No se ha aceptado el cookie" o vacía) o una página de bloqueo.
+    private static PageRejection? Rejection(byte[] content, string? text)
+    {
+        if (content.Length == 0) return new(RejectionKind.SessionLost, "una página vacía");
+        if (text is null) return null;
+        if (string.IsNullOrWhiteSpace(text)) return new(RejectionKind.SessionLost, "una página vacía");
+        if (text.Contains("No se ha aceptado el cookie", StringComparison.OrdinalIgnoreCase)) return new(RejectionKind.SessionLost, "«No se ha aceptado el cookie»");
+        if (text.Contains("<title>Access Denied", StringComparison.OrdinalIgnoreCase)) return new(RejectionKind.Blocked, "«Access Denied»");
+        if (text.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase)) return new(RejectionKind.Blocked, "«Too Many Requests»");
+        if (text.Contains("cf-chl-", StringComparison.OrdinalIgnoreCase)) return new(RejectionKind.Blocked, "una comprobación anti-bots");
+        return null;
+    }
+
+    // Si la sesión ya había servido páginas, la federación la ha cortado: no es un bloqueo, se descansa un rato y se
+    // vuelve con una sesión nueva. Si la rechaza recién abierta (o es una página de bloqueo), sí se trata como bloqueo.
+    private ProviderPause Pause(PageRejection rejection)
+    {
+        var now = clock.GetUtcNow();
+        var settings = _options.Asturfutbol;
+        if (rejection.Kind == RejectionKind.SessionLost && session.PagesServed > 0)
+            return new(now.AddMinutes(Math.Max(1, settings.SessionCutPauseMinutes)), PauseKinds.Session,
+                $"La federación cerró la sesión tras {session.PagesServed} páginas (devolvió {rejection.What}); no es un bloqueo, se sigue con una sesión nueva.",
+                NewSession: true);
+        return new(now.AddHours(Math.Max(1, settings.BlockedPauseHours)), PauseKinds.Blocked,
+            rejection.Kind == RejectionKind.SessionLost
+                ? $"La federación rechazó una sesión recién abierta (devolvió {rejection.What})."
+                : $"La federación devolvió {rejection.What}.",
+            NewSession: true);
+    }
+
+    private static string Snippet(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "(vacía)";
+        var plain = Regex.Replace(Regex.Replace(text, "<[^>]+>", " "), @"\s+", " ").Trim();
+        return plain.Length > 300 ? plain[..300] : plain;
     }
 
     private DateTimeOffset RetryAt(HttpResponseMessage response, bool blocked)
