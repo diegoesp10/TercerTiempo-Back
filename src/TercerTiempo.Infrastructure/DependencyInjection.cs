@@ -174,6 +174,7 @@ public static class DependencyInjection
         services.AddSingleton<TercerTiempo.Application.OfficialSheets.ISheetDownloadSignal>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
         services.AddScoped<TercerTiempo.Application.OfficialSheets.ISheetDownloadStore, TercerTiempo.Infrastructure.OfficialSheets.SheetDownloadStore>();
         services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetSyncWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.WeeklySheetQueueWorker>();
     }
 
     private static void AddOfficialSheets(IServiceCollection services, IConfiguration configuration)

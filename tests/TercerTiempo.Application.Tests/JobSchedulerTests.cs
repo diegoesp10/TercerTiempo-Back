@@ -37,6 +37,33 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
         Assert.InRange(due!.Value, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(15));
     }
 
+    [Fact]
+    public void A_weekly_slot_is_the_next_monday_at_seven_in_federation_time()
+    {
+        var slot = new WeeklySlot(DayOfWeek.Monday, new(7, 0), TercerTiempo.Infrastructure.FootballData.FutbolAsturiano.SiteClock.Resolve("Europe/Madrid"));
+
+        // Invierno (UTC+1) y verano (UTC+2); si ya ha pasado la hora del lunes, el de la semana siguiente.
+        Assert.Equal(new DateTimeOffset(2026, 10, 26, 6, 0, 0, TimeSpan.Zero), slot.Next(new DateTimeOffset(2026, 10, 25, 20, 0, 0, TimeSpan.Zero)));
+        Assert.Equal(new DateTimeOffset(2026, 11, 2, 6, 0, 0, TimeSpan.Zero), slot.Next(new DateTimeOffset(2026, 10, 26, 6, 0, 0, TimeSpan.Zero)));
+        Assert.Equal(new DateTimeOffset(2027, 4, 5, 5, 0, 0, TimeSpan.Zero), slot.Next(new DateTimeOffset(2027, 3, 31, 12, 0, 0, TimeSpan.Zero)));
+        Assert.Equal("Los lunes a las 7:00", slot.Describe());
+    }
+
+    [LocalSqlFact]
+    public async Task A_weekly_job_runs_on_its_day_and_catches_up_a_missed_one_on_start()
+    {
+        await fixture.Reset();
+        var scheduler = fixture.Scheduler();
+        var slot = scheduler.Get(JobNames.WeeklySheets).Weekly!;
+
+        var due = await scheduler.FirstDueAsync(JobNames.WeeklySheets, default);
+        Assert.Equal(slot.Next(DateTimeOffset.UtcNow), due!.Value, TimeSpan.FromSeconds(5));
+
+        await fixture.AddRun(JobNames.WeeklySheets, DateTimeOffset.UtcNow.AddDays(-8), JobRunStatus.Succeeded);
+        due = await scheduler.FirstDueAsync(JobNames.WeeklySheets, default);
+        Assert.InRange(due!.Value, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(35));
+    }
+
     [LocalSqlFact]
     public async Task Runs_left_running_by_a_stopped_api_are_marked_interrupted()
     {

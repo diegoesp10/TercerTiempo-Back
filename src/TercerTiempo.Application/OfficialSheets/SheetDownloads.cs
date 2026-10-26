@@ -1,4 +1,5 @@
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Application.Sync;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
@@ -89,6 +90,33 @@ internal sealed class RequestSheetDownloadsHandler(
         var added = await downloads.RequestAsync(wanted.Select(m => m.Id).ToList(), now, cancellationToken);
         signal.Signal();
         return added;
+    }
+}
+
+public sealed record QueueRecentSheetsCommand(int Days) : ICommand<RecentSheetsQueued>;
+
+public sealed record RecentSheetsQueued(int Leagues, int Queued, DateOnly From, DateOnly To);
+
+// Las actas de los últimos días de las ligas que publica la federación asturiana: las regionales y las que ya se han
+// encontrado en su web (3ª RFEF). 1ª y 2ª RFEF no están ahí y buscarlas solo gastaría peticiones.
+internal sealed class QueueRecentSheetsHandler(
+    ICompetitionStore competitions,
+    IOfficialSheetProvider provider,
+    ICommandHandler<RequestSheetDownloadsCommand, int> request,
+    TimeProvider clock) : ICommandHandler<QueueRecentSheetsCommand, RecentSheetsQueued>
+{
+    public async Task<RecentSheetsQueued> Handle(QueueRecentSheetsCommand command, CancellationToken cancellationToken)
+    {
+        var to = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+        var from = to.AddDays(-Math.Max(1, command.Days));
+        var leagues = (await competitions.GetAllAsync(cancellationToken))
+            .Where(c => c.Level == CompetitionLevel.Regional || c.CurrentSeason?.OfficialRef?.Provider == provider.ProviderName)
+            .Select(c => c.Id)
+            .ToList();
+        if (leagues.Count == 0) return new(0, 0, from, to);
+
+        var scope = new SyncScope(SyncScopeKind.DateRange, from, to, leagues, IncludeRosters: false, IncludeSheets: true);
+        return new(leagues.Count, await request.Handle(new RequestSheetDownloadsCommand(scope), cancellationToken), from, to);
     }
 }
 

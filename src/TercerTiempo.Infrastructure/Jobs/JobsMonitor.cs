@@ -74,7 +74,8 @@ internal sealed class JobsMonitor(
                 running,
                 nextRunAt,
                 progress,
-                lastRun));
+                lastRun,
+                definition.Weekly?.Describe()));
         }
 
         var recentQuery = db.Set<ScrapeRequest>().AsNoTracking();

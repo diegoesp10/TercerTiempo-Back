@@ -231,6 +231,42 @@ public class FederationDatabaseFirstTests
             TercerTiempo.Application.Admin.GetLiveDownloadsHandler.EstimateFinish(1, start, start.AddHours(5), null, 18, 20, 59, 60));
     }
 
+    [Fact]
+    public async Task The_weekly_queue_asks_for_the_last_days_of_the_leagues_the_federation_publishes()
+    {
+        var regional = Competition.Create("1ª AsturFútbol", "1ª AsturFútbol", CompetitionLevel.Regional, 1, null, "Asturias", null);
+        var tercera = Competition.Create("3ª RFEF", "3ª RFEF", CompetitionLevel.National, 3, null, "Asturias", null);
+        var terceraSeason = tercera.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
+        tercera.MarkCurrent(terceraSeason.Id);
+        terceraSeason.LinkOfficial(TercerTiempo.Domain.Common.ExternalRef.Create("asturfutbol", "22880342/22922739/22"));
+        var segunda = Competition.Create("2ª RFEF", "2ª RFEF", CompetitionLevel.National, 2, null, "Asturias", null);
+        var segundaSeason = segunda.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
+        segunda.MarkCurrent(segundaSeason.Id);
+
+        TercerTiempo.Application.Sync.SyncScope? asked = null;
+        var handler = new QueueRecentSheetsHandler(
+            Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([regional, tercera, segunda])),
+            Stub<IOfficialSheetProvider>((_, _) => "asturfutbol"),
+            Stub<TercerTiempo.Application.Abstractions.Messaging.ICommandHandler<RequestSheetDownloadsCommand, int>>((_, args) =>
+            {
+                asked = ((RequestSheetDownloadsCommand)args![0]!).Scope;
+                return Task.FromResult(12);
+            }),
+            new FixedClock(new DateTimeOffset(2026, 10, 26, 6, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(new(7), default);
+
+        Assert.Equal(new RecentSheetsQueued(2, 12, new(2026, 10, 19), new(2026, 10, 26)), result);
+        Assert.Equal([regional.Id, tercera.Id], asked!.CompetitionIds);
+        Assert.True(asked.IncludeSheets);
+        Assert.Equal(new TercerTiempo.Application.Abstractions.FootballData.MatchWindow(new(2026, 10, 19), new(2026, 10, 26)), asked.Window);
+    }
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
     private sealed class FakeSignal(Action onSignal) : ISheetDownloadSignal
     {
         public void Signal() => onSignal();

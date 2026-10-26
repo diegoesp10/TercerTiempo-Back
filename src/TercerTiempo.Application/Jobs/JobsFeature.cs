@@ -10,6 +10,7 @@ public static class JobNames
     public const string FootballData = "football-data";
     public const string OfficialSheets = "official-sheets";
     public const string LicenseRenewals = "license-renewals";
+    public const string WeeklySheets = "weekly-sheets";
 }
 
 public static class JobRunStatus
@@ -38,7 +39,9 @@ public sealed record JobDto(
     bool Running,
     DateTimeOffset? NextRunAt,
     JobProgressDto? Progress,
-    JobRunDto? LastRun);
+    JobRunDto? LastRun,
+    [property: Description("Cuándo toca si va a día y hora fijos («Los lunes a las 7:00»); null si va por intervalo.")]
+    string? Schedule = null);
 
 public sealed record JobProgressDto(string? Current, int Done, int Total);
 

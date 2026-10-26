@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -6,12 +7,30 @@ using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Infrastructure.FootballData;
+using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
 
 namespace TercerTiempo.Infrastructure.Jobs;
 
-internal sealed record JobDefinition(string Name, string Title, string Description, TimeSpan? Interval, TimeSpan FirstRunDelay, bool Enabled);
+internal sealed record JobDefinition(
+    string Name, string Title, string Description, TimeSpan? Interval, TimeSpan FirstRunDelay, bool Enabled, WeeklySlot? Weekly = null);
+
+// Un día y una hora fijos de cada semana, en la hora de la federación.
+internal sealed record WeeklySlot(DayOfWeek Day, TimeOnly At, TimeZoneInfo Zone)
+{
+    private static readonly CultureInfo Spanish = CultureInfo.GetCultureInfo("es-ES");
+
+    public DateTimeOffset Next(DateTimeOffset after)
+    {
+        var local = TimeZoneInfo.ConvertTime(after, Zone).DateTime;
+        var candidate = local.Date.AddDays(((int)Day - (int)local.DayOfWeek + 7) % 7) + At.ToTimeSpan();
+        if (candidate <= local) candidate = candidate.AddDays(7);
+        return SiteClock.ToUtc(candidate, Zone);
+    }
+
+    public string Describe() => $"Los {Spanish.DateTimeFormat.GetDayName(Day)} a las {At.ToString("H:mm", Spanish)}";
+}
 
 internal sealed record JobOutcome(string Summary, IReadOnlyList<string> Errors);
 
@@ -56,6 +75,7 @@ internal sealed class JobScheduler
 
         var footballMinutes = football.Value.SyncIntervalMinutes;
         var sheetMinutes = sheets.Value.BackgroundScanMinutes;
+        var weeklyDays = sheets.Value.WeeklyQueueDays;
         JobDefinition[] definitions =
         [
             new(JobNames.FootballData,
@@ -76,6 +96,13 @@ internal sealed class JobScheduler
                 TimeSpan.FromMinutes(1440),
                 TimeSpan.FromSeconds(60),
                 licensing.Value.Provider == "mock"),
+            new(JobNames.WeeklySheets,
+                "Actas del fin de semana",
+                $"Pone en cola las actas de los partidos de los últimos {weeklyDays} días de las ligas de la federación asturiana (regionales y 3ª RFEF); se descargan en tandas con su límite de peticiones.",
+                weeklyDays > 0 ? TimeSpan.FromDays(7) : null,
+                TimeSpan.FromSeconds(30),
+                sheets.Value.Enabled && weeklyDays > 0,
+                new WeeklySlot(sheets.Value.WeeklyQueueDay, sheets.Value.WeeklyQueueAt, SiteClock.Resolve(sheets.Value.Asturfutbol.TimeZone))),
         ];
         _slots = definitions.ToDictionary(d => d.Name, d => new Slot(d));
     }
@@ -162,6 +189,12 @@ internal sealed class JobScheduler
             .FirstOrDefaultAsync(cancellationToken);
 
         var earliest = now + definition.FirstRunDelay;
+        // A día fijo: el siguiente tras la última ejecución; si se pasó con la API apagada, se hace al arrancar.
+        if (definition.Weekly is { } weekly)
+        {
+            var next = weekly.Next(lastStart ?? now);
+            return next > earliest ? next : earliest;
+        }
         if (lastStart is null) return earliest;
         var due = lastStart.Value + interval;
         return due > earliest ? due : earliest;
