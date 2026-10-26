@@ -121,7 +121,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
             var day = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
             if (state.HourStartedAt != hour) { state.HourStartedAt = hour; state.HourRequests = 0; }
             if (state.DayStartedAt != day) { state.DayStartedAt = day; state.DayRequests = 0; }
-            if (state.DayRequests >= limits.MaxRequestsPerDay) return new(RetryAt: day.AddDays(1));
+            if (limits.MaxRequestsPerDay > 0 && state.DayRequests >= limits.MaxRequestsPerDay) return new(RetryAt: day.AddDays(1));
             if (state.HourRequests >= limits.MaxRequestsPerHour) return new(RetryAt: hour.AddHours(1));
             if (state.NextRequestAt > now) return new(RetryAt: state.NextRequestAt, Spacing: true);
 

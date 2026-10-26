@@ -124,7 +124,7 @@ internal sealed class JobsMonitor(
                     state is null ? (limit is null ? null : 0) : state.HourStartedAt == hour ? state.HourRequests : 0,
                     limit?.MaxRequestsPerHour,
                     state is null ? (limit is null ? null : 0) : state.DayStartedAt == day ? state.DayRequests : 0,
-                    limit?.MaxRequestsPerDay,
+                    limit is { MaxRequestsPerDay: > 0 } ? limit.MaxRequestsPerDay : null,
                     state?.PausedUntil > now ? state.PausedUntil : null,
                     state?.NextRequestAt > now ? state.NextRequestAt : null,
                     seen?.Count ?? 0,

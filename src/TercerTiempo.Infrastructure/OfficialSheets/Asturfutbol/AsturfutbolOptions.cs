@@ -45,7 +45,8 @@ public sealed class AsturfutbolOptions
     // bloqueo. Solo un 403/429 o una página de bloqueo explícita cuentan como bloqueo (BlockedPauseHours).
     public int RequestDelayMs { get; set; } = 30000;
     public int MaxRequestsPerHour { get; set; } = 20;
-    public int MaxRequestsPerDay { get; set; } = 60;
+    // 0 = sin tope diario: el ritmo lo marcan las tandas, su descanso y el tope por hora.
+    public int MaxRequestsPerDay { get; set; }
     public int MaxRequestsPerBurst { get; set; } = 10;
     public int BurstRestMinutes { get; set; } = 40;
     public int RejectionRetries { get; set; } = 1;

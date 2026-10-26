@@ -26,6 +26,7 @@ public sealed record SheetQueueDto(
     int HourRequests,
     int MaxPerHour,
     int DayRequests,
+    [property: Description("Tope de peticiones al día; 0 = sin tope.")]
     int MaxPerDay,
     DateTimeOffset? NextRequestAt,
     int BurstRequests,
@@ -106,11 +107,11 @@ internal sealed class GetLiveDownloadsHandler(
         var source = await monitor.SourceAsync(Federation, cancellationToken);
         var pausedUntil = source?.PausedUntil ?? (queue.PausedUntil > now ? queue.PausedUntil : null);
         var maxHour = source?.MaxPerHour ?? 20;
-        var maxDay = source?.MaxPerDay ?? 60;
+        var maxDay = source is null ? 60 : source.MaxPerDay ?? 0;
         // Sin pausa guardada, la espera de la cola viene de los topes de peticiones.
         var pauseKind = source?.PausedUntil is not null ? source.PauseKind
             : pausedUntil is null ? null
-            : (source?.DayRequests ?? 0) >= maxDay ? "day"
+            : maxDay > 0 && (source?.DayRequests ?? 0) >= maxDay ? "day"
             : (source?.HourRequests ?? 0) >= maxHour ? "hour"
             : null;
         var pending = rows.Where(r => r.Status is SheetDownloadStatus.Pending or SheetDownloadStatus.Downloading).ToList();
@@ -154,7 +155,8 @@ internal sealed class GetLiveDownloadsHandler(
         int requests, DateTimeOffset now, DateTimeOffset? pausedUntil, DateTimeOffset? nextRequestAt,
         int hourUsed, int maxHour, int dayUsed, int maxDay, int maxBurst = 0, int restMinutes = 0, TimeSpan? spacing = null)
     {
-        if (maxHour <= 0 || maxDay <= 0) return null;
+        if (maxHour <= 0) return null;
+        if (maxDay <= 0) maxDay = int.MaxValue;
         var step = spacing ?? DefaultSpacing;
 
         var at = now;

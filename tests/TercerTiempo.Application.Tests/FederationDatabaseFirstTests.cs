@@ -228,6 +228,9 @@ public class FederationDatabaseFirstTests
         // Con el tope del día gastado, se sigue al día siguiente; con pausa, desde su final.
         Assert.Equal(new DateTimeOffset(2026, 10, 26, 0, 2, 30, TimeSpan.Zero),
             TercerTiempo.Application.Admin.GetLiveDownloadsHandler.EstimateFinish(5, start, null, null, 0, 20, 60, 60));
+        // Sin tope diario (0) solo cuenta el ritmo por hora: 45 peticiones a 20 por hora acaban en la tercera hora.
+        Assert.Equal(start.AddHours(2).AddSeconds(5 * 30),
+            TercerTiempo.Application.Admin.GetLiveDownloadsHandler.EstimateFinish(45, start, null, null, 0, 20, 500, 0));
         Assert.Equal(start.AddHours(5).AddSeconds(30),
             TercerTiempo.Application.Admin.GetLiveDownloadsHandler.EstimateFinish(1, start, start.AddHours(5), null, 18, 20, 59, 60));
     }

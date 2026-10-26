@@ -111,6 +111,22 @@ public class FederationHttpSqlTests(FederationSqlFixture fixture) : IClassFixtur
     }
 
     [LocalSqlFact]
+    public async Task Without_a_daily_cap_only_the_hourly_cap_holds_requests_back()
+    {
+        await fixture.Reset();
+        var options = FederationSqlFixture.Settings();
+        options.Asturfutbol.MaxRequestsPerHour = 1000;
+        options.Asturfutbol.MaxRequestsPerDay = 0;
+        var now = new DateTimeOffset(2026, 10, 26, 20, 0, 0, TimeSpan.Zero);
+        await using (var db = fixture.Db())
+        {
+            db.Add(new FederationRequestState { Id = "asturfutbol", DayStartedAt = new(2026, 10, 26, 0, 0, 0, TimeSpan.Zero), DayRequests = 5000 });
+            await db.SaveChangesAsync();
+        }
+        Assert.Null((await fixture.Store().ReserveAsync("k", "https://federation.invalid/k", Guid.NewGuid(), false, now, options.AsturfutbolLimits, default)).RetryAt);
+    }
+
+    [LocalSqlFact]
     public async Task Requests_go_in_bursts_with_a_rest_and_a_new_session_between_them()
     {
         await fixture.Reset();
