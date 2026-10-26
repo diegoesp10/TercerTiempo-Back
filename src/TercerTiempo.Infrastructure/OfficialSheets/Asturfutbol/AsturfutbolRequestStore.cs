@@ -36,12 +36,15 @@ internal sealed class FederationRequestState
     // Por qué está en pausa (PauseKinds) y el detalle para la administración.
     public string? PauseKind { get; set; }
     public string? PauseReason { get; set; }
+    // Rechazos seguidos (páginas vacías también con sesión nueva); vuelve a 0 con la primera página buena.
+    public int RejectionStreak { get; set; }
 }
 
 internal static class PauseKinds
 {
     public const string Rest = "rest";
     public const string Session = "session";
+    public const string Retry = "retry";
     public const string Blocked = "blocked";
     public const string Error = "error";
 }
@@ -84,8 +87,9 @@ internal sealed record SourceLimits(
 internal interface IAsturfutbolRequestStore
 {
     Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct);
-    Task CompleteAsync(string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct);
+    Task CompleteAsync(string provider, string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct);
     Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, ProviderPause? pause, CancellationToken ct);
+    Task<ProviderPause> RejectAsync(string provider, string key, int? status, string what, DateTimeOffset now, TimeSpan firstPause, TimeSpan maxPause, CancellationToken ct);
 }
 
 // Cada operación usa un contexto propio: reservar una llamada nunca guarda cambios de los agregados del solicitante.
@@ -158,7 +162,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
         });
     }
 
-    public async Task CompleteAsync(string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct)
+    public async Task CompleteAsync(string provider, string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -171,6 +175,9 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
         cached.LeaseId = null;
         cached.LeaseUntil = null;
         await db.SaveChangesAsync(ct);
+        await db.Set<FederationRequestState>()
+            .Where(s => s.Id == provider && s.RejectionStreak > 0)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.RejectionStreak, 0), ct);
     }
 
     public async Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, ProviderPause? pause, CancellationToken ct)
@@ -204,6 +211,50 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
             await transaction.CommitAsync(ct);
         });
     }
+
+    // Una página que sigue vacía tras reintentarla con sesiones nuevas pausa la web un rato que se dobla con cada
+    // rechazo seguido (firstPause, 2×, 4×… hasta maxPause): un fallo pasajero se recupera enseguida y uno que dura no
+    // se martillea.
+    public async Task<ProviderPause> RejectAsync(
+        string provider, string key, int? status, string what, DateTimeOffset now, TimeSpan firstPause, TimeSpan maxPause, CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            db.ChangeTracker.Clear();
+            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+            var state = await db.Set<FederationRequestState>()
+                .FromSqlInterpolated($"SELECT * FROM [FederationRequestStates] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = {provider}")
+                .SingleAsync(ct);
+            state.RejectionStreak++;
+            var wait = TimeSpan.FromTicks(Math.Min(maxPause.Ticks, firstPause.Ticks << Math.Min(16, state.RejectionStreak - 1)));
+            var reason = state.RejectionStreak == 1
+                ? $"La federación devolvió {what} también con sesiones nuevas; parece un fallo pasajero, no un bloqueo."
+                : $"La federación lleva {state.RejectionStreak} intentos seguidos devolviendo {what}; se espera cada vez más entre intentos (ahora {Describe(wait)}).";
+            var pause = new ProviderPause(now + wait, PauseKinds.Retry, reason, NewSession: true);
+
+            var cached = await db.Set<FederationHttpCache>().SingleAsync(x => x.Key == key, ct);
+            cached.StatusCode = status;
+            cached.NextAttemptAt = pause.Until;
+            cached.LeaseId = null;
+            cached.LeaseUntil = null;
+            if (state.PausedUntil is null || state.PausedUntil < pause.Until)
+            {
+                state.PausedUntil = pause.Until;
+                state.PauseKind = pause.Kind;
+                state.PauseReason = reason;
+            }
+            state.BurstRequests = 0;
+            state.SessionEpoch++;
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return pause;
+        });
+    }
+
+    private static string Describe(TimeSpan wait) =>
+        wait.TotalMinutes < 60 ? $"{(int)wait.TotalMinutes} min" : wait.TotalMinutes % 60 == 0 ? $"{(int)wait.TotalHours} h" : $"{(int)wait.TotalHours} h {wait.Minutes} min";
 }
 
 internal sealed class AsturfutbolRequestGate
@@ -233,4 +284,11 @@ internal sealed class AsturfutbolSession
     }
 
     public void Served() => PagesServed++;
+
+    // Sesión nueva ya, sin esperar a otra época: para repetir una página que ha llegado vacía.
+    public void Reset()
+    {
+        foreach (System.Net.Cookie cookie in Cookies.GetAllCookies()) cookie.Expired = true;
+        PagesServed = 0;
+    }
 }

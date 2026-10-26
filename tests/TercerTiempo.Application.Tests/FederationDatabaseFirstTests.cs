@@ -169,6 +169,7 @@ public class FederationDatabaseFirstTests
         var signalled = false;
         var handler = new RequestSheetDownloadsHandler(
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition, other])),
+            Stub<IOfficialSheetProvider>((_, _) => true),
             Stub<IMatchStore>((_, args) => Task.FromResult<IReadOnlyList<Match>>(
                 (Guid)args![0]! == season.Id ? [saved, round2, round1, future, cancelled] : [otherLeague])),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([sheet])),
@@ -246,7 +247,7 @@ public class FederationDatabaseFirstTests
         TercerTiempo.Application.Sync.SyncScope? asked = null;
         var handler = new QueueRecentSheetsHandler(
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([regional, tercera, segunda])),
-            Stub<IOfficialSheetProvider>((_, _) => "asturfutbol"),
+            Stub<IOfficialSheetProvider>((method, args) => method == nameof(IOfficialSheetProvider.Publishes) ? (string)args![0]! != "2ª RFEF" : "asturfutbol"),
             Stub<TercerTiempo.Application.Abstractions.Messaging.ICommandHandler<RequestSheetDownloadsCommand, int>>((_, args) =>
             {
                 asked = ((RequestSheetDownloadsCommand)args![0]!).Scope;

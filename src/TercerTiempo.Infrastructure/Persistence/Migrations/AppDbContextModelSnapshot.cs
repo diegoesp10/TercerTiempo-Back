@@ -3716,6 +3716,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("PausedUntil")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int>("RejectionStreak")
+                        .HasColumnType("int");
+
                     b.Property<int>("SessionEpoch")
                         .HasColumnType("int");
 

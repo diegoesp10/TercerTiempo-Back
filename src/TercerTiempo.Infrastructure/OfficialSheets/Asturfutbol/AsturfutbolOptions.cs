@@ -38,14 +38,19 @@ public sealed class AsturfutbolOptions
 
     // La web corta la sesión en la petición 14 de una tanda seguida (visto el 22, el 24 y el 26-10-2026, a 10 s y a 30 s),
     // sin bloquear la IP: tandas de 12 como mucho (contando las redirecciones de la sesión) con un descanso entre ellas, y
-    // cada tanda con una sesión nueva. Si aun así corta, se espera SessionCutPauseMinutes; solo un rechazo con sesión
-    // recién abierta, un 403/429 o una página de bloqueo cuentan como bloqueo (BlockedPauseHours).
+    // cada tanda con una sesión nueva. A veces devuelve una página vacía suelta (26-10-2026: la misma acta bajó bien
+    // horas después): se repite hasta RejectionRetries veces con sesión nueva, esperando RejectionRetrySeconds × intento;
+    // si sigue vacía se pausa RetryPauseMinutes, el doble con cada rechazo seguido, hasta MaxRetryPauseHours. Solo un
+    // 403/429 o una página de bloqueo explícita cuentan como bloqueo (BlockedPauseHours).
     public int RequestDelayMs { get; set; } = 30000;
     public int MaxRequestsPerHour { get; set; } = 20;
     public int MaxRequestsPerDay { get; set; } = 60;
     public int MaxRequestsPerBurst { get; set; } = 10;
     public int BurstRestMinutes { get; set; } = 40;
-    public int SessionCutPauseMinutes { get; set; } = 60;
+    public int RejectionRetries { get; set; } = 2;
+    public int RejectionRetrySeconds { get; set; } = 60;
+    public int RetryPauseMinutes { get; set; } = 15;
+    public int MaxRetryPauseHours { get; set; } = 4;
     public int CacheHours { get; set; } = 24;
     public int FailureRetryMinutes { get; set; } = 60;
     public int BlockedPauseHours { get; set; } = 24;

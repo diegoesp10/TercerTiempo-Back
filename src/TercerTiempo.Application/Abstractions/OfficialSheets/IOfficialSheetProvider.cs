@@ -6,6 +6,9 @@ public interface IOfficialSheetProvider
 {
     string ProviderName { get; }
 
+    // Si la web tiene las actas de esa categoría; si no, no se le pregunta (ni se gastan peticiones).
+    bool Publishes(string category);
+
     Task<OfficialCompetitionRef?> FindCompetitionAsync(string category, string? group, string seasonLabel, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<OfficialFixture>> GetMatchdayAsync(OfficialCompetitionRef competition, int matchday, CancellationToken cancellationToken);

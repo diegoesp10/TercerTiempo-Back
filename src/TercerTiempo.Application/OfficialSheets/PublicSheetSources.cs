@@ -58,6 +58,7 @@ internal sealed class FederationSheetSource(
         var code = current?.Provider == Name ? current.ExternalId : null;
         if (code is null)
         {
+            if (!provider.Publishes(competition.Category)) return null;
             var now = clock.GetUtcNow();
             if (memory.SkipSeason(Name, season.Id, now)) return null;
             if (await locator.ResolveCompetitionAsync(competition, season, cancellationToken) is null)

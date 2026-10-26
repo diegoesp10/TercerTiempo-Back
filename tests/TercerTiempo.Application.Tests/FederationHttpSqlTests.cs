@@ -63,15 +63,16 @@ public class FederationHttpSqlTests(FederationSqlFixture fixture) : IClassFixtur
     }
 
     [LocalSqlFact]
-    public async Task Forbidden_and_empty_pages_pause_without_immediate_retries()
+    public async Task Errors_pause_the_provider_and_only_empty_pages_are_retried_first()
     {
-        foreach (var status in new[] { 403, 503, 200 })
+        // 403 y 503 pausan a la primera; una página vacía se repite dos veces con sesión nueva antes de pausar.
+        foreach (var (status, calls) in new[] { (403, 1), (503, 1), (200, 3) })
         {
             await fixture.Reset();
             var http = new FakeHttp(_ => new((HttpStatusCode)status) { Content = new StringContent(status == 200 ? "  " : "denied") });
             await Assert.ThrowsAsync<ProviderThrottledException>(() => fixture.Client(http).GetHtmlAsync("bloqueo", default));
             await Assert.ThrowsAsync<ProviderThrottledException>(() => fixture.Client(http).GetHtmlAsync("otra", default));
-            Assert.Equal(1, http.Count);
+            Assert.Equal(calls, http.Count);
         }
     }
 
@@ -145,35 +146,72 @@ public class FederationHttpSqlTests(FederationSqlFixture fixture) : IClassFixtur
     }
 
     [LocalSqlFact]
-    public async Task A_session_cut_after_serving_pages_is_a_short_pause_not_a_block()
+    public async Task A_stray_empty_page_is_retried_with_a_new_session_and_nothing_pauses()
     {
         await fixture.Reset();
-        var served = 0;
-        var http = new FakeHttp(_ => ++served <= 2 ? Ok("<html>acta</html>") : Ok("<html><body>No se ha aceptado el cookie</body></html>"));
-        var client = fixture.Client(http);
-        await client.GetHtmlAsync("acta-1", default);
-        await fixture.ClearSpacing();
-        await client.GetHtmlAsync("acta-2", default);
-        await fixture.ClearSpacing();
+        var calls = 0;
+        var session = new AsturfutbolSession();
+        var http = new FakeHttp(_ => ++calls == 1 ? Ok("  ") : Ok("<html>acta</html>"));
+        session.Cookies.Add(new Uri("https://federation.invalid/"), new Cookie("JSESSIONID", "vieja"));
 
-        var cut = await Assert.ThrowsAsync<ProviderThrottledException>(() => client.GetHtmlAsync("acta-3", default));
-        Assert.InRange(cut.RetryAt!.Value, DateTimeOffset.UtcNow.AddMinutes(55), DateTimeOffset.UtcNow.AddMinutes(65));
+        Assert.Contains("acta", await fixture.Client(http, session: session).GetHtmlAsync("acta", default));
+        Assert.Equal(2, calls);
+        Assert.Empty(session.Cookies.GetCookies(new Uri("https://federation.invalid/")));
         await using var db = fixture.Db();
         var state = await db.Set<FederationRequestState>().SingleAsync();
-        Assert.Equal(PauseKinds.Session, state.PauseKind);
-        Assert.Contains("2 páginas", state.PauseReason);
-        Assert.Equal(0, state.BurstRequests);
+        Assert.Null(state.PausedUntil);
+        Assert.Equal(0, state.RejectionStreak);
     }
 
     [LocalSqlFact]
-    public async Task A_fresh_session_rejected_at_once_is_a_block()
+    public async Task Pages_that_stay_empty_pause_briefly_and_the_pause_grows_until_one_works()
     {
         await fixture.Reset();
-        var http = new FakeHttp(_ => Ok("<html><body>No se ha aceptado el cookie</body></html>"));
+        var empty = new FakeHttp(_ => Ok("<html><body>No se ha aceptado el cookie</body></html>"));
+
+        var first = await Assert.ThrowsAsync<ProviderThrottledException>(() => fixture.Client(empty).GetHtmlAsync("acta", default));
+        Assert.Equal(3, empty.Count);
+        Assert.InRange(first.RetryAt!.Value, DateTimeOffset.UtcNow.AddMinutes(14), DateTimeOffset.UtcNow.AddMinutes(16));
+        await using (var db = fixture.Db())
+        {
+            var state = await db.Set<FederationRequestState>().SingleAsync();
+            Assert.Equal(PauseKinds.Retry, state.PauseKind);
+            Assert.Contains("no un bloqueo", state.PauseReason);
+        }
+
+        await fixture.EndPause();
+        var second = await Assert.ThrowsAsync<ProviderThrottledException>(() => fixture.Client(empty).GetHtmlAsync("acta", default));
+        Assert.InRange(second.RetryAt!.Value, DateTimeOffset.UtcNow.AddMinutes(29), DateTimeOffset.UtcNow.AddMinutes(31));
+        await using (var db = fixture.Db())
+            Assert.Contains("2 intentos seguidos", (await db.Set<FederationRequestState>().SingleAsync()).PauseReason);
+
+        await fixture.EndPause();
+        Assert.Contains("acta", await fixture.Client(new FakeHttp(_ => Ok("<html>acta</html>"))).GetHtmlAsync("acta", default));
+        await using (var db = fixture.Db())
+            Assert.Equal(0, (await db.Set<FederationRequestState>().SingleAsync()).RejectionStreak);
+    }
+
+    [LocalSqlFact]
+    public async Task An_explicit_block_page_is_a_block_without_retries()
+    {
+        await fixture.Reset();
+        var http = new FakeHttp(_ => Ok("<html><head><title>Access Denied</title></head></html>"));
         var blocked = await Assert.ThrowsAsync<ProviderThrottledException>(() => fixture.Client(http).GetHtmlAsync("acta", default));
+        Assert.Equal(1, http.Count);
         Assert.True(blocked.RetryAt > DateTimeOffset.UtcNow.AddHours(23));
         await using var db = fixture.Db();
         Assert.Equal(PauseKinds.Blocked, (await db.Set<FederationRequestState>().SingleAsync()).PauseKind);
+    }
+
+    [Theory]
+    [InlineData("1ª RFEF", false)]
+    [InlineData("2ª RFEF", false)]
+    [InlineData("3ª RFEF", true)]
+    [InlineData("2ª AsturFútbol", true)]
+    public void The_federation_only_publishes_its_own_leagues(string category, bool expected)
+    {
+        var provider = new AsturfutbolOfficialSheetProvider(null!, Options.Create(new OfficialSheetOptions()), NullLogger<AsturfutbolOfficialSheetProvider>.Instance);
+        Assert.Equal(expected, provider.Publishes(category));
     }
 
     [Fact]
@@ -247,16 +285,29 @@ public sealed class FederationSqlFixture : IAsyncLifetime
     }
     public AppDbContext Db() => new(_options);
     internal SqlAsturfutbolRequestStore Store() => new(_services.GetRequiredService<IServiceScopeFactory>());
-    internal static OfficialSheetOptions Settings() => new() { Asturfutbol = new() { RequestDelayMs = 1000 } };
-    internal AsturfutbolClient Client(HttpMessageHandler http, OfficialSheetOptions? settings = null) => new(
-        new HttpClient(http, disposeHandler: false) { BaseAddress = new Uri("https://federation.invalid/") },
-        Options.Create(settings ?? Settings()), NullLogger<AsturfutbolClient>.Instance, Store(), new AsturfutbolRequestGate(), new AsturfutbolSession(), TimeProvider.System);
+    internal static OfficialSheetOptions Settings() => new() { Asturfutbol = new() { RequestDelayMs = 1000, RejectionRetrySeconds = 0 } };
+    internal AsturfutbolClient Client(HttpMessageHandler http, OfficialSheetOptions? settings = null, AsturfutbolSession? session = null)
+    {
+        session ??= new AsturfutbolSession();
+        return new(
+            new HttpClient(http, disposeHandler: false) { BaseAddress = new Uri("https://federation.invalid/") },
+            Options.Create(settings ?? Settings()), NullLogger<AsturfutbolClient>.Instance, Store(), new AsturfutbolRequestGate(), session, TimeProvider.System);
+    }
     public async Task Reset()
     {
         await using var db = Db();
         await db.Set<FederationHttpCache>().ExecuteDeleteAsync();
         await db.Set<FederationRequestState>().ExecuteDeleteAsync();
     }
+    public async Task EndPause()
+    {
+        await using var db = Db();
+        await db.Set<FederationRequestState>().ExecuteUpdateAsync(s => s
+            .SetProperty(x => x.PausedUntil, (DateTimeOffset?)null)
+            .SetProperty(x => x.NextRequestAt, DateTimeOffset.MinValue));
+        await db.Set<FederationHttpCache>().ExecuteUpdateAsync(s => s.SetProperty(x => x.NextAttemptAt, (DateTimeOffset?)null));
+    }
+
     public async Task ClearSpacing()
     {
         await using var db = Db();

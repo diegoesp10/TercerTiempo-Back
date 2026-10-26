@@ -42,6 +42,7 @@ internal sealed class AsturfutbolClient(
         var uri = original;
         var redirect = false;
         var redirects = 0;
+        var retries = 0;
         await gate.Semaphore.WaitAsync(ct);
         try
         {
@@ -94,7 +95,7 @@ internal sealed class AsturfutbolClient(
                     if (response.StatusCode == HttpStatusCode.NotFound)
                     {
                         var absent = new FederationResponse(null, null);
-                        await store.CompleteAsync(key, absent, clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.CacheHours)), ct);
+                        await store.CompleteAsync(AsturfutbolOfficialSheetProvider.Name, key, absent, clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.CacheHours)), ct);
                         return absent;
                     }
 
@@ -125,15 +126,35 @@ internal sealed class AsturfutbolClient(
                     var text = html ? Decode(content, contentType) : null;
                     if (Rejection(content, text) is { } rejection)
                     {
-                        var pause = Pause(rejection);
-                        logger.LogWarning("La federación rechazó {Url} ({Kind}) tras {Pages} páginas servidas en esta sesión: {Reason}. Respuesta: {Snippet}",
-                            uri, pause.Kind, session.PagesServed, pause.Reason, Snippet(text));
-                        await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, pause.Until, pause, ct);
+                        var settings = _options.Asturfutbol;
+                        // Una página vacía suelta no es un bloqueo: se repite la misma con una sesión nueva, como haría
+                        // quien recarga en el navegador. Las páginas de bloqueo explícitas no se repiten.
+                        if (rejection.Kind == RejectionKind.SessionLost && retries < Math.Max(0, settings.RejectionRetries))
+                        {
+                            retries++;
+                            logger.LogInformation("La federación devolvió {What} en {Url} tras {Pages} páginas; se repite con una sesión nueva (intento {Retry}). Respuesta: {Snippet}",
+                                rejection.What, uri, session.PagesServed, retries, Snippet(text));
+                            session.Reset();
+                            uri = original;
+                            redirect = false;
+                            redirects = 0;
+                            await Task.Delay(TimeSpan.FromSeconds(Math.Max(0, settings.RejectionRetrySeconds) * retries), clock, ct);
+                            continue;
+                        }
+
+                        var pause = rejection.Kind == RejectionKind.SessionLost
+                            ? await store.RejectAsync(AsturfutbolOfficialSheetProvider.Name, key, status, rejection.What, clock.GetUtcNow(),
+                                TimeSpan.FromMinutes(Math.Max(1, settings.RetryPauseMinutes)), TimeSpan.FromHours(Math.Max(1, settings.MaxRetryPauseHours)), ct)
+                            : new ProviderPause(clock.GetUtcNow().AddHours(Math.Max(1, settings.BlockedPauseHours)), PauseKinds.Blocked,
+                                $"La federación devolvió {rejection.What}.", NewSession: true);
+                        if (pause.Kind == PauseKinds.Blocked) await store.FailAsync(AsturfutbolOfficialSheetProvider.Name, key, status, pause.Until, pause, ct);
+                        logger.LogWarning("La federación rechazó {Url} ({Kind}) tras {Retries} reintentos: {Reason}. Respuesta: {Snippet}",
+                            uri, pause.Kind, retries, pause.Reason, Snippet(text));
                         throw new ProviderThrottledException(AsturfutbolOfficialSheetProvider.Name, $"{pause.Reason} Se retoma a partir de {pause.Until:O}.", pause.Until);
                     }
                     session.Served();
                     var result = new FederationResponse(content, contentType);
-                    await store.CompleteAsync(key, result, clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.CacheHours)), ct);
+                    await store.CompleteAsync(AsturfutbolOfficialSheetProvider.Name, key, result, clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.CacheHours)), ct);
                     return result;
                 }
             }
@@ -156,23 +177,6 @@ internal sealed class AsturfutbolClient(
         if (text.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase)) return new(RejectionKind.Blocked, "«Too Many Requests»");
         if (text.Contains("cf-chl-", StringComparison.OrdinalIgnoreCase)) return new(RejectionKind.Blocked, "una comprobación anti-bots");
         return null;
-    }
-
-    // Si la sesión ya había servido páginas, la federación la ha cortado: no es un bloqueo, se descansa un rato y se
-    // vuelve con una sesión nueva. Si la rechaza recién abierta (o es una página de bloqueo), sí se trata como bloqueo.
-    private ProviderPause Pause(PageRejection rejection)
-    {
-        var now = clock.GetUtcNow();
-        var settings = _options.Asturfutbol;
-        if (rejection.Kind == RejectionKind.SessionLost && session.PagesServed > 0)
-            return new(now.AddMinutes(Math.Max(1, settings.SessionCutPauseMinutes)), PauseKinds.Session,
-                $"La federación cerró la sesión tras {session.PagesServed} páginas (devolvió {rejection.What}); no es un bloqueo, se sigue con una sesión nueva.",
-                NewSession: true);
-        return new(now.AddHours(Math.Max(1, settings.BlockedPauseHours)), PauseKinds.Blocked,
-            rejection.Kind == RejectionKind.SessionLost
-                ? $"La federación rechazó una sesión recién abierta (devolvió {rejection.What})."
-                : $"La federación devolvió {rejection.What}.",
-            NewSession: true);
     }
 
     private static string Snippet(string? text)

@@ -51,11 +51,12 @@ public interface ISheetDownloadSignal
 
 public sealed record RequestSheetDownloadsCommand(SyncScope Scope) : ICommand<int>;
 
-// Partidos jugados (y no suspendidos) de las ligas y fechas del alcance cuya acta no está guardada completa. Van en el
-// orden en que más rinde la caché de la federación: liga, jornada y hora (una página de jornada sirve para todos sus
-// partidos).
+// Partidos jugados (y no suspendidos) de las ligas y fechas del alcance cuya acta no está guardada completa y que la
+// federación publica. Van en el orden en que más rinde la caché de la federación: liga, jornada y hora (una página de
+// jornada sirve para todos sus partidos).
 internal sealed class RequestSheetDownloadsHandler(
     ICompetitionStore competitions,
+    IOfficialSheetProvider provider,
     IMatchStore matches,
     IOfficialSheetStore sheets,
     ISheetDownloadStore downloads,
@@ -71,6 +72,7 @@ internal sealed class RequestSheetDownloadsHandler(
         foreach (var competition in (await competitions.GetAllAsync(cancellationToken)).OrderBy(c => c.Tier).ThenBy(c => c.Name))
         {
             if (scope.CompetitionIds.Count > 0 && !scope.CompetitionIds.Contains(competition.Id)) continue;
+            if (!provider.Publishes(competition.Category)) continue;
             if (competition.CurrentSeason is not { } season) continue;
 
             var played = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
@@ -97,8 +99,7 @@ public sealed record QueueRecentSheetsCommand(int Days) : ICommand<RecentSheetsQ
 
 public sealed record RecentSheetsQueued(int Leagues, int Queued, DateOnly From, DateOnly To);
 
-// Las actas de los últimos días de las ligas que publica la federación asturiana: las regionales y las que ya se han
-// encontrado en su web (3ª RFEF). 1ª y 2ª RFEF no están ahí y buscarlas solo gastaría peticiones.
+// Las actas de los últimos días de las ligas que publica la federación asturiana (la cola ya descarta las que no).
 internal sealed class QueueRecentSheetsHandler(
     ICompetitionStore competitions,
     IOfficialSheetProvider provider,
@@ -110,7 +111,7 @@ internal sealed class QueueRecentSheetsHandler(
         var to = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
         var from = to.AddDays(-Math.Max(1, command.Days));
         var leagues = (await competitions.GetAllAsync(cancellationToken))
-            .Where(c => c.Level == CompetitionLevel.Regional || c.CurrentSeason?.OfficialRef?.Provider == provider.ProviderName)
+            .Where(c => provider.Publishes(c.Category))
             .Select(c => c.Id)
             .ToList();
         if (leagues.Count == 0) return new(0, 0, from, to);

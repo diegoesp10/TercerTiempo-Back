@@ -16,9 +16,10 @@ internal sealed class AsturfutbolOfficialSheetProvider(
     private static readonly Dictionary<string, string[]> CategoryAliases = new()
     {
         ["3ª rfef"] = ["tercera federacion", "tercera division"],
-        ["2ª rfef"] = ["segunda federacion", "segunda division b"],
-        ["1ª rfef"] = ["primera federacion"],
     };
+
+    // La 1ª y la 2ª RFEF las organiza la RFEF: no están en la web de la federación asturiana (comprobado el 26-10-2026).
+    private static readonly HashSet<string> NotPublished = ["1ª rfef", "2ª rfef"];
 
     private readonly AsturfutbolOptions _settings = options.Value.Asturfutbol;
 
@@ -26,6 +27,8 @@ internal sealed class AsturfutbolOfficialSheetProvider(
     private readonly Dictionary<string, IReadOnlyList<CatalogEntry>> _competitionsBySeason = [];
 
     public string ProviderName => Name;
+
+    public bool Publishes(string category) => !NotPublished.Contains(NameNormalizer.Normalize(category));
 
     public string SheetUrl(string sheetCode) =>
         client.AbsoluteUrl($"NFG_CmpPartido?cod_primaria={_settings.CalendarCode}&CodActa={sheetCode}&cod_acta={sheetCode}");
