@@ -65,8 +65,8 @@ public class FederationHttpSqlTests(FederationSqlFixture fixture) : IClassFixtur
     [LocalSqlFact]
     public async Task Errors_pause_the_provider_and_only_empty_pages_are_retried_first()
     {
-        // 403 y 503 pausan a la primera; una página vacía se repite dos veces con sesión nueva antes de pausar.
-        foreach (var (status, calls) in new[] { (403, 1), (503, 1), (200, 3) })
+        // 403 y 503 pausan a la primera; una página vacía se repite una vez con sesión nueva antes de pausar.
+        foreach (var (status, calls) in new[] { (403, 1), (503, 1), (200, 2) })
         {
             await fixture.Reset();
             var http = new FakeHttp(_ => new((HttpStatusCode)status) { Content = new StringContent(status == 200 ? "  " : "denied") });
@@ -170,18 +170,18 @@ public class FederationHttpSqlTests(FederationSqlFixture fixture) : IClassFixtur
         var empty = new FakeHttp(_ => Ok("<html><body>No se ha aceptado el cookie</body></html>"));
 
         var first = await Assert.ThrowsAsync<ProviderThrottledException>(() => fixture.Client(empty).GetHtmlAsync("acta", default));
-        Assert.Equal(3, empty.Count);
-        Assert.InRange(first.RetryAt!.Value, DateTimeOffset.UtcNow.AddMinutes(14), DateTimeOffset.UtcNow.AddMinutes(16));
+        Assert.Equal(2, empty.Count);
+        Assert.InRange(first.RetryAt!.Value, DateTimeOffset.UtcNow.AddMinutes(29), DateTimeOffset.UtcNow.AddMinutes(31));
         await using (var db = fixture.Db())
         {
             var state = await db.Set<FederationRequestState>().SingleAsync();
             Assert.Equal(PauseKinds.Retry, state.PauseKind);
-            Assert.Contains("no un bloqueo", state.PauseReason);
+            Assert.Contains("sin insistir", state.PauseReason);
         }
 
         await fixture.EndPause();
         var second = await Assert.ThrowsAsync<ProviderThrottledException>(() => fixture.Client(empty).GetHtmlAsync("acta", default));
-        Assert.InRange(second.RetryAt!.Value, DateTimeOffset.UtcNow.AddMinutes(29), DateTimeOffset.UtcNow.AddMinutes(31));
+        Assert.InRange(second.RetryAt!.Value, DateTimeOffset.UtcNow.AddMinutes(59), DateTimeOffset.UtcNow.AddMinutes(61));
         await using (var db = fixture.Db())
             Assert.Contains("2 intentos seguidos", (await db.Set<FederationRequestState>().SingleAsync()).PauseReason);
 

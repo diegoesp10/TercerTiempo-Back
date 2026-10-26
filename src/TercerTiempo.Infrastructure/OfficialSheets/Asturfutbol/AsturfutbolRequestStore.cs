@@ -230,8 +230,8 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
             state.RejectionStreak++;
             var wait = TimeSpan.FromTicks(Math.Min(maxPause.Ticks, firstPause.Ticks << Math.Min(16, state.RejectionStreak - 1)));
             var reason = state.RejectionStreak == 1
-                ? $"La federación devolvió {what} también con sesiones nuevas; parece un fallo pasajero, no un bloqueo."
-                : $"La federación lleva {state.RejectionStreak} intentos seguidos devolviendo {what}; se espera cada vez más entre intentos (ahora {Describe(wait)}).";
+                ? $"La federación devolvió {what} también con una sesión nueva: puede ser un corte temporal de la IP por ir deprisa. Se espera {Describe(wait)} sin insistir."
+                : $"La federación lleva {state.RejectionStreak} intentos seguidos devolviendo {what}: la IP sigue cortada. Se espera cada vez más entre intentos (ahora {Describe(wait)}).";
             var pause = new ProviderPause(now + wait, PauseKinds.Retry, reason, NewSession: true);
 
             var cached = await db.Set<FederationHttpCache>().SingleAsync(x => x.Key == key, ct);
