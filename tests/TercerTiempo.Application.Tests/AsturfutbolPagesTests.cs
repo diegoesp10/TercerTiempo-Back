@@ -139,6 +139,26 @@ public class AsturfutbolPagesTests
     }
 
     [Fact]
+    public void A_card_without_minute_counts_but_does_not_cut_minutes_or_enter_the_timeline()
+    {
+        // La federación escribe (999') en las tarjetas sin minuto: aquí, una roja a un jugador que entró en el 77'.
+        var sheet = AsturfutbolPages.ParseSheet(Fixture("acta-25744748.html"), matchLength: 90)!;
+
+        var sentOff = Assert.Single(sheet.Lines, l => l.FullName == "ALONSO GARCIA, LUIS");
+        Assert.True(sentOff.RedCard);
+        Assert.Equal(77, sentOff.MinuteIn);
+        Assert.Null(sentOff.MinuteOut);
+        Assert.Equal(13, sentOff.MinutesPlayed);
+        Assert.All(sheet.Events, e => Assert.InRange(e.Minute, 0, 130));
+        Assert.DoesNotContain(sheet.Events, e => e.PlayerName == "ALONSO GARCIA, LUIS" && e.Type == OfficialEventType.RedCard);
+
+        // El acta entera se puede guardar.
+        var stored = OfficialMatchSheet.Create(Guid.NewGuid(), "asturfutbol", "25744748", null, DateTimeOffset.UtcNow);
+        stored.Apply(sheet, DateTimeOffset.UtcNow);
+        Assert.Equal(OfficialSheetStatus.Available, stored.Status);
+    }
+
+    [Fact]
     public void A_page_without_teams_is_not_a_sheet()
     {
         Assert.Null(AsturfutbolPages.ParseSheet("<html><body><p>No se ha aceptado el cookie</p></body></html>", 90));

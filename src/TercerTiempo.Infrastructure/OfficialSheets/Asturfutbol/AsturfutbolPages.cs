@@ -217,7 +217,7 @@ internal static partial class AsturfutbolPages
                     var image = row.QuerySelector("img")?.GetAttribute("src") ?? string.Empty;
                     var text = Clean(string.Join(' ', row.QuerySelectorAll("td").Select(c => c.TextContent)));
                     var (minute, extra, name) = SplitMinute(text);
-                    if (minute is null || name.Length == 0) continue;
+                    if (image.Length == 0 || name.Length == 0) continue;
 
                     var type = image.Contains("roja", StringComparison.OrdinalIgnoreCase) ? OfficialEventType.RedCard
                         : image.Contains("dobl", StringComparison.OrdinalIgnoreCase) ? OfficialEventType.SecondYellow
@@ -226,11 +226,12 @@ internal static partial class AsturfutbolPages
                     var line = Find(lines, side, null, name);
                     if (line is not null)
                     {
-                        if (type == OfficialEventType.YellowCard) line.Yellow(minute.Value);
-                        else line.Red(minute.Value);
+                        if (type == OfficialEventType.YellowCard) line.Yellow(minute);
+                        else line.Red(minute);
                     }
 
-                    events.Add(new OfficialEventData(side, type, minute.Value, extra, name, null));
+                    // Sin minuto no se sabe cuándo fue: cuenta en la línea del jugador pero no entra en la cronología.
+                    if (minute is not null) events.Add(new OfficialEventData(side, type, minute.Value, extra, name, null));
                 }
             }
         }
@@ -305,6 +306,9 @@ internal static partial class AsturfutbolPages
         return (shirt, name);
     }
 
+    // Un minuto imposible (la federación escribe 999' cuando no lo anota) se lee como "sin minuto".
+    private const int MaxMinute = 130;
+
     private static (int? Minute, int? Extra, string Name) SplitMinute(string text)
     {
         var match = MinutePattern().Match(text);
@@ -314,7 +318,7 @@ internal static partial class AsturfutbolPages
         var minute = int.Parse(match.Groups["min"].Value, CultureInfo.InvariantCulture);
         int? extra = match.Groups["extra"].Success ? int.Parse(match.Groups["extra"].Value, CultureInfo.InvariantCulture) : null;
         var name = Clean(text.Remove(match.Index, match.Length));
-        return (minute, extra, name);
+        return minute > MaxMinute ? (null, null, name) : (minute, extra, name);
     }
 
     private static SheetLineBuilder? Find(List<SheetLineBuilder> lines, MatchSide? side, int? shirt, string name)

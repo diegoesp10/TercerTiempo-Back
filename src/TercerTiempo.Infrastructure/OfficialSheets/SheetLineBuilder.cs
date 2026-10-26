@@ -23,7 +23,9 @@ internal sealed class SheetLineBuilder(MatchSide side, int? shirt, string name, 
 
     public void LeaveAt(int minute) => MinuteOut ??= minute;
 
-    public void Yellow(int minute)
+    // Sin minuto (la federación pone 999' a las tarjetas que no anota, como las de después del partido) la tarjeta
+    // cuenta pero no recorta los minutos jugados.
+    public void Yellow(int? minute)
     {
         YellowCards = Math.Min(2, YellowCards + 1);
         if (YellowCards == 2)
@@ -33,7 +35,7 @@ internal sealed class SheetLineBuilder(MatchSide side, int? shirt, string name, 
         }
     }
 
-    public void Red(int minute)
+    public void Red(int? minute)
     {
         RedCard = true;
         MinuteOut ??= minute;
