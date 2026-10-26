@@ -134,7 +134,8 @@ internal sealed class JobsMonitor(
                     state?.PausedUntil > now ? state.PauseReason : null,
                     BurstInProgress(state, limit, now),
                     limit is { MaxRequestsPerBurst: > 0 } ? limit.MaxRequestsPerBurst : null,
-                    limit is { MaxRequestsPerBurst: > 0 } ? limit.BurstRestMinutes : null);
+                    limit is { MaxRequestsPerBurst: > 0 } ? limit.BurstRestMinutes : null,
+                    limit?.RequestDelayMs);
             })
             .OrderBy(s => s.Provider)
             .ToList();

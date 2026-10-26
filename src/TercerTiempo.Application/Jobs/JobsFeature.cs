@@ -76,7 +76,8 @@ public sealed record ScrapeSourceDto(
     [property: Description("Peticiones de la tanda en curso; al llegar a MaxPerBurst se descansa BurstRestMinutes y se sigue con una sesión nueva.")]
     int BurstRequests = 0,
     int? MaxPerBurst = null,
-    int? BurstRestMinutes = null);
+    int? BurstRestMinutes = null,
+    int? RequestDelayMs = null);
 
 public sealed record ScrapeRequestDto(
     long Id,

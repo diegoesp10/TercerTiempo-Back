@@ -66,7 +66,7 @@ internal sealed class GetLiveDownloadsHandler(
 {
     private const string Federation = "asturfutbol";
     private const int ItemsShown = 600;
-    private static readonly TimeSpan RequestSpacing = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultSpacing = TimeSpan.FromSeconds(30);
 
     public async Task<LiveDownloadsDto> Handle(GetLiveDownloadsQuery query, CancellationToken cancellationToken)
     {
@@ -125,7 +125,8 @@ internal sealed class GetLiveDownloadsHandler(
 
         var estimated = needed == 0 ? (DateTimeOffset?)null : EstimateFinish(
             needed, now, pausedUntil, source?.NextRequestAt, source?.HourRequests ?? 0, maxHour, source?.DayRequests ?? 0, maxDay,
-            source?.MaxPerBurst ?? 0, source?.BurstRestMinutes ?? 0);
+            source?.MaxPerBurst ?? 0, source?.BurstRestMinutes ?? 0,
+            source?.RequestDelayMs is > 0 and var ms ? TimeSpan.FromMilliseconds(ms) : null);
 
         var sheets = new SheetQueueDto(
             rows.Count(r => r.Status == SheetDownloadStatus.Pending),
@@ -151,18 +152,19 @@ internal sealed class GetLiveDownloadsHandler(
     // Con tandas, cada hora rinde lo que cabe en tandas de maxBurst separadas por su descanso.
     internal static DateTimeOffset? EstimateFinish(
         int requests, DateTimeOffset now, DateTimeOffset? pausedUntil, DateTimeOffset? nextRequestAt,
-        int hourUsed, int maxHour, int dayUsed, int maxDay, int maxBurst = 0, int restMinutes = 0)
+        int hourUsed, int maxHour, int dayUsed, int maxDay, int maxBurst = 0, int restMinutes = 0, TimeSpan? spacing = null)
     {
         if (maxHour <= 0 || maxDay <= 0) return null;
+        var step = spacing ?? DefaultSpacing;
 
         var at = now;
         if (pausedUntil > at) { at = pausedUntil.Value; hourUsed = 0; dayUsed = 0; }
         if (nextRequestAt > at) at = nextRequestAt.Value;
 
-        var perHour = Math.Min(maxHour, (int)(TimeSpan.FromHours(1) / RequestSpacing));
+        var perHour = Math.Min(maxHour, (int)(TimeSpan.FromHours(1) / step));
         if (maxBurst > 0)
         {
-            var cycle = RequestSpacing * maxBurst + TimeSpan.FromMinutes(Math.Max(1, restMinutes));
+            var cycle = step * maxBurst + TimeSpan.FromMinutes(Math.Max(1, restMinutes));
             perHour = Math.Min(perHour, Math.Max(1, (int)(maxBurst * (TimeSpan.FromHours(1) / cycle))));
         }
         for (var guard = 0; guard < 24 * 400; guard++)
@@ -172,12 +174,12 @@ internal sealed class GetLiveDownloadsHandler(
             if (allowed > 0)
             {
                 var taken = Math.Min(allowed, requests);
-                var available = (int)((hourStart.AddHours(1) - at) / RequestSpacing);
+                var available = (int)((hourStart.AddHours(1) - at) / step);
                 taken = Math.Min(taken, Math.Max(1, available));
                 requests -= taken;
                 hourUsed += taken;
                 dayUsed += taken;
-                if (requests <= 0) return at + RequestSpacing * taken;
+                if (requests <= 0) return at + step * taken;
             }
 
             var next = dayUsed >= maxDay ? new DateTimeOffset(at.Year, at.Month, at.Day, 0, 0, 0, TimeSpan.Zero).AddDays(1) : hourStart.AddHours(1);
