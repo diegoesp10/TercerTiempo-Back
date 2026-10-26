@@ -25,7 +25,9 @@ internal static class SheetMatcher
         {
             foreach (var (line, lTokens) in lineTokens)
             {
-                var score = Score(pTokens, lTokens, player.ShirtNumber, line.ShirtNumber);
+                var score = Math.Max(
+                    Score(pTokens, lTokens, player.ShirtNumber, line.ShirtNumber),
+                    SurnameScore(pTokens, line.FullName, player.ShirtNumber, line.ShirtNumber));
                 if (score >= MinScore)
                     candidates.Add((score, player, line));
             }
@@ -41,15 +43,17 @@ internal static class SheetMatcher
             usedLines.Add(line.Id);
         }
 
-        // Una sola palabra ("Mazo", "Juan") no basta por sí misma, salvo que solo un jugador libre la lleve en su
-        // nombre: las webs de resultados escriben así a muchos jugadores.
-        foreach (var (line, lTokens) in lineTokens.Where(l => l.Tokens.Count == 1 && !usedLines.Contains(l.Line.Id)))
+        // Una sola palabra ("Mazo", "Juan"; las actas de menores solo traen el nombre de pila) no basta por sí misma,
+        // salvo que solo un jugador libre la lleve en su nombre y ninguna otra línea suelta diga lo mismo: si hay dos
+        // Mateos en la plantilla y uno ya está cruzado con su línea completa, el "Mateo" que queda es el otro.
+        var single = lineTokens.Where(l => l.Tokens.Count == 1 && !usedLines.Contains(l.Line.Id)).ToList();
+        foreach (var (line, lTokens) in single)
         {
             var token = lTokens.First();
             if (token.Length < 3) continue;
+            if (single.Count(l => l.Tokens.First() == token) != 1) continue;
             var owners = playerTokens.Where(p => !result.ContainsKey(p.Player.Id) && p.Tokens.Any(o => Covers(token, o))).ToList();
             if (owners.Count != 1) continue;
-            if (playerTokens.Count(p => p.Tokens.Any(o => Covers(token, o))) != 1) continue;
             result[owners[0].Player.Id] = line;
             usedLines.Add(line.Id);
         }
@@ -104,6 +108,65 @@ internal static class SheetMatcher
         var common = player.Intersect(line).Count();
         var jaccard = (double)common / player.Union(line).Count();
         return (common >= 2 ? Math.Max(jaccard, 0.5) : jaccard * 0.5) + shirtBonus;
+    }
+
+    // Las actas de la federación escriben "APELLIDOS, NOMBRE" y los apellidos son lo que no cambia: las plantillas ponen
+    // apodos o diminutivos ("Nacho Cabal" por "CABAL GONZALEZ, IGNACIO", "Berto Arias" por "ARIAS SANZ, ALBERTO JESUS"),
+    // a veces un solo apellido y alguna errata ("Liñera" por "LIÑEIRA"). Hace falta el primer apellido y que lo demás
+    // del nombre sea el otro apellido o encaje con el nombre de pila; un nombre distinto ("Pablo Cabal") solo vale si
+    // además coincide el dorsal.
+    internal static double SurnameScore(HashSet<string> player, string lineFullName, int? playerShirt, int? lineShirt)
+    {
+        var comma = lineFullName.IndexOf(',');
+        if (comma <= 0 || player.Count < 2) return 0;
+
+        var surnames = Tokens(NameNormalizer.Normalize(lineFullName[..comma])).ToList();
+        var given = Tokens(NameNormalizer.Normalize(lineFullName[(comma + 1)..]));
+        if (surnames.Count == 0 || surnames[0].Length < 3 || !player.Any(p => SameSurname(p, surnames[0]))) return 0;
+
+        var secondSurname = surnames.Skip(1).Any(s => player.Any(p => SameSurname(p, s)));
+        var givenName = given.Any(g => player.Any(p => SameGiven(p, g)));
+        var unexplained = player.Count(p => !surnames.Any(s => SameSurname(p, s)) && !given.Any(g => SameGiven(p, g)));
+
+        var shirtBonus = playerShirt is { } ps && lineShirt is { } ls && ps == ls ? 0.3 : 0;
+        if (unexplained > 0) return unexplained == 1 && shirtBonus > 0 ? 0.5 + shirtBonus : 0;
+        return 0.5 + (secondSurname ? 0.25 : 0) + (givenName ? 0.2 : 0) + shirtBonus;
+    }
+
+    private static bool SameSurname(string token, string surname) =>
+        token == surname || token.Length >= 5 && surname.Length >= 5 && Math.Abs(token.Length - surname.Length) <= 1 && EditDistance(token, surname) <= 1;
+
+    // Nombre de pila, inicial, diminutivo que empieza o acaba igual ("Guille", "Ivanchu", "Berto") o apodo conocido.
+    private static bool SameGiven(string token, string name) =>
+        token == name
+        || token.Length == 1 && name[0] == token[0]
+        || token.Length >= 4 && (name.StartsWith(token, StringComparison.Ordinal) || name.EndsWith(token, StringComparison.Ordinal))
+        || name.Length >= 4 && token.StartsWith(name, StringComparison.Ordinal)
+        || Nicknames.TryGetValue(token, out var names) && names.Contains(name);
+
+    private static readonly Dictionary<string, string[]> Nicknames = new()
+    {
+        ["nacho"] = ["ignacio"], ["inaki"] = ["ignacio"], ["pepe"] = ["jose"], ["pepin"] = ["jose"], ["chema"] = ["jose", "maria"],
+        ["josema"] = ["jose", "maria"], ["juanjo"] = ["juan", "jose"], ["juanma"] = ["juan", "manuel"], ["paco"] = ["francisco"],
+        ["curro"] = ["francisco"], ["pancho"] = ["francisco"], ["quique"] = ["enrique"], ["kike"] = ["enrique"], ["lolo"] = ["manuel"],
+        ["manolo"] = ["manuel"], ["chus"] = ["jesus"], ["suso"] = ["jesus"], ["chuchi"] = ["jesus"], ["toni"] = ["antonio"],
+        ["tony"] = ["antonio"], ["tono"] = ["antonio"], ["lucho"] = ["luis"], ["alex"] = ["alejandro", "alexander", "alexis"],
+        ["edu"] = ["eduardo"], ["willy"] = ["guillermo"], ["moi"] = ["moises"], ["charly"] = ["carlos"], ["kiko"] = ["francisco", "enrique"],
+        ["fito"] = ["adolfo", "rodolfo"], ["tete"] = ["jose"], ["pachi"] = ["francisco"], ["rulo"] = ["raul"],
+    };
+
+    private static int EditDistance(string a, string b)
+    {
+        var previous = Enumerable.Range(0, b.Length + 1).ToArray();
+        for (var i = 1; i <= a.Length; i++)
+        {
+            var current = new int[b.Length + 1];
+            current[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+                current[j] = Math.Min(Math.Min(current[j - 1] + 1, previous[j] + 1), previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+            previous = current;
+        }
+        return previous[b.Length];
     }
 
     private static bool Covers(string token, string other) =>

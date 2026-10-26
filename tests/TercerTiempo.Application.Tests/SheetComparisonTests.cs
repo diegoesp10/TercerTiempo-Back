@@ -97,6 +97,54 @@ public class SheetComparisonTests
     }
 
     [Fact]
+    public void Official_lines_are_matched_by_surnames_despite_nicknames_and_typos()
+    {
+        var squad = Squad.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Now);
+        var nacho = squad.AddPlayer("Nacho Cabal", Position.Forward, null, null, Now);
+        var ivan = squad.AddPlayer("Ivanchu Roldán", Position.Forward, null, null, Now);
+        var berto = squad.AddPlayer("Berto Arias", Position.Forward, null, null, Now);
+        var david = squad.AddPlayer("David Frade Liñera", Position.Defender, null, null, Now);
+        var pablo = squad.AddPlayer("Pablo Cabal", Position.Defender, null, null, Now);
+        var mateo = squad.AddPlayer("Mateo García Martínez", Position.Forward, 10, null, Now);
+        var mateoJose = squad.AddPlayer("Mateo José Álvarez Álvarez", Position.Defender, 15, null, Now);
+
+        var sheet = OfficialMatchSheet.Create(Guid.NewGuid(), "asturfutbol", "1", null, Now);
+        sheet.Apply(new OfficialSheetData(null, "Local", "Visitante", 0, 0,
+            [
+                Line("CABAL GONZALEZ, IGNACIO", 9),
+                Line("ROLDAN BRIÑAS, IVAN", 7),
+                Line("ARIAS SANZ, ALBERTO JESUS", 11),
+                Line("FRADE LIÑEIRA, DAVID", 2),
+                Line("Mateo", 18),
+                Line("ALVAREZ ALVAREZ, MATEO JOSE", 15),
+                Line("GARCIA LOPEZ, PEDRO", 4),
+            ], []), Now);
+
+        var matched = SheetMatcher.Match(squad.ActivePlayers, sheet.Lines);
+
+        Assert.Equal("CABAL GONZALEZ, IGNACIO", matched[nacho.Id].FullName);
+        Assert.Equal("ROLDAN BRIÑAS, IVAN", matched[ivan.Id].FullName);
+        Assert.Equal("ARIAS SANZ, ALBERTO JESUS", matched[berto.Id].FullName);
+        Assert.Equal("FRADE LIÑEIRA, DAVID", matched[david.Id].FullName);
+        Assert.Equal("ALVAREZ ALVAREZ, MATEO JOSE", matched[mateoJose.Id].FullName);
+        // El otro Mateo ya tiene su línea completa: el "Mateo" suelto es este, aunque el dorsal no coincida.
+        Assert.Equal("Mateo", matched[mateo.Id].FullName);
+        // Mismo apellido con otro nombre de pila, o un apellido común sin nada más: no es el mismo jugador.
+        Assert.False(matched.ContainsKey(pablo.Id));
+        Assert.Equal(6, matched.Count);
+    }
+
+    [Theory]
+    [InlineData("Pablo Suárez Suárez", "SUAREZ IGLESIAS, RUBEN")]
+    [InlineData("Germán García González", "GARCIA LOPEZ, PEDRO")]
+    [InlineData("Manu Fernández", "FERNANDEZ CASTIÑEIRA, IZAN")]
+    public void A_shared_surname_with_a_different_name_is_not_a_match(string player, string line)
+    {
+        var tokens = SheetMatcher.Tokens(NameNormalizer.Normalize(player));
+        Assert.True(SheetMatcher.SurnameScore(tokens, line, null, null) < 0.6);
+    }
+
+    [Fact]
     public void Differences_cover_presence_minutes_goals_and_cards()
     {
         var (squad, coachId) = (Squad.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Now), Guid.Empty);
