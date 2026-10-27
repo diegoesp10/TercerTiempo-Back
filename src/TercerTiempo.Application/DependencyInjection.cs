@@ -36,6 +36,8 @@ public static class DependencyInjection
         services.AddScoped<Alerts.LicenseAlertSync>();
         services.AddScoped<Referees.MatchOfficialsWriter>();
         services.AddScoped<Moderation.CommentModeration>();
+        services.AddScoped<Stats.Predictions.ForecastSources>();
+        services.AddSingleton<Stats.Predictions.LeagueForecastCache>();
         services.AddScoped<OfficialSheetLocator>();
         services.AddSingleton<OfficialSheets.OfficialSheetSyncMemory>();
         services.AddScoped<IPublicSheetSource, FederationSheetSource>();
