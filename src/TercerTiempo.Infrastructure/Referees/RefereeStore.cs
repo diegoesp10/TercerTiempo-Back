@@ -96,6 +96,16 @@ internal sealed class RefereeStore(AppDbContext db) : IRefereeStore
         await db.Set<RefereeRating>().AsNoTracking().ToListAsync(cancellationToken);
 
     public void AddRating(RefereeRating rating) => db.Set<RefereeRating>().Add(rating);
+
+    public Task<RefereeRating?> GetRatingByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.Set<RefereeRating>().FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<RefereeRating>> GetCommentedRatingsAsync(int max, CancellationToken cancellationToken = default) =>
+        await db.Set<RefereeRating>().AsNoTracking()
+            .Where(r => r.Comment != null)
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(max)
+            .ToListAsync(cancellationToken);
 }
 
 internal sealed class RefereeConfiguration : IEntityTypeConfiguration<Referee>
@@ -148,6 +158,8 @@ internal sealed class RefereeRatingConfiguration : IEntityTypeConfiguration<Refe
         builder.Property(r => r.Comment).HasMaxLength(RefereeRating.MaxCommentLength);
         builder.Property(r => r.RaterName).HasMaxLength(RefereeRating.MaxRaterNameLength).IsRequired();
         builder.Property(r => r.RaterStaffRole).HasConversion<string>().HasMaxLength(20);
+        builder.Ignore(r => r.CommentHidden);
+        builder.Ignore(r => r.PublicComment);
         builder.HasOne<Match>().WithMany().HasForeignKey(r => r.MatchId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Referee>().WithMany().HasForeignKey(r => r.RefereeId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Team>().WithMany().HasForeignKey(r => r.TeamId).OnDelete(DeleteBehavior.Restrict);

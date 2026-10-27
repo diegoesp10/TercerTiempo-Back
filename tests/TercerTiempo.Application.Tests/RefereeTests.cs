@@ -2,6 +2,7 @@ using System.Reflection;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Licensing;
+using TercerTiempo.Application.Moderation;
 using TercerTiempo.Application.Referees;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
@@ -142,12 +143,12 @@ public class RefereeTests
     }
 
     [Fact]
-    public void The_rating_has_to_be_confirmed()
+    public async Task The_rating_has_to_be_confirmed()
     {
-        var validator = new RateRefereeValidator();
-        var unconfirmed = validator.Validate(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), 7, null));
+        var validator = new RateRefereeValidator(new CommentModeration(new InMemoryForbiddenWordStore()));
+        var unconfirmed = await validator.ValidateAsync(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), 7, null));
         Assert.Contains(unconfirmed.Errors, e => e.ErrorCode == ErrorCode.RefereeRatingNotConfirmed);
-        Assert.True(validator.Validate(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), 7, null, Confirmed: true)).IsValid);
+        Assert.True((await validator.ValidateAsync(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), 7, null, Confirmed: true))).IsValid);
     }
 
     [Fact]
@@ -364,4 +365,7 @@ internal sealed class InMemoryRefereeStore : IRefereeStore
         Task.FromResult<IReadOnlyList<RefereeRating>>(Ratings.Where(r => r.RefereeId == refereeId).ToList());
     public Task<IReadOnlyList<RefereeRating>> GetAllRatingsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<RefereeRating>>(Ratings.ToList());
     public void AddRating(RefereeRating rating) => Ratings.Add(rating);
+    public Task<RefereeRating?> GetRatingByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Ratings.FirstOrDefault(r => r.Id == id));
+    public Task<IReadOnlyList<RefereeRating>> GetCommentedRatingsAsync(int max, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<RefereeRating>>(Ratings.Where(r => r.Comment != null).OrderByDescending(r => r.CreatedAt).Take(max).ToList());
 }

@@ -1564,6 +1564,42 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "referee.rating_not_found",
+                            Language = "es",
+                            Message = "La nota '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "referee.rating_no_comment",
+                            Language = "es",
+                            Message = "Esa nota no tiene comentario."
+                        },
+                        new
+                        {
+                            Code = "referee.comment_not_allowed",
+                            Language = "es",
+                            Message = "No se permiten palabras malsonantes ni insultos ({0}): el comentario tiene que explicar el trabajo del árbitro, sin ofender."
+                        },
+                        new
+                        {
+                            Code = "moderation.word_invalid",
+                            Language = "es",
+                            Message = "La palabra o expresión prohibida tiene que tener entre {0} y {1} caracteres, con alguna letra y sin asteriscos."
+                        },
+                        new
+                        {
+                            Code = "moderation.word_exists",
+                            Language = "es",
+                            Message = "«{0}» ya está en la lista de palabras prohibidas."
+                        },
+                        new
+                        {
+                            Code = "moderation.word_not_found",
+                            Language = "es",
+                            Message = "«{0}» no está en la lista de palabras prohibidas."
+                        },
+                        new
+                        {
                             Code = "license.simulator_disabled",
                             Language = "es",
                             Message = "La simulación de pagos solo funciona con la pasarela simulada (Licensing:Provider = mock)."
@@ -2196,6 +2232,2295 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("SeasonId", "Matchday");
 
                     b.ToTable("Matches", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Moderation.ForbiddenWord", b =>
+                {
+                    b.Property<string>("Term")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Term");
+
+                    b.ToTable("PalabrasProhibidas", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Term = "a la salida te espero",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "a tomar por culo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "abrazafarolas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "acojonante",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "al carajo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "arbitraje basura",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "arbitro basura",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "arbitro ciego",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "arbitro comprado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "arbitro de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "arbitro inutil",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "arbitro vendido",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "asno",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "asquerosa",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "asqueroso",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "atracador",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "atraco",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "berzotas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "boba",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "bobo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "bocachancla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "bocazas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "bollera",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "boluda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "boludo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "borrico",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "botarate",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "bufon",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "burra",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "burro",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cabestro",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cabron",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cabrona",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cabronada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cabronazo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cagada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cagado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cagar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cagarla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cago",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cagon",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cagon de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cagona",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cantamañanas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "capulla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "capullazo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "capullo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "caradura",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "carajo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "carajote",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "carechimba",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cateta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cateto",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cazurra",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cazurro",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cegata",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cegato",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cenutria",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cenutrio",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cerda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cerdo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "chinga",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chingada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chingadera",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chingado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chingar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chingate",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chocho",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chorizo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "chumino",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chupaculos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "chupala",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chupame los huevos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chupamela",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "chupapollas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cojon",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cojonuda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cojonudo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "comeme los huevos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "comemela",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "comemierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "comepollas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "concha de tu madre",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "concha tu madre",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "conchatumadre",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "conchesumadre",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "conchetumare",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "conchuda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "conchudo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cornuda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cornudo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "corrupta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "corrupto",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "coñazo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "coño",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "cretina",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "cretino",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "csm",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "ctm",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "culiado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "culiao",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "culo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "dar por culo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "de los cojones",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "de puta madre",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "deficiente mental",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "descojone",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "desgraciada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "desgraciado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "eres basura",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "eres un anormal",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "eres un inutil",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "eres una basura",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "es un anormal",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "es un inutil",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "es una basura",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "escoria",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "esta ciego",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "esta comprado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "esta vendido",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "estafador",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "estas ciego",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "estas comprado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "estas vendido",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "estupida",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "estupido",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "fantoche",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "folla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "follada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "follado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "follando",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "follar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "furcia",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "garrula",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "garrulo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "gañan",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "gilipolla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "gilipollas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "gilipollez",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "gilipuertas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "gitanada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "gitano de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "golfa",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "gonorrea",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "gorda de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "gordinflon",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "gordinflona",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "gordo de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "guarra",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "guarro",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "gusano",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hacerse una paja",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "hasta los cojones",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "hasta los huevos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "hay que matarlo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "hay que matarte",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "hdlgp",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hdp",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hija de puta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hijaputa",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hijas de puta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hijo de la gran puta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hijo de puta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hijoputa",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hijos de puta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hijueputa",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "hostia",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "hostiazo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "hostion",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "huevon",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "huevon de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "huevona",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "idiota",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "imbecil",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "inutil de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "jilipollas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "jode",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "jodeos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "joder",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "joderos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "jodete",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "jodida",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "jodido",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "jodienda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "joto",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "judio de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "julandron",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "la madre que te pario",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "la puta que te pario",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "lacra",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "ladron",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "ladrona",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "lameculos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "lela",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "lelo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "lerda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "lerdo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mafioso",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "majadera",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "majadero",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "malfollada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "malfollado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "malparida",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "malparido",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mamada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "mamaguevo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mamahuevo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mamar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "mamarracha",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mamarracho",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mamon",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mamona",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mamonazo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "manda huevos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "marica",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "maricon",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "maricona",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "mariconada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "mariconazo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "mariposon",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "marrana",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "marrano",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mastuerzo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "me cago en",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "me cago en la puta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "me cago en tu madre",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "me la pela",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "me la sopla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "me la suda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "me la trae floja",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "mentecata",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mentecato",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mequetrefe",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "merluzo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "mierdecilla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "mierdosa",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "mierdoso",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "miserable",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "mongola",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "mongolica",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "mongolico",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "mongolo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "moro de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "moromierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "muerete",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "negrata",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "negro de mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "nenaza",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "nos ha robado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "nos han robado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "nos robo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "ojala te mueras",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "ojala te murieras",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "ojala te pase algo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "ojete",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "os mato",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "ostia",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "ostiazo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "pajero",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "pajillero",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "paleto",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "palurda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "palurdo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "panchito",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "panoli",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pardilla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pardillo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "partirte la cara",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "patan",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "payasa",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "payasada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "payaso",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pelele",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pelotillero",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pelotuda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pelotudo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pendeja",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pendejada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "pendejo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "perra",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "picha",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "pinche",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "polla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "pollazo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "por culo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "por huevos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "pringada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pringado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "pringao",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "ptm",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "puta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "puta madre",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "puta mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "putada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "putas madres",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "putear",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "puteo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "putero",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "putilla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "puto",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "puto arbitro",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "puton",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "putona",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "puñeta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "que le den",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "que lo maten",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "que os den",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "que os follen",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "que os jodan",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "que te den",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "que te den por culo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "que te follen",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "que te jodan",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "que te maten",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "ramera",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "rastrera",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "rastrero",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "rata",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "retrasada mental",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "retrasado mental",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "retrasados mentales",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "robado el partido",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "robo descarado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "romperte las piernas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "sabemos donde vives",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "sinverguenza",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "sobornado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "soplagaitas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "soplapollas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "subnormal",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "sudaca",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "tarada",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tarado",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tarugo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "te esperamos fuera",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te matare",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te mato",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te partire la cara",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te parto la cara",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te reviento",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te vamos a esperar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te vamos a matar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te vamos a pegar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te vamos a reventar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te vamos a romper las piernas",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te voy a matar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "te voy a pegar",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Threat"
+                        },
+                        new
+                        {
+                            Term = "teta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "tiene huevos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "tolai",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tomar por culo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "tonta",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tontaina",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tonto",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tonto del culo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tontolaba",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tontolculo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tontopolla",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tortillera",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "tramposa",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tramposo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "travelo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Slur"
+                        },
+                        new
+                        {
+                            Term = "tu puta madre",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "tus muertos",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "una mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "vaya payaso",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "verga",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "vergazo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "vete a la mierda",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "vete al carajo",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Profanity"
+                        },
+                        new
+                        {
+                            Term = "weon",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "zopenca",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "zopenco",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "zoquete",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "zorra",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        },
+                        new
+                        {
+                            Term = "zorron",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Kind = "Insult"
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.OfficialSheets.OfficialMatchSheet", b =>
@@ -3093,6 +5418,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<string>("Comment")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset?>("CommentHiddenAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CommentHiddenByUserId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");

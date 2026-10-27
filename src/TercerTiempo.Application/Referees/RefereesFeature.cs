@@ -6,6 +6,7 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Matches;
+using TercerTiempo.Application.Moderation;
 using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
@@ -101,8 +102,10 @@ public sealed record TeamRatingDto(
     string TeamName,
     string? TeamCrestUrl,
     int Score,
-    [property: Description("Por qué esa nota, si lo explicó.")]
+    [property: Description("Por qué esa nota, si lo explicó; null si no lo hizo o si la administración lo retiró.")]
     string? Comment,
+    [property: Description("Comentario retirado por la administración por no respetar las normas (la nota sigue).")]
+    bool CommentHidden,
     RefereeRaterDto RatedBy,
     DateTimeOffset RatedAt);
 
@@ -120,7 +123,9 @@ public sealed record RefereeRatingDto(
     string? TeamCrestUrl,
     OfficialRole Role,
     int Score,
+    [property: Description("Null si no lo hay o si la administración lo retiró.")]
     string? Comment,
+    bool CommentHidden,
     RefereeRaterDto RatedBy,
     DateTimeOffset RatedAt);
 
@@ -217,12 +222,18 @@ public sealed record MatchOfficialsSynced(int FromSheets, int FromProvider, int 
 
 internal sealed class RateRefereeValidator : AbstractValidator<RateRefereeCommand>
 {
-    public RateRefereeValidator()
+    public RateRefereeValidator(CommentModeration moderation)
     {
         RuleFor(x => x.MatchId).NotEmpty();
         RuleFor(x => x.RefereeId).NotEmpty();
         RuleFor(x => x.Score).InclusiveBetween(0, RefereeRating.MaxScore).WithName("Nota");
         RuleFor(x => x.Comment).MaximumLength(RefereeRating.MaxCommentLength).WithName("Comentario");
+        // Sin palabrotas, insultos, vejaciones ni amenazas (tabla PalabrasProhibidas): el comentario es público y definitivo.
+        RuleFor(x => x.Comment).CustomAsync(async (comment, context, cancellationToken) =>
+        {
+            var found = await moderation.FindAsync(comment, cancellationToken);
+            if (found.Count > 0) context.AddFailure(CommentModeration.Failure(nameof(RateRefereeCommand.Comment), found));
+        });
         RuleFor(x => x.Confirmed).Equal(true).WithCatalogMessage(ErrorCode.RefereeRatingNotConfirmed);
     }
 }
@@ -276,7 +287,8 @@ internal static class RefereeAccess
     public static TeamRatingDto TeamRating(RefereeRating rating, IReadOnlyDictionary<Guid, Team> teams)
     {
         var team = teams.GetValueOrDefault(rating.TeamId);
-        return new TeamRatingDto(rating.TeamId, team?.Name ?? "Equipo", team?.CrestLink(), rating.Score, rating.Comment, Rater(rating), rating.CreatedAt);
+        return new TeamRatingDto(
+            rating.TeamId, team?.Name ?? "Equipo", team?.CrestLink(), rating.Score, rating.PublicComment, rating.CommentHidden, Rater(rating), rating.CreatedAt);
     }
 
     // Las notas de un partido, primero la del equipo local.
@@ -604,7 +616,7 @@ internal sealed class GetRefereeHandler(IRefereeStore referees, IMatchStore matc
             var category = CategoryOf(m.Id);
             return new RefereeRatingDto(
                 m.Id, m.KickoffAt, teamMap.GetValueOrDefault(m.HomeTeamId)?.Name ?? "Local", teamMap.GetValueOrDefault(m.AwayTeamId)?.Name ?? "Visitante",
-                category?.Key, category?.Name, r.TeamId, team?.Name ?? "Equipo", team?.CrestLink(), r.Role, r.Score, r.Comment, RefereeAccess.Rater(r), r.CreatedAt);
+                category?.Key, category?.Name, r.TeamId, team?.Name ?? "Equipo", team?.CrestLink(), r.Role, r.Score, r.PublicComment, r.CommentHidden, RefereeAccess.Rater(r), r.CreatedAt);
         }
 
         var ratingDtos = ratings.OrderByDescending(r => matchMap.GetValueOrDefault(r.MatchId)?.KickoffAt).ThenByDescending(r => r.CreatedAt)

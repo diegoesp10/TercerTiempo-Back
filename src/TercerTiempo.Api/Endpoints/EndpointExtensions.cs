@@ -14,6 +14,7 @@ public static class EndpointExtensions
         app.MapTeamEndpoints();
         app.MapMatchEndpoints();
         app.MapRefereeEndpoints();
+        app.MapModerationEndpoints();
         app.MapVideoEndpoints();
         app.MapStatsEndpoints();
         app.MapAdminEndpoints();

@@ -155,6 +155,13 @@ public sealed class RefereeRating : AggregateRoot
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
+    // El administrador puede retirar un comentario fuera de lugar: la nota sigue y el texto se guarda, pero no se publica.
+    public DateTimeOffset? CommentHiddenAt { get; private set; }
+    public Guid? CommentHiddenByUserId { get; private set; }
+
+    public bool CommentHidden => CommentHiddenAt is not null;
+    public string? PublicComment => CommentHidden ? null : Comment;
+
     private RefereeRating() { }
 
     public static RefereeRating Rate(MatchOfficial official, Guid teamId, int score, string? comment, RefereeRater rater, DateTimeOffset now)
@@ -179,6 +186,19 @@ public sealed class RefereeRating : AggregateRoot
             CreatedAt = now,
             UpdatedAt = now,
         };
+    }
+
+    public void HideComment(Guid? adminUserId, DateTimeOffset now)
+    {
+        if (Comment is null) throw new DomainException(ErrorCode.RefereeRatingNoComment);
+        CommentHiddenAt ??= now;
+        CommentHiddenByUserId = adminUserId;
+    }
+
+    public void ShowComment()
+    {
+        CommentHiddenAt = null;
+        CommentHiddenByUserId = null;
     }
 }
 
@@ -215,5 +235,8 @@ public interface IRefereeStore
     Task<IReadOnlyList<RefereeRating>> GetRatingsByMatchesAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RefereeRating>> GetRatingsByRefereeAsync(Guid refereeId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RefereeRating>> GetAllRatingsAsync(CancellationToken cancellationToken = default);
+    Task<RefereeRating?> GetRatingByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    // Las notas con comentario, de la más reciente a la más antigua (para la moderación).
+    Task<IReadOnlyList<RefereeRating>> GetCommentedRatingsAsync(int max, CancellationToken cancellationToken = default);
     void AddRating(RefereeRating rating);
 }

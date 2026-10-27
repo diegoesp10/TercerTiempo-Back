@@ -212,6 +212,14 @@ public static class ErrorCode
     public const string RefereeMatchNotOver = "referee.match_not_over";
     public const string RefereeAlreadyRated = "referee.already_rated";
     public const string RefereeRatingNotConfirmed = "referee.rating_not_confirmed";
+    public const string RefereeRatingNotFound = "referee.rating_not_found";
+    public const string RefereeRatingNoComment = "referee.rating_no_comment";
+    public const string RefereeCommentNotAllowed = "referee.comment_not_allowed";
+
+    // Moderación
+    public const string ForbiddenWordInvalid = "moderation.word_invalid";
+    public const string ForbiddenWordExists = "moderation.word_exists";
+    public const string ForbiddenWordNotFound = "moderation.word_not_found";
     public const string LicenseSimulatorDisabled = "license.simulator_disabled";
     public const string LicenseSubscriptionActive = "license.subscription_active";
     public const string LicenseNoSubscription = "license.no_subscription";

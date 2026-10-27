@@ -96,6 +96,7 @@ public static class DependencyInjection
         services.AddScoped<ILicenseStore, LicenseStore>();
         services.AddScoped<TercerTiempo.Domain.Alerts.IAlertStore, TercerTiempo.Infrastructure.Alerts.AlertStore>();
         services.AddScoped<TercerTiempo.Domain.Referees.IRefereeStore, TercerTiempo.Infrastructure.Referees.RefereeStore>();
+        services.AddScoped<TercerTiempo.Domain.Moderation.IForbiddenWordStore, TercerTiempo.Infrastructure.Moderation.ForbiddenWordStore>();
         services.AddScoped<ILicensingSettingsStore, TercerTiempo.Infrastructure.Licensing.LicensingSettingsStore>();
         services.AddScoped<TercerTiempo.Domain.Competitions.IFootballSyncSettingsStore, FootballData.FootballSyncSettingsStore>();
         services.AddScoped<TercerTiempo.Domain.Competitions.ISeasonYearStore, Persistence.Stores.SeasonYearStore>();
