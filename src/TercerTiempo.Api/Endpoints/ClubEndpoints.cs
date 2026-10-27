@@ -115,7 +115,7 @@ internal static class ClubEndpoints
         group.MapPost("/appointments", (CreateAppointmentRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.CreateAppointmentAsync(request, ct))
             .WithName("CreateAppointment")
             .WithSummary("Nombrar a un técnico")
-            .WithDescription("Crea el nombramiento de un técnico para un equipo del club en la temporada en curso y devuelve el código de acceso que hay que entregarle. Vale desde hoy hasta validUntil (por defecto, el final de la temporada; nunca más allá). Al canjearlo, el técnico entra en el cuerpo técnico de la plantilla del equipo (que se crea si no existe) hasta esa fecha.")
+            .WithDescription("Crea el nombramiento de un técnico para un equipo del club en la temporada en curso y devuelve el código de acceso que hay que entregarle. Vale desde hoy hasta validUntil (por defecto, el final de la temporada; nunca más allá). Al canjearlo, el técnico entra en el cuerpo técnico de la plantilla del equipo (que se crea si no existe) hasta esa fecha. Cada nombramiento vigente o pendiente ocupa una de las licencias de técnico del club (409 license.staff_limit si no quedan).")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)

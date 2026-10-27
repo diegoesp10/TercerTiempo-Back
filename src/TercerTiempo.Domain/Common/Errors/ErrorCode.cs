@@ -185,10 +185,11 @@ public static class ErrorCode
     public const string LicenseNotFound = "license.not_found";
     public const string LicensePlanInvalid = "license.plan_invalid";
     public const string LicensingCurrencyInvalid = "licensing.currency_invalid";
-    public const string LicensingPlanOrder = "licensing.plan_order";
     public const string LicensingStripePriceInvalid = "licensing.stripe_price_invalid";
     public const string LicenseStaffLimit = "license.staff_limit";
-    public const string LicensePlanTooSmall = "license.plan_too_small";
+    public const string LicenseStaffSeatsTooFew = "license.staff_seats_too_few";
+    public const string LicenseStaffSeatsRange = "license.staff_seats_range";
+    public const string LicenseClubRequired = "license.club_required";
     public const string LicenseSimulatorDisabled = "license.simulator_disabled";
     public const string LicenseSubscriptionActive = "license.subscription_active";
     public const string LicenseNoSubscription = "license.no_subscription";

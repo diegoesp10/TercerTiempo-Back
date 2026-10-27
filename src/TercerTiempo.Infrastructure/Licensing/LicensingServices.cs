@@ -20,7 +20,7 @@ internal sealed class LicenseStore(AppDbContext db) : ILicenseStore
         db.ClubLicenses.FirstOrDefaultAsync(l => l.SubscriptionRef == subscriptionRef, cancellationToken);
 
     public async Task<IReadOnlyList<ClubLicense>> GetRenewingAsync(string provider, CancellationToken cancellationToken = default) =>
-        await db.ClubLicenses.Where(l => l.AutoRenew && l.Plan != null && l.Provider == provider).ToListAsync(cancellationToken);
+        await db.ClubLicenses.Where(l => l.AutoRenew && l.Interval != null && l.Provider == provider).ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<ClubLicense>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await db.ClubLicenses.AsNoTracking().ToListAsync(cancellationToken);
@@ -48,12 +48,10 @@ internal sealed class ClubLicenseConfiguration : IEntityTypeConfiguration<ClubLi
         builder.Ignore(l => l.ValidUntil);
         builder.Ignore(l => l.IsRenewing);
         builder.Ignore(l => l.RenewsOn);
-        builder.Ignore(l => l.EffectivePlan);
-        builder.Ignore(l => l.StaffPlan);
+        builder.Ignore(l => l.IsContracted);
+        builder.Ignore(l => l.RenewalStaffSeats);
 
-        builder.Property(l => l.Plan).HasConversion<string>().HasMaxLength(20);
         builder.Property(l => l.Interval).HasConversion<string>().HasMaxLength(20);
-        builder.Property(l => l.NextPlan).HasConversion<string>().HasMaxLength(20);
         builder.Property(l => l.NextInterval).HasConversion<string>().HasMaxLength(20);
         builder.Property(l => l.Provider).HasMaxLength(40);
         builder.Property(l => l.CustomerRef).HasMaxLength(120);
@@ -79,7 +77,6 @@ internal sealed class LicensePaymentConfiguration : IEntityTypeConfiguration<Lic
         builder.Property(p => p.SessionId).HasMaxLength(120).IsRequired();
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
         builder.Property(p => p.Kind).HasConversion<string>().HasMaxLength(20);
-        builder.Property(p => p.Plan).HasConversion<string>().HasMaxLength(20);
         builder.Property(p => p.Interval).HasConversion<string>().HasMaxLength(20);
 
         builder.HasOne<ClubLicense>().WithMany().HasForeignKey(p => p.LicenseId).OnDelete(DeleteBehavior.Cascade);

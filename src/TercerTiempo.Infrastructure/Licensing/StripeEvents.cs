@@ -52,7 +52,7 @@ internal static class StripeEvents
                     Text(data, "id")!, subscriptionRef, licenseId,
                     data.TryGetProperty("amount_due", out var due) ? due.GetInt32() : 0, Currency(data),
                     data.TryGetProperty("attempt_count", out var count) ? count.GetInt32() : 1,
-                    next, reason ?? "La entidad ha rechazado el cobro");
+                    next, reason ?? "La entidad ha rechazado el cobro", Text(data, "billing_reason") ?? "subscription_cycle");
             }
 
             case "customer.subscription.deleted":

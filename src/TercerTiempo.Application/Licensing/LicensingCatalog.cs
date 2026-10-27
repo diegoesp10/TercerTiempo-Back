@@ -2,8 +2,8 @@ using TercerTiempo.Domain.Licensing;
 
 namespace TercerTiempo.Application.Licensing;
 
-// Precios, prueba y técnicos de cada plan, leídos de la base de datos (LicensingSettings) con una caché corta que se
-// vacía al guardarlos desde la administración.
+// Precios de la licencia de club y de cada técnico, prueba y tope de técnicos, leídos de la base de datos
+// (LicensingSettings) con una caché corta que se vacía al guardarlos desde la administración.
 public interface ILicensingCatalog
 {
     Task<LicensingSettings> GetAsync(CancellationToken cancellationToken = default);

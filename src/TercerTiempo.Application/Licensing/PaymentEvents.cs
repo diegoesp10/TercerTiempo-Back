@@ -115,7 +115,7 @@ internal sealed class ApplyLicenseEventHandler(
                     return new LicenseEventOutcome(false, null, "Sesión de pago desconocida");
                 if (payment.IsPaid) return new LicenseEventOutcome(false, payment.LicenseId, "Alta ya confirmada");
                 await completion.CompleteAsync(payment, cancellationToken);
-                return new LicenseEventOutcome(true, payment.LicenseId, $"Suscripción dada de alta ({PlanText(payment.Plan, payment.Interval)})");
+                return new LicenseEventOutcome(true, payment.LicenseId, $"Suscripción dada de alta ({SubscriptionText(payment.StaffSeats, payment.Interval)})");
             }
 
             case InvoicePaidEvent invoice:
@@ -134,9 +134,21 @@ internal sealed class ApplyLicenseEventHandler(
                     return new LicenseEventOutcome(true, license.Id, $"Primer cobro: pagado hasta el {invoice.PeriodEnd:dd/MM/yyyy}");
                 }
 
+                // Técnicos añadidos a mitad de periodo: su parte proporcional, sin tocar lo pagado ni los cambios pedidos.
+                if (invoice.BillingReason == "subscription_update")
+                {
+                    var seats = LicensePayment.Begin(
+                        license, LicensePaymentKind.StaffSeats, license.Interval ?? BillingInterval.Monthly, license.StaffSeats,
+                        invoice.AmountCents, invoice.AmountCents, invoice.Currency, gateway.Provider, invoice.InvoiceId, now);
+                    seats.MarkPaid(now);
+                    licenses.AddPayment(seats);
+                    await unitOfWork.SaveChangesAsync(cancellationToken);
+                    return new LicenseEventOutcome(true, license.Id, $"Técnicos añadidos ({LicenseTexts.Staff(license.StaffSeats)} en total): {Money(invoice.AmountCents, invoice.Currency)} hasta la renovación");
+                }
+
                 license.RecordRenewal(invoice.PeriodEnd, now);
                 var renewal = LicensePayment.Begin(
-                    license, LicensePaymentKind.Renewal, license.EffectivePlan, license.Interval ?? BillingInterval.Monthly,
+                    license, LicensePaymentKind.Renewal, license.Interval ?? BillingInterval.Monthly, license.StaffSeats,
                     invoice.AmountCents, invoice.AmountCents, invoice.Currency, gateway.Provider, invoice.InvoiceId, now);
                 renewal.MarkPaid(now);
                 licenses.AddPayment(renewal);
@@ -153,8 +165,11 @@ internal sealed class ApplyLicenseEventHandler(
                 if (await licenses.GetPaymentBySessionAsync(reference, cancellationToken) is not null)
                     return new LicenseEventOutcome(false, license.Id, "Intento ya apuntado");
 
+                var seatsAdded = failed.BillingReason == "subscription_update";
                 var payment = LicensePayment.Begin(
-                    license, LicensePaymentKind.Renewal, license.NextPlan ?? license.EffectivePlan, license.NextInterval ?? license.Interval ?? BillingInterval.Monthly,
+                    license, seatsAdded ? LicensePaymentKind.StaffSeats : LicensePaymentKind.Renewal,
+                    (seatsAdded ? license.Interval : license.NextInterval ?? license.Interval) ?? BillingInterval.Monthly,
+                    seatsAdded ? license.StaffSeats : license.RenewalStaffSeats,
                     failed.AmountCents, failed.AmountCents, failed.Currency, gateway.Provider, reference, now);
                 payment.MarkFailed(failed.Reason);
                 licenses.AddPayment(payment);
@@ -182,8 +197,8 @@ internal sealed class ApplyLicenseEventHandler(
         (licenseId is { } id ? await licenses.GetByIdAsync(id, cancellationToken) : null)
         ?? await licenses.GetBySubscriptionAsync(subscriptionRef, cancellationToken);
 
-    private static string PlanText(LicensePlan plan, BillingInterval interval) =>
-        $"{LicenseTexts.Plan(plan)} {(interval == BillingInterval.Yearly ? "anual" : "mensual")}";
+    private static string SubscriptionText(int staffSeats, BillingInterval interval) =>
+        $"{LicenseTexts.Subscription(staffSeats)}, {(interval == BillingInterval.Yearly ? "anual" : "mensual")}";
 
     internal static string Money(int cents, string currency) =>
         $"{cents / 100m:0.00} {(currency == "EUR" ? "€" : currency)}".Replace('.', ',');

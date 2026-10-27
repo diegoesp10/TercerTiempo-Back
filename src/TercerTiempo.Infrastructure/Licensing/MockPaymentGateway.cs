@@ -101,7 +101,21 @@ internal sealed class MockPaymentGateway(
 
     public Task ResumeRenewalAsync(string subscriptionRef, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public Task ChangeRenewalAsync(string subscriptionRef, LicensePlan plan, BillingInterval interval, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task ChangeRenewalAsync(string subscriptionRef, BillingInterval interval, int staffSeats, CancellationToken cancellationToken) => Task.CompletedTask;
+
+    // Como Stripe con always_invoice: los técnicos añadidos con un periodo pagado se cobran ya con una factura
+    // «subscription_update» por su parte proporcional.
+    public async Task ChangeStaffSeatsAsync(StaffSeatsChange change, CancellationToken cancellationToken)
+    {
+        if (change.ChargeNowCents <= 0) return;
+        var now = clock.GetUtcNow();
+        var settings = await catalog.GetAsync(cancellationToken);
+        var eventId = StripeEvents.NewId("evt_mock");
+        await inbox.AddAsync(new PaymentEventInput(Name, eventId, "invoice.paid",
+            StripeEvents.InvoicePaid(eventId, StripeEvents.NewId("in_mock"), change.SubscriptionRef, change.LicenseId, "subscription_update",
+                change.ChargeNowCents, settings.Currency, change.PeriodEnd, now), change.LicenseId), cancellationToken);
+        signal.Signal();
+    }
 
     // A la simulada no le llegan avisos de fuera: los suyos los deja ella misma en la cola.
     public ReceivedWebhook ReadWebhook(string payload, string? signature) => throw new DomainException(ErrorCode.LicenseWebhookInvalid);
@@ -154,9 +168,8 @@ internal sealed class MockPaymentGateway(
         var today = Domain.Squads.Squad.Today(clock.GetUtcNow());
         var subscription = license.SubscriptionRef ?? throw new DomainException(ErrorCode.LicenseNoSubscription);
         var settings = await catalog.GetAsync(cancellationToken);
-        var plan = license.NextPlan ?? license.EffectivePlan;
         var interval = license.NextInterval ?? license.Interval ?? BillingInterval.Monthly;
-        var price = settings.PriceCents(plan, interval);
+        var price = settings.SubscriptionPriceCents(interval, license.RenewalStaffSeats);
         // Una factura por periodo: la de la renovación que toca (cobrarla dos veces o reintentarla es el mismo id).
         var renewsOn = license.RenewsOn ?? license.ValidUntil.AddDays(1);
         var invoiceId = $"in_mock_{license.Id:N}_{renewsOn:yyyyMMdd}";

@@ -8,18 +8,22 @@ using TercerTiempo.Domain.Licensing;
 
 namespace TercerTiempo.Application.Admin;
 
-public sealed record LicensePlanSettingsDto(
-    LicensePlan Plan,
+public sealed record LicensePriceSettingsDto(
+    [property: Description("Club (la licencia de club) o StaffSeat (cada licencia de técnico).")]
+    LicenseItem Item,
     int MonthlyPriceCents,
     int YearlyPriceCents,
-    int MaxStaff,
     string? StripeMonthlyPriceId,
     string? StripeYearlyPriceId);
 
 public sealed record LicensingSettingsDto(
     string Currency,
     int TrialDays,
-    IReadOnlyList<LicensePlanSettingsDto> Plans,
+    [property: Description("Técnicos que admite la prueba.")]
+    int TrialStaffSeats,
+    [property: Description("Licencias de técnico que puede tener un club como mucho.")]
+    int MaxStaffSeats,
+    IReadOnlyList<LicensePriceSettingsDto> Prices,
     [property: Description("Pasarela en uso (configuración del entorno, no editable aquí): «mock» o «stripe».")]
     string Provider,
     DateTimeOffset UpdatedAt);
@@ -29,8 +33,10 @@ internal static class LicensingSettingsMapper
     public static LicensingSettingsDto ToDto(LicensingSettings settings, string provider) => new(
         settings.Currency,
         settings.TrialDays,
-        settings.Plans.OrderBy(p => p.Plan)
-            .Select(p => new LicensePlanSettingsDto(p.Plan, p.MonthlyPriceCents, p.YearlyPriceCents, p.MaxStaff, p.StripeMonthlyPriceId, p.StripeYearlyPriceId))
+        settings.TrialStaffSeats,
+        settings.MaxStaffSeats,
+        settings.Prices.OrderBy(p => p.Item)
+            .Select(p => new LicensePriceSettingsDto(p.Item, p.MonthlyPriceCents, p.YearlyPriceCents, p.StripeMonthlyPriceId, p.StripeYearlyPriceId))
             .ToList(),
         provider,
         settings.UpdatedAt);
@@ -50,8 +56,12 @@ public sealed record UpdateLicensingSettingsCommand(
     string Currency,
     [property: Description("Días de prueba de las licencias nuevas (0-365).")]
     int TrialDays,
-    [property: Description("Los dos planes, Basic y Premium, con precios en céntimos (IVA incluido) y técnicos admitidos.")]
-    IReadOnlyList<LicensePlanSettingsDto> Plans) : ICommand<LicensingSettingsDto>;
+    [property: Description("Técnicos que admite la prueba (0 hasta el tope por club).")]
+    int TrialStaffSeats,
+    [property: Description("Licencias de técnico que puede tener un club como mucho (1-200).")]
+    int MaxStaffSeats,
+    [property: Description("Los dos precios, Club y StaffSeat, en céntimos (IVA incluido).")]
+    IReadOnlyList<LicensePriceSettingsDto> Prices) : ICommand<LicensingSettingsDto>;
 
 internal sealed class UpdateLicensingSettingsValidator : AbstractValidator<UpdateLicensingSettingsCommand>
 {
@@ -59,15 +69,16 @@ internal sealed class UpdateLicensingSettingsValidator : AbstractValidator<Updat
     {
         RuleFor(x => x.Currency).NotEmpty().Length(3).WithName("Moneda");
         RuleFor(x => x.TrialDays).InclusiveBetween(0, 365).WithName("Días de prueba");
-        RuleFor(x => x.Plans).NotEmpty();
-        RuleForEach(x => x.Plans).ChildRules(plan =>
+        RuleFor(x => x.MaxStaffSeats).InclusiveBetween(1, 200).WithName("Técnicos por club");
+        RuleFor(x => x.TrialStaffSeats).InclusiveBetween(0, 200).LessThanOrEqualTo(x => x.MaxStaffSeats).WithName("Técnicos de la prueba");
+        RuleFor(x => x.Prices).NotEmpty();
+        RuleForEach(x => x.Prices).ChildRules(price =>
         {
-            plan.RuleFor(p => p.Plan).IsInEnum();
-            plan.RuleFor(p => p.MonthlyPriceCents).InclusiveBetween(50, 1_000_000).WithName("Precio mensual (céntimos)");
-            plan.RuleFor(p => p.YearlyPriceCents).InclusiveBetween(50, 10_000_000).WithName("Precio anual (céntimos)");
-            plan.RuleFor(p => p.MaxStaff).InclusiveBetween(1, 50).WithName("Técnicos");
-            plan.RuleFor(p => p.StripeMonthlyPriceId).MaximumLength(100);
-            plan.RuleFor(p => p.StripeYearlyPriceId).MaximumLength(100);
+            price.RuleFor(p => p.Item).IsInEnum();
+            price.RuleFor(p => p.MonthlyPriceCents).InclusiveBetween(50, 1_000_000).WithName("Precio mensual (céntimos)");
+            price.RuleFor(p => p.YearlyPriceCents).InclusiveBetween(50, 10_000_000).WithName("Precio anual (céntimos)");
+            price.RuleFor(p => p.StripeMonthlyPriceId).MaximumLength(100);
+            price.RuleFor(p => p.StripeYearlyPriceId).MaximumLength(100);
         });
     }
 }
@@ -92,7 +103,9 @@ internal sealed class UpdateLicensingSettingsHandler(
         settings.Update(
             command.Currency,
             command.TrialDays,
-            command.Plans.Select(p => new LicensePlanTerms(p.Plan, p.MonthlyPriceCents, p.YearlyPriceCents, p.MaxStaff, p.StripeMonthlyPriceId, p.StripeYearlyPriceId)).ToList(),
+            command.TrialStaffSeats,
+            command.MaxStaffSeats,
+            command.Prices.Select(p => new LicensePriceTerms(p.Item, p.MonthlyPriceCents, p.YearlyPriceCents, p.StripeMonthlyPriceId, p.StripeYearlyPriceId)).ToList(),
             now);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         catalog.Invalidate();

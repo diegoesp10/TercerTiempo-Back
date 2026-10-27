@@ -11,24 +11,24 @@ internal static class LicensingEndpoints
         group.MapGet("/plans", (ILicensingRepository licensing, CancellationToken ct) => licensing.GetCatalogAsync(ct))
             .AllowAnonymous()
             .WithName("GetLicensingPlans")
-            .WithSummary("Planes y precios")
-            .WithDescription("Público. Los planes de licencia (Básica y Premium) con su precio mensual y anual y los técnicos que admite cada uno, los días de prueba y la pasarela en uso («mock» = pago simulado).");
+            .WithSummary("Precios de las licencias")
+            .WithDescription("Público. El precio mensual y anual de la licencia de club (el primer equipo y sus filiales, con todas las funciones para el club) y de cada licencia de técnico, la prueba (días y técnicos incluidos), el tope de técnicos por club y la pasarela en uso («mock» = pago simulado).");
 
         group.MapGet("/status", (ILicensingRepository licensing, CancellationToken ct) => licensing.GetStatusAsync(ct))
             .WithName("GetLicensingStatus")
             .WithSummary("Estado de licencia de la cuenta")
-            .WithDescription("Para cualquier cuenta: si pertenece a algún equipo con licencia vigente (prueba o pagada) y la licencia de cada club al que pertenece (club: la suya, con todos sus equipos; técnico o jugador: la de los clubes de sus plantillas, con solo sus equipos), con su plan, renovación y técnicos de cada equipo. Incluye el catálogo de planes.");
+            .WithDescription("Para cualquier cuenta: si pertenece a algún equipo con licencia vigente (prueba o pagada) y la licencia de cada club al que pertenece (club: la suya, con todos sus equipos; técnico o jugador: la de los clubes de sus plantillas, con solo sus equipos), con su renovación, los técnicos contratados y los de cada equipo. Incluye los precios.");
 
         group.MapGet("/club", (ILicensingRepository licensing, CancellationToken ct) => licensing.GetClubLicenseAsync(ct))
             .WithName("GetClubLicense")
             .WithSummary("Licencia del club")
-            .WithDescription("Solo clubes. Una licencia por club, al precio del plan, que cubre el primer equipo y sus filiales; cada equipo tiene su propio cupo de técnicos según el plan. Empieza con la prueba (con todo Premium) al darse de alta y después se paga como suscripción mensual o anual. Sin licencia vigente, el club, su cuerpo técnico y sus jugadores pierden el acceso a los datos privados de sus equipos (no se borran).")
+            .WithDescription("Solo clubes. Una licencia de club, que cubre el primer equipo y sus filiales con todas las funciones para el club, más las licencias de técnico contratadas (una bolsa para todos sus equipos). Empieza con la prueba (con unos técnicos incluidos) al darse de alta y después se paga como suscripción mensual o anual. Sin licencia vigente, el club, su cuerpo técnico y sus jugadores pierden el acceso a los datos privados de sus equipos (no se borran).")
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
-        group.MapPost("/club/checkout", (LicensePlanRequest request, ILicensingRepository licensing, CancellationToken ct) => licensing.BeginCheckoutAsync(request, ct))
+        group.MapPost("/club/checkout", (LicenseCheckoutRequest request, ILicensingRepository licensing, CancellationToken ct) => licensing.BeginCheckoutAsync(request, ct))
             .WithName("BeginLicenseCheckout")
-            .WithSummary("Contratar un plan")
-            .WithDescription("Solo clubes sin suscripción en marcha. Crea la sesión de pago de la suscripción del club (primer equipo y filiales, un solo precio) y devuelve la URL a la que llevar al club (Stripe Checkout, o una página del propio frontal con la pasarela simulada). El plan debe admitir el cuerpo técnico de cada equipo. Si queda prueba o periodo pagado, hoy no se cobra nada: el primer cobro llega al acabarse.")
+            .WithSummary("Contratar la licencia de club")
+            .WithDescription("Solo clubes sin suscripción en marcha. Crea la sesión de pago de la suscripción del club (licencia de club y, si se piden ya, licencias de técnico) y devuelve la URL a la que llevar al club (Stripe Checkout, o una página del propio frontal con la pasarela simulada). Los técnicos deben cubrir los nombramientos que ya tiene el club. Si queda prueba o periodo pagado, hoy no se cobra nada: el primer cobro llega al acabarse.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -53,12 +53,20 @@ internal static class LicensingEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        group.MapPut("/club/renewal", (LicensePlanRequest request, ILicensingRepository licensing, CancellationToken ct) => licensing.ChangeRenewalAsync(request, ct))
+        group.MapPut("/club/renewal", (LicenseRenewalRequest request, ILicensingRepository licensing, CancellationToken ct) => licensing.ChangeRenewalAsync(request, ct))
             .WithName("ChangeLicenseRenewal")
-            .WithSummary("Cambiar el plan de la renovación")
-            .WithDescription("Solo clubes. Cambia el plan o la facturación a partir de la próxima renovación (durante la prueba, ya). El plan debe admitir el cuerpo técnico que tiene cada equipo del club.")
+            .WithSummary("Cambiar la facturación")
+            .WithDescription("Solo clubes con la licencia contratada. Pasa a facturación mensual o anual a partir de la próxima renovación (durante la prueba, ya).")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPut("/club/staff-seats", (StaffSeatsRequest request, ILicensingRepository licensing, CancellationToken ct) => licensing.ChangeStaffSeatsAsync(request, ct))
+            .WithName("ChangeStaffSeats")
+            .WithSummary("Comprar o quitar licencias de técnico")
+            .WithDescription("Solo clubes, una vez contratada la licencia de club y con la renovación activa. Fija cuántas licencias de técnico tiene el club (una bolsa para todos sus equipos). Las que se añaden valen ya y, si hay un periodo pagado, se cobra al momento su parte proporcional hasta la renovación; durante la prueba no se cobra nada hasta el primer cobro. Las que se quitan valen desde la próxima renovación y nunca por debajo de los nombramientos vigentes o pendientes.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/club/renewal/cancel", (ILicensingRepository licensing, CancellationToken ct) => licensing.CancelRenewalAsync(ct))
             .WithName("CancelLicenseRenewal")
@@ -68,7 +76,7 @@ internal static class LicensingEndpoints
         group.MapPost("/club/renewal/resume", (ILicensingRepository licensing, CancellationToken ct) => licensing.ResumeRenewalAsync(ct))
             .WithName("ResumeLicenseRenewal")
             .WithSummary("Reactivar la renovación")
-            .WithDescription("Solo clubes, mientras la licencia sigue vigente: vuelve a renovarse con el mismo plan.");
+            .WithDescription("Solo clubes, mientras la licencia sigue vigente: vuelve a renovarse con la misma facturación y los mismos técnicos.");
 
         // Avisos de Stripe: el cuerpo se lee tal cual porque la firma se calcula sobre él. Se guardan en la cola de eventos y
         // se responde enseguida; los aplica el proceso de la cola, con reintentos.

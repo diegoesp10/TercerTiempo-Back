@@ -25,50 +25,50 @@ internal sealed class LicensingSettingsConfiguration : IEntityTypeConfiguration<
         builder.ConfigureAggregate();
         builder.Property(s => s.Currency).HasMaxLength(3).IsRequired();
 
-        builder.HasMany(s => s.Plans).WithOne().HasForeignKey(p => p.SettingsId).OnDelete(DeleteBehavior.Cascade);
-        builder.Navigation(s => s.Plans).UsePropertyAccessMode(PropertyAccessMode.Field).AutoInclude();
+        builder.HasMany(s => s.Prices).WithOne().HasForeignKey(p => p.SettingsId).OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(s => s.Prices).UsePropertyAccessMode(PropertyAccessMode.Field).AutoInclude();
 
-        // Valores con los que se lanzó la app (antes estaban en appsettings.json).
+        // Valores de partida: la licencia de club con los técnicos aparte (27-10-2026).
         builder.HasData(new
         {
             Id = LicensingSettings.SingletonId,
             Currency = LicensingSettings.DefaultCurrency,
             TrialDays = 30,
-            UpdatedAt = new DateTimeOffset(2026, 10, 24, 0, 0, 0, TimeSpan.Zero),
+            TrialStaffSeats = 2,
+            MaxStaffSeats = 30,
+            UpdatedAt = new DateTimeOffset(2026, 10, 27, 0, 0, 0, TimeSpan.Zero),
         });
     }
 }
 
-internal sealed class LicensePlanSettingsConfiguration : IEntityTypeConfiguration<LicensePlanSettings>
+internal sealed class LicensePriceSettingsConfiguration : IEntityTypeConfiguration<LicensePriceSettings>
 {
-    public void Configure(EntityTypeBuilder<LicensePlanSettings> builder)
+    public void Configure(EntityTypeBuilder<LicensePriceSettings> builder)
     {
-        builder.ToTable("LicensePlanSettings");
+        builder.ToTable("LicensePrices");
         builder.HasKey(p => p.Id);
         builder.Property(p => p.Id).ValueGeneratedNever();
-        builder.Property(p => p.Plan).HasConversion<string>().HasMaxLength(20);
+        builder.Property(p => p.Item).HasConversion<string>().HasMaxLength(20);
         builder.Property(p => p.StripeMonthlyPriceId).HasMaxLength(100);
         builder.Property(p => p.StripeYearlyPriceId).HasMaxLength(100);
-        builder.HasIndex(p => new { p.SettingsId, p.Plan }).IsUnique();
+        builder.HasIndex(p => new { p.SettingsId, p.Item }).IsUnique();
 
         builder.HasData(
             new
             {
                 Id = new Guid("01a16f00-0000-7000-8000-000000000011"),
                 SettingsId = LicensingSettings.SingletonId,
-                Plan = LicensePlan.Basic,
-                MonthlyPriceCents = 990,
-                YearlyPriceCents = 9900,
-                MaxStaff = 1,
+                Item = LicenseItem.Club,
+                MonthlyPriceCents = 490,
+                YearlyPriceCents = 4900,
             },
             new
             {
                 Id = new Guid("01a16f00-0000-7000-8000-000000000012"),
                 SettingsId = LicensingSettings.SingletonId,
-                Plan = LicensePlan.Premium,
-                MonthlyPriceCents = 1990,
-                YearlyPriceCents = 19900,
-                MaxStaff = 6,
+                Item = LicenseItem.StaffSeat,
+                MonthlyPriceCents = 250,
+                YearlyPriceCents = 2500,
             });
     }
 }

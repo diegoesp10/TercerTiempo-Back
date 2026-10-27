@@ -34,36 +34,41 @@ public sealed record ClubLicenseDto(
     DateOnly ValidUntil,
     [property: Description("Días que quedan de acceso; 0 si ha caducado.")]
     int DaysLeft,
-    [property: Description("Plan contratado; null mientras no se ha elegido ninguno (la prueba).")]
-    LicensePlan? Plan,
-    [property: Description("Plan con el que funciona el club ahora: el contratado o Premium durante la prueba.")]
-    LicensePlan EffectivePlan,
+    [property: Description("true una vez contratada la licencia de club; antes, la prueba.")]
+    bool Contracted,
     BillingInterval? Interval,
     [property: Description("true si la suscripción se renueva sola al acabar el periodo.")]
     bool AutoRenew,
-    [property: Description("Cambio de plan pedido para la próxima renovación.")]
-    LicensePlan? NextPlan,
+    [property: Description("Cambio de facturación pedido para la próxima renovación.")]
     BillingInterval? NextInterval,
+    [property: Description("Licencias de técnico contratadas: la bolsa del club para todos sus equipos.")]
+    int StaffSeats,
+    [property: Description("Técnicos que quedarán en la próxima renovación si se ha pedido reducirlos.")]
+    int? NextStaffSeats,
+    [property: Description("Técnicos que admite ahora la licencia: los de la prueba mientras no se ha contratado; después, los contratados.")]
+    int StaffLimit,
+    [property: Description("Técnicos con nombramiento vigente o pendiente de canjear en todos los equipos del club.")]
+    int StaffInUse,
     [property: Description("Día del próximo cobro, si se renueva.")]
     DateOnly? RenewsOn,
     [property: Description("Importe del próximo cobro, si se renueva.")]
     int? RenewalPriceCents,
-    [property: Description("Técnicos que admite el plan en cada equipo.")]
-    int StaffLimit,
     [property: Description("Equipos que cubre la licencia (el primer equipo y sus filiales) con el cuerpo técnico de cada uno. Para un técnico o un jugador, solo los suyos.")]
     IReadOnlyList<LicensedTeamDto> Teams);
 
-public sealed record LicensePlanDto(
-    LicensePlan Plan,
-    int MonthlyPriceCents,
-    int YearlyPriceCents,
-    [property: Description("Técnicos que admite el plan en cada equipo.")]
-    int MaxStaff);
+public sealed record LicensePriceDto(int MonthlyPriceCents, int YearlyPriceCents);
 
 public sealed record LicensingCatalogDto(
-    IReadOnlyList<LicensePlanDto> Plans,
+    [property: Description("Licencia de club: el primer equipo y sus filiales, con todas las funciones para el club.")]
+    LicensePriceDto Club,
+    [property: Description("Cada licencia de técnico: una cuenta del cuerpo técnico en cualquiera de los equipos del club.")]
+    LicensePriceDto StaffSeat,
     string Currency,
     int TrialDays,
+    [property: Description("Técnicos que admite la prueba.")]
+    int TrialStaffSeats,
+    [property: Description("Licencias de técnico que puede tener un club como mucho.")]
+    int MaxStaffSeats,
     [property: Description("Días que se mantiene el acceso tras el fin de lo pagado mientras se cobra la renovación.")]
     int RenewalGraceDays,
     [property: Description("Pasarela de pago en uso; «mock» = pago simulado, sin cobro real.")]
@@ -84,11 +89,12 @@ public sealed record LicenseCheckoutDto(
     string ClubName,
     [property: Description("Equipos que cubre la licencia: el primer equipo y sus filiales.")]
     IReadOnlyList<string> TeamNames,
-    LicensePlan Plan,
     BillingInterval Interval,
+    [property: Description("Licencias de técnico que se contratan con la de club.")]
+    int StaffSeats,
     [property: Description("Lo que se cobra hoy (0 si aún queda prueba o periodo pagado).")]
     int AmountCents,
-    [property: Description("Precio de cada periodo (mes o año).")]
+    [property: Description("Precio de cada periodo (mes o año): la licencia de club más los técnicos.")]
     int PeriodPriceCents,
     [property: Description("Día del primer cobro.")]
     DateOnly FirstChargeOn,
@@ -105,16 +111,20 @@ public sealed record GetLicensingStatusQuery : IQuery<LicensingStatusDto>;
 public sealed record GetClubLicenseQuery : IQuery<ClubLicenseDto>;
 
 public sealed record BeginLicenseCheckoutCommand(
-    [property: Description("Basic o Premium.")]
-    LicensePlan Plan,
     [property: Description("Monthly (cada mes) o Yearly (un pago al año).")]
-    BillingInterval Interval) : ICommand<LicenseCheckoutDto>;
+    BillingInterval Interval,
+    [property: Description("Licencias de técnico que se contratan ya con la de club (0 = solo el club; se pueden añadir después).")]
+    int StaffSeats) : ICommand<LicenseCheckoutDto>;
 
 public sealed record GetLicenseCheckoutQuery(string SessionId) : IQuery<LicenseCheckoutDto>;
 
 public sealed record ConfirmLicensePaymentCommand(string SessionId) : ICommand<ClubLicenseDto>;
 
-public sealed record ChangeLicenseRenewalCommand(LicensePlan Plan, BillingInterval Interval) : ICommand<ClubLicenseDto>;
+public sealed record ChangeLicenseRenewalCommand(BillingInterval Interval) : ICommand<ClubLicenseDto>;
+
+public sealed record ChangeStaffSeatsCommand(
+    [property: Description("Licencias de técnico que quiere tener el club.")]
+    int StaffSeats) : ICommand<ClubLicenseDto>;
 
 public sealed record CancelLicenseRenewalCommand : ICommand<ClubLicenseDto>;
 
@@ -128,29 +138,30 @@ internal sealed class BeginLicenseCheckoutValidator : AbstractValidator<BeginLic
 {
     public BeginLicenseCheckoutValidator()
     {
-        RuleFor(x => x.Plan).IsInEnum().WithCatalogMessage(ErrorCode.LicensePlanInvalid);
         RuleFor(x => x.Interval).IsInEnum().WithCatalogMessage(ErrorCode.LicensePlanInvalid);
+        RuleFor(x => x.StaffSeats).GreaterThanOrEqualTo(0).WithName("Técnicos");
     }
 }
 
 internal sealed class ChangeLicenseRenewalValidator : AbstractValidator<ChangeLicenseRenewalCommand>
 {
-    public ChangeLicenseRenewalValidator()
-    {
-        RuleFor(x => x.Plan).IsInEnum().WithCatalogMessage(ErrorCode.LicensePlanInvalid);
-        RuleFor(x => x.Interval).IsInEnum().WithCatalogMessage(ErrorCode.LicensePlanInvalid);
-    }
+    public ChangeLicenseRenewalValidator() => RuleFor(x => x.Interval).IsInEnum().WithCatalogMessage(ErrorCode.LicensePlanInvalid);
+}
+
+internal sealed class ChangeStaffSeatsValidator : AbstractValidator<ChangeStaffSeatsCommand>
+{
+    public ChangeStaffSeatsValidator() => RuleFor(x => x.StaffSeats).GreaterThanOrEqualTo(0).WithName("Técnicos");
 }
 
 internal static class LicenseTexts
 {
-    public static string Plan(LicensePlan plan) => plan == LicensePlan.Premium ? "Premium" : "Básica";
-
     public static string Staff(int count) => count == 1 ? "1 técnico" : $"{count} técnicos";
+
+    public static string Subscription(int staffSeats) => staffSeats > 0 ? $"club + {Staff(staffSeats)}" : "club";
 }
 
-// Cuenta el cuerpo técnico de cada equipo y monta la vista de la licencia del club (plan, renovación, equipos que
-// cubre y límites).
+// Cuenta el cuerpo técnico de los equipos del club y monta la vista de la licencia (renovación, técnicos contratados y
+// en uso, equipos que cubre).
 internal sealed class LicenseDescriber(
     IClubStore clubs,
     ITeamStore teams,
@@ -164,8 +175,9 @@ internal sealed class LicenseDescriber(
     public async Task<LicensingCatalogDto> CatalogAsync(CancellationToken cancellationToken)
     {
         var o = await catalog.GetAsync(cancellationToken);
-        LicensePlanDto Plan(LicensePlan plan) => new(plan, o.For(plan).MonthlyPriceCents, o.For(plan).YearlyPriceCents, o.For(plan).MaxStaff);
-        return new([Plan(LicensePlan.Basic), Plan(LicensePlan.Premium)], o.Currency, o.TrialDays, ClubLicense.RenewalGraceDays, options.Value.Provider);
+        LicensePriceDto Price(LicenseItem item) => new(o.For(item).MonthlyPriceCents, o.For(item).YearlyPriceCents);
+        return new(Price(LicenseItem.Club), Price(LicenseItem.StaffSeat), o.Currency, o.TrialDays, o.TrialStaffSeats, o.MaxStaffSeats,
+            ClubLicense.RenewalGraceDays, options.Value.Provider);
     }
 
     // Nombramientos de la temporada en curso que ocupan plaza: vigentes o pendientes de canjear.
@@ -178,18 +190,21 @@ internal sealed class LicenseDescriber(
             .Count(a => a.StatusOn(today) is AppointmentStatus.Pending or AppointmentStatus.Active);
     }
 
-    // El plan elegido debe admitir el cuerpo técnico que ya tiene cada equipo del club.
-    public async Task EnsureStaffFitsAsync(Club club, LicensePlan plan, CancellationToken cancellationToken)
+    // Las licencias de técnico son una bolsa del club: cuentan los técnicos de todos sus equipos.
+    public async Task<int> ClubStaffCountAsync(Club club, CancellationToken cancellationToken)
     {
-        var limit = (await catalog.GetAsync(cancellationToken)).For(plan).MaxStaff;
-        foreach (var clubTeam in club.Teams.OrderBy(t => t.AddedAt))
-        {
-            var count = await StaffCountAsync(clubTeam.TeamId, cancellationToken);
-            if (count <= limit) continue;
-            var team = await teams.GetByIdAsync(clubTeam.TeamId, cancellationToken);
-            throw new ConflictException(
-                ErrorCode.LicensePlanTooSmall, team?.Name ?? "Un equipo", LicenseTexts.Staff(count), $"{LicenseTexts.Plan(plan)} admite {LicenseTexts.Staff(limit)}");
-        }
+        var total = 0;
+        foreach (var clubTeam in club.Teams)
+            total += await StaffCountAsync(clubTeam.TeamId, cancellationToken);
+        return total;
+    }
+
+    // Los técnicos de la licencia deben cubrir los nombramientos que ya tiene el club.
+    public async Task EnsureStaffFitsAsync(Club club, int staffSeats, CancellationToken cancellationToken)
+    {
+        var inUse = await ClubStaffCountAsync(club, cancellationToken);
+        if (inUse > staffSeats)
+            throw new ConflictException(ErrorCode.LicenseStaffSeatsTooFew, LicenseTexts.Staff(inUse), LicenseTexts.Staff(staffSeats));
     }
 
     // onlyTeams: para un técnico o un jugador, sus equipos (no se le enseña el cuerpo técnico del resto del club).
@@ -211,15 +226,16 @@ internal sealed class LicenseDescriber(
         }
 
         int? renewalPrice = license.IsRenewing
-            ? o.PriceCents(license.NextPlan ?? license.EffectivePlan, license.NextInterval ?? license.Interval ?? BillingInterval.Monthly)
+            ? o.SubscriptionPriceCents(license.NextInterval ?? license.Interval!.Value, license.RenewalStaffSeats)
             : null;
 
         return new ClubLicenseDto(
             license.ClubId, club?.Name ?? "Club", license.StatusOn(today),
             license.TrialEndsOn, license.PaidUntil, license.ValidUntil,
             Math.Max(0, license.ValidUntil.DayNumber - today.DayNumber + 1),
-            license.Plan, license.EffectivePlan, license.Interval, license.AutoRenew, license.NextPlan, license.NextInterval,
-            license.RenewsOn, renewalPrice, o.For(license.StaffPlan).MaxStaff, covered);
+            license.IsContracted, license.Interval, license.AutoRenew, license.NextInterval,
+            license.StaffSeats, license.NextStaffSeats, license.StaffLimit(o.TrialStaffSeats), covered.Sum(t => t.StaffCount),
+            license.RenewsOn, renewalPrice, covered);
     }
 
     public async Task<LicenseCheckoutDto> DescribeAsync(LicensePayment payment, ClubLicense? license, string url, CancellationToken cancellationToken)
@@ -235,7 +251,7 @@ internal sealed class LicenseDescriber(
         if (payment.AmountCents == 0 && license is not null)
             firstCharge = license.RenewsOn ?? license.ValidUntil.AddDays(1);
         return new LicenseCheckoutDto(
-            payment.SessionId, url, payment.ClubId, club?.Name ?? "Club", teamNames, payment.Plan, payment.Interval,
+            payment.SessionId, url, payment.ClubId, club?.Name ?? "Club", teamNames, payment.Interval, payment.StaffSeats,
             payment.AmountCents, payment.PeriodPriceCents, firstCharge, payment.Currency, payment.Provider, payment.Status);
     }
 }
@@ -260,7 +276,7 @@ internal sealed class LicenseCheckoutCompletion(
 
         var now = clock.GetUtcNow();
         var today = SquadAccess.Today(clock);
-        license.Subscribe(payment.Plan, payment.Interval, gateway.Provider, result.SubscriptionRef, result.CustomerRef, now);
+        license.Subscribe(payment.Interval, payment.StaffSeats, gateway.Provider, result.SubscriptionRef, result.CustomerRef, now);
         if (payment.AmountCents > 0)
             license.RecordPaidPeriod(result.PeriodEnd ?? license.NextPeriodEnd(payment.Interval, today), now);
         payment.MarkPaid(now);
@@ -360,19 +376,21 @@ internal sealed class BeginLicenseCheckoutHandler(
 
         if (license.IsRenewing && license.IsActiveOn(today))
             throw new ConflictException(ErrorCode.LicenseSubscriptionActive);
-        await describer.EnsureStaffFitsAsync(club, command.Plan, cancellationToken);
+        var o = await catalog.GetAsync(cancellationToken);
+        o.EnsureStaffSeatsAllowed(command.StaffSeats);
+        await describer.EnsureStaffFitsAsync(club, command.StaffSeats, cancellationToken);
 
         // Lo que queda de prueba o de un periodo ya pagado no se pierde: el primer cobro llega al acabarse.
         var deferUntil = license.IsActiveOn(today) ? license.ValidUntil : (DateOnly?)null;
-        var o = await catalog.GetAsync(cancellationToken);
-        var price = o.PriceCents(command.Plan, command.Interval);
+        var request = new CheckoutRequest(
+            club.Id, license.Id, club.Name, command.Interval, command.StaffSeats,
+            o.PriceCents(LicenseItem.Club, command.Interval), o.PriceCents(LicenseItem.StaffSeat, command.Interval),
+            o.Currency, deferUntil, license.CustomerRef);
 
-        var session = await gateway.BeginCheckoutAsync(
-            new CheckoutRequest(club.Id, license.Id, club.Name, command.Plan, command.Interval, price, o.Currency, deferUntil, license.CustomerRef),
-            cancellationToken);
+        var session = await gateway.BeginCheckoutAsync(request, cancellationToken);
         var payment = LicensePayment.Begin(
-            license, LicensePaymentKind.Subscription, command.Plan, command.Interval, deferUntil is null ? price : 0, price,
-            o.Currency, gateway.Provider, session.SessionId, clock.GetUtcNow());
+            license, LicensePaymentKind.Subscription, command.Interval, command.StaffSeats, deferUntil is null ? request.PeriodPriceCents : 0,
+            request.PeriodPriceCents, o.Currency, gateway.Provider, session.SessionId, clock.GetUtcNow());
         licenses.AddPayment(payment);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -432,12 +450,44 @@ internal sealed class ChangeLicenseRenewalHandler(
 {
     public async Task<ClubLicenseDto> Handle(ChangeLicenseRenewalCommand command, CancellationToken cancellationToken)
     {
-        var (club, license) = await ClubLicenseAccess.OfCurrentClubAsync(currentUser, clubs, gate, cancellationToken);
-        await describer.EnsureStaffFitsAsync(club, command.Plan, cancellationToken);
+        var (_, license) = await ClubLicenseAccess.OfCurrentClubAsync(currentUser, clubs, gate, cancellationToken);
 
-        license.ChangeRenewal(command.Plan, command.Interval, SquadAccess.Today(clock), clock.GetUtcNow());
+        license.ChangeRenewal(command.Interval, SquadAccess.Today(clock), clock.GetUtcNow());
         if (license.SubscriptionRef is { } subscription)
-            await gateway.ChangeRenewalAsync(subscription, command.Plan, command.Interval, cancellationToken);
+            await gateway.ChangeRenewalAsync(subscription, command.Interval, license.RenewalStaffSeats, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return await describer.DescribeAsync(license, cancellationToken);
+    }
+}
+
+// Licencias de técnico del club, una vez contratada la de club. Las que se añaden valen ya y, con un periodo pagado,
+// se cobra al momento su parte proporcional hasta la renovación (llega como factura de la pasarela a la cola de
+// eventos); las que se quitan, desde la próxima renovación, y nunca por debajo de los nombramientos que ya hay.
+internal sealed class ChangeStaffSeatsHandler(
+    ICurrentUser currentUser,
+    ILicenseGate gate,
+    IClubStore clubs,
+    ILicensePaymentGateway gateway,
+    LicenseDescriber describer,
+    ILicensingCatalog catalog,
+    IUnitOfWork unitOfWork,
+    TimeProvider clock) : ICommandHandler<ChangeStaffSeatsCommand, ClubLicenseDto>
+{
+    public async Task<ClubLicenseDto> Handle(ChangeStaffSeatsCommand command, CancellationToken cancellationToken)
+    {
+        var (club, license) = await ClubLicenseAccess.OfCurrentClubAsync(currentUser, clubs, gate, cancellationToken);
+        var o = await catalog.GetAsync(cancellationToken);
+        o.EnsureStaffSeatsAllowed(command.StaffSeats);
+        if (command.StaffSeats < license.StaffSeats)
+            await describer.EnsureStaffFitsAsync(club, command.StaffSeats, cancellationToken);
+
+        var today = SquadAccess.Today(clock);
+        var added = license.ChangeStaffSeats(command.StaffSeats, today, clock.GetUtcNow());
+        var interval = license.Interval!.Value;
+        var chargeNow = license.StaffSeatsProrationCents(added, o.PriceCents(LicenseItem.StaffSeat, interval), today);
+        if (license.SubscriptionRef is { } subscription)
+            await gateway.ChangeStaffSeatsAsync(
+                new StaffSeatsChange(license.Id, subscription, license.RenewalStaffSeats, chargeNow, license.ValidUntil), cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return await describer.DescribeAsync(license, cancellationToken);
     }
@@ -476,7 +526,7 @@ internal sealed class ResumeLicenseRenewalHandler(
     public async Task<ClubLicenseDto> Handle(ResumeLicenseRenewalCommand command, CancellationToken cancellationToken)
     {
         var (club, license) = await ClubLicenseAccess.OfCurrentClubAsync(currentUser, clubs, gate, cancellationToken);
-        await describer.EnsureStaffFitsAsync(club, license.EffectivePlan, cancellationToken);
+        await describer.EnsureStaffFitsAsync(club, license.StaffSeats, cancellationToken);
 
         license.ResumeRenewal(SquadAccess.Today(clock), clock.GetUtcNow());
         if (license.SubscriptionRef is { } subscription)

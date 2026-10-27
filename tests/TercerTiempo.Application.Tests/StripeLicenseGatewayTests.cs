@@ -1,6 +1,8 @@
+using System.Net;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Licensing;
 using TercerTiempo.Infrastructure.Licensing;
 
 namespace TercerTiempo.Application.Tests;
@@ -77,6 +79,88 @@ public class StripeLicenseGatewayTests
         const string payload = """{"type":"payment_intent.created","data":{"object":{"id":"pi_1"}}}""";
 
         Assert.Null(Gateway().ParseWebhook(payload, Header(payload, Now)));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public async Task Checkout_charges_the_club_license_and_the_coaches_as_separate_lines(int staffSeats)
+    {
+        var stripe = new StripeStub(_ => """{"id":"cs_1","url":"https://checkout.stripe.test/cs_1"}""");
+
+        await Gateway(stripe).BeginCheckoutAsync(
+            new CheckoutRequest(Guid.NewGuid(), Guid.NewGuid(), "CD Vallobín", BillingInterval.Monthly, staffSeats, 490, 250, "EUR", null, null), default);
+
+        var form = Assert.Single(stripe.Requests).Form;
+        Assert.Equal(("1", "490", "club"), (form["line_items[0][quantity]"], form["line_items[0][price_data][unit_amount]"], form["line_items[0][price_data][product_data][metadata][item]"]));
+        if (staffSeats == 0)
+        {
+            Assert.DoesNotContain("line_items[1][quantity]", form.Keys);
+        }
+        else
+        {
+            Assert.Equal(("3", "250", "staff_seat"), (form["line_items[1][quantity]"], form["line_items[1][price_data][unit_amount]"], form["line_items[1][price_data][product_data][metadata][item]"]));
+        }
+    }
+
+    [Fact]
+    public async Task Adding_coaches_mid_period_changes_their_quantity_and_charges_the_proration_at_once()
+    {
+        var stripe = new StripeStub(request => request.Method == HttpMethod.Get ? Subscription(withSeats: true) : """{"id":"sub_1"}""");
+
+        await Gateway(stripe).ChangeStaffSeatsAsync(new StaffSeatsChange(Guid.NewGuid(), "sub_1", 3, 125, new DateOnly(2026, 11, 20)), default);
+
+        var update = stripe.Requests.Last().Form;
+        Assert.Equal(("always_invoice", "si_seat", "3"), (update["proration_behavior"], update["items[0][id]"], update["items[0][quantity]"]));
+        Assert.Equal(("prod_seat", "250"), (update["items[0][price_data][product]"], update["items[0][price_data][unit_amount]"]));
+    }
+
+    [Fact]
+    public async Task A_subscription_from_the_old_plans_gets_a_coach_line_at_the_next_renewal()
+    {
+        var stripe = new StripeStub(request =>
+            request.Method == HttpMethod.Get ? Subscription(withSeats: false)
+            : request.RequestUri!.AbsolutePath.EndsWith("/products") ? """{"id":"prod_new"}"""
+            : """{"id":"sub_1"}""");
+
+        await Gateway(stripe).ChangeRenewalAsync("sub_1", BillingInterval.Yearly, 2, default);
+
+        Assert.Equal(("staff_seat", "Tercer Tiempo · Licencia de técnico"), (stripe.Requests[1].Form["metadata[item]"], stripe.Requests[1].Form["name"]));
+        var update = stripe.Requests.Last().Form;
+        Assert.Equal("none", update["proration_behavior"]);
+        Assert.Equal(("si_club", "prod_club", "4900", "year"),
+            (update["items[0][id]"], update["items[0][price_data][product]"], update["items[0][price_data][unit_amount]"], update["items[0][price_data][recurring][interval]"]));
+        Assert.Equal(("2", "prod_new", "2500"), (update["items[1][quantity]"], update["items[1][price_data][product]"], update["items[1][price_data][unit_amount]"]));
+        Assert.DoesNotContain("items[1][id]", update.Keys);
+    }
+
+    private static StripeLicensePaymentGateway Gateway(StripeStub stripe) => new(
+        new HttpClient(stripe) { BaseAddress = new Uri("https://api.stripe.test/") },
+        Options.Create(new LicensingOptions { Stripe = new StripeOptions { SecretKey = "sk_test", WebhookSecret = Secret } }),
+        new FixedCatalog(),
+        new FixedClock(Now));
+
+    // Suscripción con la línea de club y, si se pide, la de técnicos (con la marca «item» en sus productos).
+    private static string Subscription(bool withSeats)
+    {
+        const string club = """{"id":"si_club","quantity":1,"price":{"id":"price_c","recurring":{"interval":"month"},"product":{"id":"prod_club","metadata":{"item":"club"}}}}""";
+        const string seats = """{"id":"si_seat","quantity":1,"price":{"id":"price_s","recurring":{"interval":"month"},"product":{"id":"prod_seat","metadata":{"item":"staff_seat"}}}}""";
+        return """{"id":"sub_1","items":{"data":[""" + club + (withSeats ? "," + seats : "") + "]}}";
+    }
+
+    private sealed class StripeStub(Func<HttpRequestMessage, string> respond) : HttpMessageHandler
+    {
+        public List<(HttpMethod Method, string Path, Dictionary<string, string> Form)> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken);
+            var form = body.Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(pair => pair.Split('=', 2))
+                .ToDictionary(pair => WebUtility.UrlDecode(pair[0]), pair => WebUtility.UrlDecode(pair[1]));
+            Requests.Add((request.Method, request.RequestUri!.PathAndQuery, form));
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respond(request)) };
+        }
     }
 
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider

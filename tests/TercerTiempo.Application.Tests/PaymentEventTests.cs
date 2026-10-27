@@ -69,6 +69,25 @@ public class PaymentEventTests
         Assert.False(license.AutoRenew);
     }
 
+    [Fact]
+    public async Task Coaches_added_mid_period_record_their_charge_without_renewing_or_applying_pending_changes()
+    {
+        var store = new Store();
+        var license = store.Subscribed();
+        var paidUntil = license.PaidUntil;
+        license.ChangeRenewal(BillingInterval.Yearly, Today, Now);
+        license.ChangeStaffSeats(3, Today, Now);
+
+        var outcome = await Handler(store).Handle(new ApplyLicenseEventCommand(
+            new InvoicePaidEvent("in_seats", "sub_1", license.Id, "subscription_update", 83, "EUR", paidUntil!.Value)), default);
+
+        Assert.True(outcome.Applied);
+        Assert.Equal(paidUntil, license.PaidUntil);
+        Assert.Equal((BillingInterval.Monthly, BillingInterval.Yearly, 3), (license.Interval, license.NextInterval, license.StaffSeats));
+        var payment = Assert.Single(store.Payments);
+        Assert.Equal((LicensePaymentKind.StaffSeats, 83, 3, PaymentStatus.Paid), (payment.Kind, payment.AmountCents, payment.StaffSeats, payment.Status));
+    }
+
     private static ApplyLicenseEventHandler Handler(Store store) => new(
         store.Proxy(),
         new MockGateway(),
@@ -84,7 +103,7 @@ public class PaymentEventTests
         public ClubLicense Subscribed()
         {
             var license = ClubLicense.Start(Guid.NewGuid(), Today.AddDays(-40), 30, Now.AddDays(-40));
-            license.Subscribe(LicensePlan.Basic, BillingInterval.Monthly, "mock", "sub_1", "cus_1", Now.AddDays(-35));
+            license.Subscribe(BillingInterval.Monthly, 1, "mock", "sub_1", "cus_1", Now.AddDays(-35));
             license.RecordPaidPeriod(Today.AddDays(5), Now.AddDays(-35));
             Licenses.Add(license);
             return license;
@@ -114,7 +133,8 @@ public class PaymentEventTests
         public Task<CheckoutResult> GetCheckoutAsync(string sessionId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task CancelRenewalAsync(string subscriptionRef, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task ResumeRenewalAsync(string subscriptionRef, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task ChangeRenewalAsync(string subscriptionRef, LicensePlan plan, BillingInterval interval, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ChangeRenewalAsync(string subscriptionRef, BillingInterval interval, int staffSeats, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ChangeStaffSeatsAsync(StaffSeatsChange change, CancellationToken cancellationToken) => Task.CompletedTask;
         public ReceivedWebhook ReadWebhook(string payload, string? signature) => throw new NotSupportedException();
     }
 

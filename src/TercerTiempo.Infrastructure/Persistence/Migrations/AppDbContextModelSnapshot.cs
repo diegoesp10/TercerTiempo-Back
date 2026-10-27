@@ -1338,19 +1338,13 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "license.plan_invalid",
                             Language = "es",
-                            Message = "Plan o periodo de facturación no válido."
+                            Message = "Periodo de facturación o concepto de la licencia no válido."
                         },
                         new
                         {
                             Code = "licensing.currency_invalid",
                             Language = "es",
                             Message = "La moneda '{0}' no es un código ISO de tres letras (EUR)."
-                        },
-                        new
-                        {
-                            Code = "licensing.plan_order",
-                            Language = "es",
-                            Message = "Premium no puede admitir menos técnicos que Básica."
                         },
                         new
                         {
@@ -1362,13 +1356,25 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "license.staff_limit",
                             Language = "es",
-                            Message = "La licencia {0} admite {1} en el cuerpo técnico de cada equipo y este ya está completo. Revoca algún nombramiento o pasa a Premium."
+                            Message = "La licencia del club incluye {0} y ya están todos asignados. Añade técnicos a la licencia o revoca algún nombramiento."
                         },
                         new
                         {
-                            Code = "license.plan_too_small",
+                            Code = "license.staff_seats_too_few",
                             Language = "es",
-                            Message = "{0} tiene {1} en el cuerpo técnico y la licencia {2} por equipo. Revoca nombramientos antes de elegirla."
+                            Message = "El club tiene {0} en el cuerpo técnico de sus equipos y la licencia se quedaría con {1}. Revoca nombramientos antes de reducirla."
+                        },
+                        new
+                        {
+                            Code = "license.staff_seats_range",
+                            Language = "es",
+                            Message = "Un club puede tener entre 0 y {0} licencias de técnico."
+                        },
+                        new
+                        {
+                            Code = "license.club_required",
+                            Language = "es",
+                            Message = "Las licencias de técnico se añaden una vez contratada la licencia de club."
                         },
                         new
                         {
@@ -1380,13 +1386,13 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "license.subscription_active",
                             Language = "es",
-                            Message = "Este equipo ya tiene una suscripción que se renueva sola: cambia su plan o cancela la renovación."
+                            Message = "El club ya tiene una suscripción que se renueva sola: cambia sus técnicos o su facturación, o cancela la renovación."
                         },
                         new
                         {
                             Code = "license.no_subscription",
                             Language = "es",
-                            Message = "Este equipo no tiene una suscripción que gestionar."
+                            Message = "El club no tiene una suscripción en marcha que modificar: contrata la licencia o reactiva su renovación."
                         },
                         new
                         {
@@ -1749,20 +1755,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<string>("NextPlan")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                    b.Property<int?>("NextStaffSeats")
+                        .HasColumnType("int");
 
                     b.Property<DateOnly?>("PaidUntil")
                         .HasColumnType("date");
 
-                    b.Property<string>("Plan")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
                     b.Property<string>("Provider")
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
+
+                    b.Property<int>("StaffSeats")
+                        .HasColumnType("int");
 
                     b.Property<string>("SubscriptionRef")
                         .HasMaxLength(120)
@@ -1828,11 +1832,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("PeriodPriceCents")
                         .HasColumnType("int");
 
-                    b.Property<string>("Plan")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -1842,6 +1841,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
+
+                    b.Property<int>("StaffSeats")
+                        .HasColumnType("int");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1860,21 +1862,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("LicensePayments", (string)null);
                 });
 
-            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePlanSettings", b =>
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePriceSettings", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<int>("MaxStaff")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MonthlyPriceCents")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Plan")
+                    b.Property<string>("Item")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("MonthlyPriceCents")
+                        .HasColumnType("int");
 
                     b.Property<Guid>("SettingsId")
                         .HasColumnType("uniqueidentifier");
@@ -1892,29 +1891,27 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SettingsId", "Plan")
+                    b.HasIndex("SettingsId", "Item")
                         .IsUnique();
 
-                    b.ToTable("LicensePlanSettings", (string)null);
+                    b.ToTable("LicensePrices", (string)null);
 
                     b.HasData(
                         new
                         {
                             Id = new Guid("01a16f00-0000-7000-8000-000000000011"),
-                            MaxStaff = 1,
-                            MonthlyPriceCents = 990,
-                            Plan = "Basic",
+                            Item = "Club",
+                            MonthlyPriceCents = 490,
                             SettingsId = new Guid("01a16f00-0000-7000-8000-000000000001"),
-                            YearlyPriceCents = 9900
+                            YearlyPriceCents = 4900
                         },
                         new
                         {
                             Id = new Guid("01a16f00-0000-7000-8000-000000000012"),
-                            MaxStaff = 6,
-                            MonthlyPriceCents = 1990,
-                            Plan = "Premium",
+                            Item = "StaffSeat",
+                            MonthlyPriceCents = 250,
                             SettingsId = new Guid("01a16f00-0000-7000-8000-000000000001"),
-                            YearlyPriceCents = 19900
+                            YearlyPriceCents = 2500
                         });
                 });
 
@@ -1928,7 +1925,13 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("nvarchar(3)");
 
+                    b.Property<int>("MaxStaffSeats")
+                        .HasColumnType("int");
+
                     b.Property<int>("TrialDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TrialStaffSeats")
                         .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
@@ -1943,8 +1946,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Id = new Guid("01a16f00-0000-7000-8000-000000000001"),
                             Currency = "EUR",
+                            MaxStaffSeats = 30,
                             TrialDays = 30,
-                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 24, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
+                            TrialStaffSeats = 2,
+                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 10, 27, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
                         });
                 });
 
@@ -4006,10 +4011,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePlanSettings", b =>
+            modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensePriceSettings", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Licensing.LicensingSettings", null)
-                        .WithMany("Plans")
+                        .WithMany("Prices")
                         .HasForeignKey("SettingsId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -4623,7 +4628,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.LicensingSettings", b =>
                 {
-                    b.Navigation("Plans");
+                    b.Navigation("Prices");
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.OfficialSheets.OfficialMatchSheet", b =>

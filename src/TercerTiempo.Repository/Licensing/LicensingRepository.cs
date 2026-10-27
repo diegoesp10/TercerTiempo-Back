@@ -10,10 +10,11 @@ public interface ILicensingRepository
     Task<LicensingCatalogDto> GetCatalogAsync(CancellationToken cancellationToken = default);
     Task<LicensingStatusDto> GetStatusAsync(CancellationToken cancellationToken = default);
     Task<ClubLicenseDto> GetClubLicenseAsync(CancellationToken cancellationToken = default);
-    Task<LicenseCheckoutDto> BeginCheckoutAsync(LicensePlanRequest request, CancellationToken cancellationToken = default);
+    Task<LicenseCheckoutDto> BeginCheckoutAsync(LicenseCheckoutRequest request, CancellationToken cancellationToken = default);
     Task<LicenseCheckoutDto> GetCheckoutAsync(string sessionId, CancellationToken cancellationToken = default);
     Task<ClubLicenseDto> ConfirmPaymentAsync(string sessionId, CancellationToken cancellationToken = default);
-    Task<ClubLicenseDto> ChangeRenewalAsync(LicensePlanRequest request, CancellationToken cancellationToken = default);
+    Task<ClubLicenseDto> ChangeRenewalAsync(LicenseRenewalRequest request, CancellationToken cancellationToken = default);
+    Task<ClubLicenseDto> ChangeStaffSeatsAsync(StaffSeatsRequest request, CancellationToken cancellationToken = default);
     Task<ClubLicenseDto> CancelRenewalAsync(CancellationToken cancellationToken = default);
     Task<ClubLicenseDto> ResumeRenewalAsync(CancellationToken cancellationToken = default);
     Task<bool> HandleWebhookAsync(string payload, string? signature, CancellationToken cancellationToken = default);
@@ -24,11 +25,19 @@ public sealed record SimulatedPaymentRequest(
     [property: Description("Resultado de la tarjeta de prueba: Succeeded, Declined, InsufficientFunds, ExpiredCard o AuthenticationFailed.")]
     SimulatedPaymentOutcome Outcome);
 
-public sealed record LicensePlanRequest(
-    [property: Description("Basic (1 técnico) o Premium (cuerpo técnico ampliado).")]
-    LicensePlan Plan,
+public sealed record LicenseCheckoutRequest(
+    [property: Description("Monthly (cobro cada mes) o Yearly (un cobro al año).")]
+    BillingInterval Interval,
+    [property: Description("Licencias de técnico que se contratan ya con la de club (0 = solo el club; se pueden añadir después).")]
+    int StaffSeats = 0);
+
+public sealed record LicenseRenewalRequest(
     [property: Description("Monthly (cobro cada mes) o Yearly (un cobro al año).")]
     BillingInterval Interval);
+
+public sealed record StaffSeatsRequest(
+    [property: Description("Licencias de técnico que quiere tener el club (la bolsa para todos sus equipos).")]
+    int StaffSeats);
 
 internal sealed class LicensingRepository(
     IQueryHandler<GetLicensingCatalogQuery, LicensingCatalogDto> getCatalog,
@@ -38,6 +47,7 @@ internal sealed class LicensingRepository(
     IQueryHandler<GetLicenseCheckoutQuery, LicenseCheckoutDto> getCheckout,
     ICommandHandler<ConfirmLicensePaymentCommand, ClubLicenseDto> confirmPayment,
     ICommandHandler<ChangeLicenseRenewalCommand, ClubLicenseDto> changeRenewal,
+    ICommandHandler<ChangeStaffSeatsCommand, ClubLicenseDto> changeStaffSeats,
     ICommandHandler<CancelLicenseRenewalCommand, ClubLicenseDto> cancelRenewal,
     ICommandHandler<ResumeLicenseRenewalCommand, ClubLicenseDto> resumeRenewal,
     ICommandHandler<HandleLicenseWebhookCommand, bool> handleWebhook,
@@ -52,8 +62,8 @@ internal sealed class LicensingRepository(
     public Task<ClubLicenseDto> GetClubLicenseAsync(CancellationToken cancellationToken = default) =>
         getClubLicense.Handle(new GetClubLicenseQuery(), cancellationToken);
 
-    public Task<LicenseCheckoutDto> BeginCheckoutAsync(LicensePlanRequest request, CancellationToken cancellationToken = default) =>
-        beginCheckout.Handle(new BeginLicenseCheckoutCommand(request.Plan, request.Interval), cancellationToken);
+    public Task<LicenseCheckoutDto> BeginCheckoutAsync(LicenseCheckoutRequest request, CancellationToken cancellationToken = default) =>
+        beginCheckout.Handle(new BeginLicenseCheckoutCommand(request.Interval, request.StaffSeats), cancellationToken);
 
     public Task<LicenseCheckoutDto> GetCheckoutAsync(string sessionId, CancellationToken cancellationToken = default) =>
         getCheckout.Handle(new GetLicenseCheckoutQuery(sessionId), cancellationToken);
@@ -61,8 +71,11 @@ internal sealed class LicensingRepository(
     public Task<ClubLicenseDto> ConfirmPaymentAsync(string sessionId, CancellationToken cancellationToken = default) =>
         confirmPayment.Handle(new ConfirmLicensePaymentCommand(sessionId), cancellationToken);
 
-    public Task<ClubLicenseDto> ChangeRenewalAsync(LicensePlanRequest request, CancellationToken cancellationToken = default) =>
-        changeRenewal.Handle(new ChangeLicenseRenewalCommand(request.Plan, request.Interval), cancellationToken);
+    public Task<ClubLicenseDto> ChangeRenewalAsync(LicenseRenewalRequest request, CancellationToken cancellationToken = default) =>
+        changeRenewal.Handle(new ChangeLicenseRenewalCommand(request.Interval), cancellationToken);
+
+    public Task<ClubLicenseDto> ChangeStaffSeatsAsync(StaffSeatsRequest request, CancellationToken cancellationToken = default) =>
+        changeStaffSeats.Handle(new ChangeStaffSeatsCommand(request.StaffSeats), cancellationToken);
 
     public Task<ClubLicenseDto> CancelRenewalAsync(CancellationToken cancellationToken = default) =>
         cancelRenewal.Handle(new CancelLicenseRenewalCommand(), cancellationToken);

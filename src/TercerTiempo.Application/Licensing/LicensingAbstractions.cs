@@ -6,7 +6,7 @@ using TercerTiempo.Domain.Squads;
 namespace TercerTiempo.Application.Licensing;
 
 // Configuración del entorno: qué pasarela se usa y cómo se conecta con Stripe (secretos y URLs de vuelta). Los precios,
-// la prueba y los técnicos de cada plan están en la base de datos (LicensingSettings) y se editan en la administración.
+// la prueba y el tope de técnicos están en la base de datos (LicensingSettings) y se editan en la administración.
 public sealed class LicensingOptions
 {
     public const string SectionName = "Licensing";
@@ -42,13 +42,21 @@ public sealed record CheckoutRequest(
     Guid ClubId,
     Guid LicenseId,
     string ClubName,
-    LicensePlan Plan,
     BillingInterval Interval,
-    int PeriodPriceCents,
+    int StaffSeats,
+    int ClubPriceCents,
+    int StaffSeatPriceCents,
     string Currency,
     // Último día ya cubierto (prueba o periodo pagado): el primer cobro es al día siguiente. null = se cobra ya.
     DateOnly? DeferUntil,
-    string? CustomerRef);
+    string? CustomerRef)
+{
+    public int PeriodPriceCents => ClubPriceCents + StaffSeats * StaffSeatPriceCents;
+}
+
+// Técnicos de una suscripción en marcha. ChargeNowCents > 0: se añaden y se cobra ya su parte proporcional hasta
+// PeriodEnd; 0: el cambio sale en la próxima factura.
+public sealed record StaffSeatsChange(Guid LicenseId, string SubscriptionRef, int StaffSeats, int ChargeNowCents, DateOnly PeriodEnd);
 
 public sealed record CheckoutSession(string SessionId, string Url);
 
@@ -60,7 +68,8 @@ public abstract record LicenseWebhookEvent;
 
 public sealed record CheckoutCompletedEvent(string SessionId) : LicenseWebhookEvent;
 
-// Factura cobrada de una suscripción: alta (BillingReason «subscription_create») o renovación.
+// Factura cobrada de una suscripción: alta (BillingReason «subscription_create»), técnicos añadidos a mitad de periodo
+// («subscription_update») o renovación.
 public sealed record InvoicePaidEvent(
     string InvoiceId,
     string SubscriptionRef,
@@ -79,15 +88,17 @@ public sealed record InvoicePaymentFailedEvent(
     string Currency,
     int AttemptCount,
     DateTimeOffset? NextAttemptAt,
-    string Reason) : LicenseWebhookEvent;
+    string Reason,
+    string BillingReason = "subscription_cycle") : LicenseWebhookEvent;
 
 public sealed record SubscriptionEndedEvent(string SubscriptionRef) : LicenseWebhookEvent;
 
 // Aviso recibido y con la firma comprobada: se guarda en la cola de eventos y se aplica después.
 public sealed record ReceivedWebhook(string ExternalId, string Type);
 
-// Pasarela de pago de las licencias: suscripciones mensuales o anuales. La simulada confirma todo con un clic y cobra
-// las renovaciones con un trabajo en segundo plano; la de Stripe usa Checkout en modo suscripción y sus webhooks.
+// Pasarela de pago de las licencias: suscripciones mensuales o anuales con dos conceptos, la licencia de club y las
+// licencias de técnico (por cantidad). La simulada confirma todo con un clic y cobra las renovaciones con un trabajo en
+// segundo plano; la de Stripe usa Checkout en modo suscripción y sus webhooks.
 public interface ILicensePaymentGateway
 {
     string Provider { get; }
@@ -103,8 +114,11 @@ public interface ILicensePaymentGateway
 
     Task ResumeRenewalAsync(string subscriptionRef, CancellationToken cancellationToken);
 
-    // Cambia el precio de la suscripción a partir de la próxima renovación (sin prorratear).
-    Task ChangeRenewalAsync(string subscriptionRef, LicensePlan plan, BillingInterval interval, CancellationToken cancellationToken);
+    // Cambia la facturación y los técnicos de la suscripción a partir de la próxima renovación (sin prorratear).
+    Task ChangeRenewalAsync(string subscriptionRef, BillingInterval interval, int staffSeats, CancellationToken cancellationToken);
+
+    // Cambia los técnicos de la suscripción; si se añaden con un periodo ya pagado, cobra ya su parte proporcional.
+    Task ChangeStaffSeatsAsync(StaffSeatsChange change, CancellationToken cancellationToken);
 
     // Comprueba la firma del aviso y lee su id y su tipo. Lanza si la firma no es válida (la simulada nunca recibe
     // avisos de fuera: sus eventos los genera ella misma en la cola).

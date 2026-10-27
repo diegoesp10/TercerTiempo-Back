@@ -8,8 +8,8 @@ using TercerTiempo.Domain.Teams;
 namespace TercerTiempo.Application.Admin;
 
 // Estado de cobro de una licencia para el administrador:
-//   trial        en prueba sin plan elegido;
-//   trial-plan   en prueba con plan elegido (el primer cobro llega al acabarla);
+//   trial        en prueba sin contratar;
+//   trial-plan   en prueba con la licencia ya contratada (el primer cobro llega al acabarla);
 //   active       pagada y al día;
 //   grace        se pasó la fecha de renovación y el cobro está pendiente (días de cortesía);
 //   unpaid       caducada con la renovación activa: no se ha podido cobrar;
@@ -55,12 +55,14 @@ public sealed record AdminLicenseDto(
     IReadOnlyList<string> TeamNames,
     string State,
     bool HasAccess,
-    LicensePlan EffectivePlan,
-    LicensePlan? Plan,
+    bool Contracted,
     BillingInterval? Interval,
     bool AutoRenew,
-    LicensePlan? NextPlan,
     BillingInterval? NextInterval,
+    [property: System.ComponentModel.Description("Licencias de técnico contratadas.")]
+    int StaffSeats,
+    [property: System.ComponentModel.Description("Técnicos de la próxima renovación si se ha pedido reducirlos.")]
+    int? NextStaffSeats,
     DateOnly TrialEndsOn,
     DateOnly? PaidUntil,
     DateOnly? RenewsOn,
@@ -75,8 +77,8 @@ public sealed record AdminLicensePaymentDto(
     Guid Id,
     string ClubName,
     LicensePaymentKind Kind,
-    LicensePlan Plan,
     BillingInterval Interval,
+    int StaffSeats,
     int AmountCents,
     int PeriodPriceCents,
     PaymentStatus Status,
@@ -128,8 +130,8 @@ internal sealed class GetLicensesOverviewHandler(
         var monthly = all
             .Where(l => l.IsRenewing && l.StatusOn(today) == LicenseStatus.Active && l.PaidUntil >= today)
             .Sum(l => l.Interval == BillingInterval.Yearly
-                ? settings.PriceCents(l.EffectivePlan, BillingInterval.Yearly) / 12
-                : settings.PriceCents(l.EffectivePlan, BillingInterval.Monthly));
+                ? settings.SubscriptionPriceCents(BillingInterval.Yearly, l.StaffSeats) / 12
+                : settings.SubscriptionPriceCents(BillingInterval.Monthly, l.StaffSeats));
 
         var summary = new LicensesSummaryDto(
             rows.Count,
@@ -149,7 +151,7 @@ internal sealed class GetLicensesOverviewHandler(
             .Select(p => new AdminLicensePaymentDto(
                 p.Id,
                 clubNames.GetValueOrDefault(p.ClubId, "Club eliminado"),
-                p.Kind, p.Plan, p.Interval, p.AmountCents, p.PeriodPriceCents, p.Status, p.Provider, p.CreatedAt, p.PaidAt, p.FailureReason))
+                p.Kind, p.Interval, p.StaffSeats, p.AmountCents, p.PeriodPriceCents, p.Status, p.Provider, p.CreatedAt, p.PaidAt, p.FailureReason))
             .ToList();
 
         return new LicensesOverviewDto(summary, rows, recent, settings.Currency, today, gateway.Provider);
@@ -166,9 +168,9 @@ internal sealed class GetLicensesOverviewHandler(
         var status = license.StatusOn(today);
         var state = StateOf(license, status, today);
 
-        // Lo que se cobra en la próxima renovación (con el cambio de plan pedido, si lo hay).
-        int? nextCharge = license.Plan is not null && license.Interval is { } interval
-            ? settings.PriceCents(license.NextPlan ?? license.EffectivePlan, license.NextInterval ?? interval)
+        // Lo que se cobra en la próxima renovación (con los cambios pedidos, si los hay).
+        int? nextCharge = license.Interval is { } interval
+            ? settings.SubscriptionPriceCents(license.NextInterval ?? interval, license.RenewalStaffSeats)
             : null;
         var owes = state is LicenseBillingState.Grace or LicenseBillingState.Unpaid;
 
@@ -179,12 +181,12 @@ internal sealed class GetLicensesOverviewHandler(
             teamNames.GetValueOrDefault(license.ClubId, []),
             state,
             status != LicenseStatus.Expired,
-            license.EffectivePlan,
-            license.Plan,
+            license.IsContracted,
             license.Interval,
             license.AutoRenew,
-            license.NextPlan,
             license.NextInterval,
+            license.StaffSeats,
+            license.NextStaffSeats,
             license.TrialEndsOn,
             license.PaidUntil,
             license.RenewsOn,
@@ -198,10 +200,10 @@ internal sealed class GetLicensesOverviewHandler(
 
     private static string StateOf(ClubLicense license, LicenseStatus status, DateOnly today) => status switch
     {
-        LicenseStatus.Trial => license.Plan is null ? LicenseBillingState.Trial : LicenseBillingState.TrialWithPlan,
+        LicenseStatus.Trial => license.IsContracted ? LicenseBillingState.TrialWithPlan : LicenseBillingState.Trial,
         LicenseStatus.Active when license.RenewsOn is { } renews && renews <= today => LicenseBillingState.Grace,
         LicenseStatus.Active => LicenseBillingState.Active,
-        _ when license.Plan is null => LicenseBillingState.TrialEnded,
+        _ when !license.IsContracted => LicenseBillingState.TrialEnded,
         _ when license.AutoRenew => LicenseBillingState.Unpaid,
         _ => LicenseBillingState.Cancelled,
     };

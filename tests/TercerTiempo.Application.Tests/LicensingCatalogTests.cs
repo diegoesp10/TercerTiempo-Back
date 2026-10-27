@@ -50,13 +50,13 @@ public class LicensingCatalogTests
     }
 
     [Fact]
-    public async Task Without_a_row_it_falls_back_to_the_launch_prices()
+    public async Task Without_a_row_it_falls_back_to_the_default_prices()
     {
         var catalog = new LicensingCatalog(new CountingStore(null), new LicensingCatalogCache(), new MovableClock(Now));
 
         var settings = await catalog.GetAsync();
 
-        Assert.Equal(990, settings.PriceCents(LicensePlan.Basic, BillingInterval.Monthly));
+        Assert.Equal(490, settings.PriceCents(LicenseItem.Club, BillingInterval.Monthly));
         Assert.Equal(30, settings.TrialDays);
     }
 }

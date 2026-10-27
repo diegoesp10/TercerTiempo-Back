@@ -16,15 +16,16 @@ public class LicensesOverviewTests
     private static ClubLicense Started(int daysAgo) => ClubLicense.Start(Guid.NewGuid(), Today.AddDays(-daysAgo), 30, Now);
 
     [Fact]
-    public void A_trial_owes_nothing_and_shows_whether_a_plan_was_chosen()
+    public void A_trial_owes_nothing_and_shows_whether_the_license_was_contracted()
     {
         var trial = Started(5);
         Assert.Equal(LicenseBillingState.Trial, Row(trial).State);
 
-        trial.Subscribe(LicensePlan.Basic, BillingInterval.Monthly, "mock", null, null, Now);
+        trial.Subscribe(BillingInterval.Monthly, 1, "mock", null, null, Now);
         var row = Row(trial);
         Assert.Equal(LicenseBillingState.TrialWithPlan, row.State);
-        Assert.Equal(990, row.NextChargeCents);
+        Assert.Equal((true, 1), (row.Contracted, row.StaffSeats));
+        Assert.Equal(490 + 250, row.NextChargeCents);
         Assert.Equal(0, row.OwedCents);
         Assert.True(row.HasAccess);
     }
@@ -33,7 +34,7 @@ public class LicensesOverviewTests
     public void Paid_licenses_are_active_until_the_renewal_date_and_then_owe_it_during_the_grace_days()
     {
         var license = Started(40);
-        license.Subscribe(LicensePlan.Premium, BillingInterval.Yearly, "mock", null, null, Now);
+        license.Subscribe(BillingInterval.Yearly, 6, "mock", null, null, Now);
         license.RecordPaidPeriod(Today.AddDays(10), Now);
         Assert.Equal(LicenseBillingState.Active, Row(license).State);
 
@@ -53,7 +54,7 @@ public class LicensesOverviewTests
     public void A_cancelled_renewal_or_an_ended_trial_loses_access_without_debt()
     {
         var cancelled = Started(40);
-        cancelled.Subscribe(LicensePlan.Basic, BillingInterval.Monthly, "mock", null, null, Now);
+        cancelled.Subscribe(BillingInterval.Monthly, 0, "mock", null, null, Now);
         cancelled.RecordPaidPeriod(Today.AddDays(-5), Now);
         cancelled.CancelRenewal(Now);
         var cancelledRow = Row(cancelled);
