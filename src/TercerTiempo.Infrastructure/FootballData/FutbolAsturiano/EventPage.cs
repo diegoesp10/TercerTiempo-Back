@@ -3,6 +3,7 @@ using System.Net;
 using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Referees;
 
 namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
@@ -51,6 +52,44 @@ internal static class EventPageParser
     private static readonly string[] LeagueHeaders = ["liga", "league", "competicion"];
     private static readonly string[] SeasonHeaders = ["temporada", "season"];
     private static readonly string[] MatchdayHeaders = ["jornada", "match day", "matchday", "day"];
+
+    // Tabla «Equipo arbitral» de SportsPress (sp-event-officials): una columna por función («Árbitro», «Asistente 1»,
+    // «Asistente 2», a veces «Cuarto árbitro») y el nombre enlazado a su ficha /official/<slug>/.
+    public static IReadOnlyList<MatchOfficialData> ParseOfficials(string html)
+    {
+        using var document = new HtmlParser().ParseDocument(html);
+        var table = document.QuerySelector("table.sp-event-officials");
+        if (table is null) return [];
+
+        var headers = table.QuerySelectorAll("thead th").Select(th => Text(th)).ToList();
+        var cells = table.QuerySelector("tbody tr")?.QuerySelectorAll("td").ToList() ?? [];
+        var officials = new List<MatchOfficialData>();
+        var assistants = 0;
+        for (var i = 0; i < Math.Min(headers.Count, cells.Count); i++)
+        {
+            var name = Text(cells[i]);
+            if (name.Length == 0) continue;
+            var label = NameNormalizer.Normalize(headers[i]);
+            OfficialRole? role = label.Contains("asistente")
+                ? label.Contains('1') ? OfficialRole.AssistantReferee1
+                : label.Contains('2') ? OfficialRole.AssistantReferee2
+                : ++assistants == 1 ? OfficialRole.AssistantReferee1 : assistants == 2 ? OfficialRole.AssistantReferee2 : null
+                : label.Contains("cuarto") || label.StartsWith('4') ? OfficialRole.FourthOfficial
+                : label.Contains("arbitro") ? OfficialRole.Referee
+                : null;
+            if (role is not { } r || officials.Any(o => o.Role == r)) continue;
+
+            var href = cells[i].QuerySelector("a")?.GetAttribute("href") ?? string.Empty;
+            var slug = href.Contains("/official/", StringComparison.OrdinalIgnoreCase)
+                ? href.TrimEnd('/').Split('/').LastOrDefault()
+                : null;
+            officials.Add(new MatchOfficialData(r, name, string.IsNullOrWhiteSpace(slug) ? null : slug));
+        }
+        return officials;
+    }
+
+    private static string Text(IElement element) =>
+        string.Join(' ', WebUtility.HtmlDecode(element.TextContent).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     public static EventPage Parse(string html)
     {

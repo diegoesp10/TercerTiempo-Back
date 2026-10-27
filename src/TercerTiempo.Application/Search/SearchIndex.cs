@@ -12,6 +12,7 @@ public static class SearchTypes
     public const string Player = "player";
     public const string Match = "match";
     public const string Squad = "squad";
+    public const string Referee = "referee";
 
     public static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
     {
@@ -21,6 +22,7 @@ public static class SearchTypes
         [Club] = "Clubes",
         [Player] = "Jugadores",
         [Match] = "Partidos",
+        [Referee] = "Árbitros",
     };
 
     public static bool IsKnown(string type) => Labels.ContainsKey(type);
@@ -28,7 +30,8 @@ public static class SearchTypes
 
 // Quién busca: sus equipos suben en los resultados y solo él ve sus plantillas internas (las de su cuerpo técnico o la
 // suya como jugador y, para un club, todas las de sus equipos).
-internal sealed record SearchViewer(IReadOnlySet<Guid> OwnTeamIds, IReadOnlySet<Guid> VisibleSquadIds, IReadOnlySet<Guid> ClubTeamIds)
+// SeesReferees: clubes y cuerpos técnicos con licencia (los árbitros y sus notas no son para nadie más).
+internal sealed record SearchViewer(IReadOnlySet<Guid> OwnTeamIds, IReadOnlySet<Guid> VisibleSquadIds, IReadOnlySet<Guid> ClubTeamIds, bool SeesReferees = false)
 {
     public bool CanSee(Guid squadId, Guid? teamId) => VisibleSquadIds.Contains(squadId) || teamId is { } team && ClubTeamIds.Contains(team);
 }
@@ -144,6 +147,17 @@ internal sealed class SearchIndex
                 Prior = 0.8,
                 Fields = [SearchText.Tokens(c.Name), SearchText.Tokens(string.Join(' ', clubTeams.Select(t => t.Name))), []],
                 TeamId = first.Id,
+            });
+        }
+
+        foreach (var r in corpus.Referees ?? [])
+        {
+            docs.Add(new SearchDoc
+            {
+                Type = SearchTypes.Referee, Id = r.Id, Title = r.Name, NormalizedTitle = SearchText.Normalize(r.Name),
+                Subtitle = r.Matches == 1 ? "Árbitro · 1 partido" : $"Árbitro · {r.Matches} partidos",
+                Link = $"/arbitros/{r.Id}", ImageKind = "referee", Prior = 0.6,
+                Fields = [SearchText.Tokens(r.Name), [], []],
             });
         }
 
@@ -276,6 +290,7 @@ internal sealed class SearchIndex
     {
         var doc = _docs[index];
         if (doc.RestrictedToSquadId is { } squad && !viewer.CanSee(squad, doc.TeamId)) return null;
+        if (doc.Type == SearchTypes.Referee && !viewer.SeesReferees) return null;
 
         // Un partido solo sale si la búsqueda nombra a cada equipo con una palabra propia («nalón roces»): «real avilés»
         // es un equipo, no el Real Avilés – Real Unión, y una letra suelta no nombra a nadie.

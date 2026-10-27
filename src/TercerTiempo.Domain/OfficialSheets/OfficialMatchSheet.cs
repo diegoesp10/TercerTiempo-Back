@@ -194,7 +194,9 @@ public sealed record OfficialSheetData(
     int? HomeGoals,
     int? AwayGoals,
     IReadOnlyList<OfficialLineData> Lines,
-    IReadOnlyList<OfficialEventData> Events);
+    IReadOnlyList<OfficialEventData> Events,
+    // Equipo arbitral completo (árbitro, asistentes y cuarto árbitro si lo hay).
+    IReadOnlyList<Referees.MatchOfficialData>? Officials = null);
 
 public sealed record OfficialLineData(
     MatchSide Side,

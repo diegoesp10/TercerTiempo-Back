@@ -1438,6 +1438,54 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "referee.not_found",
+                            Language = "es",
+                            Message = "El árbitro '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "referee.role_invalid",
+                            Language = "es",
+                            Message = "Función del equipo arbitral no válida."
+                        },
+                        new
+                        {
+                            Code = "referee.score_range",
+                            Language = "es",
+                            Message = "La nota va de 0 a {0}."
+                        },
+                        new
+                        {
+                            Code = "referee.rater_required",
+                            Language = "es",
+                            Message = "La nota la pone el club o un técnico del equipo."
+                        },
+                        new
+                        {
+                            Code = "referee.staff_only",
+                            Language = "es",
+                            Message = "Los árbitros y sus notas son para los clubes y sus cuerpos técnicos, con licencia vigente."
+                        },
+                        new
+                        {
+                            Code = "referee.not_in_match",
+                            Language = "es",
+                            Message = "Ese árbitro no figura en el equipo arbitral de este partido."
+                        },
+                        new
+                        {
+                            Code = "referee.team_not_in_match",
+                            Language = "es",
+                            Message = "Solo pueden puntuar al equipo arbitral los equipos que jugaron el partido: su club o su cuerpo técnico vigente."
+                        },
+                        new
+                        {
+                            Code = "referee.match_not_over",
+                            Language = "es",
+                            Message = "Solo se puede puntuar al equipo arbitral de un partido ya jugado."
+                        },
+                        new
+                        {
                             Code = "license.simulator_disabled",
                             Language = "es",
                             Message = "La simulación de pagos solo funciona con la pasarela simulada (Licensing:Provider = mock)."
@@ -2877,6 +2925,142 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.MatchOfficial", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RefereeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RefereeId");
+
+                    b.HasIndex("MatchId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("MatchOfficials", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.MatchOfficialLookup", b =>
+                {
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("MatchId");
+
+                    b.ToTable("MatchOfficialLookups", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.Referee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Slug")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique();
+
+                    b.HasIndex("Slug");
+
+                    b.ToTable("Referees", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.RefereeRating", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RatedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RatedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RefereeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RatedByClubId");
+
+                    b.HasIndex("RatedByCoachId");
+
+                    b.HasIndex("RefereeId");
+
+                    b.HasIndex("TeamId");
+
+                    b.HasIndex("MatchId", "TeamId", "RefereeId")
+                        .IsUnique();
+
+                    b.ToTable("RefereeRatings", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4302,6 +4486,61 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("SquadId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.MatchOfficial", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Referees.Referee", null)
+                        .WithMany()
+                        .HasForeignKey("RefereeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.MatchOfficialLookup", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.RefereeRating", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("RatedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("RatedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Referees.Referee", null)
+                        .WithMany()
+                        .HasForeignKey("RefereeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

@@ -108,6 +108,7 @@ internal sealed class SearchHandler(
     IClubStore clubs,
     ISquadStore squads,
     IPlayerStore players,
+    Licensing.ILicenseGate licenses,
     TimeProvider clock) : IQueryHandler<SearchQuery, SearchResultsDto>
 {
     public const int DefaultLimit = 6;
@@ -163,7 +164,9 @@ internal sealed class SearchHandler(
             visible.Add(own.Id);
         }
 
-        return new SearchViewer(teams, visible, clubTeams);
+        var seesReferees = currentUser.AccountType is AccountType.Club or AccountType.Coach
+            && await licenses.IsViewerLicensedAsync(currentUser, cancellationToken);
+        return new SearchViewer(teams, visible, clubTeams, seesReferees);
     }
 
     private static SearchItemDto ToDto(SearchHit hit) => new(

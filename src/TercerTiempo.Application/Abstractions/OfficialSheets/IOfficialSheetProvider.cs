@@ -15,6 +15,9 @@ public interface IOfficialSheetProvider
 
     Task<OfficialSheetData?> GetSheetAsync(string sheetCode, CancellationToken cancellationToken);
 
+    // El acta tal como se descargó la última vez, sin pedir nada a la web (null si no está guardada).
+    Task<OfficialSheetData?> GetCachedSheetAsync(string sheetCode, CancellationToken cancellationToken);
+
     string SheetUrl(string sheetCode);
 }
 

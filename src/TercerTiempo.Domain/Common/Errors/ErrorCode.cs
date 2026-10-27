@@ -191,6 +191,14 @@ public static class ErrorCode
     public const string LicenseStaffSeatsRange = "license.staff_seats_range";
     public const string LicenseClubRequired = "license.club_required";
     public const string AlertNotFound = "alert.not_found";
+    public const string RefereeNotFound = "referee.not_found";
+    public const string RefereeRoleInvalid = "referee.role_invalid";
+    public const string RefereeScoreRange = "referee.score_range";
+    public const string RefereeRaterRequired = "referee.rater_required";
+    public const string RefereeStaffOnly = "referee.staff_only";
+    public const string RefereeNotInMatch = "referee.not_in_match";
+    public const string RefereeTeamNotInMatch = "referee.team_not_in_match";
+    public const string RefereeMatchNotOver = "referee.match_not_over";
     public const string LicenseSimulatorDisabled = "license.simulator_disabled";
     public const string LicenseSubscriptionActive = "license.subscription_active";
     public const string LicenseNoSubscription = "license.no_subscription";

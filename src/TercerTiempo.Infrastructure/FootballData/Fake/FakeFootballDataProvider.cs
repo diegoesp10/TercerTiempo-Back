@@ -253,4 +253,8 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
 
         return TimeZoneInfo.CreateCustomTimeZone("Madrid-Fallback", TimeSpan.FromHours(1), "Madrid", "Madrid");
     }
+
+    // Los datos de prueba no traen equipo arbitral.
+    public Task<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?>([]);
 }

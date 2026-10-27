@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<Privacy.IPrivacyRepository, Privacy.PrivacyRepository>();
         services.AddScoped<Licensing.ILicensingRepository, Licensing.LicensingRepository>();
         services.AddScoped<Alerts.IAlertsRepository, Alerts.AlertsRepository>();
+        services.AddScoped<Referees.IRefereesRepository, Referees.RefereesRepository>();
 
         return services;
     }

@@ -53,7 +53,7 @@ public class FederationDatabaseFirstTests
         var handler = new SyncOfficialSheetHandler(null!, Options.Create(new PublicSheetOptions()),
             Stub<IMatchStore>((_, _) => Task.FromResult<Match?>(match)), null!,
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<OfficialMatchSheet?>(sheet)),
-            null!, new OfficialSheetSyncMemory(), TimeProvider.System, NullLogger<SyncOfficialSheetHandler>.Instance);
+            null!, new OfficialSheetSyncMemory(), new TercerTiempo.Application.Referees.MatchOfficialsWriter(new InMemoryRefereeStore(), TimeProvider.System), TimeProvider.System, NullLogger<SyncOfficialSheetHandler>.Instance);
         var result = await handler.Handle(new(match.Id, Force: true), default);
         Assert.Equal(OfficialSheetAvailability.Available, result.Status);
     }
@@ -117,7 +117,7 @@ public class FederationDatabaseFirstTests
             Stub<ICompetitionStore>((_, _) => Task.FromResult<Competition?>(competition)),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<OfficialMatchSheet?>(hidden)),
             Stub<TercerTiempo.Domain.Common.IUnitOfWork>((_, _) => Task.FromResult(0)),
-            new OfficialSheetSyncMemory(), TimeProvider.System, NullLogger<SyncOfficialSheetHandler>.Instance);
+            new OfficialSheetSyncMemory(), new TercerTiempo.Application.Referees.MatchOfficialsWriter(new InMemoryRefereeStore(), TimeProvider.System), TimeProvider.System, NullLogger<SyncOfficialSheetHandler>.Instance);
 
         var result = await handler.Handle(new(match.Id, Background: true), default);
 
@@ -199,7 +199,7 @@ public class FederationDatabaseFirstTests
             Stub<ICompetitionStore>((_, _) => Task.FromResult<Competition?>(competition)),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<OfficialMatchSheet?>(null)),
             Stub<TercerTiempo.Domain.Common.IUnitOfWork>((_, _) => Task.FromResult(0)),
-            new OfficialSheetSyncMemory(), TimeProvider.System, NullLogger<SyncOfficialSheetHandler>.Instance);
+            new OfficialSheetSyncMemory(), new TercerTiempo.Application.Referees.MatchOfficialsWriter(new InMemoryRefereeStore(), TimeProvider.System), TimeProvider.System, NullLogger<SyncOfficialSheetHandler>.Instance);
 
         // La pasada general sigue (y lo intentará otro día); la cola pedida se para hasta que acabe la pausa.
         Assert.Equal(OfficialSheetAvailability.Pending, (await Handler().Handle(new(match.Id, Background: true), default)).Status);

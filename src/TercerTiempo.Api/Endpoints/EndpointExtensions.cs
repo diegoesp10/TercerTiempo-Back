@@ -13,6 +13,7 @@ public static class EndpointExtensions
         app.MapCompetitionEndpoints();
         app.MapTeamEndpoints();
         app.MapMatchEndpoints();
+        app.MapRefereeEndpoints();
         app.MapVideoEndpoints();
         app.MapStatsEndpoints();
         app.MapAdminEndpoints();

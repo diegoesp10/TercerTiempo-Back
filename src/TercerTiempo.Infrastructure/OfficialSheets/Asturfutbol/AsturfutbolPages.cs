@@ -6,6 +6,7 @@ using AngleSharp.Html.Parser;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Referees;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
@@ -126,11 +127,8 @@ internal static partial class AsturfutbolPages
         var home = teamNames[0];
         var away = teamNames[1];
 
-        var referee = document.QuerySelectorAll("h5")
-            .Select(h => h.TextContent)
-            .Where(t => Clean(t).StartsWith("Árbitro", StringComparison.OrdinalIgnoreCase) && !Clean(t).StartsWith("Árbitro Asistente", StringComparison.OrdinalIgnoreCase))
-            .Select(t => Clean(Regex.Replace(t, "^\\s*Árbitro\\s*", string.Empty)))
-            .FirstOrDefault(t => t.Length > 0);
+        var officials = ReadOfficials(document);
+        var referee = officials.FirstOrDefault(o => o.Role == OfficialRole.Referee)?.Name;
 
         // Un bloque .dashboard-stat por equipo (su título es el nombre del equipo) con titulares, suplentes,
         // sustituciones y tarjetas; otro bloque "Goles" común.
@@ -153,7 +151,31 @@ internal static partial class AsturfutbolPages
             referee, home, away,
             ScoreOf(lines, MatchSide.Home), ScoreOf(lines, MatchSide.Away),
             lines.Select(l => l.Build()).ToList(),
-            ordered);
+            ordered,
+            officials);
+    }
+
+    // Equipo arbitral: un <h5> por persona con su función en <strong> («Árbitro», «Árbitro Asistente» dos veces y, si lo
+    // hay, «Cuarto Árbitro») y el nombre detrás, en «Apellidos, Nombre».
+    public static IReadOnlyList<MatchOfficialData> ReadOfficials(IDocument document)
+    {
+        var officials = new List<MatchOfficialData>();
+        var assistants = 0;
+        foreach (var heading in document.QuerySelectorAll("h5"))
+        {
+            var label = Clean(heading.QuerySelector("strong")?.TextContent ?? string.Empty);
+            if (!label.Contains("rbitro", StringComparison.OrdinalIgnoreCase)) continue;
+            var name = Clean(heading.TextContent);
+            name = Clean(name.StartsWith(label, StringComparison.Ordinal) ? name[label.Length..] : name);
+            if (name.Length == 0) continue;
+
+            OfficialRole? role = label.Contains("asistente", StringComparison.OrdinalIgnoreCase)
+                ? ++assistants switch { 1 => OfficialRole.AssistantReferee1, 2 => OfficialRole.AssistantReferee2, _ => null }
+                : label.Contains("cuarto", StringComparison.OrdinalIgnoreCase) || label.StartsWith('4') ? OfficialRole.FourthOfficial
+                : OfficialRole.Referee;
+            if (role is { } r && officials.All(o => o.Role != r)) officials.Add(new MatchOfficialData(r, name));
+        }
+        return officials;
     }
 
     private static int? ScoreOf(List<SheetLineBuilder> lines, MatchSide side)

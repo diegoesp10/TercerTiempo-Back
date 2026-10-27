@@ -16,4 +16,7 @@ public interface IFootballDataProvider
     Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<RosterEntrySnapshot>> GetRosterAsync(string teamExternalId, CancellationToken cancellationToken);
+
+    // Equipo arbitral de un partido según la web del proveedor: vacío si no lo publica, null si no se ha podido leer.
+    Task<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken);
 }

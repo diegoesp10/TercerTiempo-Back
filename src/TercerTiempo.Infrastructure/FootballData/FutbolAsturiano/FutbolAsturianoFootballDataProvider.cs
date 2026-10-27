@@ -8,6 +8,7 @@ using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Referees;
 
 namespace TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
@@ -433,6 +434,27 @@ internal sealed class FutbolAsturianoFootballDataProvider(
             page.Played ? page.HomeGoals : null,
             page.Played ? page.AwayGoals : null,
             page.Venue);
+    }
+
+    public async Task<IReadOnlyList<MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken)
+    {
+        if (!int.TryParse(matchExternalId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)) return [];
+        try
+        {
+            using var response = await SendAsync($"/?p={id}", "text/html", allowNotFound: true, cancellationToken);
+            if (response is null) return [];
+            return EventPageParser.ParseOfficials(await response.Content.ReadAsStringAsync(cancellationToken));
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "futbolasturiano.es: no se pudo leer el equipo arbitral del partido {Id}", id);
+            return null;
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("futbolasturiano.es: timeout leyendo el equipo arbitral del partido {Id}", id);
+            return null;
+        }
     }
 
     private async Task<(EventPage? Page, bool Failed)> FetchEventPageAsync(int id, CancellationToken cancellationToken)

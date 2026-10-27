@@ -12,7 +12,9 @@ public sealed record SearchCorpus(
     IReadOnlyList<CorpusClub> Clubs,
     IReadOnlyList<CorpusPlayer> Players,
     IReadOnlyList<CorpusMatch> Matches,
-    IReadOnlyList<CorpusSquad> Squads);
+    IReadOnlyList<CorpusSquad> Squads,
+    // Árbitros con los partidos en que figuran (solo los ven clubes y cuerpos técnicos).
+    IReadOnlyList<CorpusReferee>? Referees = null);
 
 public sealed record CorpusCompetition(
     Guid Id, string Name, string Category, string? Group, string Region, int Tier, int SortOrder,
@@ -22,6 +24,8 @@ public sealed record CorpusCompetition(
 public sealed record CorpusTeam(Guid Id, string Name, string ShortName, string? CrestUrl, Guid? CompetitionId, int? Position, int? Points);
 
 public sealed record CorpusClub(Guid Id, string Name, IReadOnlyList<Guid> TeamIds);
+
+public sealed record CorpusReferee(Guid Id, string Name, int Matches);
 
 public sealed record CorpusPlayer(Guid EntryId, Guid TeamId, string FullName, Position? Position, int? ShirtNumber, string? PhotoUrl);
 

@@ -33,6 +33,7 @@ internal sealed class SyncOfficialSheetHandler(
     IOfficialSheetStore sheets,
     IUnitOfWork unitOfWork,
     OfficialSheetSyncMemory memory,
+    Referees.MatchOfficialsWriter officials,
     TimeProvider clock,
     ILogger<SyncOfficialSheetHandler> logger) : ICommandHandler<SyncOfficialSheetCommand, OfficialSheetDto>
 {
@@ -97,6 +98,9 @@ internal sealed class SyncOfficialSheetHandler(
 
             sheet = Link(sheet, match, fetch, now);
             sheet.Apply(fetch.Data!, now);
+            // El equipo arbitral del acta (árbitro, asistentes y cuarto árbitro) va a su propia tabla.
+            if (fetch.Data!.Officials is { Count: > 0 } team)
+                await officials.ApplyAsync(match.Id, team, fetch.Provider, authoritative: true, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
             return Result(sheet, match, OfficialSheetAvailability.Available, null);
         }

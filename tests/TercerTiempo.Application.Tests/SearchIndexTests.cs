@@ -38,7 +38,20 @@ public class SearchIndexTests
         [new CorpusSquad(RocesSquad, Roces, "2026/2027", [
             new CorpusSquadPlayer(PepeInSquad, "José Fernández Álvarez", Position.Forward, 10, PepeEntry, null),
             new CorpusSquadPlayer(ManualPlayer, "Marcos Juvenil Prueba", Position.Defender, 22, null, null),
-        ])]), Now);
+        ])],
+        [new CorpusReferee(Sara, "Sara Ovies García", 7)]), Now);
+
+    private static readonly Guid Sara = Guid.NewGuid();
+
+    [Fact]
+    public void Referees_only_show_up_for_clubs_and_coaches()
+    {
+        Assert.Empty(Index().Search("ovies", Stranger, null).Hits);
+
+        var staff = RocesStaff with { SeesReferees = true };
+        var hit = Assert.Single(Index().Search("ovies", staff, null).Hits);
+        Assert.Equal((Sara, SearchTypes.Referee, $"/arbitros/{Sara}"), (hit.Doc.Id, hit.Doc.Type, hit.Link));
+    }
 
     private static readonly SearchViewer Stranger = new(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
     private static readonly SearchViewer RocesStaff = new(new HashSet<Guid> { Roces }, new HashSet<Guid> { RocesSquad }, new HashSet<Guid>());

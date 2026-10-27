@@ -3,6 +3,7 @@ using TercerTiempo.Application.Players.Photos;
 using TercerTiempo.Application.Search;
 using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.Referees;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Infrastructure.Persistence;
 
@@ -77,6 +78,14 @@ internal sealed class SearchCorpusSource(AppDbContext db) : ISearchCorpusSource
                     p.PlayerId is { } playerId ? accountPhotos.GetValueOrDefault(playerId) : null))
                 .ToList())).ToList();
 
-        return new SearchCorpus(corpusCompetitions, corpusTeams, corpusClubs, corpusPlayers, corpusMatches, corpusSquads);
+        var refereeMatches = await db.Set<MatchOfficial>().AsNoTracking()
+            .GroupBy(o => o.RefereeId)
+            .Select(g => new { g.Key, Matches = g.Select(o => o.MatchId).Distinct().Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Matches, cancellationToken);
+        var corpusReferees = (await db.Set<Referee>().AsNoTracking().ToListAsync(cancellationToken))
+            .Select(r => new CorpusReferee(r.Id, r.Name, refereeMatches.GetValueOrDefault(r.Id)))
+            .ToList();
+
+        return new SearchCorpus(corpusCompetitions, corpusTeams, corpusClubs, corpusPlayers, corpusMatches, corpusSquads, corpusReferees);
     }
 }

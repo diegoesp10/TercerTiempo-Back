@@ -75,11 +75,17 @@ internal sealed class AsturfutbolOfficialSheetProvider(
         return html is null ? [] : AsturfutbolPages.ParseMatchday(html);
     }
 
+    public async Task<OfficialSheetData?> GetCachedSheetAsync(string sheetCode, CancellationToken cancellationToken)
+    {
+        var html = await client.PeekHtmlAsync(SheetPath(sheetCode), cancellationToken);
+        return html is null ? null : AsturfutbolPages.ParseSheet(html, _settings.MatchLength);
+    }
+
+    private string SheetPath(string sheetCode) => $"NFG_CmpPartido?cod_primaria={_settings.CalendarCode}&CodActa={sheetCode}&cod_acta={sheetCode}";
+
     public async Task<OfficialSheetData?> GetSheetAsync(string sheetCode, CancellationToken cancellationToken)
     {
-        var html = await client.GetHtmlAsync(
-            $"NFG_CmpPartido?cod_primaria={_settings.CalendarCode}&CodActa={sheetCode}&cod_acta={sheetCode}",
-            cancellationToken);
+        var html = await client.GetHtmlAsync(SheetPath(sheetCode), cancellationToken);
 
         return html is null ? null : AsturfutbolPages.ParseSheet(html, _settings.MatchLength);
     }

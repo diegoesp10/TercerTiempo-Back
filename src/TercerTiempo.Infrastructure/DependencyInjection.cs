@@ -95,6 +95,7 @@ public static class DependencyInjection
         services.AddScoped<IVideoShareStore, VideoShareStore>();
         services.AddScoped<ILicenseStore, LicenseStore>();
         services.AddScoped<TercerTiempo.Domain.Alerts.IAlertStore, TercerTiempo.Infrastructure.Alerts.AlertStore>();
+        services.AddScoped<TercerTiempo.Domain.Referees.IRefereeStore, TercerTiempo.Infrastructure.Referees.RefereeStore>();
         services.AddScoped<ILicensingSettingsStore, TercerTiempo.Infrastructure.Licensing.LicensingSettingsStore>();
         services.AddScoped<TercerTiempo.Domain.Competitions.IFootballSyncSettingsStore, FootballData.FootballSyncSettingsStore>();
         services.AddScoped<TercerTiempo.Domain.Competitions.ISeasonYearStore, Persistence.Stores.SeasonYearStore>();
@@ -255,6 +256,7 @@ public static class DependencyInjection
         }
         services.AddHostedService<LicenseRenewalWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.Alerts.LicenseAlertsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Referees.MatchOfficialsWorker>();
 
         // Cola de avisos de la pasarela (webhooks de Stripe o eventos de la simulada) y el proceso que los aplica.
         services.AddScoped<IPaymentEventInbox, PaymentEventInbox>();

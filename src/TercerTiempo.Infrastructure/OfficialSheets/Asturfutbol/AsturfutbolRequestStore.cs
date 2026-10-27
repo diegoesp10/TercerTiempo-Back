@@ -90,6 +90,9 @@ internal interface IAsturfutbolRequestStore
     Task CompleteAsync(string provider, string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct);
     Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, ProviderPause? pause, CancellationToken ct);
     Task<ProviderPause> RejectAsync(string provider, string key, int? status, string what, DateTimeOffset now, TimeSpan firstPause, TimeSpan maxPause, CancellationToken ct);
+
+    // Lo que haya guardado de esa página (aunque esté caducado), sin pedir nada a la web.
+    Task<(byte[] Content, string? ContentType)?> PeekAsync(string key, CancellationToken ct);
 }
 
 // Cada operación usa un contexto propio: reservar una llamada nunca guarda cambios de los agregados del solicitante.
@@ -97,6 +100,17 @@ internal interface IAsturfutbolRequestStore
 // propios contadores y pausa; la caché de páginas es común (la clave es la URL).
 internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : IAsturfutbolRequestStore
 {
+    public async Task<(byte[] Content, string? ContentType)?> PeekAsync(string key, CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var cached = await db.Set<FederationHttpCache>().AsNoTracking()
+            .Where(x => x.Key == key && x.StatusCode == 200 && x.Content != null)
+            .Select(x => new { x.Content, x.ContentType })
+            .SingleOrDefaultAsync(ct);
+        return cached is null ? null : (cached.Content!, cached.ContentType);
+    }
+
     public async Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct)
     {
         using var scope = scopes.CreateScope();

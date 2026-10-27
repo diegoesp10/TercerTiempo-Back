@@ -19,6 +19,14 @@ internal sealed class AsturfutbolClient(
 {
     private readonly OfficialSheetOptions _options = options.Value;
 
+    // La página tal como se guardó la última vez, sin hacer ninguna petición (null si nunca se descargó bien).
+    public async Task<string?> PeekHtmlAsync(string pathAndQuery, CancellationToken cancellationToken)
+    {
+        var original = new Uri(http.BaseAddress!, pathAndQuery);
+        var key = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(original.AbsoluteUri)));
+        return await store.PeekAsync(key, cancellationToken) is { } cached ? Decode(cached.Content, cached.ContentType) : null;
+    }
+
     public async Task<string?> GetHtmlAsync(string pathAndQuery, CancellationToken cancellationToken)
     {
         var response = await FetchAsync(pathAndQuery, html: true, cancellationToken);

@@ -44,4 +44,8 @@ internal sealed class JsonFileFootballDataProvider(IOptions<FootballDataOptions>
         await using var stream = File.OpenRead(path);
         return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
     }
+
+    // Los datos de prueba no traen equipo arbitral.
+    public Task<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?>([]);
 }
