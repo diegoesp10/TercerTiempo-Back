@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
@@ -26,6 +27,7 @@ internal sealed class PerformanceConfiguration : IEntityTypeConfiguration<Player
         builder.HasOne<Team>().WithMany().HasForeignKey(p => p.TeamId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Season>().WithMany().HasForeignKey(p => p.SeasonId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Coach>().WithMany().HasForeignKey(p => p.RecordedByCoachId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Club>().WithMany().HasForeignKey(p => p.RecordedByClubId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(p => new { p.SquadPlayerId, p.MatchId }).IsUnique();
         builder.HasIndex(p => new { p.SquadId, p.MatchId });

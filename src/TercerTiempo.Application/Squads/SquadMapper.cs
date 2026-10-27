@@ -73,8 +73,8 @@ internal static class SquadMapper
     {
         var today = SquadAccess.Today(clock);
         var summary = await ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
-        var canManage = SquadAccess.IsStaff(squad, currentUser, clock);
-        var canInvitePlayers = canManage || await SquadAccess.IsClubOfAsync(squad, currentUser, clubs, cancellationToken);
+        var canManage = await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken);
+        var canInvitePlayers = canManage;
 
         var activeStaff = squad.StaffOn(today).ToList();
         var coachMap = (await coaches.GetByIdsAsync(activeStaff.Select(s => s.CoachId), cancellationToken))

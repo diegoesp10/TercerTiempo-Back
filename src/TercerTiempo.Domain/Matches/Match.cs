@@ -106,6 +106,9 @@ public sealed class Match : AggregateRoot
 
     public bool Involves(Guid teamId) => HomeTeamId == teamId || AwayTeamId == teamId;
 
+    // Jugado y con la fecha ya pasada: lo que exige todo lo que se apunta después del partido, como su vídeo.
+    public bool IsOver(DateTimeOffset now) => Status == MatchStatus.Played && KickoffAt <= now;
+
     public bool IsHome(Guid teamId) => HomeTeamId == teamId;
 
     public Guid OpponentOf(Guid teamId)

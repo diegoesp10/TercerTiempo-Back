@@ -2,6 +2,7 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Squads;
 
@@ -21,12 +22,13 @@ internal sealed class RemoveSquadPlayerValidator : AbstractValidator<RemoveSquad
 internal sealed class RemoveSquadPlayerHandler(
     ICurrentUser currentUser,
     ISquadStore squads,
+    IClubStore clubs,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<RemoveSquadPlayerCommand, SquadPlayerDto>
 {
     public async Task<SquadPlayerDto> Handle(RemoveSquadPlayerCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
 
         squad.RemovePlayer(command.SquadPlayerId, clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);

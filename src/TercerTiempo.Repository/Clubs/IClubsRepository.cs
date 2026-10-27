@@ -17,6 +17,7 @@ public interface IClubsRepository
     Task<ClubDto> GetMineAsync(CancellationToken cancellationToken = default);
     Task<ClubDto> AddTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
     Task<ClubDto> RemoveTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
+    Task<ClubSquadDto> OpenSquadAsync(Guid teamId, OpenClubSquadRequest request, CancellationToken cancellationToken = default);
     Task<TeamCrestImportDto> UploadTeamCrestAsync(Guid teamId, CrestUpload file, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RosterEntryDto>> AddRosterEntryAsync(Guid teamId, RosterEntryRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RosterEntryDto>> UpdateRosterEntryAsync(Guid teamId, Guid entryId, RosterEntryRequest request, CancellationToken cancellationToken = default);
@@ -35,6 +36,10 @@ public sealed record RosterEntryRequest(
     Position? Position,
     [property: Description("1-99, opcional.")]
     int? ShirtNumber);
+
+public sealed record OpenClubSquadRequest(
+    [property: Description("Partido desde el que se abre: la plantilla es la de la temporada de ese partido. Vacío = la temporada que se está viendo.")]
+    Guid? MatchId);
 
 public sealed record ClubTeamRequest(
     [property: Description("Id del equipo (GET /api/teams?competitionId=...).")]

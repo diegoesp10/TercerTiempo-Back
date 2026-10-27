@@ -125,7 +125,6 @@ public static class ErrorCatalog
         (ErrorCode.StaffInvalidRole, "Rol del cuerpo técnico no válido."),
 
         (ErrorCode.SquadNotFound, "La plantilla '{0}' no existe."),
-        (ErrorCode.SquadStaffOnly, "Solo el cuerpo técnico vigente de la plantilla puede hacer esto."),
         (ErrorCode.SquadPrivate, "Los datos de esta plantilla son privados: solo su cuerpo técnico y sus jugadores pueden verlos."),
         (ErrorCode.SquadAlreadyStaff, "Ya formas parte del cuerpo técnico de esta plantilla."),
         (ErrorCode.SquadStaffNotMember, "Ese técnico no forma parte de la plantilla."),
@@ -156,7 +155,7 @@ public static class ErrorCatalog
         (ErrorCode.SquadManagersOnly, "Solo el club propietario o el cuerpo técnico vigente pueden realizar esta acción."),
         (ErrorCode.VideoManagerRequired, "El vídeo debe tener como responsable un club o un técnico."),
 
-        (ErrorCode.SheetStaffOnly, "Solo el cuerpo técnico vigente de la plantilla puede registrar el acta."),
+        (ErrorCode.SheetStaffOnly, "Solo el club o el cuerpo técnico vigente de la plantilla pueden registrar el acta."),
         (ErrorCode.SheetMatchOtherSeason, "El partido no pertenece a la temporada de esta plantilla."),
         (ErrorCode.SheetTeamNotInvolved, "El equipo de la plantilla no participa en este partido."),
         (ErrorCode.SheetMatchNotPlayed, "Solo se puede registrar el acta de partidos ya disputados."),
@@ -173,7 +172,6 @@ public static class ErrorCatalog
         (ErrorCode.SuggestionAlreadyResolved, "Esa sugerencia ya se ha aprobado o rechazado."),
         (ErrorCode.SuggestionPendingExists, "Ya tienes una sugerencia pendiente para este partido. Espera a que tu club o tu entrenador la revisen."),
         (ErrorCode.SuggestionMessageTooLong, "El mensaje no puede superar los {0} caracteres."),
-        (ErrorCode.SuggestionNoStaffToRecord, "No hay ningún técnico vigente en la plantilla en cuyo nombre registrar el acta."),
         (ErrorCode.LicenseRequired, "Este equipo no tiene licencia vigente en Tercer Tiempo. Sus datos se conservan, pero el club debe renovar la licencia para que el cuerpo técnico y los jugadores vuelvan a verlos."),
         (ErrorCode.LicenseViewerRequired, "Para ver las actas internas y los vídeos de otros equipos tu cuenta debe pertenecer a un equipo con licencia vigente."),
         (ErrorCode.LicenseNotFound, "La licencia '{0}' no existe."),
@@ -209,6 +207,7 @@ public static class ErrorCatalog
         (ErrorCode.VideoShareHoursRange, "La validez del enlace tiene que estar entre 1 hora y {0} horas."),
         (ErrorCode.VideoPartTaken, "Ya hay un vídeo de esa parte del partido: elimínalo antes de subir otro."),
         (ErrorCode.VideoPartMix, "El partido se sube entero o en dos partes, no las dos cosas: elimina el vídeo que ya hay."),
+        (ErrorCode.VideoMatchNotPlayed, "Solo se puede subir el vídeo de un partido ya jugado, desde el acta interna de tu equipo."),
         (ErrorCode.VideoUploadNotFound, "La subida '{0}' no existe o ya terminó."),
         (ErrorCode.VideoUploadExpired, "La subida caducó: empieza de nuevo."),
         (ErrorCode.VideoUploadChunkOutOfOrder, "Trozo fuera de orden: el siguiente que espera la API es el {0}."),

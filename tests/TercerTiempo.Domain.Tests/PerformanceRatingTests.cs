@@ -1,3 +1,4 @@
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
@@ -121,7 +122,7 @@ public class PerformanceRatingTests
         var (squad, coachId) = TestData.NewSquad();
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
         var match = TestData.PlayedMatch(2, 0);
-        var line = PlayerMatchPerformance.Record(squad, entry, match, coachId, TestData.ValidStats(), TestData.Now);
+        var line = PlayerMatchPerformance.Record(squad, entry, match, SquadEditor.Coach(coachId), TestData.ValidStats(), TestData.Now);
         var asForward = line.Rating;
 
         squad.UpdatePlayer(entry.Id, entry.FullName, Position.Defender, entry.ShirtNumber);

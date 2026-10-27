@@ -1,3 +1,4 @@
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
@@ -14,7 +15,7 @@ public class PerformancePolicyTests
         var entry = squad.AddPlayer("Pelayo Fernández", Position.Forward, 9, null, TestData.Now);
         var match = TestData.PlayedMatch();
 
-        var line = PlayerMatchPerformance.Record(squad, entry, match, coachId, TestData.ValidStats(), TestData.Now);
+        var line = PlayerMatchPerformance.Record(squad, entry, match, SquadEditor.Coach(coachId), TestData.ValidStats(), TestData.Now);
 
         Assert.Equal(squad.Id, line.SquadId);
         Assert.Equal(entry.Id, line.SquadPlayerId);
@@ -35,7 +36,7 @@ public class PerformancePolicyTests
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
 
         Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), Guid.NewGuid(), TestData.ValidStats(), TestData.Now));
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), SquadEditor.Coach(Guid.NewGuid()), TestData.ValidStats(), TestData.Now));
     }
 
     [Fact]
@@ -48,7 +49,7 @@ public class PerformancePolicyTests
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
 
         Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), assistant, TestData.ValidStats(), TestData.Now));
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), SquadEditor.Coach(assistant), TestData.ValidStats(), TestData.Now));
     }
 
     [Fact]
@@ -60,7 +61,7 @@ public class PerformancePolicyTests
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
 
         Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), assistant, TestData.ValidStats(), TestData.Now));
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), SquadEditor.Coach(assistant), TestData.ValidStats(), TestData.Now));
     }
 
     [Fact]
@@ -70,7 +71,7 @@ public class PerformancePolicyTests
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
 
         Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Record(squad, entry, TestData.ScheduledMatch(), coachId, TestData.ValidStats(), TestData.Now));
+            PlayerMatchPerformance.Record(squad, entry, TestData.ScheduledMatch(), SquadEditor.Coach(coachId), TestData.ValidStats(), TestData.Now));
     }
 
     [Fact]
@@ -80,7 +81,7 @@ public class PerformancePolicyTests
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
 
         Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), coachId, TestData.ValidStats(), TestData.Now));
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), SquadEditor.Coach(coachId), TestData.ValidStats(), TestData.Now));
     }
 
     [Fact]
@@ -92,7 +93,7 @@ public class PerformancePolicyTests
         otherSeason.RecordResult(1, 1, TestData.Now);
 
         Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Record(squad, entry, otherSeason, coachId, TestData.ValidStats(), TestData.Now));
+            PlayerMatchPerformance.Record(squad, entry, otherSeason, SquadEditor.Coach(coachId), TestData.ValidStats(), TestData.Now));
     }
 
     [Fact]
@@ -103,7 +104,7 @@ public class PerformancePolicyTests
         var foreignEntry = otherSquad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
 
         Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Record(squad, foreignEntry, TestData.PlayedMatch(), coachId, TestData.ValidStats(), TestData.Now));
+            PlayerMatchPerformance.Record(squad, foreignEntry, TestData.PlayedMatch(), SquadEditor.Coach(coachId), TestData.ValidStats(), TestData.Now));
     }
 
     [Fact]
@@ -114,7 +115,7 @@ public class PerformancePolicyTests
         var stats = TestData.ValidStats() with { ShotsOnTarget = 5 };
 
         Assert.Throws<DomainException>(() =>
-            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), coachId, stats, TestData.Now));
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), SquadEditor.Coach(coachId), stats, TestData.Now));
     }
 
     [Fact]
@@ -125,9 +126,9 @@ public class PerformancePolicyTests
         squad.AddStaff(assistant, Domain.Squads.StaffRole.AssistantCoach, TestData.Now);
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
         var match = TestData.PlayedMatch();
-        var line = PlayerMatchPerformance.Record(squad, entry, match, coachId, TestData.ValidStats(), TestData.Now);
+        var line = PlayerMatchPerformance.Record(squad, entry, match, SquadEditor.Coach(coachId), TestData.ValidStats(), TestData.Now);
 
-        line.Update(TestData.ValidStats(goals: 2, assists: 1), entry, match, assistant, TestData.Now.AddHours(1));
+        line.Update(TestData.ValidStats(goals: 2, assists: 1), entry, match, SquadEditor.Coach(assistant), TestData.Now.AddHours(1));
 
         Assert.Equal(2, line.Goals);
         Assert.Equal(1, line.Assists);
@@ -138,13 +139,56 @@ public class PerformancePolicyTests
     }
 
     [Fact]
+    public void The_club_of_the_team_records_the_sheet_as_its_staff_even_without_coaches()
+    {
+        var squad = Squad.Open(TestData.HomeTeamId, TestData.SeasonId, TestData.Now);
+        var club = Clubs.Club.Register(Guid.NewGuid(), "CD Vallobín", TestData.Now);
+        club.AddTeam(TestData.HomeTeamId, TestData.Now);
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+        var match = TestData.PlayedMatch();
+
+        var line = PlayerMatchPerformance.Record(squad, entry, match, SquadEditor.Club(club), TestData.ValidStats(), TestData.Now);
+
+        Assert.Empty(squad.Staff);
+        Assert.Equal(club.Id, line.RecordedByClubId);
+        Assert.Null(line.RecordedByCoachId);
+
+        var coachId = Guid.NewGuid();
+        squad.AddStaff(coachId, StaffRole.HeadCoach, TestData.Now);
+        line.Update(TestData.ValidStats(goals: 2), entry, match, SquadEditor.Coach(coachId), TestData.Now.AddHours(1));
+
+        Assert.Equal(coachId, line.RecordedByCoachId);
+        Assert.Null(line.RecordedByClubId);
+    }
+
+    [Fact]
+    public void A_club_cannot_record_the_sheet_of_a_team_it_does_not_manage()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var club = Clubs.Club.Register(Guid.NewGuid(), "Real Titánico", TestData.Now);
+        club.AddTeam(TestData.AwayTeamId, TestData.Now);
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+
+        Assert.Throws<DomainException>(() =>
+            PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), SquadEditor.Club(club), TestData.ValidStats(), TestData.Now));
+    }
+
+    [Fact]
+    public void A_match_is_over_once_played_and_its_kickoff_has_passed()
+    {
+        Assert.True(TestData.PlayedMatch().IsOver(TestData.Now));
+        Assert.False(TestData.ScheduledMatch().IsOver(TestData.Now));
+        Assert.False(TestData.PlayedMatch().IsOver(TestData.Now.AddDays(-4)));
+    }
+
+    [Fact]
     public void ToStats_round_trips_the_recorded_values()
     {
         var (squad, coachId) = TestData.NewSquad();
         var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
         var stats = TestData.ValidStats(minutes: 75, goals: 0, assists: 2) with { Notes = "  Gran partido  " };
 
-        var line = PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), coachId, stats, TestData.Now);
+        var line = PlayerMatchPerformance.Record(squad, entry, TestData.PlayedMatch(), SquadEditor.Coach(coachId), stats, TestData.Now);
 
         Assert.Equal(stats with { Notes = "Gran partido" }, line.ToStats());
     }

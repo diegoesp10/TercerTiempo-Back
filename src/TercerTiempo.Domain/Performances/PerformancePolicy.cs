@@ -7,9 +7,9 @@ namespace TercerTiempo.Domain.Performances;
 
 public static class PerformancePolicy
 {
-    public static void EnsureCanRecord(Squad squad, Guid coachId, Match match, DateOnly today)
+    public static void EnsureCanRecord(Squad squad, SquadEditor editor, Match match, DateOnly today)
     {
-        if (!squad.IsStaff(coachId, today))
+        if (!editor.CanEdit(squad, today))
             throw new DomainException(ErrorCode.SheetStaffOnly);
 
         if (match.SeasonId != squad.SeasonId)

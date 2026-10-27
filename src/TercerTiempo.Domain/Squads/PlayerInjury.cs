@@ -54,7 +54,8 @@ public sealed class PlayerInjury : AggregateRoot
     public DateOnly StartedOn { get; private set; }
     public DateOnly? ExpectedReturnOn { get; private set; }
     public DateOnly? ReturnedOn { get; private set; }
-    public Guid RecordedByCoachId { get; private set; }
+    public Guid? RecordedByCoachId { get; private set; }
+    public Guid? RecordedByClubId { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
     public bool IsActive => ReturnedOn is null;
@@ -62,7 +63,7 @@ public sealed class PlayerInjury : AggregateRoot
     private PlayerInjury() { }
 
     public static PlayerInjury Create(
-        Squad squad, SquadPlayer player, Guid coachId, InjuryType type, string? reason, DateOnly startedOn, DateOnly? expectedReturnOn, DateTimeOffset now)
+        Squad squad, SquadPlayer player, SquadEditor editor, InjuryType type, string? reason, DateOnly startedOn, DateOnly? expectedReturnOn, DateTimeOffset now)
     {
         if (player.SquadId != squad.Id || !player.IsActive)
             throw new DomainException(ErrorCode.SquadPlayerNotMember);
@@ -72,7 +73,8 @@ public sealed class PlayerInjury : AggregateRoot
             Id = NewId(),
             SquadId = squad.Id,
             SquadPlayerId = player.Id,
-            RecordedByCoachId = Guard.NotEmpty(coachId, nameof(coachId)),
+            RecordedByCoachId = editor.CoachId,
+            RecordedByClubId = editor.ClubId,
         };
         injury.Update(type, reason, startedOn, expectedReturnOn, now);
         return injury;

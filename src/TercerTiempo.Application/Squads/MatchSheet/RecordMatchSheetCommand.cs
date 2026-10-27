@@ -3,6 +3,7 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
@@ -96,6 +97,7 @@ internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchS
 internal sealed class RecordMatchSheetHandler(
     ICurrentUser currentUser,
     ICoachStore coaches,
+    IClubStore clubs,
     ISquadStore squads,
     IMatchStore matches,
     ITeamStore teams,
@@ -108,13 +110,13 @@ internal sealed class RecordMatchSheetHandler(
 {
     public async Task<MatchSheetDto> Handle(RecordMatchSheetCommand command, CancellationToken cancellationToken)
     {
-        var coach = await Resolvers.CurrentCoachAsync(currentUser, coaches, cancellationToken);
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
+        var editor = await Resolvers.CurrentEditorAsync(currentUser, coaches, clubs, cancellationToken);
 
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
 
-        PerformancePolicy.EnsureCanRecord(squad, coach.Id, match, SquadAccess.Today(clock));
+        PerformancePolicy.EnsureCanRecord(squad, editor, match, SquadAccess.Today(clock));
 
         var existing = (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken))
             .ToDictionary(p => p.SquadPlayerId);
@@ -137,12 +139,12 @@ internal sealed class RecordMatchSheetHandler(
 
             if (current is null)
             {
-                current = PlayerMatchPerformance.Record(squad, player, match, coach.Id, stats, now);
+                current = PlayerMatchPerformance.Record(squad, player, match, editor, stats, now);
                 performances.Add(current);
             }
             else
             {
-                current.Update(stats, player, match, coach.Id, now);
+                current.Update(stats, player, match, editor, now);
             }
 
             current.SetShirtNumber(input.ShirtNumber);
@@ -150,6 +152,6 @@ internal sealed class RecordMatchSheetHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, cancellationToken);
+        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, cancellationToken);
     }
 }

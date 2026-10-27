@@ -26,7 +26,11 @@ public sealed record MatchDetailDto(
     string? CompetitionName,
     string? SeasonLabel,
     [property: System.ComponentModel.Description("Actas internas de las plantillas de los dos equipos; las privadas llegan sin líneas (visible = false).")]
-    IReadOnlyList<MatchSquadSheetDto> Sheets);
+    IReadOnlyList<MatchSquadSheetDto> Sheets,
+    [property: System.ComponentModel.Description("Equipo del partido que gestiona quien mira (su club o su cuerpo técnico vigente): ve el partido como el cuerpo técnico.")]
+    Guid? ManagedTeamId = null,
+    [property: System.ComponentModel.Description("Plantilla de ese equipo en la temporada del partido; vacía si el club todavía no la ha abierto (POST /api/clubs/me/teams/{teamId}/squad).")]
+    Guid? ManagedSquadId = null);
 
 public sealed record MatchSquadSheetDto(
     Guid SquadId,

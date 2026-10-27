@@ -56,11 +56,7 @@ internal sealed class UploadMatchVideoHandler(
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var uploader = await VideoManagers.CurrentAsync(currentUser, coaches, clubs, cancellationToken);
 
-        var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
-            ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
-
-        if (match.SeasonId != squad.SeasonId || !match.Involves(squad.TeamId))
-            throw new ConflictException(ErrorCode.MatchNotOfSquad);
+        var match = await VideoUploads.MatchOfSquadAsync(squad, command.MatchId, matches, clock, cancellationToken);
 
         await VideoUploads.EnsurePartAvailableAsync(squad, match.Id, command.Part, videos, cancellationToken);
 

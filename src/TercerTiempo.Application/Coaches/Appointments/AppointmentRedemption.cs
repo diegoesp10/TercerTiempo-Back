@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Squads;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Squads;
@@ -29,22 +30,8 @@ internal sealed class AppointmentRedemption(ICoachAppointmentStore appointments,
     {
         appointment.Redeem(coach.Id, now);
 
-        var squad = await squads.GetByTeamAndSeasonAsync(appointment.TeamId, appointment.SeasonId, cancellationToken);
-
-        if (squad is null)
-        {
-            squad = Squad.Create(appointment.TeamId, appointment.SeasonId, coach.Id, now, appointment.Role, appointment.ValidUntil, appointment.Id);
-
-            foreach (var entry in await teams.GetRosterAsync(appointment.TeamId, appointment.SeasonId, cancellationToken))
-                squad.AddPlayer(entry.FullName, entry.Position, entry.ShirtNumber, entry.Id, now);
-
-            squads.Add(squad);
-        }
-        else
-        {
-            squad.AddStaff(coach.Id, appointment.Role, now, appointment.ValidUntil, appointment.Id);
-        }
-
+        var squad = await SquadOpening.OpenAsync(squads, teams, appointment.TeamId, appointment.SeasonId, now, cancellationToken);
+        squad.AddStaff(coach.Id, appointment.Role, now, appointment.ValidUntil, appointment.Id);
         return squad;
     }
 }

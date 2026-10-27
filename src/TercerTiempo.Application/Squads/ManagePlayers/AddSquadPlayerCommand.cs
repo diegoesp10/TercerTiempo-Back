@@ -3,6 +3,7 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
@@ -32,12 +33,13 @@ internal sealed class AddSquadPlayerValidator : AbstractValidator<AddSquadPlayer
 internal sealed class AddSquadPlayerHandler(
     ICurrentUser currentUser,
     ISquadStore squads,
+    IClubStore clubs,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<AddSquadPlayerCommand, SquadPlayerDto>
 {
     public async Task<SquadPlayerDto> Handle(AddSquadPlayerCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
 
         var player = squad.AddPlayer(command.FullName, command.Position, command.ShirtNumber, null, clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);

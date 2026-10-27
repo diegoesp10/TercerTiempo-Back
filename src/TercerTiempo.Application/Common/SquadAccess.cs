@@ -18,15 +18,6 @@ internal static class SquadAccess
     public static bool CanView(Squad squad, ICurrentUser user, TimeProvider clock) =>
         squad.CanBeViewedBy(user.CoachId, user.PlayerId, Today(clock));
 
-    public static void EnsureStaff(Squad squad, ICurrentUser user, TimeProvider clock)
-    {
-        if (!user.IsAuthenticated)
-            throw new UnauthenticatedException();
-
-        if (!IsStaff(squad, user, clock))
-            throw new ForbiddenException(ErrorCode.SquadStaffOnly);
-    }
-
     public static void EnsureCanView(Squad squad, ICurrentUser user, TimeProvider clock)
     {
         if (!CanView(squad, user, clock))
@@ -36,6 +27,10 @@ internal static class SquadAccess
     // El club que gestiona el equipo ve todo lo de su plantilla, como su cuerpo técnico.
     public static async Task<bool> IsClubOfAsync(Squad squad, ICurrentUser user, IClubStore clubs, CancellationToken cancellationToken) =>
         user.ClubId is { } clubId && (await clubs.GetByIdAsync(clubId, cancellationToken))?.Manages(squad.TeamId) == true;
+
+    // El club es la entidad de la que depende el cuerpo técnico: gestiona la plantilla igual que un técnico vigente.
+    public static async Task<bool> IsManagerAsync(Squad squad, ICurrentUser user, TimeProvider clock, IClubStore clubs, CancellationToken cancellationToken) =>
+        IsStaff(squad, user, clock) || await IsClubOfAsync(squad, user, clubs, cancellationToken);
 
     public static async Task<bool> CanViewAsync(Squad squad, ICurrentUser user, TimeProvider clock, IClubStore clubs, CancellationToken cancellationToken) =>
         CanView(squad, user, clock) || await IsClubOfAsync(squad, user, clubs, cancellationToken);

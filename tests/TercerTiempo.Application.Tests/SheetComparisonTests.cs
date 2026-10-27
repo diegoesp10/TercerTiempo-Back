@@ -153,7 +153,7 @@ public class SheetComparisonTests
         var match = Match.Schedule(squad.SeasonId, 1, squad.TeamId, Guid.NewGuid(), Now.AddDays(-1), null, null);
         match.RecordResult(2, 1, Now);
 
-        var coach = PlayerMatchPerformance.Record(squad, player, match, coachId,
+        var coach = PlayerMatchPerformance.Record(squad, player, match, SquadEditor.Coach(coachId),
             new PerformanceStats(true, 90, 1, 0, 2, 1, 0, 0, 0, 0, 1, false, null), Now);
 
         var sheet = OfficialMatchSheet.Create(match.Id, "asturfutbol", "1", null, Now);

@@ -39,6 +39,15 @@ internal static class ClubEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        group.MapPost("/teams/{teamId:guid}/squad", (Guid teamId, OpenClubSquadRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.OpenSquadAsync(teamId, request, ct))
+            .RequireLicense(LicenseScope.Team)
+            .WithName("OpenClubSquad")
+            .WithSummary("Abrir la plantilla de un equipo del club")
+            .WithDescription("El club es la entidad de la que depende el cuerpo técnico y hace todo lo que hace él (acta interna, datos del equipo, lesiones, fichas, vídeos y previa), sin necesitar técnicos nombrados. Devuelve la plantilla del equipo en la temporada del partido indicado (o en la que se está viendo) y la crea con las fichas publicadas si todavía no existe. Idempotente.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         group.MapPut("/teams/{teamId:guid}/crest", async (Guid teamId, IFormFile file, IClubsRepository clubs, CancellationToken ct) =>
             {
                 await using var content = file.OpenReadStream();

@@ -49,7 +49,7 @@ internal sealed class GetTeamHandler(
             : new TeamSquadDto(
                 squad.Id, squad.Visibility, squad.ActivePlayers.Count(), squad.StaffOn(SquadAccess.Today(clock)).Count(),
                 await SquadAccess.CanViewAsync(squad, currentUser, clock, clubs, cancellationToken),
-                SquadAccess.IsStaff(squad, currentUser, clock) || SquadAccess.IsMember(squad, currentUser));
+                await SquadAccess.IsInsiderAsync(squad, currentUser, clock, clubs, cancellationToken));
 
         return new TeamDetailDto(
             team.Id, team.Name, team.ShortName, team.CrestLink(),

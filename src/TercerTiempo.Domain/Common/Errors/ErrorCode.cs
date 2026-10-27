@@ -131,7 +131,6 @@ public static class ErrorCode
 
     // Plantillas internas
     public const string SquadNotFound = "squad.not_found";
-    public const string SquadStaffOnly = "squad.staff_only";
     public const string SquadPrivate = "squad.private";
     public const string SquadAlreadyStaff = "squad.already_staff";
     public const string SquadStaffNotMember = "squad.staff_not_member";
@@ -181,7 +180,6 @@ public static class ErrorCode
     public const string SuggestionAlreadyResolved = "suggestion.already_resolved";
     public const string SuggestionPendingExists = "suggestion.pending_exists";
     public const string SuggestionMessageTooLong = "suggestion.message_too_long";
-    public const string SuggestionNoStaffToRecord = "suggestion.no_staff_to_record";
     public const string LicenseRequired = "license.required";
     public const string LicenseViewerRequired = "license.viewer_required";
     public const string LicenseNotFound = "license.not_found";
@@ -218,6 +216,7 @@ public static class ErrorCode
     public const string VideoShareHoursRange = "video.share_hours_range";
     public const string VideoPartTaken = "video.part_taken";
     public const string VideoPartMix = "video.part_mix";
+    public const string VideoMatchNotPlayed = "video.match_not_played";
     public const string VideoUploadNotFound = "video_upload.not_found";
     public const string VideoUploadExpired = "video_upload.expired";
     public const string VideoUploadChunkOutOfOrder = "video_upload.chunk_out_of_order";

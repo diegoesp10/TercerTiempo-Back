@@ -23,18 +23,20 @@ public sealed class Squad : AggregateRoot
 
     public static Squad Create(Guid teamId, Guid seasonId, Guid headCoachId, DateTimeOffset now, StaffRole role = StaffRole.HeadCoach, DateOnly? validUntil = null, Guid? appointmentId = null)
     {
-        var squad = new Squad
-        {
-            Id = NewId(),
-            TeamId = Guard.NotEmpty(teamId, nameof(teamId)),
-            SeasonId = Guard.NotEmpty(seasonId, nameof(seasonId)),
-            Visibility = SquadVisibility.Private,
-            CreatedAt = now,
-        };
-
+        var squad = Open(teamId, seasonId, now);
         squad.AddStaff(headCoachId, role, now, validUntil, appointmentId);
         return squad;
     }
+
+    // Plantilla sin cuerpo técnico: la abre el club, que trabaja en ella como su staff hasta que nombre técnicos.
+    public static Squad Open(Guid teamId, Guid seasonId, DateTimeOffset now) => new()
+    {
+        Id = NewId(),
+        TeamId = Guard.NotEmpty(teamId, nameof(teamId)),
+        SeasonId = Guard.NotEmpty(seasonId, nameof(seasonId)),
+        Visibility = SquadVisibility.Private,
+        CreatedAt = now,
+    };
 
     // ---------------------------------------------------------------- Cuerpo técnico
 

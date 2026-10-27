@@ -40,15 +40,12 @@ internal static class Resolvers
             ?? throw new ForbiddenException(ErrorCode.AuthClubAccountRequired);
     }
 
-    public static async Task<Squad> SquadForStaffAsync(
-        ISquadStore squads, ICurrentUser currentUser, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
-    {
-        var squad = await squads.GetByIdAsync(squadId, cancellationToken)
-            ?? throw new NotFoundException(ErrorCode.SquadNotFound, squadId);
-
-        SquadAccess.EnsureStaff(squad, currentUser, clock);
-        return squad;
-    }
+    // Quien escribe en la plantilla: el club si la cuenta es de club; si no, el técnico.
+    public static async Task<SquadEditor> CurrentEditorAsync(
+        ICurrentUser currentUser, ICoachStore coaches, IClubStore clubs, CancellationToken cancellationToken) =>
+        currentUser.ClubId is not null
+            ? SquadEditor.Club(await CurrentClubAsync(currentUser, clubs, cancellationToken))
+            : SquadEditor.Coach((await CurrentCoachAsync(currentUser, coaches, cancellationToken)).Id);
 
     // La liga y la temporada del equipo en la temporada de la app que se está viendo.
     public static async Task<(Competition Competition, Season Season)> SeasonOfTeamAsync(
@@ -74,8 +71,7 @@ internal static class Resolvers
         if (!currentUser.IsAuthenticated) throw new UnauthenticatedException();
         var squad = await squads.GetByIdAsync(squadId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.SquadNotFound, squadId);
-        if (!SquadAccess.IsStaff(squad, currentUser, clock)
-            && !await SquadAccess.IsClubOfAsync(squad, currentUser, clubs, cancellationToken))
+        if (!await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken))
             throw new ForbiddenException(ErrorCode.SquadManagersOnly);
         return squad;
     }

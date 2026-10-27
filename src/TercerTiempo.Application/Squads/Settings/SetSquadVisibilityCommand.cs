@@ -41,7 +41,7 @@ internal sealed class SetSquadVisibilityHandler(
 {
     public async Task<SquadDetailDto> Handle(SetSquadVisibilityCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
 
         squad.SetVisibility(command.Visibility);
         await unitOfWork.SaveChangesAsync(cancellationToken);

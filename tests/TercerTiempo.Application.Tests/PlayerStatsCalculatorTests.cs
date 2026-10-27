@@ -71,7 +71,7 @@ public class PlayerStatsCalculatorTests
         var rivalSquad = Squad.Create(Rival, SeasonId, rivalCoach, Now);
         var other = rivalSquad.AddPlayer("Rival Goleador", Position.Forward, 10, null, Now);
         var otherPerformances = played.Take(2)
-            .Select(m => PlayerMatchPerformance.Record(rivalSquad, other, m, rivalCoach,
+            .Select(m => PlayerMatchPerformance.Record(rivalSquad, other, m, SquadEditor.Coach(rivalCoach),
                 new PerformanceStats(true, 90, 0, 0, 1, 0, 0, 2, 2, 0, 0, false, null), Now))
             .ToList();
 
@@ -133,9 +133,9 @@ public class PlayerStatsCalculatorTests
 
         var performances = new List<PlayerMatchPerformance>
         {
-            PlayerMatchPerformance.Record(squad, me, matches[0], coachId, Stats(90, 2, 0, started: true), Now),
-            PlayerMatchPerformance.Record(squad, me, matches[1], coachId, Stats(90, 1, 1, started: true), Now),
-            PlayerMatchPerformance.Record(squad, me, matches[2], coachId, Stats(45, 0, 0, started: false), Now),
+            PlayerMatchPerformance.Record(squad, me, matches[0], SquadEditor.Coach(coachId), Stats(90, 2, 0, started: true), Now),
+            PlayerMatchPerformance.Record(squad, me, matches[1], SquadEditor.Coach(coachId), Stats(90, 1, 1, started: true), Now),
+            PlayerMatchPerformance.Record(squad, me, matches[2], SquadEditor.Coach(coachId), Stats(45, 0, 0, started: false), Now),
         };
 
         return (me, performances, matches);

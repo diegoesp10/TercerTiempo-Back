@@ -101,13 +101,17 @@ internal static class VideoUploads
     public static VideoUploadDto ToDto(VideoUploadSession s) =>
         new(s.Id, s.SquadId, s.MatchId, s.Part, s.FileName, s.SizeBytes, s.ChunkSize, s.TotalChunks, s.ReceivedBytes, s.NextChunk, s.IsComplete, s.ExpiresAt);
 
-    public static async Task<Match> MatchOfSquadAsync(Squad squad, Guid matchId, IMatchStore matches, CancellationToken cancellationToken)
+    // El vídeo va siempre al acta interna de la plantilla y solo de un partido ya jugado.
+    public static async Task<Match> MatchOfSquadAsync(Squad squad, Guid matchId, IMatchStore matches, TimeProvider clock, CancellationToken cancellationToken)
     {
         var match = await matches.GetByIdAsync(matchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, matchId);
 
         if (match.SeasonId != squad.SeasonId || !match.Involves(squad.TeamId))
             throw new ConflictException(ErrorCode.MatchNotOfSquad);
+
+        if (!match.IsOver(clock.GetUtcNow()))
+            throw new ConflictException(ErrorCode.VideoMatchNotPlayed);
 
         return match;
     }
@@ -147,7 +151,7 @@ internal sealed class BeginVideoUploadHandler(
     {
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var uploader = await VideoManagers.CurrentAsync(currentUser, coaches, clubs, cancellationToken);
-        var match = await VideoUploads.MatchOfSquadAsync(squad, command.MatchId, matches, cancellationToken);
+        var match = await VideoUploads.MatchOfSquadAsync(squad, command.MatchId, matches, clock, cancellationToken);
         await VideoUploads.EnsurePartAvailableAsync(squad, match.Id, command.Part, videos, cancellationToken);
         await VideoUploads.PurgeExpiredAsync(uploader.CoachId, uploader.ClubId, uploads, storage, clock, cancellationToken);
 
@@ -218,7 +222,7 @@ internal sealed class CompleteVideoUploadHandler(
         var session = await VideoUploads.SessionAsync(command.SquadId, command.UploadId, currentUser, uploads, squads, clubs, clock, cancellationToken);
         session.EnsureComplete();
 
-        var match = await VideoUploads.MatchOfSquadAsync(squad, session.MatchId, matches, cancellationToken);
+        var match = await VideoUploads.MatchOfSquadAsync(squad, session.MatchId, matches, clock, cancellationToken);
         await VideoUploads.EnsurePartAvailableAsync(squad, match.Id, session.Part, videos, cancellationToken);
 
         var storageKey = await storage.CommitUploadAsync(session.StorageKey, session.FileName, cancellationToken);

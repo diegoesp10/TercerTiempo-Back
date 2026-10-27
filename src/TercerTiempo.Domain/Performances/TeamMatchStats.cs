@@ -94,24 +94,25 @@ public sealed class TeamMatchStats : AggregateRoot
     public int ThrowInsAgainst { get; private set; }
     public string? Notes { get; private set; }
 
-    public Guid RecordedByCoachId { get; private set; }
+    public Guid? RecordedByCoachId { get; private set; }
+    public Guid? RecordedByClubId { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
     private TeamMatchStats() { }
 
-    public static TeamMatchStats Record(Squad squad, Match match, Guid coachId, TeamMatchStatsData data, DateTimeOffset now)
+    public static TeamMatchStats Record(Squad squad, Match match, SquadEditor editor, TeamMatchStatsData data, DateTimeOffset now)
     {
         var stats = new TeamMatchStats { Id = NewId(), SquadId = squad.Id, MatchId = match.Id };
-        stats.Update(squad, match, coachId, data, now);
+        stats.Update(squad, match, editor, data, now);
         return stats;
     }
 
-    public void Update(Squad squad, Match match, Guid coachId, TeamMatchStatsData data, DateTimeOffset now)
+    public void Update(Squad squad, Match match, SquadEditor editor, TeamMatchStatsData data, DateTimeOffset now)
     {
         if (squad.Id != SquadId || match.Id != MatchId)
             throw new DomainException(ErrorCode.SheetLineMismatch);
 
-        PerformancePolicy.EnsureCanRecord(squad, coachId, match, Squad.Today(now));
+        PerformancePolicy.EnsureCanRecord(squad, editor, match, Squad.Today(now));
         data.EnsureValid(match.GoalsFor(squad.TeamId), match.GoalsAgainst(squad.TeamId));
 
         PossessionPct = data.PossessionPct;
@@ -134,7 +135,8 @@ public sealed class TeamMatchStats : AggregateRoot
         ThrowInsFor = data.ThrowInsFor;
         ThrowInsAgainst = data.ThrowInsAgainst;
         Notes = string.IsNullOrWhiteSpace(data.Notes) ? null : data.Notes.Trim();
-        RecordedByCoachId = Guard.NotEmpty(coachId, nameof(coachId));
+        RecordedByCoachId = editor.CoachId;
+        RecordedByClubId = editor.ClubId;
         UpdatedAt = now;
     }
 }

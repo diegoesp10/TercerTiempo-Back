@@ -60,7 +60,7 @@ internal sealed class CompareMatchSheetHandler(
         var teamMap = (await teams.GetByIdsAsync([match.HomeTeamId, match.AwayTeamId], cancellationToken)).ToDictionary(t => t.Id);
         var matchDto = MatchMapper.ToDto(match, teamMap);
         var side = match.IsHome(squad.TeamId) ? MatchSide.Home : MatchSide.Away;
-        var canEdit = SquadAccess.IsStaff(squad, currentUser, clock) && match.Status == MatchStatus.Played;
+        var canEdit = match.Status == MatchStatus.Played && await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken);
 
         var recorded = (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken))
             .ToDictionary(p => p.SquadPlayerId);

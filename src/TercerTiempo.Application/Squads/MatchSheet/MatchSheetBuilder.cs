@@ -2,6 +2,7 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Application.Performances;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
@@ -23,6 +24,7 @@ internal static class MatchSheetBuilder
         IPlayerStore players,
         IPerformanceStore performances,
         ITeamMatchStatsStore teamStats,
+        IClubStore clubs,
         CancellationToken cancellationToken)
     {
         var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
@@ -42,7 +44,7 @@ internal static class MatchSheetBuilder
                 recorded.TryGetValue(p.Id, out var performance) ? PerformanceMapper.ToDto(performance, p) : null))
             .ToList();
 
-        var canEdit = SquadAccess.IsStaff(squad, currentUser, clock) && match.Status == MatchStatus.Played;
+        var canEdit = match.Status == MatchStatus.Played && await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken);
         var team = await teamStats.GetAsync(squad.Id, match.Id, cancellationToken);
 
         return new MatchSheetDto(summary, matchDto, canEdit, entries, team is null ? null : TeamStats.TeamMatchStatsMapper.ToDto(team));

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Squads;
 
@@ -19,6 +20,7 @@ internal sealed class InjuryConfiguration : IEntityTypeConfiguration<PlayerInjur
         builder.HasOne<Squad>().WithMany().HasForeignKey(i => i.SquadId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<SquadPlayer>().WithMany().HasForeignKey(i => i.SquadPlayerId).OnDelete(DeleteBehavior.NoAction);
         builder.HasOne<Coach>().WithMany().HasForeignKey(i => i.RecordedByCoachId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Club>().WithMany().HasForeignKey(i => i.RecordedByClubId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(i => new { i.SquadId, i.SquadPlayerId });
     }

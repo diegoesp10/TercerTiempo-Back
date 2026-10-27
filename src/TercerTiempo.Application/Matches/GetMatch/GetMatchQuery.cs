@@ -65,8 +65,21 @@ internal sealed class GetMatchHandler(
                 squad.Visibility, visible, entries));
         }
 
+        // Quien gestiona uno de los dos equipos (su club o su cuerpo técnico vigente) lo ve como el cuerpo técnico,
+        // siempre que tenga la licencia vigente.
+        var club = currentUser.ClubId is { } clubId ? await clubs.GetByIdAsync(clubId, cancellationToken) : null;
+        var visibleSquads = sheets.Where(s => s.Visible).Select(s => s.SquadId).ToHashSet();
+        var managedSquad = matchSquads.FirstOrDefault(s => visibleSquads.Contains(s.Id)
+            && (SquadAccess.IsStaff(s, currentUser, clock) || club?.Manages(s.TeamId) == true));
+        Guid? managedTeamId = managedSquad?.TeamId;
+        if (managedTeamId is null && club is not null && await licenses.IsViewerLicensedAsync(currentUser, cancellationToken))
+            managedTeamId = new[] { match.HomeTeamId, match.AwayTeamId }
+                .Where(id => club.Manages(id) && matchSquads.All(s => s.TeamId != id))
+                .Select(id => (Guid?)id)
+                .FirstOrDefault();
+
         var competition = await competitions.GetBySeasonAsync(match.SeasonId, cancellationToken);
         var season = competition?.Seasons.FirstOrDefault(s => s.Id == match.SeasonId);
-        return new MatchDetailDto(MatchMapper.ToDto(match, teamMap), competition?.Name, season?.Label, sheets);
+        return new MatchDetailDto(MatchMapper.ToDto(match, teamMap), competition?.Name, season?.Label, sheets, managedTeamId, managedSquad?.Id);
     }
 }

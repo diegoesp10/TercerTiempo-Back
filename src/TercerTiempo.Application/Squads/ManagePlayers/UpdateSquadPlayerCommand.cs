@@ -3,6 +3,7 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Performances;
+using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
@@ -33,6 +34,7 @@ internal sealed class UpdateSquadPlayerValidator : AbstractValidator<UpdateSquad
 internal sealed class UpdateSquadPlayerHandler(
     ICurrentUser currentUser,
     ISquadStore squads,
+    IClubStore clubs,
     IPlayerStore players,
     IMatchStore matches,
     IPerformanceStore performances,
@@ -41,7 +43,7 @@ internal sealed class UpdateSquadPlayerHandler(
 {
     public async Task<SquadPlayerDto> Handle(UpdateSquadPlayerCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
 
         var previousPosition = squad.GetPlayer(command.SquadPlayerId).Position;
         squad.UpdatePlayer(command.SquadPlayerId, command.FullName, command.Position, command.ShirtNumber);

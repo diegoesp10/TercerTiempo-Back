@@ -1048,12 +1048,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
-                            Code = "squad.staff_only",
-                            Language = "es",
-                            Message = "Solo el cuerpo técnico vigente de la plantilla puede hacer esto."
-                        },
-                        new
-                        {
                             Code = "squad.private",
                             Language = "es",
                             Message = "Los datos de esta plantilla son privados: solo su cuerpo técnico y sus jugadores pueden verlos."
@@ -1224,7 +1218,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "sheet.staff_only",
                             Language = "es",
-                            Message = "Solo el cuerpo técnico vigente de la plantilla puede registrar el acta."
+                            Message = "Solo el club o el cuerpo técnico vigente de la plantilla pueden registrar el acta."
                         },
                         new
                         {
@@ -1321,12 +1315,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "suggestion.message_too_long",
                             Language = "es",
                             Message = "El mensaje no puede superar los {0} caracteres."
-                        },
-                        new
-                        {
-                            Code = "suggestion.no_staff_to_record",
-                            Language = "es",
-                            Message = "No hay ningún técnico vigente en la plantilla en cuyo nombre registrar el acta."
                         },
                         new
                         {
@@ -1531,6 +1519,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "video.part_mix",
                             Language = "es",
                             Message = "El partido se sube entero o en dos partes, no las dos cosas: elimina el vídeo que ya hay."
+                        },
+                        new
+                        {
+                            Code = "video.match_not_played",
+                            Language = "es",
+                            Message = "Solo se puede subir el vídeo de un partido ya jugado, desde el acta interna de tu equipo."
                         },
                         new
                         {
@@ -2312,7 +2306,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<double?>("Rating")
                         .HasColumnType("float");
 
-                    b.Property<Guid>("RecordedByCoachId")
+                    b.Property<Guid?>("RecordedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RecordedByCoachId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Recoveries")
@@ -2360,6 +2357,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("MatchId");
+
+                    b.HasIndex("RecordedByClubId");
 
                     b.HasIndex("RecordedByCoachId");
 
@@ -2420,7 +2419,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int?>("PossessionPct")
                         .HasColumnType("int");
 
-                    b.Property<Guid>("RecordedByCoachId")
+                    b.Property<Guid?>("RecordedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RecordedByCoachId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("SetPieceGoalsAgainst")
@@ -2456,6 +2458,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("MatchId");
+
+                    b.HasIndex("RecordedByClubId");
 
                     b.HasIndex("RecordedByCoachId");
 
@@ -2815,7 +2819,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
-                    b.Property<Guid>("RecordedByCoachId")
+                    b.Property<Guid?>("RecordedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RecordedByCoachId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateOnly?>("ReturnedOn")
@@ -2839,6 +2846,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RecordedByClubId");
 
                     b.HasIndex("RecordedByCoachId");
 
@@ -4157,11 +4166,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("RecordedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
                         .WithMany()
                         .HasForeignKey("RecordedByCoachId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
                         .WithMany()
@@ -4196,11 +4209,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("RecordedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
                         .WithMany()
                         .HasForeignKey("RecordedByCoachId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
                         .WithMany()
@@ -4211,11 +4228,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>
                 {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("RecordedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
                         .WithMany()
                         .HasForeignKey("RecordedByCoachId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
                         .WithMany()

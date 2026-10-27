@@ -1,3 +1,4 @@
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Performances;
 
@@ -14,7 +15,7 @@ public class TeamMatchStatsTests
         var (squad, coachId) = TestData.NewSquad();
         var match = TestData.PlayedMatch(home: 2, away: 1);
 
-        var stats = TeamMatchStats.Record(squad, match, coachId, Data(), TestData.Now);
+        var stats = TeamMatchStats.Record(squad, match, SquadEditor.Coach(coachId), Data(), TestData.Now);
 
         Assert.Equal((55, 6, 1), (stats.PossessionPct, stats.CornersFor, stats.SetPieceGoalsFor));
         Assert.Equal(coachId, stats.RecordedByCoachId);
@@ -25,7 +26,7 @@ public class TeamMatchStatsTests
     {
         var (squad, _) = TestData.NewSquad();
 
-        Assert.Throws<DomainException>(() => TeamMatchStats.Record(squad, TestData.PlayedMatch(), Guid.NewGuid(), Data(), TestData.Now));
+        Assert.Throws<DomainException>(() => TeamMatchStats.Record(squad, TestData.PlayedMatch(), SquadEditor.Coach(Guid.NewGuid()), Data(), TestData.Now));
     }
 
     [Fact]
@@ -33,7 +34,7 @@ public class TeamMatchStatsTests
     {
         var (squad, coachId) = TestData.NewSquad();
 
-        Assert.Throws<DomainException>(() => TeamMatchStats.Record(squad, TestData.ScheduledMatch(), coachId, Data(), TestData.Now));
+        Assert.Throws<DomainException>(() => TeamMatchStats.Record(squad, TestData.ScheduledMatch(), SquadEditor.Coach(coachId), Data(), TestData.Now));
     }
 
     [Theory]
@@ -46,7 +47,7 @@ public class TeamMatchStatsTests
         var match = TestData.PlayedMatch(home: 2, away: 1);
 
         // Posesión > 100, más goles a balón parado (3) que goles del equipo (2) o más tiros a puerta que tiros.
-        Assert.ThrowsAny<Exception>(() => TeamMatchStats.Record(squad, match, coachId, Data(possession, setPieceFor, shotsFor, onTargetFor), TestData.Now));
+        Assert.ThrowsAny<Exception>(() => TeamMatchStats.Record(squad, match, SquadEditor.Coach(coachId), Data(possession, setPieceFor, shotsFor, onTargetFor), TestData.Now));
     }
 
     [Fact]
@@ -55,13 +56,13 @@ public class TeamMatchStatsTests
         var (squad, coachId) = TestData.NewSquad();
         var match = TestData.PlayedMatch(home: 2, away: 1);
 
-        var stats = TeamMatchStats.Record(squad, match, coachId,
+        var stats = TeamMatchStats.Record(squad, match, SquadEditor.Coach(coachId),
             Data() with { PenaltiesFor = 2, PenaltyGoalsFor = 1, ThrowInsFor = 24, ThrowInsAgainst = 19 }, TestData.Now);
         Assert.Equal((2, 1, 24, 19), (stats.PenaltiesFor, stats.PenaltyGoalsFor, stats.ThrowInsFor, stats.ThrowInsAgainst));
 
         // Más goles de penalti que penaltis, o que goles a balón parado (1).
-        Assert.Throws<DomainException>(() => stats.Update(squad, match, coachId, Data() with { PenaltiesFor = 0, PenaltyGoalsFor = 1 }, TestData.Now));
-        Assert.Throws<DomainException>(() => stats.Update(squad, match, coachId, Data() with { PenaltiesFor = 3, PenaltyGoalsFor = 2 }, TestData.Now));
+        Assert.Throws<DomainException>(() => stats.Update(squad, match, SquadEditor.Coach(coachId), Data() with { PenaltiesFor = 0, PenaltyGoalsFor = 1 }, TestData.Now));
+        Assert.Throws<DomainException>(() => stats.Update(squad, match, SquadEditor.Coach(coachId), Data() with { PenaltiesFor = 3, PenaltyGoalsFor = 2 }, TestData.Now));
     }
 
     [Fact]
@@ -69,9 +70,9 @@ public class TeamMatchStatsTests
     {
         var (squad, coachId) = TestData.NewSquad();
         var match = TestData.PlayedMatch();
-        var stats = TeamMatchStats.Record(squad, match, coachId, Data(), TestData.Now);
+        var stats = TeamMatchStats.Record(squad, match, SquadEditor.Coach(coachId), Data(), TestData.Now);
 
-        stats.Update(squad, match, coachId, Data(possession: null) with { CornersFor = 9, Notes = "  " }, TestData.Now.AddHours(1));
+        stats.Update(squad, match, SquadEditor.Coach(coachId), Data(possession: null) with { CornersFor = 9, Notes = "  " }, TestData.Now.AddHours(1));
 
         Assert.Equal((null, 9, (string?)null), (stats.PossessionPct, stats.CornersFor, stats.Notes));
         Assert.Equal(TestData.Now.AddHours(1), stats.UpdatedAt);

@@ -164,6 +164,7 @@ internal sealed class RecordTeamMatchStatsValidator : AbstractValidator<RecordTe
 internal sealed class RecordTeamMatchStatsHandler(
     ICurrentUser currentUser,
     ICoachStore coaches,
+    IClubStore clubs,
     ISquadStore squads,
     IMatchStore matches,
     ITeamMatchStatsStore teamStats,
@@ -172,8 +173,8 @@ internal sealed class RecordTeamMatchStatsHandler(
 {
     public async Task<TeamMatchStatsDto> Handle(RecordTeamMatchStatsCommand command, CancellationToken cancellationToken)
     {
-        var coach = await Resolvers.CurrentCoachAsync(currentUser, coaches, cancellationToken);
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
+        var editor = await Resolvers.CurrentEditorAsync(currentUser, coaches, clubs, cancellationToken);
 
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
@@ -182,12 +183,12 @@ internal sealed class RecordTeamMatchStatsHandler(
         var current = await teamStats.GetAsync(squad.Id, match.Id, cancellationToken);
         if (current is null)
         {
-            current = TeamMatchStats.Record(squad, match, coach.Id, command.Stats.ToData(), now);
+            current = TeamMatchStats.Record(squad, match, editor, command.Stats.ToData(), now);
             teamStats.Add(current);
         }
         else
         {
-            current.Update(squad, match, coach.Id, command.Stats.ToData(), now);
+            current.Update(squad, match, editor, command.Stats.ToData(), now);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

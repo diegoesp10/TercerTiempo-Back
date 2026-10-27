@@ -36,7 +36,8 @@ public sealed class PlayerMatchPerformance : AggregateRoot
 
     public string? Notes { get; private set; }
 
-    public Guid RecordedByCoachId { get; private set; }
+    public Guid? RecordedByCoachId { get; private set; }
+    public Guid? RecordedByClubId { get; private set; }
     public DateTimeOffset LoggedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -55,9 +56,9 @@ public sealed class PlayerMatchPerformance : AggregateRoot
     private PlayerMatchPerformance() { }
 
     public static PlayerMatchPerformance Record(
-        Squad squad, SquadPlayer player, Match match, Guid coachId, PerformanceStats stats, DateTimeOffset now)
+        Squad squad, SquadPlayer player, Match match, SquadEditor editor, PerformanceStats stats, DateTimeOffset now)
     {
-        PerformancePolicy.EnsureCanRecord(squad, coachId, match, Squad.Today(now));
+        PerformancePolicy.EnsureCanRecord(squad, editor, match, Squad.Today(now));
 
         if (player.SquadId != squad.Id)
             throw new DomainException(ErrorCode.SquadPlayerNotMember);
@@ -72,7 +73,8 @@ public sealed class PlayerMatchPerformance : AggregateRoot
             MatchId = match.Id,
             TeamId = squad.TeamId,
             SeasonId = match.SeasonId,
-            RecordedByCoachId = coachId,
+            RecordedByCoachId = editor.CoachId,
+            RecordedByClubId = editor.ClubId,
             LoggedAt = now,
             UpdatedAt = now,
         };
@@ -81,12 +83,13 @@ public sealed class PlayerMatchPerformance : AggregateRoot
         return performance;
     }
 
-    public void Update(PerformanceStats stats, SquadPlayer player, Match match, Guid coachId, DateTimeOffset now)
+    public void Update(PerformanceStats stats, SquadPlayer player, Match match, SquadEditor editor, DateTimeOffset now)
     {
         stats.EnsureValid();
         Apply(stats);
         Recalculate(player, match);
-        RecordedByCoachId = Guard.NotEmpty(coachId, nameof(coachId));
+        RecordedByCoachId = editor.CoachId;
+        RecordedByClubId = editor.ClubId;
         UpdatedAt = now;
     }
 

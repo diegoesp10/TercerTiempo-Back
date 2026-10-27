@@ -4,6 +4,7 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Squads;
@@ -113,12 +114,12 @@ internal sealed class ListSquadInjuriesHandler(ICurrentUser currentUser, ISquadS
     }
 }
 
-internal sealed class RecordInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class RecordInjuryHandler(ICurrentUser currentUser, ISquadStore squads, ICoachStore coaches, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<RecordInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(RecordInjuryCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var player = squad.ActivePlayers.FirstOrDefault(p => p.Id == command.SquadPlayerId)
             ?? throw new NotFoundException(ErrorCode.SquadPlayerNotFound, command.SquadPlayerId);
 
@@ -129,19 +130,20 @@ internal sealed class RecordInjuryHandler(ICurrentUser currentUser, ISquadStore 
         var expected = command.ExpectedReturnOn
             ?? (InjuryCatalog.Info(command.Type).AverageDays is { } days ? command.StartedOn.AddDays(days) : null);
 
-        injuries.Add(PlayerInjury.Create(squad, player, currentUser.CoachId!.Value, command.Type, command.Reason, command.StartedOn, expected, clock.GetUtcNow()));
+        var editor = await Resolvers.CurrentEditorAsync(currentUser, coaches, clubs, cancellationToken);
+        injuries.Add(PlayerInjury.Create(squad, player, editor, command.Type, command.Reason, command.StartedOn, expected, clock.GetUtcNow()));
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken);
     }
 }
 
-internal sealed class UpdateInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class UpdateInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<UpdateInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(UpdateInjuryCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var injury = await InjuryAccess.InjuryOfAsync(squad, command.InjuryId, injuries, cancellationToken);
 
         injury.Update(command.Type, command.Reason, command.StartedOn, command.ExpectedReturnOn, clock.GetUtcNow());
@@ -151,12 +153,12 @@ internal sealed class UpdateInjuryHandler(ICurrentUser currentUser, ISquadStore 
     }
 }
 
-internal sealed class CloseInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class CloseInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<CloseInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(CloseInjuryCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var injury = await InjuryAccess.InjuryOfAsync(squad, command.InjuryId, injuries, cancellationToken);
 
         injury.Close(command.ReturnedOn ?? SquadAccess.Today(clock), clock.GetUtcNow());
@@ -166,12 +168,12 @@ internal sealed class CloseInjuryHandler(ICurrentUser currentUser, ISquadStore s
     }
 }
 
-internal sealed class ReopenInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class ReopenInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<ReopenInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(ReopenInjuryCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var injury = await InjuryAccess.InjuryOfAsync(squad, command.InjuryId, injuries, cancellationToken);
 
         var current = await injuries.GetBySquadAsync(squad.Id, cancellationToken);
@@ -185,12 +187,12 @@ internal sealed class ReopenInjuryHandler(ICurrentUser currentUser, ISquadStore 
     }
 }
 
-internal sealed class DeleteInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class DeleteInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<DeleteInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(DeleteInjuryCommand command, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForStaffAsync(squads, currentUser, command.SquadId, clock, cancellationToken);
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var injury = await InjuryAccess.InjuryOfAsync(squad, command.InjuryId, injuries, cancellationToken);
 
         injuries.Remove(injury);

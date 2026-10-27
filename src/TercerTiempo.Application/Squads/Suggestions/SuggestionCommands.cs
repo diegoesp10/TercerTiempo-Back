@@ -212,15 +212,11 @@ internal sealed class ResolveSuggestionHandler(
             throw new NotFoundException(ErrorCode.SuggestionNotFound, command.SuggestionId);
 
         var now = clock.GetUtcNow();
-        var today = SquadAccess.Today(clock);
 
         if (command.Approve)
         {
-            // La línea se escribe en el acta en nombre de un técnico vigente: el que aprueba o, si aprueba el club,
-            // el primer entrenador (o cualquier miembro del staff) de la plantilla.
-            var recorder = currentUser.CoachId
-                ?? squad.StaffOn(today).OrderBy(s => s.Role == StaffRole.HeadCoach ? 0 : 1).Select(s => (Guid?)s.CoachId).FirstOrDefault()
-                ?? throw new ConflictException(ErrorCode.SuggestionNoStaffToRecord);
+            // La línea se escribe en el acta en nombre de quien aprueba: el técnico o el club, que hace lo mismo que él.
+            var recorder = await Resolvers.CurrentEditorAsync(currentUser, coaches, clubs, cancellationToken);
 
             var match = await matches.GetByIdAsync(suggestion.MatchId, cancellationToken)
                 ?? throw new NotFoundException(ErrorCode.MatchNotFound, suggestion.MatchId);
