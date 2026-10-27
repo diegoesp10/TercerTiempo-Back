@@ -9,6 +9,9 @@ services:
       ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.production}"
       Jwt__Key: "${TT_JWT_KEY:?Falta TT_JWT_KEY en .env.production (al menos 32 caracteres)}"
       Admin__Password: "${TT_ADMIN_PASSWORD:?Falta TT_ADMIN_PASSWORD en .env.production}"
+      # En publicación el login del administrador pide además el código de la app de autenticación (MFA).
+      Admin__RequireMfa: "true"
+      Admin__ResetMfa: "${TT_ADMIN_RESET_MFA:-false}"
       Cors__AllowedOrigins__0: "${TT_PUBLIC_URL:?Falta TT_PUBLIC_URL en .env.production}"
       Licensing__Provider: "${TT_LICENSING_PROVIDER:-mock}"
       Licensing__Stripe__SecretKey: "${TT_STRIPE_SECRET_KEY:-}"

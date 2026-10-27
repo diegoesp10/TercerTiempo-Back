@@ -29,6 +29,8 @@ public static class ErrorCode
     public const string AuthUnauthenticated = "auth.unauthenticated";
     public const string AuthInvalidCredentials = "auth.invalid_credentials";
     public const string AdminInvalidCredentials = "admin.invalid_credentials";
+    public const string AdminMfaExpired = "admin.mfa_expired";
+    public const string AdminMfaInvalidCode = "admin.mfa_invalid_code";
     public const string JobNotFound = "job.not_found";
     public const string JobAlreadyRunning = "job.already_running";
     public const string JobDisabled = "job.disabled";

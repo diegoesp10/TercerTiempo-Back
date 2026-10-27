@@ -8,6 +8,7 @@ namespace TercerTiempo.Repository.Admin;
 
 internal sealed class AdminRepository(
     ICommandHandler<AdminLoginCommand, AdminAuthResponse> login,
+    ICommandHandler<AdminVerifyMfaCommand, AdminAuthResponse> verifyMfa,
     IQueryHandler<GetJobsOverviewQuery, JobsOverviewDto> jobs,
     ICommandHandler<RunJobCommand, JobDto> runJob,
     IQueryHandler<TercerTiempo.Application.Privacy.GetAnalyticsReportQuery, TercerTiempo.Application.Privacy.AnalyticsReportDto> analytics,
@@ -34,6 +35,9 @@ internal sealed class AdminRepository(
 {
     public Task<AdminAuthResponse> LoginAsync(AdminLoginCommand command, CancellationToken cancellationToken = default) =>
         login.Handle(command, cancellationToken);
+
+    public Task<AdminAuthResponse> VerifyMfaAsync(AdminVerifyMfaCommand command, CancellationToken cancellationToken = default) =>
+        verifyMfa.Handle(command, cancellationToken);
 
     public Task<JobsOverviewDto> GetJobsAsync(string? provider, int? requests, CancellationToken cancellationToken = default) =>
         jobs.Handle(new GetJobsOverviewQuery(provider, requests ?? 200), cancellationToken);

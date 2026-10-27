@@ -17,7 +17,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.13")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -547,6 +547,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "admin.invalid_credentials",
                             Language = "es",
                             Message = "Usuario o contraseña incorrectos."
+                        },
+                        new
+                        {
+                            Code = "admin.mfa_expired",
+                            Language = "es",
+                            Message = "La verificación ha caducado: vuelve a entrar con tu usuario y tu contraseña."
+                        },
+                        new
+                        {
+                            Code = "admin.mfa_invalid_code",
+                            Language = "es",
+                            Message = "Código incorrecto: escribe el de 6 cifras que enseña ahora la app de autenticación."
                         },
                         new
                         {

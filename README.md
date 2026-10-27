@@ -192,7 +192,8 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/videos/{id}/stream?ticket=` | Streaming con rangos (206) para el reproductor |
 | DELETE | `/api/videos/{id}` | Eliminar el vídeo (solo el cuerpo técnico que lo subió) |
 | GET | `/api/league/table?competitionId=` | Clasificación de una liga (sin parámetro, la de la plantilla del usuario) |
-| POST | `/api/admin/login` | Sesión del administrador (rol `Admin`); su token abre todo `/api/admin/*` |
+| POST | `/api/admin/login` | Sesión del administrador (rol `Admin`); su token abre todo `/api/admin/*`. En publicación devuelve el reto MFA en vez del token |
+| POST | `/api/admin/login/mfa` | Segundo paso del administrador en publicación: billete + código de Microsoft Authenticator → token |
 | GET | `/api/admin/jobs` | Trabajos en segundo plano, historial de ejecuciones, contadores de cada web y últimas llamadas |
 | POST | `/api/admin/jobs/{job}/run` | Lanzar ya `football-data` u `official-sheets` |
 | GET/PUT | `/api/admin/football-sync` | Qué descarga la sincronización automática de las ligas (jornada en curso o temporada) |
@@ -308,6 +309,14 @@ dotnet user-secrets set "Admin:Password" "<contraseña>" --project src/TercerTie
 
 Si se cambia el secreto, la contraseña guardada se sustituye en el siguiente arranque. Todo `/api/admin/*` exige ese
 token (claim `admin`).
+
+En publicación (`Admin:RequireMfa`, que `appsettings.Development.json` apaga) el login tiene un segundo paso con una
+app de autenticación TOTP (Microsoft Authenticator): tras la contraseña, `POST /api/admin/login` no da el token sino un
+billete de 5 minutos, y el token llega con `POST /api/admin/login/mfa` y el código de 6 cifras. La primera vez el
+login enseña además el QR (y la clave para escribirla a mano); el primer código bueno deja la app dada de alta y el QR
+ya no vuelve a salir. Los códigos falsos cuentan para el bloqueo (5 fallos, 5 minutos) y un código ya usado no vale.
+Si se pierde el móvil, `Admin__ResetMfa=true` (`TT_ADMIN_RESET_MFA` en `.env.production`) cambia la clave al arrancar
+y el siguiente login vuelve a enseñar el QR; después hay que volver a ponerlo en `false`.
 
 ## Acta pública: asturfutbol.es
 

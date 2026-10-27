@@ -28,6 +28,8 @@ public static class ErrorCatalog
         (ErrorCode.AuthUnauthenticated, "Debes iniciar sesión para realizar esta acción."),
         (ErrorCode.AuthInvalidCredentials, "Email o contraseña incorrectos."),
         (ErrorCode.AdminInvalidCredentials, "Usuario o contraseña incorrectos."),
+        (ErrorCode.AdminMfaExpired, "La verificación ha caducado: vuelve a entrar con tu usuario y tu contraseña."),
+        (ErrorCode.AdminMfaInvalidCode, "Código incorrecto: escribe el de 6 cifras que enseña ahora la app de autenticación."),
         (ErrorCode.JobNotFound, "El trabajo '{0}' no existe."),
         (ErrorCode.JobAlreadyRunning, "El trabajo '{0}' ya está en marcha."),
         (ErrorCode.JobDisabled, "El trabajo '{0}' está desactivado en la configuración."),

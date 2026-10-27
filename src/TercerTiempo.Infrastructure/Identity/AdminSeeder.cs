@@ -15,6 +15,13 @@ public sealed class AdminOptions
 
     // Nunca en appsettings: user-secrets o variable de entorno Admin__Password.
     public string Password { get; set; } = string.Empty;
+
+    // Segundo paso con app de autenticación (TOTP) tras la contraseña. Activo salvo que se apague: appsettings.Development.json lo apaga.
+    public bool RequireMfa { get; set; } = true;
+
+    // Para cuando se pierde el móvil: al arrancar con Admin__ResetMfa=true se borra la app dada de alta y el siguiente
+    // login vuelve a enseñar el QR. Hay que quitarla después.
+    public bool ResetMfa { get; set; }
 }
 
 public static class AdminSeeder
@@ -76,6 +83,14 @@ public static class AdminSeeder
 
         if (!await users.IsInRoleAsync(user, AuthClaims.AdminRole))
             Ensure(await users.AddToRoleAsync(user, AuthClaims.AdminRole), "dar el rol Admin");
+
+        // Clave nueva y sin dar de alta: la app antigua deja de valer y el próximo login enseña el QR de la nueva.
+        if (settings.ResetMfa && user.TwoFactorEnabled)
+        {
+            Ensure(await users.SetTwoFactorEnabledAsync(user, false), "quitar la verificación en dos pasos");
+            Ensure(await users.ResetAuthenticatorKeyAsync(user), "cambiar la clave de la app de autenticación");
+            logger.LogWarning("Admin:ResetMfa: borrada la app de autenticación de {UserName}; el próximo login enseña un QR nuevo. Quita Admin__ResetMfa.", user.UserName);
+        }
     }
 
     private static async Task<List<string>> PolicyProblemsAsync(UserManager<ApplicationUser> users, ApplicationUser user, string password)

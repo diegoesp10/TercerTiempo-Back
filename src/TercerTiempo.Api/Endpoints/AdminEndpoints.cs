@@ -13,9 +13,17 @@ internal static class AdminEndpoints
             .WithTags("Admin")
             .WithName("AdminLogin")
             .WithSummary("Inicio de sesión del administrador")
-            .WithDescription("Solo usuarios con el rol Admin (Admin:UserName y Admin:Password de la configuración). Devuelve un JWT con el claim admin, independiente de las cuentas de jugador, técnico y club. Tras 5 fallos seguidos el usuario queda bloqueado 5 minutos.")
+            .WithDescription("Solo usuarios con el rol Admin (Admin:UserName y Admin:Password de la configuración). Devuelve un JWT con el claim admin, independiente de las cuentas de jugador, técnico y club. Tras 5 fallos seguidos el usuario queda bloqueado 5 minutos. Con Admin:RequireMfa (publicación; apagado en Development) no devuelve token sino mfa: un billete de 5 minutos para POST /api/admin/login/mfa y, la primera vez, la clave y el otpauth:// del QR para dar de alta Microsoft Authenticator.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        app.MapPost("/api/admin/login/mfa", (AdminVerifyMfaCommand command, IAdminRepository admin, CancellationToken ct) => admin.VerifyMfaAsync(command, ct))
+            .WithTags("Admin")
+            .WithName("AdminVerifyMfa")
+            .WithSummary("Segundo paso del login del administrador")
+            .WithDescription("Con el billete del login y el código de 6 cifras de la app de autenticación devuelve el JWT de administrador. El primer código bueno deja dada de alta la app (el QR ya no se vuelve a enseñar). Un código ya usado no vale. Los códigos falsos cuentan para el bloqueo (5 fallos, 5 minutos). 409 si el billete caducó o la cuenta está bloqueada; 400 en code si el código no es correcto.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         var group = app.MapGroup("/api/admin").WithTags("Admin").RequireAuthorization(AuthClaims.AdminPolicy);
 

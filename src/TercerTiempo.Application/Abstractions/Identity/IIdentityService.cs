@@ -10,8 +10,9 @@ public interface IIdentityService
     // Cada fallo cuenta para el bloqueo temporal; con la cuenta bloqueada lanza auth.locked_out.
     Task<Guid?> ValidateCredentialsAsync(string email, string password, CancellationToken cancellationToken);
 
-    // Solo usuarios con el rol Admin; cada fallo cuenta para el bloqueo temporal de Identity.
-    Task<Guid?> ValidateAdminAsync(string userName, string password, CancellationToken cancellationToken);
+    // Solo usuarios con el rol Admin; cada fallo cuenta para el bloqueo temporal de Identity. Con el segundo paso
+    // pendiente (MFA), una contraseña buena no borra los fallos: así no se puede probar códigos sin fin.
+    Task<Guid?> ValidateAdminAsync(string userName, string password, bool secondFactorPending, CancellationToken cancellationToken);
 
     // Huella de la sesión que viaja en el token: cambia con la contraseña y deja sin valor los tokens anteriores.
     Task<string> GetSessionStampAsync(Guid userId, CancellationToken cancellationToken);

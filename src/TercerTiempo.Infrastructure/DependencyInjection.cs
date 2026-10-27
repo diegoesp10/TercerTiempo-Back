@@ -112,10 +112,13 @@ public static class DependencyInjection
             .AddIdentityCore<ApplicationUser>(IdentitySetup.Configure)
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<AppDbContext>()
-            .AddPasswordValidator<PasswordRulesValidator>();
+            .AddPasswordValidator<PasswordRulesValidator>()
+            .AddTokenProvider<AuthenticatorTokenProvider<ApplicationUser>>(TokenOptions.DefaultAuthenticatorProvider);
 
         services.Configure<PasswordHasherOptions>(IdentitySetup.ConfigureHasher);
         services.AddSingleton<SessionStamps>();
+        // Solo para el billete del segundo paso del administrador (5 minutos): no hace falta guardar las claves.
+        services.AddDataProtection();
 
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
@@ -128,6 +131,7 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(TercerTiempo.Application.Clubs.Invitations.RegistrationOptions.SectionName));
 
         services.AddScoped<IIdentityService, IdentityService>();
+        services.AddScoped<IAdminSecondFactor, AdminSecondFactor>();
         services.AddSingleton<ITokenService, JwtTokenService>();
     }
 
