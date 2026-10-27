@@ -85,4 +85,6 @@ public sealed record LeagueTableDto(
     SeasonDto? Season,
     IReadOnlyList<Standings.StandingDto> Standings,
     [property: System.ComponentModel.Description("Explicación cuando no hay clasificación (temporada nueva o sin partidos).")]
-    string? Notice);
+    string? Notice,
+    [property: System.ComponentModel.Description("Puestos destacados (ascenso, promoción, descenso) con su nombre y color, tal como los publica la web de la liga.")]
+    IReadOnlyList<Competitions.LeagueZoneDto>? Zones = null);

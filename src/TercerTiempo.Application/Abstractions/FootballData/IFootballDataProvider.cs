@@ -15,6 +15,10 @@ public interface IFootballDataProvider
         CancellationToken cancellationToken);
     Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken);
 
+    // Puestos destacados de la clasificación (ascenso, promoción, descenso...) de la temporada en curso de la liga: vacío si
+    // la web no los marca, null si no se han podido leer.
+    Task<IReadOnlyList<TercerTiempo.Domain.Competitions.LeagueZoneData>?> GetLeagueZonesAsync(string competitionExternalId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<RosterEntrySnapshot>> GetRosterAsync(string teamExternalId, CancellationToken cancellationToken);
 
     // Equipo arbitral de un partido según la web del proveedor: vacío si no lo publica, null si no se ha podido leer.

@@ -8,7 +8,7 @@ namespace TercerTiempo.Application.Tests;
 // Previsor de resultados: probabilidades de campeón, ascenso o promoción y descenso con lo que se sabe en cada jornada.
 public class LeagueForecastTests
 {
-    private static readonly ForecastZones Zones = new(2, 5);
+    private static readonly ForecastZones Zones = ForecastZones.Range(2, 5, 6);
 
     // Liga de seis a doble vuelta: en la primera vuelta gana siempre el de número más bajo («0» lo gana todo y «5» lo pierde
     // todo), unas veces en casa y otras fuera; la segunda vuelta, con los campos cambiados, está por jugar.
@@ -71,7 +71,7 @@ public class LeagueForecastTests
             new(teams[0], teams[2], 3, 1), new(teams[2], teams[0], 0, 2),
             new(teams[1], teams[2], 1, 0), new(teams[2], teams[1], 2, 2),
         };
-        var forecast = LeagueForecaster.Run(teams, matches, new ForecastZones(1, 3), 500, 1);
+        var forecast = LeagueForecaster.Run(teams, matches, ForecastZones.Range(1, 3, 3), 500, 1);
 
         Assert.Equal([teams[0], teams[1], teams[2]], forecast.Select(t => t.TeamId));
         Assert.Equal([1.0, 0.0, 0.0], forecast.Select(t => t.Champion));
@@ -94,7 +94,7 @@ public class LeagueForecastTests
 
         var source = new ForecastSource(
             competition, season, [first, second, cancelled], [home.Id, away.Id], new Dictionary<Guid, Team>(), [1, 2],
-            LeagueZoneRules.For(competition, 2), "huella");
+            LeagueZoneRules.For(competition, 2), [], "huella");
 
         var asOfFirst = source.AsOf(1);
         Assert.Equal(2, asOfFirst.Count);
@@ -111,6 +111,37 @@ public class LeagueForecastTests
     public void Each_category_has_its_usual_zones(CompetitionLevel level, int tier, int teams, int promotionUntil, int? relegationFrom)
     {
         var competition = Competition.Create("Liga", "Liga", level, tier, null, "Asturias", null);
-        Assert.Equal(new ForecastZones(promotionUntil, relegationFrom), LeagueZoneRules.For(competition, teams));
+        var zones = LeagueZoneRules.For(competition, teams);
+        Assert.Equal(Enumerable.Range(1, promotionUntil), zones.Promotion);
+        Assert.Equal(relegationFrom is { } from ? Enumerable.Range(from, teams - from + 1) : [], zones.Relegation);
+    }
+
+    [Fact]
+    public void The_published_places_are_used_and_the_permanence_playoff_is_not_relegation()
+    {
+        var season = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        SeasonZone Place(int position, string label) => SeasonZone.Create(season, new LeagueZoneData(position, label, "#cb010a"), now);
+        var published = new List<SeasonZone> { Place(1, "Ascenso directo") };
+        published.AddRange(Enumerable.Range(2, 4).Select(p => Place(p, "Promoción de ascenso")));
+        published.Add(Place(13, "Promoción por la permanencia"));
+        published.AddRange(Enumerable.Range(14, 5).Select(p => Place(p, "Descenso")));
+
+        var zones = LeagueZoneRules.From(published);
+        Assert.Equal([1, 2, 3, 4, 5], zones.Promotion);
+        Assert.Equal([14, 15, 16, 17, 18], zones.Relegation);
+    }
+
+    [Theory]
+    [InlineData("Campeón", LeagueZoneKind.Champion)]
+    [InlineData("Ascenso directo", LeagueZoneKind.DirectPromotion)]
+    [InlineData("Promoción de ascenso", LeagueZoneKind.PromotionPlayoff)]
+    [InlineData("Promoción por la permanencia", LeagueZoneKind.RelegationPlayoff)]
+    [InlineData("Promoción de descenso", LeagueZoneKind.RelegationPlayoff)]
+    [InlineData("DESCENSO", LeagueZoneKind.Relegation)]
+    [InlineData("Copa del Rey", LeagueZoneKind.Other)]
+    public void Each_legend_says_what_is_at_stake(string label, LeagueZoneKind kind)
+    {
+        Assert.Equal(kind, SeasonZone.Classify(label));
     }
 }

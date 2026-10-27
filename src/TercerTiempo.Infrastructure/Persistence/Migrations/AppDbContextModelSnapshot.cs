@@ -1951,6 +1951,37 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("SeasonYears", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Competitions.SeasonZone", b =>
+                {
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Color")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("nvarchar(7)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("SeasonId", "Position");
+
+                    b.ToTable("SeasonZones", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.ClubLicense", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6667,6 +6698,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Navigation("ExternalRef");
 
                     b.Navigation("OfficialRef");
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Competitions.SeasonZone", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.ClubLicense", b =>

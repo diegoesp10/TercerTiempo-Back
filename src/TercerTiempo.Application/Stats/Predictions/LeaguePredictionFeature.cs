@@ -12,11 +12,15 @@ using TercerTiempo.Domain.Teams;
 namespace TercerTiempo.Application.Stats.Predictions;
 
 public sealed record LeagueZonesDto(
-    [property: Description("Último puesto con ascenso o promoción (1 = solo el campeón).")]
-    int PromotionUntil,
-    [property: Description("Primer puesto de descenso; null si es la última categoría.")]
-    int? RelegationFrom,
-    int Teams);
+    [property: Description("Puestos que cuentan como ascenso o promoción.")]
+    IReadOnlyList<int> Promotion,
+    [property: Description("Puestos de descenso; vacío si la liga no tiene.")]
+    IReadOnlyList<int> Relegation,
+    int Teams,
+    [property: Description("true si son las plazas que publica la web de la liga; false si son unas aproximadas por categoría.")]
+    bool Published,
+    [property: Description("Los puestos destacados con su nombre y color, tal como los publica la web (vacío si no los publica).")]
+    IReadOnlyList<LeagueZoneDto> Places);
 
 public sealed record TeamPredictionDto(
     Guid TeamId,
@@ -89,6 +93,7 @@ internal sealed record ForecastSource(
     IReadOnlyDictionary<Guid, Team> Teams,
     IReadOnlyList<int> PlayedMatchdays,
     ForecastZones Zones,
+    IReadOnlyList<SeasonZone> Places,
     string Fingerprint)
 {
     public int TotalMatchdays => Matches.Count == 0 ? 0 : Matches.Max(m => m.Matchday);
@@ -105,10 +110,11 @@ internal sealed record ForecastSource(
 
     public int Seed(int matchday) => BitConverter.ToInt32(Season.Id.ToByteArray(), 0) ^ (matchday * 7919);
 
-    public LeagueZonesDto ZonesDto => new(Zones.PromotionUntil, Zones.RelegationFrom, TeamIds.Count);
+    public LeagueZonesDto ZonesDto => new(Zones.Promotion, Zones.Relegation, TeamIds.Count, Places.Count > 0, Places.Select(LeagueZoneDto.From).ToList());
 }
 
-internal sealed class ForecastSources(ICompetitionStore competitions, IMatchStore matches, ITeamStore teams, ISeasonContext seasons)
+internal sealed class ForecastSources(
+    ICompetitionStore competitions, IMatchStore matches, ITeamStore teams, ISeasonZoneStore zones, ISeasonContext seasons)
 {
     public async Task<ForecastSource?> LoadAsync(Guid competitionId, CancellationToken cancellationToken)
     {
@@ -122,7 +128,13 @@ internal sealed class ForecastSources(ICompetitionStore competitions, IMatchStor
         var teamMap = (await teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
         var playedMatchdays = list.Where(m => m.Status == MatchStatus.Played && m.Score is not null).Select(m => m.Matchday).Distinct().Order().ToList();
 
+        var places = await zones.GetBySeasonAsync(season.Id, cancellationToken);
         var hash = new HashCode();
+        foreach (var place in places)
+        {
+            hash.Add(place.Position);
+            hash.Add(place.Kind);
+        }
         foreach (var m in list)
         {
             hash.Add(m.Id);
@@ -132,9 +144,9 @@ internal sealed class ForecastSources(ICompetitionStore competitions, IMatchStor
             hash.Add(m.Score?.Away);
         }
 
+        var forecastZones = places.Count > 0 ? LeagueZoneRules.From(places) : LeagueZoneRules.For(competition, teamIds.Count);
         return new ForecastSource(
-            competition, season, list, teamIds, teamMap, playedMatchdays, LeagueZoneRules.For(competition, teamIds.Count),
-            $"{season.Id:N}:{hash.ToHashCode()}");
+            competition, season, list, teamIds, teamMap, playedMatchdays, forecastZones, places, $"{season.Id:N}:{hash.ToHashCode()}");
     }
 }
 

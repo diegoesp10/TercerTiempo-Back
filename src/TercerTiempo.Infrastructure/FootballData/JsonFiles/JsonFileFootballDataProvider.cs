@@ -46,6 +46,9 @@ internal sealed class JsonFileFootballDataProvider(IOptions<FootballDataOptions>
     }
 
     // Los datos de prueba no traen equipo arbitral.
+    public Task<IReadOnlyList<TercerTiempo.Domain.Competitions.LeagueZoneData>?> GetLeagueZonesAsync(string competitionExternalId, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Competitions.LeagueZoneData>?>([]);
+
     public Task<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?>([]);
 }

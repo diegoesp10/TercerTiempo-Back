@@ -19,6 +19,7 @@ internal sealed class GetLeagueTableHandler(
     ICompetitionStore competitions,
     IStandingStore standings,
     ITeamStore teams,
+    ISeasonZoneStore zones,
     Seasons.ISeasonContext seasons,
     TimeProvider clock) : IQueryHandler<GetLeagueTableQuery, LeagueTableDto>
 {
@@ -39,7 +40,8 @@ internal sealed class GetLeagueTableHandler(
             .Select(s => StandingDto.From(s, teamMap.GetValueOrDefault(s.TeamId)))
             .ToList();
 
-        return new LeagueTableDto(SeasonDto.From(competition, season), rows, null);
+        var places = (await zones.GetBySeasonAsync(season.Id, cancellationToken)).Select(LeagueZoneDto.From).ToList();
+        return new LeagueTableDto(SeasonDto.From(competition, season), rows, null, places);
     }
 
     private async Task<(Competition, Season?)> ResolveAsync(Guid? competitionId, CancellationToken cancellationToken)

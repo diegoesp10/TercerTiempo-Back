@@ -191,12 +191,7 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         var season = await ResolveSeasonAsync(cancellationToken);
         var leagueId = int.Parse(competitionExternalId, CultureInfo.InvariantCulture);
 
-        _tables ??= (await GetPagedAsync("sportspress/v2/sp_table?_fields=id,title,modified,sp_league,sp_season,data", cancellationToken)).Items;
-
-        var table = _tables
-            .Where(t => Json.GetIntArray(t, "sp_league").Contains(leagueId) && Json.GetIntArray(t, "sp_season").Contains(season.Id))
-            .OrderByDescending(t => Json.GetString(t, "modified"))
-            .FirstOrDefault();
+        var table = await TableAsync(leagueId, season.Id, cancellationToken);
 
         if (table.ValueKind != JsonValueKind.Object || !table.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
         {
@@ -229,6 +224,43 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         }
 
         return rows.OrderBy(r => r.Position).ToList();
+    }
+
+    // La tabla de la liga en la temporada (la más reciente si hay varias).
+    private async Task<JsonElement> TableAsync(int leagueId, int seasonId, CancellationToken cancellationToken)
+    {
+        _tables ??= (await GetPagedAsync("sportspress/v2/sp_table?_fields=id,title,modified,link,sp_league,sp_season,data", cancellationToken)).Items;
+        return _tables
+            .Where(t => Json.GetIntArray(t, "sp_league").Contains(leagueId) && Json.GetIntArray(t, "sp_season").Contains(seasonId))
+            .OrderByDescending(t => Json.GetString(t, "modified"))
+            .FirstOrDefault();
+    }
+
+    public async Task<IReadOnlyList<LeagueZoneData>?> GetLeagueZonesAsync(string competitionExternalId, CancellationToken cancellationToken)
+    {
+        if (!int.TryParse(competitionExternalId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var leagueId)) return [];
+        try
+        {
+            var season = await ResolveSeasonAsync(cancellationToken);
+            var table = await TableAsync(leagueId, season.Id, cancellationToken);
+            if (table.ValueKind != JsonValueKind.Object || Json.GetInt(table, "id") is not { } tableId
+                || !Uri.TryCreate(Json.GetString(table, "link"), UriKind.Absolute, out var link))
+                return [];
+
+            using var response = await SendAsync(link.PathAndQuery, "text/html", allowNotFound: true, cancellationToken);
+            if (response is null) return [];
+            return LeagueTablePage.ParseZones(await response.Content.ReadAsStringAsync(cancellationToken), tableId);
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "futbolasturiano.es: no se pudieron leer las plazas de la liga {League}", competitionExternalId);
+            return null;
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("futbolasturiano.es: timeout leyendo las plazas de la liga {League}", competitionExternalId);
+            return null;
+        }
     }
 
     public async Task<IReadOnlyList<RosterEntrySnapshot>> GetRosterAsync(string teamExternalId, CancellationToken cancellationToken)

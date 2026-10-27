@@ -6,9 +6,13 @@ namespace TercerTiempo.Application.Stats.Predictions;
 // Un partido de la temporada para el previsor: con resultado si ya contaba en la jornada elegida; sin él, se simula.
 internal sealed record ForecastMatch(Guid HomeTeamId, Guid AwayTeamId, int? HomeGoals, int? AwayGoals);
 
-// Puestos que cuentan en la clasificación final: hasta PromotionUntil, ascenso o promoción; desde RelegationFrom, descenso
-// (null si es la última categoría).
-internal sealed record ForecastZones(int PromotionUntil, int? RelegationFrom);
+// Puestos de la clasificación final que cuentan como ascenso o promoción y como descenso (vacío si la liga no tiene).
+internal sealed record ForecastZones(IReadOnlyList<int> Promotion, IReadOnlyList<int> Relegation)
+{
+    public static ForecastZones Range(int promotionUntil, int? relegationFrom, int teams) => new(
+        Enumerable.Range(1, Math.Max(0, promotionUntil)).ToList(),
+        relegationFrom is { } from ? Enumerable.Range(from, Math.Max(0, teams - from + 1)).ToList() : []);
+}
 
 internal sealed record TeamForecast(
     Guid TeamId,
@@ -131,10 +135,10 @@ internal static class LeagueForecaster
         var position = new int[n];
         for (var p = 0; p < n; p++) position[table[p]] = p + 1;
 
-        double Share(int team, int from, int to)
+        double Share(int team, IEnumerable<int> places)
         {
             long count = 0;
-            for (var p = Math.Max(from, 0); p <= Math.Min(to, n - 1); p++) count += finish[team, p];
+            foreach (var place in places.Where(p => p >= 1 && p <= n)) count += finish[team, place - 1];
             return Math.Round(count / (double)simulations, 4);
         }
 
@@ -145,7 +149,7 @@ internal static class LeagueForecaster
                 var expectedPosition = Enumerable.Range(0, n).Sum(p => (p + 1) * finish[i, p] / (double)simulations);
                 return new TeamForecast(
                     teams[i], position[i], points[i], games[i], goalsFor[i], goalsAgainst[i],
-                    Share(i, 0, 0), Share(i, 0, zones.PromotionUntil - 1), zones.RelegationFrom is { } from ? Share(i, from - 1, n - 1) : 0,
+                    Share(i, [1]), Share(i, zones.Promotion), Share(i, zones.Relegation),
                     Math.Round(pointsSum[i] / (double)simulations, 1), Math.Round(expectedPosition, 2), odds,
                     Math.Round(attack[i], 3), Math.Round(defense[i], 3));
             })
@@ -219,8 +223,8 @@ internal static class LeagueForecaster
     }
 }
 
-// Plazas de la clasificación final que mira el previsor, las habituales de cada categoría (pueden cambiar con los arrastres
-// de las categorías superiores): ascenso directo o promoción y descenso.
+// Plazas de la clasificación final que mira el previsor: las que publica la web de la liga (SeasonZone) o, si no las hay, unas
+// aproximadas por categoría.
 internal static class LeagueZoneRules
 {
     public static ForecastZones For(Competition competition, int teams)
@@ -237,8 +241,14 @@ internal static class LeagueZoneRules
         };
         relegated = Math.Min(relegated, Math.Max(0, teams / 4));
         promotion = Math.Clamp(promotion, 1, Math.Max(1, teams - relegated - 1));
-        return new ForecastZones(promotion, relegated > 0 ? teams - relegated + 1 : null);
+        return ForecastZones.Range(promotion, relegated > 0 ? teams - relegated + 1 : null, teams);
     }
+
+    // Las plazas que publica la web de la liga: ascenso o promoción (también el campeón) y descenso; la promoción por la
+    // permanencia no cuenta como descenso.
+    public static ForecastZones From(IReadOnlyList<SeasonZone> published) => new(
+        published.Where(z => SeasonZone.IsPromotion(z.Kind)).Select(z => z.Position).Order().ToList(),
+        published.Where(z => z.Kind == LeagueZoneKind.Relegation).Select(z => z.Position).Order().ToList());
 }
 
 // Las simulaciones son caras y no cambian mientras no cambien los partidos: se guardan por temporada, jornada y huella de
