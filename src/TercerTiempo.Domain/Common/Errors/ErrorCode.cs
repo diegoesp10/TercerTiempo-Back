@@ -202,6 +202,7 @@ public static class ErrorCode
     public const string LicenseClubRequired = "license.club_required";
     public const string AlertNotFound = "alert.not_found";
     public const string RefereeNotFound = "referee.not_found";
+    public const string RefereeCategoryNotFound = "referee.category_not_found";
     public const string RefereeRoleInvalid = "referee.role_invalid";
     public const string RefereeScoreRange = "referee.score_range";
     public const string RefereeRaterRequired = "referee.rater_required";

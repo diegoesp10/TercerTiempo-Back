@@ -43,13 +43,34 @@ public sealed record RefereeCategoryDto(
     [property: Description("Partidos de la categoría con equipo arbitral.")]
     int Matches,
     [property: Description("Notas puestas en partidos de la categoría.")]
-    int Ratings);
+    int Ratings,
+    [property: Description("Ligas (cada grupo) de la categoría, para reconocer la de un equipo por su competitionId.")]
+    IReadOnlyList<Guid> CompetitionIds);
 
-public sealed record RefereeCategoriesDto(
-    [property: Description("Categorías con equipos arbitrales, de la más alta a la más baja.")]
-    IReadOnlyList<RefereeCategoryDto> Categories,
-    [property: Description("Claves de las categorías de los equipos de la cuenta, para abrir la suya.")]
-    IReadOnlyList<string> Mine);
+// Por qué se ordena el listado de una categoría.
+public enum RefereeSort
+{
+    Average = 1,
+    Ratings = 2,
+    Matches = 3,
+    Name = 4,
+    LastMatch = 5,
+}
+
+public enum SortOrder
+{
+    Desc = 1,
+    Asc = 2,
+}
+
+public sealed record RefereeCategoryListDto(
+    RefereeCategoryDto Category,
+    [property: Description("Función filtrada (Main o Assistant); null si van las dos.")]
+    OfficialDuty? Duty,
+    RefereeSort Sort,
+    SortOrder Order,
+    [property: Description("Árbitros de la categoría: una fila por árbitro y función, en el orden pedido.")]
+    IReadOnlyList<RefereeSummaryDto> Referees);
 
 public sealed record RefereeSummaryDto(
     Guid Id,
@@ -165,10 +186,12 @@ public sealed record PendingRefereeRatingDto(
     [property: Description("Cuántos ha puntuado ya el equipo.")]
     int Rated);
 
-public sealed record ListRefereesQuery(string? Category = null, OfficialDuty? Duty = null, string? Search = null)
-    : IQuery<IReadOnlyList<RefereeSummaryDto>>;
+// Los árbitros se buscan siempre dentro de una categoría: la categoría manda en el listado.
+public sealed record ListRefereesQuery(
+    string Category, OfficialDuty? Duty = null, string? Search = null, RefereeSort? Sort = null, SortOrder? Order = null)
+    : IQuery<RefereeCategoryListDto>;
 
-public sealed record ListRefereeCategoriesQuery : IQuery<RefereeCategoriesDto>;
+public sealed record ListRefereeCategoriesQuery : IQuery<IReadOnlyList<RefereeCategoryDto>>;
 
 public sealed record GetRefereeQuery(Guid RefereeId) : IQuery<RefereeDetailDto>;
 
@@ -298,23 +321,16 @@ internal static class RefereeCategories
     public static IOrderedEnumerable<T> Ordered<T>(IEnumerable<T> items, Func<T, RefereeCategory> category) =>
         items.OrderBy(x => category(x).Level).ThenBy(x => category(x).Tier).ThenBy(x => category(x).Name, StringComparer.Ordinal);
 
-    // Las categorías de los equipos de la cuenta (las ligas en curso de su club o de sus plantillas vigentes), la más alta primero.
-    public static async Task<IReadOnlyList<string>> MineAsync(
-        ICurrentUser user, IClubStore clubs, ISquadStore squads, ICompetitionStore competitions, TimeProvider clock, CancellationToken cancellationToken)
+    public static RefereeCategoryDto ToDto(RefereeCategory category, IReadOnlyList<Appearance> items, IReadOnlyList<Guid> competitionIds)
     {
-        var found = new List<Competition>();
-        if (user.ClubId is { } clubId && await clubs.GetByIdAsync(clubId, cancellationToken) is { } club)
-        {
-            foreach (var team in club.Teams)
-                if (await competitions.GetByTeamAsync(team.TeamId, null, cancellationToken) is { } competition) found.Add(competition);
-        }
-        else if (user.CoachId is { } coachId)
-        {
-            foreach (var squad in await squads.GetByCoachAsync(coachId, SquadAccess.Today(clock), cancellationToken))
-                if (await competitions.GetBySeasonAsync(squad.SeasonId, cancellationToken) is { } competition) found.Add(competition);
-        }
-        return found.OrderBy(c => c.Level).ThenBy(c => c.Tier).Select(c => Key(c.Category)).Distinct().ToList();
+        int People(OfficialDuty duty) => items.Where(a => a.Duty == duty).Select(a => a.Official.RefereeId).Distinct().Count();
+        return new RefereeCategoryDto(
+            category.Key, category.Name, category.Level, category.Tier, People(OfficialDuty.Main), People(OfficialDuty.Assistant),
+            items.Select(a => a.Official.MatchId).Distinct().Count(), items.Sum(a => a.Ratings.Count), competitionIds);
     }
+
+    public static async Task<Dictionary<string, List<Guid>>> CompetitionIdsAsync(ICompetitionStore competitions, CancellationToken cancellationToken) =>
+        (await competitions.GetAllAsync(cancellationToken)).GroupBy(c => Key(c.Category)).ToDictionary(g => g.Key, g => g.Select(c => c.Id).ToList());
 }
 
 // Cada vez que un árbitro ha estado en un partido, con la categoría del partido y las notas que le pusieron en él: la base
@@ -486,65 +502,79 @@ internal sealed class RateRefereeHandler(
 }
 
 internal sealed class ListRefereesHandler(IRefereeStore referees, IMatchStore matches, ICompetitionStore competitions)
-    : IQueryHandler<ListRefereesQuery, IReadOnlyList<RefereeSummaryDto>>
+    : IQueryHandler<ListRefereesQuery, RefereeCategoryListDto>
 {
-    public async Task<IReadOnlyList<RefereeSummaryDto>> Handle(ListRefereesQuery query, CancellationToken cancellationToken)
+    public async Task<RefereeCategoryListDto> Handle(ListRefereesQuery query, CancellationToken cancellationToken)
     {
+        var key = RefereeCategories.Key(query.Category ?? string.Empty);
         var search = NameNormalizer.Normalize(query.Search);
-        var category = string.IsNullOrWhiteSpace(query.Category) ? null : RefereeCategories.Key(query.Category);
-        var people = (await referees.GetAllAsync(cancellationToken))
-            .Where(r => search.Length == 0 || r.NormalizedName.Contains(search, StringComparison.Ordinal))
-            .ToDictionary(r => r.Id);
-        var officials = (await referees.GetAllOfficialsAsync(cancellationToken))
-            .Where(o => people.ContainsKey(o.RefereeId) && (query.Duty is null || o.Role.Duty() == query.Duty))
+        var people = (await referees.GetAllAsync(cancellationToken)).ToDictionary(r => r.Id);
+        var inCategory = (await Appearances.LoadAsync(
+                await referees.GetAllOfficialsAsync(cancellationToken), await referees.GetAllRatingsAsync(cancellationToken), matches, competitions, cancellationToken))
+            .Where(a => a.Category?.Key == key)
             .ToList();
-        var appearances = await Appearances.LoadAsync(officials, await referees.GetAllRatingsAsync(cancellationToken), matches, competitions, cancellationToken);
+        if (inCategory.Count == 0) throw new NotFoundException(ErrorCode.RefereeCategoryNotFound, query.Category ?? string.Empty);
 
-        return appearances
-            .Where(a => a.Category is not null && (category is null || a.Category.Key == category))
-            .GroupBy(a => (a.Official.RefereeId, a.Category!.Key, a.Duty))
+        var category = RefereeCategories.ToDto(
+            inCategory[0].Category!, inCategory, (await RefereeCategories.CompetitionIdsAsync(competitions, cancellationToken)).GetValueOrDefault(key) ?? []);
+        var rows = inCategory
+            .Where(a => (query.Duty is null || a.Duty == query.Duty) && people.ContainsKey(a.Official.RefereeId))
+            .Where(a => search.Length == 0 || people[a.Official.RefereeId].NormalizedName.Contains(search, StringComparison.Ordinal))
+            .GroupBy(a => (a.Official.RefereeId, a.Duty))
             .Select(g =>
             {
-                var where = g.First().Category!;
                 var notes = g.SelectMany(a => a.Ratings).ToList();
                 return new RefereeSummaryDto(
-                    g.Key.RefereeId, people[g.Key.RefereeId].Name, where.Key, where.Name, g.Key.Duty,
+                    g.Key.RefereeId, people[g.Key.RefereeId].Name, category.Key, category.Name, g.Key.Duty,
                     g.Select(a => a.Official.MatchId).Distinct().Count(), notes.Count, RefereeAccess.Average(notes), g.Max(a => a.Match?.KickoffAt));
-            })
-            .OrderByDescending(r => r.Average.HasValue)
-            .ThenByDescending(r => r.Average)
-            .ThenByDescending(r => r.Ratings)
-            .ThenByDescending(r => r.Matches)
-            .ThenBy(r => r.Name)
-            .ToList();
+            });
+
+        var sort = query.Sort ?? RefereeSort.Average;
+        var order = query.Order ?? (sort == RefereeSort.Name ? SortOrder.Asc : SortOrder.Desc);
+        return new RefereeCategoryListDto(category, query.Duty, sort, order, RefereeSorting.Apply(rows, sort, order));
     }
 }
 
-internal sealed class ListRefereeCategoriesHandler(
-    ICurrentUser currentUser,
-    IRefereeStore referees,
-    IMatchStore matches,
-    ICompetitionStore competitions,
-    IClubStore clubs,
-    ISquadStore squads,
-    TimeProvider clock) : IQueryHandler<ListRefereeCategoriesQuery, RefereeCategoriesDto>
+// Orden del listado de una categoría. Por nota, los que aún no tienen ninguna van siempre al final; los empates se
+// deshacen por notas, partidos y nombre.
+internal static class RefereeSorting
 {
-    public async Task<RefereeCategoriesDto> Handle(ListRefereeCategoriesQuery query, CancellationToken cancellationToken)
+    private static readonly StringComparer Names = StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("es-ES"), ignoreCase: true);
+
+    public static IReadOnlyList<RefereeSummaryDto> Apply(IEnumerable<RefereeSummaryDto> rows, RefereeSort sort, SortOrder order)
+    {
+        var desc = order == SortOrder.Desc;
+        IOrderedEnumerable<RefereeSummaryDto> sorted = sort switch
+        {
+            RefereeSort.Ratings => By(rows, r => r.Ratings, desc).ThenByDescending(r => r.Average ?? -1),
+            RefereeSort.Matches => By(rows, r => r.Matches, desc).ThenByDescending(r => r.Average ?? -1),
+            RefereeSort.Name => desc ? rows.OrderByDescending(r => r.Name, Names) : rows.OrderBy(r => r.Name, Names),
+            RefereeSort.LastMatch => By(rows.OrderByDescending(r => r.LastMatchAt.HasValue), r => r.LastMatchAt, desc),
+            _ => By(rows.OrderByDescending(r => r.Average.HasValue), r => r.Average, desc),
+        };
+        return sorted.ThenByDescending(r => r.Ratings).ThenByDescending(r => r.Matches).ThenBy(r => r.Name, Names).ToList();
+    }
+
+    private static IOrderedEnumerable<T> By<T, TKey>(IEnumerable<T> items, Func<T, TKey> key, bool desc) =>
+        desc ? items.OrderByDescending(key) : items.OrderBy(key);
+
+    private static IOrderedEnumerable<T> By<T, TKey>(IOrderedEnumerable<T> items, Func<T, TKey> key, bool desc) =>
+        desc ? items.ThenByDescending(key) : items.ThenBy(key);
+}
+
+internal sealed class ListRefereeCategoriesHandler(IRefereeStore referees, IMatchStore matches, ICompetitionStore competitions)
+    : IQueryHandler<ListRefereeCategoriesQuery, IReadOnlyList<RefereeCategoryDto>>
+{
+    public async Task<IReadOnlyList<RefereeCategoryDto>> Handle(ListRefereeCategoriesQuery query, CancellationToken cancellationToken)
     {
         var appearances = await Appearances.LoadAsync(
             await referees.GetAllOfficialsAsync(cancellationToken), await referees.GetAllRatingsAsync(cancellationToken), matches, competitions, cancellationToken);
+        var competitionIds = await RefereeCategories.CompetitionIdsAsync(competitions, cancellationToken);
 
         var groups = appearances.Where(a => a.Category is not null).GroupBy(a => a.Category!.Key).Select(g => (Category: g.First().Category!, Items: g.ToList()));
-        var categories = RefereeCategories.Ordered(groups, g => g.Category)
-            .Select(g =>
-            {
-                int People(OfficialDuty duty) => g.Items.Where(a => a.Duty == duty).Select(a => a.Official.RefereeId).Distinct().Count();
-                return new RefereeCategoryDto(
-                    g.Category.Key, g.Category.Name, g.Category.Level, g.Category.Tier, People(OfficialDuty.Main), People(OfficialDuty.Assistant),
-                    g.Items.Select(a => a.Official.MatchId).Distinct().Count(), g.Items.Sum(a => a.Ratings.Count));
-            })
+        return RefereeCategories.Ordered(groups, g => g.Category)
+            .Select(g => RefereeCategories.ToDto(g.Category, g.Items, competitionIds.GetValueOrDefault(g.Category.Key) ?? []))
             .ToList();
-        return new RefereeCategoriesDto(categories, await RefereeCategories.MineAsync(currentUser, clubs, squads, competitions, clock, cancellationToken));
     }
 }
 

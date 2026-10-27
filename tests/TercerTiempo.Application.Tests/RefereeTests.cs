@@ -209,32 +209,34 @@ public class RefereeTests
         var competitions = Stub<ICompetitionStore>((method, _) => method == nameof(ICompetitionStore.GetAllAsync)
             ? Task.FromResult<IReadOnlyList<Competition>>([third, thirdTwo, second])
             : Task.FromResult<Competition?>(third));
-        var club = Club.Register(Guid.NewGuid(), "CD Vallobín", Now);
-        club.AddTeam(games[0].HomeTeamId, Now);
-        var user = new User(ClubId: club.Id);
-
         Assert.Equal("3a-asturfutbol", RefereeCategories.Key("3ª AsturFútbol"));
         var list = new ListRefereesHandler(store, matches, competitions);
 
         var thirdMain = await list.Handle(new ListRefereesQuery("3a-asturfutbol", OfficialDuty.Main), default);
-        var main = Assert.Single(thirdMain);
+        var main = Assert.Single(thirdMain.Referees);
         Assert.Equal((sara.Id, "3ª AsturFútbol", 2, 1, 8.0), (main.Id, main.Category, main.Matches, main.Ratings, main.Average));
+        Assert.Equal((2, 1, 1, 2), (thirdMain.Category.CompetitionIds.Count, thirdMain.Category.Referees, thirdMain.Category.Assistants, thirdMain.Category.Matches));
 
         var thirdAll = await list.Handle(new ListRefereesQuery("3ª AsturFútbol"), default);
-        Assert.Equal([(sara.Id, OfficialDuty.Main), (pepe.Id, OfficialDuty.Assistant)], thirdAll.Select(r => (r.Id, r.Duty)));
+        Assert.Equal([(sara.Id, OfficialDuty.Main), (pepe.Id, OfficialDuty.Assistant)], thirdAll.Referees.Select(r => (r.Id, r.Duty)));
+        var worstFirst = await list.Handle(new ListRefereesQuery("3a-asturfutbol", Sort: RefereeSort.Average, Order: SortOrder.Asc), default);
+        Assert.Equal([sara.Id, pepe.Id], worstFirst.Referees.Select(r => r.Id));
+        var byName = await list.Handle(new ListRefereesQuery("3a-asturfutbol", Sort: RefereeSort.Name), default);
+        Assert.Equal((SortOrder.Asc, pepe.Id), (byName.Order, byName.Referees[0].Id));
 
-        var asAssistant = Assert.Single(await list.Handle(new ListRefereesQuery("2a-asturfutbol", OfficialDuty.Assistant), default));
+        var asAssistant = Assert.Single((await list.Handle(new ListRefereesQuery("2a-asturfutbol", OfficialDuty.Assistant), default)).Referees);
         Assert.Equal((sara.Id, 1, 4.0), (asAssistant.Id, asAssistant.Ratings, asAssistant.Average));
-        Assert.Equal(2, (await list.Handle(new ListRefereesQuery(Search: "ovies"), default)).Count);
+        Assert.Empty((await list.Handle(new ListRefereesQuery("2a-asturfutbol", Search: "pepe"), default)).Referees);
+        Assert.Single((await list.Handle(new ListRefereesQuery("3a-asturfutbol", Search: "PEREZ"), default)).Referees);
 
-        var categories = await new ListRefereeCategoriesHandler(
-            user, store, matches, competitions,
-            Stub<IClubStore>((_, _) => Task.FromResult<Club?>(club)), Stub<ISquadStore>((_, _) => Task.FromResult<Squad?>(null)), new FixedClock(Now))
-            .Handle(new ListRefereeCategoriesQuery(), default);
-        Assert.Equal(["2a-asturfutbol", "3a-asturfutbol"], categories.Categories.Select(c => c.Key));
-        var thirdCategory = categories.Categories[1];
+        var unknown = await Assert.ThrowsAsync<NotFoundException>(() => list.Handle(new ListRefereesQuery("juveniles"), default));
+        Assert.Equal(ErrorCode.RefereeCategoryNotFound, unknown.Code);
+
+        var categories = await new ListRefereeCategoriesHandler(store, matches, competitions).Handle(new ListRefereeCategoriesQuery(), default);
+        Assert.Equal(["2a-asturfutbol", "3a-asturfutbol"], categories.Select(c => c.Key));
+        var thirdCategory = categories[1];
         Assert.Equal((1, 1, 2, 1), (thirdCategory.Referees, thirdCategory.Assistants, thirdCategory.Matches, thirdCategory.Ratings));
-        Assert.Equal(["3a-asturfutbol"], categories.Mine);
+        Assert.Equal([third.Id, thirdTwo.Id], thirdCategory.CompetitionIds);
     }
 
     private static string Page(string name)

@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Referees;
 using TercerTiempo.Domain.Referees;
 using TercerTiempo.Repository.Referees;
 
@@ -10,16 +11,20 @@ internal static class RefereeEndpoints
         // Los árbitros y sus notas son públicos, como la liga y los equipos; puntuar es de los clubes y sus cuerpos técnicos.
         var group = app.MapGroup("/api/referees").WithTags("Árbitros");
 
-        group.MapGet("/", (string? category, OfficialDuty? duty, string? search, IRefereesRepository referees, CancellationToken ct) =>
-                referees.ListAsync(category, duty, search, ct))
-            .WithName("ListReferees")
-            .WithSummary("Árbitros de una categoría y su nota media")
-            .WithDescription("Árbitros de los partidos guardados (de las actas de la federación y de futbolasturiano.es) con sus cifras en cada categoría y función: una fila por árbitro, categoría y función (Main: principal; Assistant: asistente o cuarto árbitro), con los partidos, cuántas notas tiene y su media (0-10), de mejor a peor. category (la clave de GET /api/referees/categories) y duty filtran; search busca por nombre. Público.");
-
         group.MapGet("/categories", (IRefereesRepository referees, CancellationToken ct) => referees.GetCategoriesAsync(ct))
+            .AllowAnonymous()
             .WithName("ListRefereeCategories")
             .WithSummary("Categorías con árbitros")
-            .WithDescription("Categorías de los partidos con equipo arbitral, de la más alta a la más baja, con cuántos árbitros principales, asistentes, partidos y notas tiene cada una, y las de los equipos de la cuenta (si hay sesión) para abrir la suya. Público.");
+            .WithDescription("Primer paso para buscar árbitros: las categorías de los partidos con equipo arbitral (sus grupos van juntos), de la más alta a la más baja, con cuántos árbitros principales, asistentes, partidos y notas tiene cada una y sus ligas (competitionIds). Pública: sin token, con el de una cuenta o con el de administrador da lo mismo.");
+
+        group.MapGet("/categories/{category}", (
+                string category, OfficialDuty? duty, string? search, RefereeSort? sort, SortOrder? order, IRefereesRepository referees, CancellationToken ct) =>
+                referees.ListAsync(category, duty, search, sort, order, ct))
+            .AllowAnonymous()
+            .WithName("ListReferees")
+            .WithSummary("Árbitros de una categoría")
+            .WithDescription("Los árbitros se buscan siempre dentro de una categoría (su clave, de GET /api/referees/categories, p. ej. 3a-asturfutbol). Una fila por árbitro y función con sus partidos pitados, cuántas notas tiene y su media (0-10) en la categoría. duty: Main (principal) o Assistant (asistente o cuarto árbitro); sin él, las dos. search busca por nombre sin distinguir tildes. sort: Average (por defecto), Ratings, Matches, Name o LastMatch; order: Desc o Asc (por defecto Desc, y Asc por nombre). Pública, sin token.")
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapGet("/pending", (IRefereesRepository referees, CancellationToken ct) => referees.GetPendingAsync(ct))
             .RequireAuthorization()
@@ -29,6 +34,7 @@ internal static class RefereeEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
         group.MapGet("/{refereeId:guid}", (Guid refereeId, IRefereesRepository referees, CancellationToken ct) => referees.GetAsync(refereeId, ct))
+            .AllowAnonymous()
             .WithName("GetReferee")
             .WithSummary("Ficha de un árbitro")
             .WithDescription("Sus estadísticas (partidos, notas, media y reparto de 0 a 10), por categoría y función, las mejores notas con comentario, todas sus notas con el equipo y quién las puso, y sus partidos con la nota de cada uno de los dos equipos. Público.")
@@ -37,6 +43,7 @@ internal static class RefereeEndpoints
         var matches = app.MapGroup("/api/matches/{matchId:guid}/officials").WithTags("Árbitros");
 
         matches.MapGet("/", (Guid matchId, IRefereesRepository referees, CancellationToken ct) => referees.GetMatchOfficialsAsync(matchId, ct))
+            .AllowAnonymous()
             .WithName("GetMatchOfficials")
             .WithSummary("Equipo arbitral de un partido")
             .WithDescription("Árbitro, asistentes y cuarto árbitro con su nota media y las notas de los dos equipos en este partido, con quién las puso y por qué. Público; si la cuenta es del club o del cuerpo técnico de uno de los dos equipos, dice además si puede puntuar (partido jugado y licencia vigente).")

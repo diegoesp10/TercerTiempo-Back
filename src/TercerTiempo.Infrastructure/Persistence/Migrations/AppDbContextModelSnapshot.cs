@@ -1504,6 +1504,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "referee.category_not_found",
+                            Language = "es",
+                            Message = "No hay árbitros en la categoría '{0}': elige una de GET /api/referees/categories."
+                        },
+                        new
+                        {
                             Code = "referee.role_invalid",
                             Language = "es",
                             Message = "Función del equipo arbitral no válida."

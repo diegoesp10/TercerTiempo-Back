@@ -194,6 +194,7 @@ public static class ErrorCatalog
         (ErrorCode.LicenseClubRequired, "Las licencias de técnico se añaden una vez contratada la licencia de club."),
         (ErrorCode.AlertNotFound, "El aviso '{0}' no existe o no es de tu club."),
         (ErrorCode.RefereeNotFound, "El árbitro '{0}' no existe."),
+        (ErrorCode.RefereeCategoryNotFound, "No hay árbitros en la categoría '{0}': elige una de GET /api/referees/categories."),
         (ErrorCode.RefereeRoleInvalid, "Función del equipo arbitral no válida."),
         (ErrorCode.RefereeScoreRange, "La nota va de 0 a {0}."),
         (ErrorCode.RefereeRaterRequired, "La nota la pone el club o un técnico del equipo."),
