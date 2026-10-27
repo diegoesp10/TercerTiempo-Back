@@ -13,6 +13,18 @@ public enum OfficialRole
     FourthOfficial = 4,
 }
 
+// Lo que se compara entre árbitros: dirigir el partido (principal) o ayudar desde fuera (asistentes y cuarto árbitro).
+public enum OfficialDuty
+{
+    Main = 1,
+    Assistant = 2,
+}
+
+public static class OfficialRoles
+{
+    public static OfficialDuty Duty(this OfficialRole role) => role == OfficialRole.Referee ? OfficialDuty.Main : OfficialDuty.Assistant;
+}
+
 // Árbitro, asistente o cuarto árbitro. Es una entidad de referencia: sale de las actas de la federación («Apellidos,
 // Nombre») y de futbolasturiano.es («Nombre Apellidos», con su slug de /official/), y se identifica por el nombre
 // normalizado en el orden natural para que las dos fuentes den la misma persona.

@@ -25,7 +25,8 @@ public sealed record CorpusTeam(Guid Id, string Name, string ShortName, string? 
 
 public sealed record CorpusClub(Guid Id, string Name, IReadOnlyList<Guid> TeamIds);
 
-public sealed record CorpusReferee(Guid Id, string Name, int Matches);
+// Category y Assistant: la categoría y la función en que más ha pitado.
+public sealed record CorpusReferee(Guid Id, string Name, int Matches, string? Category = null, bool Assistant = false);
 
 public sealed record CorpusPlayer(Guid EntryId, Guid TeamId, string FullName, Position? Position, int? ShirtNumber, string? PhotoUrl);
 

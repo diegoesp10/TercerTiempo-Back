@@ -78,12 +78,23 @@ internal sealed class SearchCorpusSource(AppDbContext db) : ISearchCorpusSource
                     p.PlayerId is { } playerId ? accountPhotos.GetValueOrDefault(playerId) : null))
                 .ToList())).ToList();
 
-        var refereeMatches = await db.Set<MatchOfficial>().AsNoTracking()
-            .GroupBy(o => o.RefereeId)
-            .Select(g => new { g.Key, Matches = g.Select(o => o.MatchId).Distinct().Count() })
-            .ToDictionaryAsync(x => x.Key, x => x.Matches, cancellationToken);
+        // Dónde pita cada árbitro: la categoría y la función en que más partidos tiene, para reconocerlo en los resultados.
+        var categoryBySeason = competitions.SelectMany(c => c.Seasons.Select(s => (s.Id, c.Category))).ToDictionary(x => x.Id, x => x.Category);
+        var appearances = await (
+                from o in db.Set<MatchOfficial>().AsNoTracking()
+                join m in db.Matches on o.MatchId equals m.Id
+                select new { o.RefereeId, o.MatchId, o.Role, m.SeasonId })
+            .ToListAsync(cancellationToken);
+        var refereeStats = appearances.GroupBy(a => a.RefereeId).ToDictionary(g => g.Key, g =>
+        {
+            var usual = g.GroupBy(a => (Category: categoryBySeason.GetValueOrDefault(a.SeasonId), Duty: a.Role.Duty()))
+                .OrderByDescending(x => x.Count()).ThenBy(x => x.Key.Duty).First().Key;
+            return (Matches: g.Select(a => a.MatchId).Distinct().Count(), usual.Category, Assistant: usual.Duty == OfficialDuty.Assistant);
+        });
         var corpusReferees = (await db.Set<Referee>().AsNoTracking().ToListAsync(cancellationToken))
-            .Select(r => new CorpusReferee(r.Id, r.Name, refereeMatches.GetValueOrDefault(r.Id)))
+            .Select(r => refereeStats.TryGetValue(r.Id, out var stats)
+                ? new CorpusReferee(r.Id, r.Name, stats.Matches, stats.Category, stats.Assistant)
+                : new CorpusReferee(r.Id, r.Name, 0))
             .ToList();
 
         return new SearchCorpus(corpusCompetitions, corpusTeams, corpusClubs, corpusPlayers, corpusMatches, corpusSquads, corpusReferees);

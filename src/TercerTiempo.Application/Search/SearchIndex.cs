@@ -155,7 +155,7 @@ internal sealed class SearchIndex
             docs.Add(new SearchDoc
             {
                 Type = SearchTypes.Referee, Id = r.Id, Title = r.Name, NormalizedTitle = SearchText.Normalize(r.Name),
-                Subtitle = r.Matches == 1 ? "Árbitro · 1 partido" : $"Árbitro · {r.Matches} partidos",
+                Subtitle = string.Join(" · ", new[] { r.Assistant ? "Asistente" : "Árbitro", r.Category, r.Matches == 1 ? "1 partido" : $"{r.Matches} partidos" }.OfType<string>()),
                 Link = $"/arbitros/{r.Id}", ImageKind = "referee", Prior = 0.6,
                 Fields = [SearchText.Tokens(r.Name), [], []],
             });
