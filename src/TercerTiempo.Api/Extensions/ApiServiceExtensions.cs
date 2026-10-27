@@ -66,6 +66,16 @@ public static class ApiServiceExtensions
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromMinutes(1),
                 };
+                options.Events = new JwtBearerEvents
+                {
+                    // Un token de antes del último cambio de contraseña (otra huella de sesión) ya no vale.
+                    OnTokenValidated = async context =>
+                    {
+                        var sessions = context.HttpContext.RequestServices.GetRequiredService<SessionStamps>();
+                        if (!await sessions.IsCurrentAsync(context.Principal, context.HttpContext.RequestAborted))
+                            context.Fail("La sesión ya no es válida.");
+                    },
+                };
             });
 
         services.AddAuthorization(options =>

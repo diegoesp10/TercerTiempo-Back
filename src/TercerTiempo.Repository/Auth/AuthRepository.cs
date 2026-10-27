@@ -1,5 +1,6 @@
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Auth;
+using TercerTiempo.Application.Auth.ChangePassword;
 using TercerTiempo.Application.Auth.GetMyAccount;
 using TercerTiempo.Application.Auth.Invite;
 using TercerTiempo.Application.Auth.Login;
@@ -15,8 +16,16 @@ internal sealed class AuthRepository(
     ICommandHandler<LoginCommand, AuthResponse> login,
     IQueryHandler<GetMyAccountQuery, AccountDto> getMyAccount,
     IQueryHandler<GetRegistrationOptionsQuery, RegistrationOptionsDto> registrationOptions,
-    IQueryHandler<GetClubInvitationQuery, ClubInvitationLookupDto> clubInvitation) : IAuthRepository
+    IQueryHandler<GetClubInvitationQuery, ClubInvitationLookupDto> clubInvitation,
+    IQueryHandler<GetPasswordStatusQuery, PasswordStatusDto> passwordStatus,
+    ICommandHandler<ChangePasswordCommand, AuthResponse> changePassword) : IAuthRepository
 {
+    public Task<PasswordStatusDto> GetPasswordStatusAsync(CancellationToken cancellationToken = default) =>
+        passwordStatus.Handle(new GetPasswordStatusQuery(), cancellationToken);
+
+    public Task<AuthResponse> ChangePasswordAsync(ChangePasswordCommand command, CancellationToken cancellationToken = default) =>
+        changePassword.Handle(command, cancellationToken);
+
     public Task<ClubInvitationLookupDto> GetClubInvitationAsync(string code, CancellationToken cancellationToken = default) =>
         clubInvitation.Handle(new GetClubInvitationQuery(code), cancellationToken);
 

@@ -107,17 +107,13 @@ public static class DependencyInjection
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)
     {
         services
-            .AddIdentityCore<ApplicationUser>(options =>
-            {
-                options.User.RequireUniqueEmail = true;
-                options.Password.RequiredLength = 8;
-                options.Password.RequireDigit = true;
-                options.Password.RequireUppercase = false;
-                options.Password.RequireLowercase = false;
-                options.Password.RequireNonAlphanumeric = false;
-            })
+            .AddIdentityCore<ApplicationUser>(IdentitySetup.Configure)
             .AddRoles<IdentityRole<Guid>>()
-            .AddEntityFrameworkStores<AppDbContext>();
+            .AddEntityFrameworkStores<AppDbContext>()
+            .AddPasswordValidator<PasswordRulesValidator>();
+
+        services.Configure<PasswordHasherOptions>(IdentitySetup.ConfigureHasher);
+        services.AddSingleton<SessionStamps>();
 
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))

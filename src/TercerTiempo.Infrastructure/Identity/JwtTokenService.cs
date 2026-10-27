@@ -10,7 +10,7 @@ internal sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider
 {
     private readonly JsonWebTokenHandler _handler = new();
 
-    public AuthToken CreateToken(Guid userId, string email, AccountType accountType, Guid profileId)
+    public AuthToken CreateToken(Guid userId, string email, AccountType accountType, Guid profileId, string sessionStamp)
     {
         return Create(new Dictionary<string, object>
         {
@@ -19,16 +19,18 @@ internal sealed class JwtTokenService(IOptions<JwtOptions> options, TimeProvider
             [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
             [AuthClaims.AccountType] = accountType.ToString(),
             [AuthClaims.ProfileClaimFor(accountType)] = profileId.ToString(),
+            [AuthClaims.SessionStamp] = sessionStamp,
         });
     }
 
-    public AuthToken CreateAdminToken(Guid userId, string userName) =>
+    public AuthToken CreateAdminToken(Guid userId, string userName, string sessionStamp) =>
         Create(new Dictionary<string, object>
         {
             [JwtRegisteredClaimNames.Sub] = userId.ToString(),
             [JwtRegisteredClaimNames.UniqueName] = userName,
             [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
             [AuthClaims.Admin] = "true",
+            [AuthClaims.SessionStamp] = sessionStamp,
         });
 
     private AuthToken Create(Dictionary<string, object> claims)

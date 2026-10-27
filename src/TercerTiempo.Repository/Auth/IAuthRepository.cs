@@ -1,4 +1,5 @@
 using TercerTiempo.Application.Auth;
+using TercerTiempo.Application.Auth.ChangePassword;
 using TercerTiempo.Application.Auth.Login;
 using TercerTiempo.Application.Auth.Register;
 using TercerTiempo.Application.Clubs.Invitations;
@@ -14,4 +15,6 @@ public interface IAuthRepository
     Task<AccountDto> GetMyAccountAsync(CancellationToken cancellationToken = default);
     Task<RegistrationOptionsDto> GetRegistrationOptionsAsync(CancellationToken cancellationToken = default);
     Task<ClubInvitationLookupDto> GetClubInvitationAsync(string code, CancellationToken cancellationToken = default);
+    Task<PasswordStatusDto> GetPasswordStatusAsync(CancellationToken cancellationToken = default);
+    Task<AuthResponse> ChangePasswordAsync(ChangePasswordCommand command, CancellationToken cancellationToken = default);
 }

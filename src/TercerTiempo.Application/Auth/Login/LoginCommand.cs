@@ -17,7 +17,7 @@ internal sealed class LoginValidator : AbstractValidator<LoginCommand>
     public LoginValidator()
     {
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
-        RuleFor(x => x.Password).NotEmpty();
+        RuleFor(x => x.Password).NotEmpty().MaximumLength(PasswordPolicy.MaxLength);
     }
 }
 
@@ -34,7 +34,7 @@ internal sealed class LoginHandler(
             ?? throw new InvalidCredentialsException();
 
         var (type, profileId) = await AccountResolver.IdentifyAsync(userId, stores.Players, stores.Coaches, stores.Clubs, cancellationToken);
-        var token = tokens.CreateToken(userId, email, type, profileId);
+        var token = tokens.CreateToken(userId, email, type, profileId, await identity.GetSessionStampAsync(userId, cancellationToken));
         var account = await AccountResolver.ForUserAsync(userId, stores, cancellationToken);
 
         return new AuthResponse(token.AccessToken, token.ExpiresAt, account);

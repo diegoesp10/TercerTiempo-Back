@@ -286,7 +286,7 @@ public class PlayerInvitationTests
 
         public RegisterHandler Register(bool clubInviteRequired = false)
         {
-            var identity = Stub<IIdentityService>((_, _) => Task.FromResult(Guid.NewGuid()));
+            var identity = Stub<IIdentityService>((method, _) => method == nameof(IIdentityService.GetSessionStampAsync) ? (object)Task.FromResult("stamp") : Task.FromResult(Guid.NewGuid()));
             var tokens = Stub<ITokenService>((_, args) => new AuthToken("token", DateTimeOffset.UtcNow.AddHours(1)));
             var appointments = Stub<ICoachAppointmentStore>((method, _) => throw new NotSupportedException(method));
             var licenses = Licenses();

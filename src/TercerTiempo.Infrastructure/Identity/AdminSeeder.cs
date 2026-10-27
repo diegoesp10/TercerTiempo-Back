@@ -39,15 +39,31 @@ public static class AdminSeeder
 
         var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var user = await users.FindByNameAsync(settings.UserName.Trim());
+        var candidate = user ?? new ApplicationUser
+        {
+            Id = Guid.CreateVersion7(),
+            UserName = settings.UserName.Trim(),
+            Email = settings.Email.Trim(),
+            EmailConfirmed = true,
+        };
+
+        // La contraseña del administrador sigue las mismas reglas que las de las cuentas. Si la configurada no las
+        // cumple, la API arranca igual (sin crear ni cambiar el administrador) y lo dice en el log.
+        var weak = await PolicyProblemsAsync(users, candidate, settings.Password);
+        if (weak.Count > 0)
+        {
+            var reasons = string.Join(" ", weak);
+            if (user is null || !await users.CheckPasswordAsync(user, settings.Password))
+            {
+                logger.LogError("Admin:Password no cumple las reglas de contraseña; no se crea ni se cambia el administrador. {Reasons}", reasons);
+                return;
+            }
+            logger.LogWarning("La contraseña del administrador ya no cumple las reglas de contraseña; cámbiala en Admin:Password. {Reasons}", reasons);
+        }
+
         if (user is null)
         {
-            user = new ApplicationUser
-            {
-                Id = Guid.CreateVersion7(),
-                UserName = settings.UserName.Trim(),
-                Email = settings.Email.Trim(),
-                EmailConfirmed = true,
-            };
+            user = candidate;
             Ensure(await users.CreateAsync(user, settings.Password), "crear el administrador");
             logger.LogInformation("Administrador {UserName} creado", user.UserName);
         }
@@ -60,6 +76,17 @@ public static class AdminSeeder
 
         if (!await users.IsInRoleAsync(user, AuthClaims.AdminRole))
             Ensure(await users.AddToRoleAsync(user, AuthClaims.AdminRole), "dar el rol Admin");
+    }
+
+    private static async Task<List<string>> PolicyProblemsAsync(UserManager<ApplicationUser> users, ApplicationUser user, string password)
+    {
+        var problems = new List<string>();
+        foreach (var validator in users.PasswordValidators)
+        {
+            var result = await validator.ValidateAsync(users, user, password);
+            problems.AddRange(result.Errors.Select(e => e.Description));
+        }
+        return problems;
     }
 
     private static void Ensure(IdentityResult result, string action)

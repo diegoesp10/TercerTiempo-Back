@@ -42,7 +42,9 @@ internal sealed class RegisterValidator : AbstractValidator<RegisterCommand>
     public RegisterValidator()
     {
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
-        RuleFor(x => x.Password).NotEmpty().MinimumLength(8).WithCatalogMessage(ErrorCode.AuthPasswordTooShort, 8).MaximumLength(100);
+        RuleFor(x => x.Password).NotEmpty()
+            .MinimumLength(PasswordPolicy.MinLength).WithCatalogMessage(ErrorCode.AuthPasswordTooShort, PasswordPolicy.MinLength)
+            .MaximumLength(PasswordPolicy.MaxLength).WithCatalogMessage(ErrorCode.AuthPasswordTooLong, PasswordPolicy.MaxLength);
         RuleFor(x => x.DisplayName).NotEmpty().When(x => x.AccountType != AccountType.Player);
         RuleFor(x => x.DisplayName).MaximumLength(120);
         RuleFor(x => x.AccountType).IsInEnum();
@@ -128,7 +130,7 @@ internal sealed class RegisterHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var token = tokens.CreateToken(userId, email, command.AccountType, profileId);
+        var token = tokens.CreateToken(userId, email, command.AccountType, profileId, await identity.GetSessionStampAsync(userId, cancellationToken));
         var account = await AccountResolver.ForUserAsync(userId, stores, cancellationToken);
         return new AuthResponse(token.AccessToken, token.ExpiresAt, account);
     }

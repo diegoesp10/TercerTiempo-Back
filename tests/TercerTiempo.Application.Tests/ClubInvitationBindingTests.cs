@@ -106,7 +106,7 @@ public class ClubInvitationBindingTests
     {
         var stores = Stores();
         var handler = new RegisterHandler(
-            Stub<IIdentityService>((_, _) => Task.FromResult(Guid.NewGuid())),
+            Stub<IIdentityService>((method, _) => method == nameof(IIdentityService.GetSessionStampAsync) ? (object)Task.FromResult("stamp") : Task.FromResult(Guid.NewGuid())),
             stores,
             new AppointmentRedemption(stores.Appointments, stores.Squads, stores.Teams, stores.Licenses),
             Invitations(),

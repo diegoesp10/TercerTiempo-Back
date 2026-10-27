@@ -7,6 +7,8 @@ public static class AuthClaims
     public const string CoachId = "coach_id";
     public const string ClubId = "club_id";
     public const string Admin = "admin";
+    // Huella de la sesión (de la SecurityStamp de Identity): al cambiar la contraseña, los tokens anteriores dejan de valer.
+    public const string SessionStamp = "sst";
     public const string AdminPolicy = "Admin";
     public const string AdminRole = "Admin";
 

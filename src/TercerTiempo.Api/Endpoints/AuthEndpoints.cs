@@ -1,3 +1,4 @@
+using TercerTiempo.Application.Auth.ChangePassword;
 using TercerTiempo.Application.Auth.Login;
 using TercerTiempo.Application.Auth.Register;
 using TercerTiempo.Repository.Auth;
@@ -47,6 +48,20 @@ internal static class AuthEndpoints
             .WithName("GetMyAccount")
             .WithSummary("Cuenta autenticada")
             .WithDescription("Tipo de cuenta y perfil: el jugador con la plantilla a la que está vinculado; el técnico con las plantillas que gestiona y sus nombramientos; el club con sus equipos y nombramientos.");
+
+        group.MapGet("/password", (IAuthRepository auth, CancellationToken ct) => auth.GetPasswordStatusAsync(ct))
+            .RequireAuthorization()
+            .WithName("GetPasswordStatus")
+            .WithSummary("Estado de la contraseña")
+            .WithDescription("Cuándo se cambió la contraseña por última vez y si ya se puede volver a cambiar: como mucho un cambio cada 24 horas.");
+
+        group.MapPut("/password", (ChangePasswordCommand command, IAuthRepository auth, CancellationToken ct) => auth.ChangePasswordAsync(command, ct))
+            .RequireAuthorization()
+            .WithName("ChangePassword")
+            .WithSummary("Cambiar la contraseña")
+            .WithDescription("Cualquier cuenta (club, cuerpo técnico o jugador), con su contraseña actual. La nueva: al menos 10 caracteres con mayúscula, minúscula, número y símbolo, 5 caracteres distintos, sin el email, sin palabras o series fáciles de adivinar y distinta de la actual. Como mucho un cambio cada 24 horas (409 si no). Cinco intentos fallidos bloquean la cuenta 15 minutos. Cierra las demás sesiones y devuelve un token nuevo para esta.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         return app;
     }

@@ -604,6 +604,36 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "auth.password_too_long",
+                            Language = "es",
+                            Message = "La contraseña no puede tener más de {0} caracteres."
+                        },
+                        new
+                        {
+                            Code = "auth.password_same",
+                            Language = "es",
+                            Message = "La contraseña nueva tiene que ser distinta de la actual."
+                        },
+                        new
+                        {
+                            Code = "auth.current_password_wrong",
+                            Language = "es",
+                            Message = "La contraseña actual no es correcta."
+                        },
+                        new
+                        {
+                            Code = "auth.password_change_too_soon",
+                            Language = "es",
+                            Message = "Solo se puede cambiar la contraseña una vez al día. Podrás volver a cambiarla a partir del {0}."
+                        },
+                        new
+                        {
+                            Code = "auth.locked_out",
+                            Language = "es",
+                            Message = "Demasiados intentos fallidos. Vuelve a intentarlo dentro de {0} minutos."
+                        },
+                        new
+                        {
                             Code = "auth.club_not_in_catalog",
                             Language = "es",
                             Message = "Elige tu club de la lista: solo pueden darse de alta los clubes de las ligas que sigue Tercer Tiempo."
@@ -727,6 +757,36 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "identity.PasswordRequiresUniqueChars",
                             Language = "es",
                             Message = "La contraseña debe tener al menos {0} caracteres distintos."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordMismatch",
+                            Language = "es",
+                            Message = "La contraseña actual no es correcta."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordTooLong",
+                            Language = "es",
+                            Message = "La contraseña no puede tener más de {0} caracteres."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordContainsEmail",
+                            Language = "es",
+                            Message = "La contraseña no puede contener tu email."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordTooCommon",
+                            Language = "es",
+                            Message = "Esa contraseña es demasiado fácil de adivinar: evita palabras como «contraseña», «fútbol» o «qwerty» y series como «123456»."
+                        },
+                        new
+                        {
+                            Code = "identity.PasswordRepeatedChars",
+                            Language = "es",
+                            Message = "La contraseña no puede repetir el mismo carácter más de {0} veces seguidas."
                         },
                         new
                         {
@@ -3643,6 +3703,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<string>("NormalizedUserName")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset?>("PasswordChangedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("PasswordHash")
                         .HasColumnType("nvarchar(max)");

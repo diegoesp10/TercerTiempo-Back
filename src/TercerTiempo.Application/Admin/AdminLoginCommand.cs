@@ -32,7 +32,7 @@ internal sealed class AdminLoginHandler(IIdentityService identity, ITokenService
         var userId = await identity.ValidateAdminAsync(userName, command.Password, cancellationToken)
             ?? throw new InvalidCredentialsException(ErrorCode.AdminInvalidCredentials);
 
-        var token = tokens.CreateAdminToken(userId, userName);
+        var token = tokens.CreateAdminToken(userId, userName, await identity.GetSessionStampAsync(userId, cancellationToken));
         return new AdminAuthResponse(token.AccessToken, token.ExpiresAt, userName);
     }
 }

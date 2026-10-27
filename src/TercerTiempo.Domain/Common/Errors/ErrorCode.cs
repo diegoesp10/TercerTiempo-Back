@@ -38,6 +38,11 @@ public static class ErrorCode
     public const string AuthAccessCodeRequired = "auth.access_code_required";
     public const string AuthInviteCodeRequired = "auth.invite_code_required";
     public const string AuthPasswordTooShort = "auth.password_too_short";
+    public const string AuthPasswordTooLong = "auth.password_too_long";
+    public const string AuthPasswordSame = "auth.password_same";
+    public const string AuthCurrentPasswordWrong = "auth.current_password_wrong";
+    public const string AuthPasswordChangeTooSoon = "auth.password_change_too_soon";
+    public const string AuthLockedOut = "auth.locked_out";
     public const string AuthClubNotInCatalog = "auth.club_not_in_catalog";
     public const string AuthClubAlreadyRegistered = "auth.club_already_registered";
     public const string AuthClubInviteRequired = "auth.club_invite_required";
@@ -61,6 +66,11 @@ public static class ErrorCode
     public const string IdentityPasswordRequiresLower = "identity.PasswordRequiresLower";
     public const string IdentityPasswordRequiresUpper = "identity.PasswordRequiresUpper";
     public const string IdentityPasswordRequiresUniqueChars = "identity.PasswordRequiresUniqueChars";
+    public const string IdentityPasswordMismatch = "identity.PasswordMismatch";
+    public const string IdentityPasswordTooLong = "identity.PasswordTooLong";
+    public const string IdentityPasswordContainsEmail = "identity.PasswordContainsEmail";
+    public const string IdentityPasswordTooCommon = "identity.PasswordTooCommon";
+    public const string IdentityPasswordRepeatedChars = "identity.PasswordRepeatedChars";
     public const string IdentityDefaultError = "identity.DefaultError";
 
     // Equipos, competiciones, jornadas y partidos
