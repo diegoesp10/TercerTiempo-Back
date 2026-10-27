@@ -6,6 +6,7 @@ public static class EndpointExtensions
     {
         app.MapAuthEndpoints();
         app.MapClubEndpoints();
+        app.MapAlertEndpoints();
         app.MapCoachEndpoints();
         app.MapSquadEndpoints();
         app.MapPlayerEndpoints();

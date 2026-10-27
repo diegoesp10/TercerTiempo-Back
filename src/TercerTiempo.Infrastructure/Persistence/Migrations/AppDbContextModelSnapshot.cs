@@ -153,6 +153,60 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Alerts.Alert", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly?>("DueOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Link")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId", "CreatedAt");
+
+                    b.HasIndex("ClubId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("Alerts", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Clubs.Club", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1378,6 +1432,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "alert.not_found",
+                            Language = "es",
+                            Message = "El aviso '{0}' no existe o no es de tu club."
+                        },
+                        new
+                        {
                             Code = "license.simulator_disabled",
                             Language = "es",
                             Message = "La simulación de pagos solo funciona con la pasarela simulada (Licensing:Provider = mock)."
@@ -1925,6 +1985,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("nvarchar(3)");
 
+                    b.PrimitiveCollection<string>("ExpiryAlertDays")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("MaxStaffSeats")
                         .HasColumnType("int");
 
@@ -1946,6 +2010,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Id = new Guid("01a16f00-0000-7000-8000-000000000001"),
                             Currency = "EUR",
+                            ExpiryAlertDays = "[15,5]",
                             MaxStaffSeats = 30,
                             TrialDays = 30,
                             TrialStaffSeats = 2,
@@ -3824,6 +3889,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasOne("TercerTiempo.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Alerts.Alert", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

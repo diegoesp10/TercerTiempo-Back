@@ -190,6 +190,7 @@ public static class ErrorCode
     public const string LicenseStaffSeatsTooFew = "license.staff_seats_too_few";
     public const string LicenseStaffSeatsRange = "license.staff_seats_range";
     public const string LicenseClubRequired = "license.club_required";
+    public const string AlertNotFound = "alert.not_found";
     public const string LicenseSimulatorDisabled = "license.simulator_disabled";
     public const string LicenseSubscriptionActive = "license.subscription_active";
     public const string LicenseNoSubscription = "license.no_subscription";

@@ -260,7 +260,9 @@ internal sealed class LicenseDescriber(
 // el webhook, lo que llegue antes (la otra vía ya no cambia nada).
 internal sealed class LicenseCheckoutCompletion(
     ILicenseStore licenses,
+    IClubStore clubs,
     ILicensePaymentGateway gateway,
+    Alerts.LicenseAlertSync alertSync,
     IUnitOfWork unitOfWork,
     TimeProvider clock)
 {
@@ -280,6 +282,8 @@ internal sealed class LicenseCheckoutCompletion(
         if (payment.AmountCents > 0)
             license.RecordPaidPeriod(result.PeriodEnd ?? license.NextPeriodEnd(payment.Interval, today), now);
         payment.MarkPaid(now);
+        if (await clubs.GetByIdAsync(license.ClubId, cancellationToken) is { } club)
+            await alertSync.SyncAsync(club, license, null, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return license;
     }
@@ -499,16 +503,19 @@ internal sealed class CancelLicenseRenewalHandler(
     IClubStore clubs,
     ILicensePaymentGateway gateway,
     LicenseDescriber describer,
+    Alerts.LicenseAlertSync alertSync,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<CancelLicenseRenewalCommand, ClubLicenseDto>
 {
     public async Task<ClubLicenseDto> Handle(CancelLicenseRenewalCommand command, CancellationToken cancellationToken)
     {
-        var (_, license) = await ClubLicenseAccess.OfCurrentClubAsync(currentUser, clubs, gate, cancellationToken);
+        var (club, license) = await ClubLicenseAccess.OfCurrentClubAsync(currentUser, clubs, gate, cancellationToken);
 
         license.CancelRenewal(clock.GetUtcNow());
         if (license.SubscriptionRef is { } subscription)
             await gateway.CancelRenewalAsync(subscription, cancellationToken);
+        // Si ya está dentro del plazo de aviso, el club lo ve enseguida en su campanita.
+        await alertSync.SyncAsync(club, license, null, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return await describer.DescribeAsync(license, cancellationToken);
     }
@@ -520,6 +527,7 @@ internal sealed class ResumeLicenseRenewalHandler(
     IClubStore clubs,
     ILicensePaymentGateway gateway,
     LicenseDescriber describer,
+    Alerts.LicenseAlertSync alertSync,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<ResumeLicenseRenewalCommand, ClubLicenseDto>
 {
@@ -531,6 +539,8 @@ internal sealed class ResumeLicenseRenewalHandler(
         license.ResumeRenewal(SquadAccess.Today(clock), clock.GetUtcNow());
         if (license.SubscriptionRef is { } subscription)
             await gateway.ResumeRenewalAsync(subscription, cancellationToken);
+        // Vuelve a renovarse: los avisos de caducidad ya no aplican.
+        await alertSync.SyncAsync(club, license, null, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return await describer.DescribeAsync(license, cancellationToken);
     }

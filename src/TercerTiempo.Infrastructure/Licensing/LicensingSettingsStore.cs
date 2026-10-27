@@ -36,6 +36,7 @@ internal sealed class LicensingSettingsConfiguration : IEntityTypeConfiguration<
             TrialDays = 30,
             TrialStaffSeats = 2,
             MaxStaffSeats = 30,
+            ExpiryAlertDays = new[] { 15, 5 },
             UpdatedAt = new DateTimeOffset(2026, 10, 27, 0, 0, 0, TimeSpan.Zero),
         });
     }

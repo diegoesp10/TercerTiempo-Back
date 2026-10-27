@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<Licensing.ILicensingCatalog, Licensing.LicensingCatalog>();
         services.AddScoped<Licensing.LicenseDescriber>();
         services.AddScoped<Licensing.LicenseCheckoutCompletion>();
+        services.AddScoped<Alerts.LicenseAlertSync>();
         services.AddScoped<OfficialSheetLocator>();
         services.AddSingleton<OfficialSheets.OfficialSheetSyncMemory>();
         services.AddScoped<IPublicSheetSource, FederationSheetSource>();

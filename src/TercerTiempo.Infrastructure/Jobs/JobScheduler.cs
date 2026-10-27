@@ -103,6 +103,12 @@ internal sealed class JobScheduler
                 TimeSpan.FromSeconds(30),
                 sheets.Value.Enabled && weeklyDays > 0,
                 new WeeklySlot(sheets.Value.WeeklyQueueDay, sheets.Value.WeeklyQueueAt, SiteClock.Resolve(sheets.Value.Asturfutbol.TimeZone))),
+            new(JobNames.LicenseAlerts,
+                "Avisos de caducidad",
+                "Avisa en la campanita de cada club cuando su licencia va a acabar sin renovarse (la prueba sin contratar o la renovación cancelada), con los días de antelación de la administración, y da por resueltos los que ya no aplican.",
+                TimeSpan.FromHours(6),
+                TimeSpan.FromSeconds(45),
+                true),
         ];
         _slots = definitions.ToDictionary(d => d.Name, d => new Slot(d));
     }

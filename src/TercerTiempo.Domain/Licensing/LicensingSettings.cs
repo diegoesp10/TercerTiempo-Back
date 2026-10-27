@@ -3,7 +3,7 @@ using TercerTiempo.Domain.Common;
 namespace TercerTiempo.Domain.Licensing;
 
 // Condiciones comerciales de las licencias, editables por el administrador: moneda, prueba (días y técnicos incluidos),
-// tope de técnicos por club y los precios de la licencia de club y de cada licencia de técnico, con sus precios de
+// tope de técnicos por club, días de antelación de los avisos de caducidad y los precios de la licencia de club y de cada licencia de técnico, con sus precios de
 // Stripe. Una sola fila; sus cambios valen para las altas, pruebas y renovaciones nuevas (lo ya contratado en Stripe
 // sigue con su precio hasta que se cambie su renovación).
 public sealed class LicensingSettings : AggregateRoot
@@ -22,6 +22,9 @@ public sealed class LicensingSettings : AggregateRoot
     // Licencias de técnico que puede tener un club como mucho.
     public int MaxStaffSeats { get; private set; }
 
+    // Días antes del fin de una licencia que no se renueva en los que se avisa al club, de más a menos (vacío = sin avisos).
+    public int[] ExpiryAlertDays { get; private set; } = [];
+
     public DateTimeOffset UpdatedAt { get; private set; }
 
     public IReadOnlyCollection<LicensePriceSettings> Prices => _prices.AsReadOnly();
@@ -33,7 +36,8 @@ public sealed class LicensingSettings : AggregateRoot
     {
         var settings = new LicensingSettings
         {
-            Id = SingletonId, Currency = DefaultCurrency, TrialDays = 30, TrialStaffSeats = 2, MaxStaffSeats = 30, UpdatedAt = now,
+            Id = SingletonId, Currency = DefaultCurrency, TrialDays = 30, TrialStaffSeats = 2, MaxStaffSeats = 30, ExpiryAlertDays = [15, 5],
+            UpdatedAt = now,
         };
         settings._prices.Add(LicensePriceSettings.Create(SingletonId, LicenseItem.Club, 490, 4900, null, null));
         settings._prices.Add(LicensePriceSettings.Create(SingletonId, LicenseItem.StaffSeat, 250, 2500, null, null));
@@ -55,7 +59,9 @@ public sealed class LicensingSettings : AggregateRoot
             throw new DomainException(Common.Errors.ErrorCode.LicenseStaffSeatsRange, MaxStaffSeats);
     }
 
-    public void Update(string currency, int trialDays, int trialStaffSeats, int maxStaffSeats, IReadOnlyCollection<LicensePriceTerms> prices, DateTimeOffset now)
+    public void Update(
+        string currency, int trialDays, int trialStaffSeats, int maxStaffSeats, IReadOnlyCollection<int> expiryAlertDays,
+        IReadOnlyCollection<LicensePriceTerms> prices, DateTimeOffset now)
     {
         var code = Guard.NotEmpty(currency, "moneda", 3).ToUpperInvariant();
         if (code.Length != 3 || !code.All(char.IsAsciiLetterUpper))
@@ -64,6 +70,10 @@ public sealed class LicensingSettings : AggregateRoot
         Guard.InRange(trialDays, 0, 365, "días de prueba");
         Guard.InRange(maxStaffSeats, 1, 200, "técnicos por club");
         Guard.InRange(trialStaffSeats, 0, maxStaffSeats, "técnicos de la prueba");
+        var alertDays = expiryAlertDays.Distinct().OrderByDescending(d => d).ToArray();
+        Guard.InRange(alertDays.Length, 0, 5, "avisos de caducidad");
+        foreach (var days in alertDays)
+            Guard.InRange(days, 1, 90, "días de aviso");
         if (prices.Select(p => p.Item).Distinct().Count() != prices.Count || Enum.GetValues<LicenseItem>().Any(i => prices.All(t => t.Item != i)))
             throw new DomainException(Common.Errors.ErrorCode.LicensePlanInvalid);
 
@@ -76,6 +86,7 @@ public sealed class LicensingSettings : AggregateRoot
         TrialDays = trialDays;
         TrialStaffSeats = trialStaffSeats;
         MaxStaffSeats = maxStaffSeats;
+        ExpiryAlertDays = alertDays;
         UpdatedAt = now;
     }
 }

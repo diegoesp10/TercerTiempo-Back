@@ -23,6 +23,8 @@ public sealed record LicensingSettingsDto(
     int TrialStaffSeats,
     [property: Description("Licencias de técnico que puede tener un club como mucho.")]
     int MaxStaffSeats,
+    [property: Description("Días antes del fin de una licencia que no se renueva en los que se avisa al club en su campanita (de más a menos; vacío = sin avisos).")]
+    IReadOnlyList<int> ExpiryAlertDays,
     IReadOnlyList<LicensePriceSettingsDto> Prices,
     [property: Description("Pasarela en uso (configuración del entorno, no editable aquí): «mock» o «stripe».")]
     string Provider,
@@ -35,6 +37,7 @@ internal static class LicensingSettingsMapper
         settings.TrialDays,
         settings.TrialStaffSeats,
         settings.MaxStaffSeats,
+        settings.ExpiryAlertDays,
         settings.Prices.OrderBy(p => p.Item)
             .Select(p => new LicensePriceSettingsDto(p.Item, p.MonthlyPriceCents, p.YearlyPriceCents, p.StripeMonthlyPriceId, p.StripeYearlyPriceId))
             .ToList(),
@@ -60,6 +63,8 @@ public sealed record UpdateLicensingSettingsCommand(
     int TrialStaffSeats,
     [property: Description("Licencias de técnico que puede tener un club como mucho (1-200).")]
     int MaxStaffSeats,
+    [property: Description("Días de antelación de los avisos de caducidad (hasta 5 valores entre 1 y 90; vacío = sin avisos).")]
+    IReadOnlyList<int> ExpiryAlertDays,
     [property: Description("Los dos precios, Club y StaffSeat, en céntimos (IVA incluido).")]
     IReadOnlyList<LicensePriceSettingsDto> Prices) : ICommand<LicensingSettingsDto>;
 
@@ -71,6 +76,8 @@ internal sealed class UpdateLicensingSettingsValidator : AbstractValidator<Updat
         RuleFor(x => x.TrialDays).InclusiveBetween(0, 365).WithName("Días de prueba");
         RuleFor(x => x.MaxStaffSeats).InclusiveBetween(1, 200).WithName("Técnicos por club");
         RuleFor(x => x.TrialStaffSeats).InclusiveBetween(0, 200).LessThanOrEqualTo(x => x.MaxStaffSeats).WithName("Técnicos de la prueba");
+        RuleFor(x => x.ExpiryAlertDays).NotNull().Must(d => d.Count <= 5).WithName("Avisos de caducidad");
+        RuleForEach(x => x.ExpiryAlertDays).InclusiveBetween(1, 90).WithName("Días de aviso");
         RuleFor(x => x.Prices).NotEmpty();
         RuleForEach(x => x.Prices).ChildRules(price =>
         {
@@ -105,6 +112,7 @@ internal sealed class UpdateLicensingSettingsHandler(
             command.TrialDays,
             command.TrialStaffSeats,
             command.MaxStaffSeats,
+            command.ExpiryAlertDays,
             command.Prices.Select(p => new LicensePriceTerms(p.Item, p.MonthlyPriceCents, p.YearlyPriceCents, p.StripeMonthlyPriceId, p.StripeYearlyPriceId)).ToList(),
             now);
         await unitOfWork.SaveChangesAsync(cancellationToken);

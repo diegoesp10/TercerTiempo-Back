@@ -18,6 +18,7 @@ public class LicensingSettingsTests
         var settings = LicensingSettings.CreateDefault(TestData.Now);
 
         Assert.Equal(("EUR", 30, 2, 30), (settings.Currency, settings.TrialDays, settings.TrialStaffSeats, settings.MaxStaffSeats));
+        Assert.Equal([15, 5], settings.ExpiryAlertDays);
         Assert.Equal(490, settings.PriceCents(LicenseItem.Club, BillingInterval.Monthly));
         Assert.Equal(2500, settings.PriceCents(LicenseItem.StaffSeat, BillingInterval.Yearly));
         // El club con 6 técnicos cuesta lo mismo que el antiguo Premium.
@@ -31,7 +32,7 @@ public class LicensingSettingsTests
     {
         var settings = LicensingSettings.CreateDefault(TestData.Now);
 
-        settings.Update("eur", 15, 1, 10, Prices(stripe: "price_club_month"), TestData.Now.AddDays(1));
+        settings.Update("eur", 15, 1, 10, [15, 5], Prices(stripe: "price_club_month"), TestData.Now.AddDays(1));
 
         Assert.Equal(("EUR", 15, 1, 10), (settings.Currency, settings.TrialDays, settings.TrialStaffSeats, settings.MaxStaffSeats));
         Assert.Equal(590 + 2 * 290, settings.SubscriptionPriceCents(BillingInterval.Monthly, 2));
@@ -45,7 +46,7 @@ public class LicensingSettingsTests
     [InlineData("E1R", ErrorCode.LicensingCurrencyInvalid)]
     public void Currency_must_be_an_iso_code(string currency, string expected)
     {
-        var error = Assert.Throws<DomainException>(() => LicensingSettings.CreateDefault(TestData.Now).Update(currency, 30, 2, 30, Prices(), TestData.Now));
+        var error = Assert.Throws<DomainException>(() => LicensingSettings.CreateDefault(TestData.Now).Update(currency, 30, 2, 30, [15, 5], Prices(), TestData.Now));
         Assert.Equal(expected, error.Code);
     }
 
@@ -54,11 +55,26 @@ public class LicensingSettingsTests
     {
         var settings = LicensingSettings.CreateDefault(TestData.Now);
 
-        Assert.Equal(ErrorCode.LicensingStripePriceInvalid, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 2, 30, Prices(stripe: "prod_123"), TestData.Now)).Code);
-        Assert.Equal(ErrorCode.CommonOutOfRange, Assert.Throws<DomainException>(() => settings.Update("EUR", 400, 2, 30, Prices(), TestData.Now)).Code);
-        Assert.Equal(ErrorCode.CommonOutOfRange, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 5, 3, Prices(), TestData.Now)).Code);
-        Assert.Equal(ErrorCode.LicensePlanInvalid, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 2, 30, [Prices()[0]], TestData.Now)).Code);
+        Assert.Equal(ErrorCode.LicensingStripePriceInvalid, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 2, 30, [15, 5], Prices(stripe: "prod_123"), TestData.Now)).Code);
+        Assert.Equal(ErrorCode.CommonOutOfRange, Assert.Throws<DomainException>(() => settings.Update("EUR", 400, 2, 30, [15, 5], Prices(), TestData.Now)).Code);
+        Assert.Equal(ErrorCode.CommonOutOfRange, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 5, 3, [15, 5], Prices(), TestData.Now)).Code);
+        Assert.Equal(ErrorCode.LicensePlanInvalid, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 2, 30, [15, 5], [Prices()[0]], TestData.Now)).Code);
         Assert.Equal(490, settings.PriceCents(LicenseItem.Club, BillingInterval.Monthly));
+    }
+
+    [Fact]
+    public void Expiry_alert_days_are_sorted_without_repeats_and_can_be_turned_off()
+    {
+        var settings = LicensingSettings.CreateDefault(TestData.Now);
+
+        settings.Update("EUR", 30, 2, 30, [5, 30, 5, 10], Prices(), TestData.Now);
+        Assert.Equal([30, 10, 5], settings.ExpiryAlertDays);
+
+        Assert.Equal(ErrorCode.CommonOutOfRange, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 2, 30, [0], Prices(), TestData.Now)).Code);
+        Assert.Equal(ErrorCode.CommonOutOfRange, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 2, 30, [1, 2, 3, 4, 5, 6], Prices(), TestData.Now)).Code);
+
+        settings.Update("EUR", 30, 2, 30, [], Prices(), TestData.Now);
+        Assert.Empty(settings.ExpiryAlertDays);
     }
 
     [Fact]

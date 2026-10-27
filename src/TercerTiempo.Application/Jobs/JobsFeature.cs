@@ -11,6 +11,7 @@ public static class JobNames
     public const string OfficialSheets = "official-sheets";
     public const string LicenseRenewals = "license-renewals";
     public const string WeeklySheets = "weekly-sheets";
+    public const string LicenseAlerts = "license-alerts";
 }
 
 public static class JobRunStatus

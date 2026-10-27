@@ -182,6 +182,7 @@ public static class ErrorCatalog
         (ErrorCode.LicenseStaffSeatsTooFew, "El club tiene {0} en el cuerpo técnico de sus equipos y la licencia se quedaría con {1}. Revoca nombramientos antes de reducirla."),
         (ErrorCode.LicenseStaffSeatsRange, "Un club puede tener entre 0 y {0} licencias de técnico."),
         (ErrorCode.LicenseClubRequired, "Las licencias de técnico se añaden una vez contratada la licencia de club."),
+        (ErrorCode.AlertNotFound, "El aviso '{0}' no existe o no es de tu club."),
         (ErrorCode.LicenseSimulatorDisabled, "La simulación de pagos solo funciona con la pasarela simulada (Licensing:Provider = mock)."),
         (ErrorCode.LicenseSubscriptionActive, "El club ya tiene una suscripción que se renueva sola: cambia sus técnicos o su facturación, o cancela la renovación."),
         (ErrorCode.LicenseNoSubscription, "El club no tiene una suscripción en marcha que modificar: contrata la licencia o reactiva su renovación."),

@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminRepository, AdminRepository>();
         services.AddScoped<Privacy.IPrivacyRepository, Privacy.PrivacyRepository>();
         services.AddScoped<Licensing.ILicensingRepository, Licensing.LicensingRepository>();
+        services.AddScoped<Alerts.IAlertsRepository, Alerts.AlertsRepository>();
 
         return services;
     }
