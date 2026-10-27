@@ -110,6 +110,21 @@ public class AdminMfaTests
         Assert.Equal(ErrorCode.AuthLockedOut, stillLocked.Code);
     }
 
+    [LocalSqlFact]
+    public async Task With_mfa_a_new_database_gets_the_admin_even_with_a_password_that_breaks_the_rules()
+    {
+        const string Weak = "futbol2026";
+        await using (var withMfa = await IdentityFixture.CreateAsync(o => (o.UserName, o.Password, o.RequireMfa) = ("diego", Weak, true)))
+        {
+            await withMfa.Provider.SeedAdminAsync();
+            Assert.NotNull(await withMfa.Identity.ValidateAdminAsync("diego", Weak, secondFactorPending: true, default));
+        }
+
+        await using var withoutMfa = await IdentityFixture.CreateAsync(o => (o.UserName, o.Password, o.RequireMfa) = ("diego", Weak, false));
+        await withoutMfa.Provider.SeedAdminAsync();
+        Assert.Null(await withoutMfa.Users.FindByNameAsync("diego"));
+    }
+
     // RFC 6238 con los valores de Microsoft Authenticator: HMAC-SHA1, 30 s, 6 cifras.
     private static string Totp(string base32Key, int offset = 0)
     {
@@ -163,12 +178,14 @@ public class AdminMfaTests
         private IdentityFixture(ServiceProvider provider)
         {
             _provider = provider;
+            Provider = provider;
             _scope = provider.CreateAsyncScope();
             Users = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
             Identity = new IdentityService(Users, provider.GetRequiredService<SessionStamps>(), TimeProvider.System);
             SecondFactor = _scope.ServiceProvider.GetRequiredService<AdminSecondFactor>();
         }
 
+        public IServiceProvider Provider { get; }
         public UserManager<ApplicationUser> Users { get; }
         public IdentityService Identity { get; }
         public AdminSecondFactor SecondFactor { get; }
@@ -183,7 +200,7 @@ public class AdminMfaTests
             return user;
         }
 
-        public static async Task<IdentityFixture> CreateAsync()
+        public static async Task<IdentityFixture> CreateAsync(Action<AdminOptions>? admin = null)
         {
             var database = $"TercerTiempo_AdminMfaVerification_{Guid.NewGuid():N}";
             var services = new ServiceCollection();
@@ -199,7 +216,11 @@ public class AdminMfaTests
                 .AddTokenProvider<AuthenticatorTokenProvider<ApplicationUser>>(TokenOptions.DefaultAuthenticatorProvider);
             services.AddSingleton<SessionStamps>();
             services.AddDataProtection();
-            services.Configure<AdminOptions>(o => o.RequireMfa = true);
+            services.Configure<AdminOptions>(o =>
+            {
+                o.RequireMfa = true;
+                admin?.Invoke(o);
+            });
             services.AddScoped<AdminSecondFactor>();
 
             var provider = services.BuildServiceProvider();

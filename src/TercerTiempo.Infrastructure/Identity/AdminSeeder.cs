@@ -55,29 +55,49 @@ public static class AdminSeeder
         };
 
         // La contraseña del administrador sigue las mismas reglas que las de las cuentas. Si la configurada no las
-        // cumple, la API arranca igual (sin crear ni cambiar el administrador) y lo dice en el log.
+        // cumple, la API arranca igual (sin crear ni cambiar el administrador) y lo dice en el log. Con el segundo paso
+        // (Admin:RequireMfa) se acepta igualmente: sin el código de la app no basta con la contraseña.
         var weak = await PolicyProblemsAsync(users, candidate, settings.Password);
+        var acceptWeak = weak.Count > 0 && settings.RequireMfa;
         if (weak.Count > 0)
         {
             var reasons = string.Join(" ", weak);
-            if (user is null || !await users.CheckPasswordAsync(user, settings.Password))
+            if (acceptWeak)
+                logger.LogWarning("Admin:Password no cumple las reglas de contraseña; se acepta porque el login del administrador pide además el código de la app de autenticación. {Reasons}", reasons);
+            else if (user is null || !await users.CheckPasswordAsync(user, settings.Password))
             {
                 logger.LogError("Admin:Password no cumple las reglas de contraseña; no se crea ni se cambia el administrador. {Reasons}", reasons);
                 return;
             }
-            logger.LogWarning("La contraseña del administrador ya no cumple las reglas de contraseña; cámbiala en Admin:Password. {Reasons}", reasons);
+            else
+                logger.LogWarning("La contraseña del administrador ya no cumple las reglas de contraseña; cámbiala en Admin:Password. {Reasons}", reasons);
         }
 
         if (user is null)
         {
             user = candidate;
-            Ensure(await users.CreateAsync(user, settings.Password), "crear el administrador");
+            if (acceptWeak)
+            {
+                // CreateAsync con contraseña pasaría por las reglas: se guarda el hash a mano.
+                user.PasswordHash = users.PasswordHasher.HashPassword(user, settings.Password);
+                Ensure(await users.CreateAsync(user), "crear el administrador");
+            }
+            else
+                Ensure(await users.CreateAsync(user, settings.Password), "crear el administrador");
             logger.LogInformation("Administrador {UserName} creado", user.UserName);
         }
         else if (!await users.CheckPasswordAsync(user, settings.Password))
         {
-            Ensure(await users.RemovePasswordAsync(user), "quitar la contraseña anterior del administrador");
-            Ensure(await users.AddPasswordAsync(user, settings.Password), "cambiar la contraseña del administrador");
+            if (acceptWeak)
+            {
+                user.PasswordHash = users.PasswordHasher.HashPassword(user, settings.Password);
+                Ensure(await users.UpdateSecurityStampAsync(user), "cambiar la contraseña del administrador");
+            }
+            else
+            {
+                Ensure(await users.RemovePasswordAsync(user), "quitar la contraseña anterior del administrador");
+                Ensure(await users.AddPasswordAsync(user, settings.Password), "cambiar la contraseña del administrador");
+            }
             logger.LogInformation("Contraseña del administrador {UserName} actualizada desde la configuración", user.UserName);
         }
 

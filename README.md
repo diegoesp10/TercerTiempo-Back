@@ -317,6 +317,8 @@ login enseña además el QR (y la clave para escribirla a mano); el primer códi
 ya no vuelve a salir. Los códigos falsos cuentan para el bloqueo (5 fallos, 5 minutos) y un código ya usado no vale.
 Si se pierde el móvil, `Admin__ResetMfa=true` (`TT_ADMIN_RESET_MFA` en `.env.production`) cambia la clave al arrancar
 y el siguiente login vuelve a enseñar el QR; después hay que volver a ponerlo en `false`.
+Con el segundo paso activo, `Admin:Password` puede no cumplir las reglas de contraseña de las cuentas: el
+administrador se crea igual (con un aviso en el log), porque sin el código de la app no basta con la contraseña.
 
 ## Acta pública: asturfutbol.es
 
