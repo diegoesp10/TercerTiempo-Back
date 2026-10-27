@@ -44,12 +44,9 @@ public class SearchIndexTests
     private static readonly Guid Sara = Guid.NewGuid();
 
     [Fact]
-    public void Referees_only_show_up_for_clubs_and_coaches()
+    public void Referees_show_up_for_anyone_who_searches()
     {
-        Assert.Empty(Index().Search("ovies", Stranger, null).Hits);
-
-        var staff = RocesStaff with { SeesReferees = true };
-        var hit = Assert.Single(Index().Search("ovies", staff, null).Hits);
+        var hit = Assert.Single(Index().Search("ovies", Stranger, null).Hits);
         Assert.Equal((Sara, SearchTypes.Referee, $"/arbitros/{Sara}"), (hit.Doc.Id, hit.Doc.Type, hit.Link));
     }
 

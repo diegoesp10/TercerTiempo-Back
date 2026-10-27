@@ -146,6 +146,8 @@ internal sealed class RefereeRatingConfiguration : IEntityTypeConfiguration<Refe
         builder.ConfigureAggregate();
         builder.Property(r => r.Role).HasConversion<string>().HasMaxLength(30);
         builder.Property(r => r.Comment).HasMaxLength(RefereeRating.MaxCommentLength);
+        builder.Property(r => r.RaterName).HasMaxLength(RefereeRating.MaxRaterNameLength).IsRequired();
+        builder.Property(r => r.RaterStaffRole).HasConversion<string>().HasMaxLength(20);
         builder.HasOne<Match>().WithMany().HasForeignKey(r => r.MatchId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Referee>().WithMany().HasForeignKey(r => r.RefereeId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Team>().WithMany().HasForeignKey(r => r.TeamId).OnDelete(DeleteBehavior.Restrict);

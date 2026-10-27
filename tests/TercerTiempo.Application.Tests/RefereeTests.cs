@@ -4,6 +4,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Referees;
 using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
@@ -88,27 +89,65 @@ public class RefereeTests
     public void A_rating_goes_from_0_to_10_and_is_given_by_the_club_or_a_coach()
     {
         var official = MatchOfficial.Assign(Guid.NewGuid(), Guid.NewGuid(), OfficialRole.Referee, "asturfutbol", Now);
+        var club = new RefereeRater(Guid.NewGuid(), null, Guid.NewGuid(), "CD Vallobín");
 
-        var rating = RefereeRating.Rate(official, Guid.NewGuid(), 8, "  Buen criterio  ", Guid.NewGuid(), null, Now);
-        Assert.Equal((8, "Buen criterio"), (rating.Score, rating.Comment));
+        var rating = RefereeRating.Rate(official, Guid.NewGuid(), 8, "  Buen criterio  ", club, Now);
+        Assert.Equal((8, "Buen criterio", "CD Vallobín", (StaffRole?)null), (rating.Score, rating.Comment, rating.RaterName, rating.RaterStaffRole));
 
-        Assert.Equal(ErrorCode.RefereeScoreRange, Assert.Throws<DomainException>(() => rating.Change(11, null, Guid.NewGuid(), null, Now)).Code);
-        Assert.Equal(ErrorCode.RefereeRaterRequired, Assert.Throws<DomainException>(() => rating.Change(5, null, null, null, Now)).Code);
+        Assert.Equal(ErrorCode.RefereeScoreRange, Assert.Throws<DomainException>(() => RefereeRating.Rate(official, Guid.NewGuid(), 11, null, club, Now)).Code);
+        Assert.Equal(ErrorCode.RefereeRaterRequired,
+            Assert.Throws<DomainException>(() => RefereeRating.Rate(official, Guid.NewGuid(), 5, null, new RefereeRater(null, null, null, "Nadie"), Now)).Code);
     }
 
     [Fact]
-    public async Task The_club_of_a_team_that_played_rates_each_official_once_and_can_change_it()
+    public async Task The_club_rates_each_official_once_and_the_rating_is_final()
     {
         var f = new Fixture();
 
-        await f.Rate(f.ClubUser, 7, "Bien colocada");
-        var updated = await f.Rate(f.ClubUser, 9, null);
+        var saved = await f.Rate(f.ClubUser, 7, "Bien colocada");
+        var again = await Assert.ThrowsAsync<ConflictException>(() => f.Rate(f.ClubUser, 9, null));
+        Assert.Equal(ErrorCode.RefereeAlreadyRated, again.Code);
 
         var rating = Assert.Single(f.Store.Ratings);
-        Assert.Equal((9, (string?)null, f.Home.Id), (rating.Score, rating.Comment, rating.TeamId));
-        var mine = Assert.Single(updated.Officials);
-        Assert.Equal((9, 9.0, 1), (mine.MyScore, mine.Average, mine.Ratings));
-        Assert.Equal((true, f.Home.Id), (updated.CanRate, updated.RaterTeamId));
+        Assert.Equal((7, "Bien colocada", f.Home.Id, "CD Vallobín", f.Club.Id), (rating.Score, rating.Comment, rating.TeamId, rating.RaterName, rating.RatedByClubId));
+        var official = Assert.Single(saved.Officials);
+        Assert.Equal((7, 7.0, 1), (official.MyScore, official.Average, official.Ratings));
+        var shown = Assert.Single(official.TeamRatings);
+        Assert.Equal(("CD Vallobín", "CD Vallobín", true, "Bien colocada"), (shown.TeamName, shown.RatedBy.Name, shown.RatedBy.Club, shown.Comment));
+        Assert.Equal((true, f.Home.Id), (saved.CanRate, saved.RaterTeamId));
+    }
+
+    [Fact]
+    public async Task A_coach_of_the_other_team_rates_too_and_both_ratings_are_public()
+    {
+        var f = new Fixture();
+        var coach = Coach.Register(Guid.NewGuid(), "Pepe Rivero", Now);
+        f.Coaches.Add(coach);
+        f.Squads.Add(Squad.Create(f.Away.Id, f.Match.SeasonId, coach.Id, Now.AddDays(-30), StaffRole.AssistantCoach));
+
+        await f.Rate(f.ClubUser, 8, "Dejó jugar");
+        await f.Rate(new User(CoachId: coach.Id), 4, "Se comió un penalti claro");
+
+        var away = Assert.Single(f.Store.Ratings, r => r.TeamId == f.Away.Id);
+        Assert.Equal(("Pepe Rivero", (StaffRole?)StaffRole.AssistantCoach, coach.Id), (away.RaterName, away.RaterStaffRole, away.RatedByCoachId));
+
+        var anonymous = await f.View(new Anonymous());
+        Assert.Equal((false, false, (Guid?)null), (anonymous.CanRate, anonymous.NeedsLicense, anonymous.RaterTeamId));
+        var official = Assert.Single(anonymous.Officials);
+        Assert.Null(official.MyScore);
+        Assert.Equal(
+            [(f.Home.Id, 8, "CD Vallobín", (StaffRole?)null), (f.Away.Id, 4, "Pepe Rivero", StaffRole.AssistantCoach)],
+            official.TeamRatings.Select(r => (r.TeamId, r.Score, r.RatedBy.Name, r.RatedBy.StaffRole)));
+        Assert.Equal(6.0, official.Average);
+    }
+
+    [Fact]
+    public void The_rating_has_to_be_confirmed()
+    {
+        var validator = new RateRefereeValidator();
+        var unconfirmed = validator.Validate(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), 7, null));
+        Assert.Contains(unconfirmed.Errors, e => e.ErrorCode == ErrorCode.RefereeRatingNotConfirmed);
+        Assert.True(validator.Validate(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), 7, null, Confirmed: true)).IsValid);
     }
 
     [Fact]
@@ -129,11 +168,15 @@ public class RefereeTests
     }
 
     [Fact]
-    public async Task Players_cannot_see_or_rate_referees()
+    public async Task Players_and_visitors_see_referees_but_cannot_rate_them()
     {
         var f = new Fixture();
         var error = await Assert.ThrowsAsync<ForbiddenException>(() => f.Rate(new User(PlayerId: Guid.NewGuid()), 5, null));
         Assert.Equal(ErrorCode.RefereeStaffOnly, error.Code);
+        await Assert.ThrowsAsync<UnauthenticatedException>(() => f.Rate(new Anonymous(), 5, null));
+
+        var seen = await f.View(new User(PlayerId: Guid.NewGuid()));
+        Assert.Equal((false, "Sara Ovies García"), (seen.CanRate, Assert.Single(seen.Officials).Name));
     }
 
     [Fact]
@@ -158,20 +201,20 @@ public class RefereeTests
         store.Officials.Add(MatchOfficial.Assign(games[1].Id, sara.Id, OfficialRole.Referee, "asturfutbol", Now));
         store.Officials.Add(MatchOfficial.Assign(games[2].Id, sara.Id, OfficialRole.AssistantReferee1, "asturfutbol", Now));
         store.Officials.Add(MatchOfficial.Assign(games[0].Id, pepe.Id, OfficialRole.AssistantReferee2, "asturfutbol", Now));
-        store.Ratings.Add(RefereeRating.Rate(store.Officials[0], games[0].HomeTeamId, 8, null, Guid.NewGuid(), null, Now));
-        store.Ratings.Add(RefereeRating.Rate(store.Officials[2], games[2].HomeTeamId, 4, null, Guid.NewGuid(), null, Now));
+        var rater = new RefereeRater(Guid.NewGuid(), null, null, "Club");
+        store.Ratings.Add(RefereeRating.Rate(store.Officials[0], games[0].HomeTeamId, 8, null, rater, Now));
+        store.Ratings.Add(RefereeRating.Rate(store.Officials[2], games[2].HomeTeamId, 4, null, rater, Now));
 
         var matches = Stub<IMatchStore>((_, args) => Task.FromResult<IReadOnlyList<Match>>(games.Where(m => ((IEnumerable<Guid>)args![0]!).Contains(m.Id)).ToList()));
         var competitions = Stub<ICompetitionStore>((method, _) => method == nameof(ICompetitionStore.GetAllAsync)
             ? Task.FromResult<IReadOnlyList<Competition>>([third, thirdTwo, second])
             : Task.FromResult<Competition?>(third));
-        var licenses = Stub<ILicenseGate>((_, _) => Task.FromResult(true));
         var club = Club.Register(Guid.NewGuid(), "CD Vallobín", Now);
         club.AddTeam(games[0].HomeTeamId, Now);
         var user = new User(ClubId: club.Id);
 
         Assert.Equal("3a-asturfutbol", RefereeCategories.Key("3ª AsturFútbol"));
-        var list = new ListRefereesHandler(user, licenses, store, matches, competitions);
+        var list = new ListRefereesHandler(store, matches, competitions);
 
         var thirdMain = await list.Handle(new ListRefereesQuery("3a-asturfutbol", OfficialDuty.Main), default);
         var main = Assert.Single(thirdMain);
@@ -185,7 +228,7 @@ public class RefereeTests
         Assert.Equal(2, (await list.Handle(new ListRefereesQuery(Search: "ovies"), default)).Count);
 
         var categories = await new ListRefereeCategoriesHandler(
-            user, licenses, store, matches, competitions,
+            user, store, matches, competitions,
             Stub<IClubStore>((_, _) => Task.FromResult<Club?>(club)), Stub<ISquadStore>((_, _) => Task.FromResult<Squad?>(null)), new FixedClock(Now))
             .Handle(new ListRefereeCategoriesQuery(), default);
         Assert.Equal(["2a-asturfutbol", "3a-asturfutbol"], categories.Categories.Select(c => c.Key));
@@ -211,6 +254,16 @@ public class RefereeTests
             : CoachId != null ? Abstractions.Identity.AccountType.Coach : Abstractions.Identity.AccountType.Club;
     }
 
+    private sealed record Anonymous : ICurrentUser
+    {
+        public bool IsAuthenticated => false;
+        public Guid? UserId => null;
+        public AccountType? AccountType => null;
+        public Guid? PlayerId => null;
+        public Guid? CoachId => null;
+        public Guid? ClubId => null;
+    }
+
     private sealed class Fixture
     {
         public Team Home { get; } = Team.Create("CD Vallobín", "VAL", null);
@@ -218,6 +271,8 @@ public class RefereeTests
         public Match Match { get; }
         public Club Club { get; } = Club.Register(Guid.NewGuid(), "CD Vallobín", Now);
         public List<Club> Clubs { get; } = [];
+        public List<Coach> Coaches { get; } = [];
+        public List<Squad> Squads { get; } = [];
         public InMemoryRefereeStore Store { get; } = new();
         public User ClubUser => new(ClubId: Club.Id);
 
@@ -232,18 +287,26 @@ public class RefereeTests
             Store.Officials.Add(MatchOfficial.Assign(Match.Id, sara.Id, OfficialRole.Referee, "asturfutbol", Now));
         }
 
+        private ILicenseGate Licenses => Stub<ILicenseGate>((_, _) => Task.FromResult(true));
+        private IMatchStore Matches => Stub<IMatchStore>((_, args) => Task.FromResult<Match?>((Guid)args![0]! == Match.Id ? Match : null));
+        private ITeamStore Teams => Stub<ITeamStore>((method, args) => method == nameof(ITeamStore.GetByIdsAsync)
+            ? Task.FromResult<IReadOnlyList<Team>>(new[] { Home, Away }.Where(t => ((IEnumerable<Guid>)args![0]!).Contains(t.Id)).ToList())
+            : Task.FromResult(new[] { Home, Away }.FirstOrDefault(t => t.Id == (Guid)args![0]!)));
+        private IClubStore ClubStore => Stub<IClubStore>((_, args) => Task.FromResult(Clubs.FirstOrDefault(c => c.Id == (Guid)args![0]!)));
+        private ISquadStore SquadStore => Stub<ISquadStore>((_, args) =>
+            Task.FromResult(Squads.FirstOrDefault(s => s.TeamId == (Guid)args![0]! && s.SeasonId == (Guid)args[1]!)));
+        private ICoachStore CoachStore => Stub<ICoachStore>((_, args) => Task.FromResult(Coaches.FirstOrDefault(c => c.Id == (Guid)args![0]!)));
+        private ICompetitionStore Competitions => Stub<ICompetitionStore>((_, _) => Task.FromResult<Competition?>(null));
+
         public Task<MatchOfficialsDto> Rate(ICurrentUser user, int score, string? comment) =>
             new RateRefereeHandler(
-                user,
-                Stub<ILicenseGate>((_, _) => Task.FromResult(true)),
-                Stub<IMatchStore>((_, args) => Task.FromResult<Match?>((Guid)args![0]! == Match.Id ? Match : null)),
-                Stub<ITeamStore>((_, args) => Task.FromResult(new[] { Home, Away }.FirstOrDefault(t => t.Id == (Guid)args![0]!))),
-                Stub<IClubStore>((_, args) => Task.FromResult(Clubs.FirstOrDefault(c => c.Id == (Guid)args![0]!))),
-                Stub<ISquadStore>((_, _) => Task.FromResult<Squad?>(null)),
-                Store,
-                Stub<ICompetitionStore>((_, _) => Task.FromResult<Competition?>(null)),
+                user, Licenses, Matches, Teams, ClubStore, SquadStore, CoachStore, Store, Competitions,
                 Stub<IUnitOfWork>((_, _) => Task.FromResult(1)),
-                new FixedClock(Now)).Handle(new RateRefereeCommand(Match.Id, Store.Referees[0].Id, score, comment), default);
+                new FixedClock(Now)).Handle(new RateRefereeCommand(Match.Id, Store.Referees[0].Id, score, comment, Confirmed: true), default);
+
+        public Task<MatchOfficialsDto> View(ICurrentUser user) =>
+            new GetMatchOfficialsHandler(user, Licenses, Matches, Teams, ClubStore, SquadStore, Store, Competitions, new FixedClock(Now))
+                .Handle(new GetMatchOfficialsQuery(Match.Id), default);
     }
 
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider

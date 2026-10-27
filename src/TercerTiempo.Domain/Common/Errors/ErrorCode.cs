@@ -209,6 +209,8 @@ public static class ErrorCode
     public const string RefereeNotInMatch = "referee.not_in_match";
     public const string RefereeTeamNotInMatch = "referee.team_not_in_match";
     public const string RefereeMatchNotOver = "referee.match_not_over";
+    public const string RefereeAlreadyRated = "referee.already_rated";
+    public const string RefereeRatingNotConfirmed = "referee.rating_not_confirmed";
     public const string LicenseSimulatorDisabled = "license.simulator_disabled";
     public const string LicenseSubscriptionActive = "license.subscription_active";
     public const string LicenseNoSubscription = "license.no_subscription";

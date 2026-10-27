@@ -12,6 +12,7 @@ using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Referees;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
@@ -88,6 +89,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             && ex.Entries.Any(e => e.Entity is SquadPlayer { PlayerId: not null }))
         {
             throw new ConflictException(ErrorCode.PlayerAlreadyInSquad);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 }
+            && ex.Entries.Any(e => e.Entity is RefereeRating))
+        {
+            throw new ConflictException(ErrorCode.RefereeAlreadyRated, "ese árbitro");
         }
 
         foreach (var aggregate in aggregates)

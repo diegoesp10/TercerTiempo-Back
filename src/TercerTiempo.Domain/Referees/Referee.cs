@@ -1,6 +1,7 @@
 using System.Globalization;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Domain.Referees;
 
@@ -127,13 +128,18 @@ public sealed class MatchOfficialLookup
     }
 }
 
+// Quién pone una nota: el club del equipo (su nombre) o un técnico de su plantilla (su nombre y su función en ella), y
+// con qué cuenta. Se guarda tal cual estaba al votar.
+public sealed record RefereeRater(Guid? ClubId, Guid? CoachId, Guid? UserId, string Name, StaffRole? StaffRole = null);
+
 // Nota de un equipo a un miembro del equipo arbitral en un partido que ha jugado: de 0 a 10, con un comentario opcional
-// que la explique. La pone el club del equipo o su cuerpo técnico vigente; una por equipo, árbitro y partido (se puede
-// cambiar). Es una referencia para los clubes: se ve entre ellos, nunca en público ni para los jugadores.
+// que la explique. La pone el club del equipo o su cuerpo técnico vigente; una por equipo, árbitro y partido, y es
+// definitiva: no se cambia ni se borra. Es pública, con quién la puso, para que se vea el porqué de cada nota.
 public sealed class RefereeRating : AggregateRoot
 {
     public const int MaxScore = 10;
     public const int MaxCommentLength = 1000;
+    public const int MaxRaterNameLength = 150;
 
     public Guid MatchId { get; private set; }
     public Guid RefereeId { get; private set; }
@@ -143,37 +149,36 @@ public sealed class RefereeRating : AggregateRoot
     public string? Comment { get; private set; }
     public Guid? RatedByClubId { get; private set; }
     public Guid? RatedByCoachId { get; private set; }
+    public Guid? RatedByUserId { get; private set; }
+    public string RaterName { get; private set; } = string.Empty;
+    public StaffRole? RaterStaffRole { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
     private RefereeRating() { }
 
-    public static RefereeRating Rate(
-        MatchOfficial official, Guid teamId, int score, string? comment, Guid? clubId, Guid? coachId, DateTimeOffset now)
+    public static RefereeRating Rate(MatchOfficial official, Guid teamId, int score, string? comment, RefereeRater rater, DateTimeOffset now)
     {
-        var rating = new RefereeRating
+        if (score is < 0 or > MaxScore) throw new DomainException(ErrorCode.RefereeScoreRange, MaxScore);
+        if (rater.ClubId is null == rater.CoachId is null) throw new DomainException(ErrorCode.RefereeRaterRequired);
+
+        return new RefereeRating
         {
             Id = NewId(),
             MatchId = official.MatchId,
             RefereeId = official.RefereeId,
             Role = official.Role,
             TeamId = Guard.NotEmpty(teamId, nameof(teamId)),
+            Score = score,
+            Comment = string.IsNullOrWhiteSpace(comment) ? null : Guard.NotEmpty(comment, "comentario", MaxCommentLength),
+            RatedByClubId = rater.ClubId,
+            RatedByCoachId = rater.CoachId,
+            RatedByUserId = rater.UserId,
+            RaterName = Guard.NotEmpty(rater.Name, "quién puntúa", MaxRaterNameLength),
+            RaterStaffRole = rater.CoachId is null ? null : rater.StaffRole,
             CreatedAt = now,
+            UpdatedAt = now,
         };
-        rating.Change(score, comment, clubId, coachId, now);
-        return rating;
-    }
-
-    public void Change(int score, string? comment, Guid? clubId, Guid? coachId, DateTimeOffset now)
-    {
-        if (score is < 0 or > MaxScore) throw new DomainException(ErrorCode.RefereeScoreRange, MaxScore);
-        if (clubId is null == coachId is null) throw new DomainException(ErrorCode.RefereeRaterRequired);
-
-        Score = score;
-        Comment = string.IsNullOrWhiteSpace(comment) ? null : Guard.NotEmpty(comment, "comentario", MaxCommentLength);
-        RatedByClubId = clubId;
-        RatedByCoachId = coachId;
-        UpdatedAt = now;
     }
 }
 

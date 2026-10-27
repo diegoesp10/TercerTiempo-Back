@@ -1524,7 +1524,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "referee.staff_only",
                             Language = "es",
-                            Message = "Los árbitros y sus notas son para los clubes y sus cuerpos técnicos, con licencia vigente."
+                            Message = "Solo los clubes y sus cuerpos técnicos, con licencia vigente, puntúan a los árbitros."
                         },
                         new
                         {
@@ -1543,6 +1543,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "referee.match_not_over",
                             Language = "es",
                             Message = "Solo se puede puntuar al equipo arbitral de un partido ya jugado."
+                        },
+                        new
+                        {
+                            Code = "referee.already_rated",
+                            Language = "es",
+                            Message = "Tu equipo ya puntuó a {0} en este partido y las notas son definitivas: no se pueden cambiar."
+                        },
+                        new
+                        {
+                            Code = "referee.rating_not_confirmed",
+                            Language = "es",
+                            Message = "Confirma la nota antes de guardarla: una vez guardada no se puede cambiar."
                         },
                         new
                         {
@@ -3087,6 +3099,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("RatedByCoachId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RaterName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("RaterStaffRole")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<Guid>("RefereeId")
                         .HasColumnType("uniqueidentifier");

@@ -21,7 +21,9 @@ public sealed record RefereeRatingRequest(
     [property: Description("Opcional: por qué esa nota (hasta 1000 caracteres).")]
     string? Comment,
     [property: Description("Solo si el club tiene los dos equipos del partido: en nombre de cuál puntúa.")]
-    Guid? TeamId = null);
+    Guid? TeamId = null,
+    [property: Description("Tiene que ser true: la nota es definitiva, no se puede cambiar, y se confirma antes de guardarla.")]
+    bool Confirmed = false);
 
 internal sealed class RefereesRepository(
     IQueryHandler<ListRefereesQuery, IReadOnlyList<RefereeSummaryDto>> list,
@@ -47,5 +49,5 @@ internal sealed class RefereesRepository(
         officials.Handle(new GetMatchOfficialsQuery(matchId), cancellationToken);
 
     public Task<MatchOfficialsDto> RateAsync(Guid matchId, Guid refereeId, RefereeRatingRequest request, CancellationToken cancellationToken = default) =>
-        rate.Handle(new RateRefereeCommand(matchId, refereeId, request.Score, request.Comment, request.TeamId), cancellationToken);
+        rate.Handle(new RateRefereeCommand(matchId, refereeId, request.Score, request.Comment, request.TeamId, request.Confirmed), cancellationToken);
 }

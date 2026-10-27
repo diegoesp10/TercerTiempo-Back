@@ -30,8 +30,7 @@ public static class SearchTypes
 
 // Quién busca: sus equipos suben en los resultados y solo él ve sus plantillas internas (las de su cuerpo técnico o la
 // suya como jugador y, para un club, todas las de sus equipos).
-// SeesReferees: clubes y cuerpos técnicos con licencia (los árbitros y sus notas no son para nadie más).
-internal sealed record SearchViewer(IReadOnlySet<Guid> OwnTeamIds, IReadOnlySet<Guid> VisibleSquadIds, IReadOnlySet<Guid> ClubTeamIds, bool SeesReferees = false)
+internal sealed record SearchViewer(IReadOnlySet<Guid> OwnTeamIds, IReadOnlySet<Guid> VisibleSquadIds, IReadOnlySet<Guid> ClubTeamIds)
 {
     public bool CanSee(Guid squadId, Guid? teamId) => VisibleSquadIds.Contains(squadId) || teamId is { } team && ClubTeamIds.Contains(team);
 }
@@ -290,7 +289,6 @@ internal sealed class SearchIndex
     {
         var doc = _docs[index];
         if (doc.RestrictedToSquadId is { } squad && !viewer.CanSee(squad, doc.TeamId)) return null;
-        if (doc.Type == SearchTypes.Referee && !viewer.SeesReferees) return null;
 
         // Un partido solo sale si la búsqueda nombra a cada equipo con una palabra propia («nalón roces»): «real avilés»
         // es un equipo, no el Real Avilés – Real Unión, y una letra suelta no nombra a nadie.
