@@ -11,7 +11,9 @@ public sealed record ChangePasswordCommand(
     [property: Description("Contraseña actual de la cuenta.")]
     string CurrentPassword,
     [property: Description("Contraseña nueva: al menos 10 caracteres con mayúscula, minúscula, número y símbolo, distinta de la actual.")]
-    string NewPassword) : ICommand<AuthResponse>;
+    string NewPassword,
+    [property: Description("La contraseña nueva otra vez: tienen que coincidir.")]
+    string ConfirmNewPassword) : ICommand<AuthResponse>;
 
 internal sealed class ChangePasswordValidator : AbstractValidator<ChangePasswordCommand>
 {
@@ -22,6 +24,7 @@ internal sealed class ChangePasswordValidator : AbstractValidator<ChangePassword
             .MinimumLength(PasswordPolicy.MinLength).WithCatalogMessage(ErrorCode.AuthPasswordTooShort, PasswordPolicy.MinLength)
             .MaximumLength(PasswordPolicy.MaxLength).WithCatalogMessage(ErrorCode.AuthPasswordTooLong, PasswordPolicy.MaxLength)
             .NotEqual(x => x.CurrentPassword).WithCatalogMessage(ErrorCode.AuthPasswordSame);
+        RuleFor(x => x.ConfirmNewPassword).Equal(x => x.NewPassword).WithCatalogMessage(ErrorCode.AuthPasswordMismatch);
     }
 }
 

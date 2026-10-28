@@ -24,8 +24,10 @@ namespace TercerTiempo.Application.Auth.Register;
 public sealed record RegisterCommand(
     [property: Description("Email de acceso. Debe ser único.")]
     string Email,
-    [property: Description("Mínimo 8 caracteres y al menos un número.")]
+    [property: Description("Al menos 10 caracteres con mayúscula, minúscula, número y símbolo.")]
     string Password,
+    [property: Description("La misma contraseña otra vez: tienen que coincidir.")]
+    string ConfirmPassword,
     [property: Description("Cuerpo técnico: nombre y apellidos. Club: nombre tal y como figura en GET /api/clubs/catalog. Jugadores: se ignora, el nombre es el de la ficha del código.")]
     string? DisplayName,
     [property: Description("Player (jugador), Coach (cuerpo técnico) o Club.")]
@@ -45,6 +47,7 @@ internal sealed class RegisterValidator : AbstractValidator<RegisterCommand>
         RuleFor(x => x.Password).NotEmpty()
             .MinimumLength(PasswordPolicy.MinLength).WithCatalogMessage(ErrorCode.AuthPasswordTooShort, PasswordPolicy.MinLength)
             .MaximumLength(PasswordPolicy.MaxLength).WithCatalogMessage(ErrorCode.AuthPasswordTooLong, PasswordPolicy.MaxLength);
+        RuleFor(x => x.ConfirmPassword).Equal(x => x.Password).WithCatalogMessage(ErrorCode.AuthPasswordMismatch);
         RuleFor(x => x.DisplayName).NotEmpty().When(x => x.AccountType != AccountType.Player);
         RuleFor(x => x.DisplayName).MaximumLength(120);
         RuleFor(x => x.AccountType).IsInEnum();

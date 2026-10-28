@@ -41,6 +41,7 @@ public static class ErrorCatalog
         (ErrorCode.AuthPasswordTooShort, "La contraseña debe tener al menos {0} caracteres."),
         (ErrorCode.AuthPasswordTooLong, "La contraseña no puede tener más de {0} caracteres."),
         (ErrorCode.AuthPasswordSame, "La contraseña nueva tiene que ser distinta de la actual."),
+        (ErrorCode.AuthPasswordMismatch, "Las dos contraseñas no coinciden: escribe la misma en los dos campos."),
         (ErrorCode.AuthCurrentPasswordWrong, "La contraseña actual no es correcta."),
         (ErrorCode.AuthPasswordChangeTooSoon, "Solo se puede cambiar la contraseña una vez al día. Podrás volver a cambiarla a partir del {0}."),
         (ErrorCode.AuthLockedOut, "Demasiados intentos fallidos. Vuelve a intentarlo dentro de {0} minutos."),

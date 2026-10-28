@@ -63,7 +63,7 @@ public class PlayerInvitationTests
         Assert.Equal(f.Target.FullName, anonymous.Player.FullName);
         Assert.Null(anonymous.Player.InviteCode);
 
-        var response = await f.Register().Handle(new("nuevo@example.com", "Prueba1234", null, AccountType.Player, null, null, code), default);
+        var response = await f.Register().Handle(new("nuevo@example.com", "Prueba1234", "Prueba1234", null, AccountType.Player, null, null, code), default);
         var registered = f.Registered.Single();
         Assert.Equal(AccountType.Player, response.Account.Type);
         Assert.Equal("Pelayo Fernández", registered.DisplayName);
@@ -77,10 +77,10 @@ public class PlayerInvitationTests
     public async Task Register_as_player_rejects_missing_or_unknown_codes_before_creating_the_user()
     {
         var f = new Fixture();
-        RegisterCommand withoutCode = new("nuevo@example.com", "Prueba1234", "Alguien", AccountType.Player, null, null, null);
+        RegisterCommand withoutCode = new("nuevo@example.com", "Prueba1234", "Prueba1234", "Alguien", AccountType.Player, null, null, null);
         var validation = new RegisterValidator().Validate(withoutCode);
         Assert.Contains(validation.Errors, e => e.ErrorCode == ErrorCode.AuthInviteCodeRequired);
-        await Assert.ThrowsAsync<NotFoundException>(() => f.Register().Handle(new("nuevo@example.com", "Prueba1234", "Alguien", AccountType.Player, Position.Forward, null, "J9MEG589"), default));
+        await Assert.ThrowsAsync<NotFoundException>(() => f.Register().Handle(new("nuevo@example.com", "Prueba1234", "Prueba1234", "Alguien", AccountType.Player, Position.Forward, null, "J9MEG589"), default));
         Assert.Empty(f.Registered);
         Assert.Equal(0, f.Saves);
     }
@@ -93,7 +93,7 @@ public class PlayerInvitationTests
         var f = new Fixture();
 
         var error = await Assert.ThrowsAsync<FluentValidation.ValidationException>(() =>
-            f.Register(clubInviteRequired: true).Handle(new("club@example.com", "Prueba1234", "CD Vallobín", AccountType.Club, null, null, code), default));
+            f.Register(clubInviteRequired: true).Handle(new("club@example.com", "Prueba1234", "Prueba1234", "CD Vallobín", AccountType.Club, null, null, code), default));
 
         Assert.Equal(expected, Assert.Single(error.Errors).ErrorCode);
         Assert.Equal(0, f.Saves);
@@ -107,7 +107,7 @@ public class PlayerInvitationTests
         var code = f.Target.InviteCode!;
 
         var register = await Assert.ThrowsAsync<ForbiddenException>(() =>
-            f.Register().Handle(new("nuevo@example.com", "Prueba1234", null, AccountType.Player, null, null, code), default));
+            f.Register().Handle(new("nuevo@example.com", "Prueba1234", "Prueba1234", null, AccountType.Player, null, null, code), default));
         var join = await Assert.ThrowsAsync<ForbiddenException>(() => f.Join().Handle(new(code), default));
 
         Assert.Equal(TercerTiempo.Domain.Common.Errors.ErrorCode.LicenseRequired, register.Code);

@@ -42,6 +42,7 @@ public static class ErrorCode
     public const string AuthPasswordTooShort = "auth.password_too_short";
     public const string AuthPasswordTooLong = "auth.password_too_long";
     public const string AuthPasswordSame = "auth.password_same";
+    public const string AuthPasswordMismatch = "auth.password_mismatch";
     public const string AuthCurrentPasswordWrong = "auth.current_password_wrong";
     public const string AuthPasswordChangeTooSoon = "auth.password_change_too_soon";
     public const string AuthLockedOut = "auth.locked_out";

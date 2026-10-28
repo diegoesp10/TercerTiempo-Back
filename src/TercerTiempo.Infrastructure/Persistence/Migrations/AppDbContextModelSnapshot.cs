@@ -628,6 +628,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "auth.password_mismatch",
+                            Language = "es",
+                            Message = "Las dos contraseñas no coinciden: escribe la misma en los dos campos."
+                        },
+                        new
+                        {
                             Code = "auth.current_password_wrong",
                             Language = "es",
                             Message = "La contraseña actual no es correcta."

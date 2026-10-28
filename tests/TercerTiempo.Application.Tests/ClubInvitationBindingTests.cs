@@ -114,7 +114,7 @@ public class ClubInvitationBindingTests
             Stub<IUnitOfWork>((_, _) => Task.FromResult(1)),
             Stub<ITokenService>((_, _) => new AuthToken("token", DateTimeOffset.UtcNow.AddHours(1))));
 
-        return handler.Handle(new RegisterCommand("club@example.com", "secreto123", club, AccountType.Club, null, null, code), default);
+        return handler.Handle(new RegisterCommand("club@example.com", "secreto123", "secreto123", club, AccountType.Club, null, null, code), default);
     }
 
     private AccountStores Stores() => new(

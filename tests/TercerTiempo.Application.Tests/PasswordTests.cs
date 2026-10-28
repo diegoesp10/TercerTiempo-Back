@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Auth.ChangePassword;
+using TercerTiempo.Application.Auth.Register;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Infrastructure.Identity;
@@ -49,11 +50,23 @@ public class PasswordTests
     public void The_new_password_must_be_long_and_different()
     {
         var validator = new ChangePasswordValidator();
-        var same = validator.Validate(new ChangePasswordCommand(Strong, Strong));
+        var same = validator.Validate(new ChangePasswordCommand(Strong, Strong, Strong));
         Assert.Contains(same.Errors, e => e.ErrorCode == ErrorCode.AuthPasswordSame);
-        var shortOne = validator.Validate(new ChangePasswordCommand(Strong, "Ab1!x"));
+        var shortOne = validator.Validate(new ChangePasswordCommand(Strong, "Ab1!x", "Ab1!x"));
         Assert.Contains(shortOne.Errors, e => e.ErrorCode == ErrorCode.AuthPasswordTooShort);
-        Assert.True(validator.Validate(new ChangePasswordCommand(Strong, "Nube#Cobre83Ri")).IsValid);
+        Assert.True(validator.Validate(new ChangePasswordCommand(Strong, "Nube#Cobre83Ri", "Nube#Cobre83Ri")).IsValid);
+    }
+
+    [Fact]
+    public void The_password_has_to_be_typed_twice_the_same()
+    {
+        var change = new ChangePasswordValidator().Validate(new ChangePasswordCommand(Strong, "Nube#Cobre83Ri", "Nube#Cobre83Rl"));
+        var failure = Assert.Single(change.Errors);
+        Assert.Equal((nameof(ChangePasswordCommand.ConfirmNewPassword), ErrorCode.AuthPasswordMismatch), (failure.PropertyName, failure.ErrorCode));
+
+        var register = new RegisterValidator().Validate(new RegisterCommand("pelayo.ruiz@example.com", "Nube#Cobre83Ri", "", null, AccountType.Player, null, null, "ABCD1234"));
+        Assert.Contains(register.Errors, e => e.PropertyName == nameof(RegisterCommand.ConfirmPassword) && e.ErrorCode == ErrorCode.AuthPasswordMismatch);
+        Assert.True(new RegisterValidator().Validate(new RegisterCommand("pelayo.ruiz@example.com", "Nube#Cobre83Ri", "Nube#Cobre83Ri", null, AccountType.Player, null, null, "ABCD1234")).IsValid);
     }
 
     [LocalSqlFact]

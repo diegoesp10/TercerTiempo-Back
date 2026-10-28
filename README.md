@@ -151,8 +151,9 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | Método | Ruta | Caso de uso |
 |---|---|---|
 | GET | `/api/auth/invite/{code}` | Sin sesión: la ficha y la plantilla que hay detrás de un código personal vigente |
-| POST | `/api/auth/register` | Alta como jugador (solo con su código personal: queda vinculado a su ficha), cuerpo técnico (con el código de acceso del club: lo canjea y entra en su plantilla) o club |
+| POST | `/api/auth/register` | Alta como jugador (solo con su código personal: queda vinculado a su ficha), cuerpo técnico (con el código de acceso del club: lo canjea y entra en su plantilla) o club. La contraseña va dos veces (`password` y `confirmPassword`) y tienen que coincidir |
 | POST | `/api/auth/login` | Login |
+| PUT | `/api/auth/password` | Cambiar la contraseña (como mucho una vez al día): la actual, la nueva y la nueva otra vez (`confirmNewPassword`) |
 | GET | `/api/auth/me` | Cuenta autenticada: jugador con su plantilla; técnico con sus plantillas y nombramientos; club con sus equipos y nombramientos |
 | POST | `/api/admin/teams/{id}/crest` | Importar el escudo de un equipo desde una URL (`{ "url": ... }`) |
 | GET | `/api/clubs/catalog?search=` | Catálogo de clubes del proveedor (equipos agrupados, si ya tienen cuenta); de aquí sale el nombre del alta. Público |
