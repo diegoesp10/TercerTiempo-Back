@@ -84,10 +84,12 @@ public static class ApiServiceExtensions
                 .RequireAuthenticatedUser()
                 .RequireClaim(AuthClaims.Admin, "true"));
 
-            // Las rutas de las cuentas no aceptan el token del administrador: son sesiones distintas que no conviven.
+            // El administrador entra en las rutas de las cuentas solo para leer (visor de mantenimiento): con su token
+            // cualquier escritura de un club, un técnico o un jugador da 403, además de que no tiene perfil propio.
             options.DefaultPolicy = new AuthorizationPolicyBuilder()
                 .RequireAuthenticatedUser()
-                .RequireAssertion(context => !context.User.HasClaim(AuthClaims.Admin, "true"))
+                .RequireAssertion(context => !context.User.HasClaim(AuthClaims.Admin, "true")
+                    || context.Resource is HttpContext http && (HttpMethods.IsGet(http.Request.Method) || HttpMethods.IsHead(http.Request.Method)))
                 .Build();
         });
     }

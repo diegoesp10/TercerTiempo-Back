@@ -93,6 +93,30 @@ public class ClubAsStaffTests
         Assert.Equal(0, f.Saves);
     }
 
+    // Visor del administrador: ve por dentro cualquier plantilla y sus vídeos, pero no gestiona ni registra nada.
+    [Fact]
+    public async Task The_admin_sees_any_squad_from_inside_but_cannot_record_anything()
+    {
+        var f = new Fixture();
+        var admin = new Admin(Guid.NewGuid());
+        var noClubs = Stub<IClubStore>((method, _) => throw new NotSupportedException(method));
+
+        Assert.True(SquadAccess.CanView(f.Squad, admin, TimeProvider.System));
+        Assert.True(await SquadAccess.IsInsiderAsync(f.Squad, admin, TimeProvider.System, noClubs, default));
+        Assert.False(await SquadAccess.IsManagerAsync(f.Squad, admin, TimeProvider.System, noClubs, default));
+
+        var video = MatchVideo.Upload(f.Squad.Id, f.Team.Id, f.Played.Id, f.Squad.SeasonId, null, VideoPart.Full, null, "partido.mp4", "video/mp4",
+            50_000_000, "clave", 500, Now, f.Club.Id);
+        var level = VideoAccess.LevelFor(video, f.Squad, admin, purchased: false, TimeProvider.System);
+        Assert.Equal(VideoAccessLevel.Admin, level);
+        Assert.True(VideoAccess.CanWatch(level));
+
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            f.Record(admin).Handle(new(f.Squad.Id, f.Played.Id, [Line(f.Squad.ActivePlayers.Single().Id)]), default));
+        Assert.Equal(ErrorCode.SquadManagersOnly, error.Code);
+        Assert.Empty(f.Performances);
+    }
+
     private static MatchSheetEntryInput Line(Guid squadPlayerId) =>
         new(squadPlayerId, Played: true, Started: true, MinutesPlayed: 90, Goals: 1, Assists: 0, Shots: 2, ShotsOnTarget: 1,
             KeyPasses: 0, Tackles: 1, Interceptions: 0, Saves: 0, YellowCards: 0, RedCard: false, Notes: null);
@@ -101,6 +125,16 @@ public class ClubAsStaffTests
     {
         public bool IsAuthenticated => true;
         public AccountType? AccountType => CoachId != null ? Abstractions.Identity.AccountType.Coach : Abstractions.Identity.AccountType.Club;
+    }
+
+    private sealed record Admin(Guid? UserId) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public AccountType? AccountType => null;
+        public Guid? PlayerId => null;
+        public Guid? CoachId => null;
+        public Guid? ClubId => null;
+        public bool IsAdmin => true;
     }
 
     private sealed class Fixture

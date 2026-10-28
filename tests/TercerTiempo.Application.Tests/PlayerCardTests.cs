@@ -106,6 +106,7 @@ public class PlayerCardTests
         "get_UserId" => Guid.NewGuid(),
         "get_CoachId" => coachId,
         "get_PlayerId" => playerId,
+        "get_IsAdmin" => false,
         _ => null,
     });
 

@@ -328,6 +328,14 @@ y el siguiente login vuelve a enseñar el QR; después hay que volver a ponerlo 
 Con el segundo paso activo, `Admin:Password` puede no cumplir las reglas de contraseña de las cuentas: el
 administrador se crea igual (con un aviso en el log), porque sin el código de la app no basta con la contraseña.
 
+**Visor de solo lectura.** Con su token, el administrador ve todo lo que vería una cuenta y lo interno de cada plantilla
+(plantillas privadas aunque el equipo no tenga licencia, actas internas, estadísticas, lesiones, sugerencias, previa,
+fichas de jugador, vídeos y el buscador con todas las plantillas): `ICurrentUser.IsAdmin` cuenta en `SquadAccess.CanView`
+e `IsInsiderAsync`, en `LicenseGate` (sin crear licencias de prueba al mirar) y en `VideoAccess` (nivel `Admin`). Nunca
+es gestor (`IsManagerAsync` sigue en falso) y la política por defecto solo le deja GET/HEAD: cualquier escritura de las
+rutas de las cuentas le da 403, y las rutas de la cuenta propia (`/me`, `/api/squads/mine`) no tienen nada que darle.
+El frontal usa su sesión para leer cuando no hay una cuenta abierta y lo indica con una banda «Modo administrador».
+
 ## Acta pública: asturfutbol.es
 
 Cada partido tiene un **acta pública** (alineaciones, cambios con minuto, goles y tarjetas), igual para todos, y

@@ -30,9 +30,9 @@ public static class SearchTypes
 
 // Quién busca: sus equipos suben en los resultados y solo él ve sus plantillas internas (las de su cuerpo técnico o la
 // suya como jugador y, para un club, todas las de sus equipos).
-internal sealed record SearchViewer(IReadOnlySet<Guid> OwnTeamIds, IReadOnlySet<Guid> VisibleSquadIds, IReadOnlySet<Guid> ClubTeamIds)
+internal sealed record SearchViewer(IReadOnlySet<Guid> OwnTeamIds, IReadOnlySet<Guid> VisibleSquadIds, IReadOnlySet<Guid> ClubTeamIds, bool SeesAll = false)
 {
-    public bool CanSee(Guid squadId, Guid? teamId) => VisibleSquadIds.Contains(squadId) || teamId is { } team && ClubTeamIds.Contains(team);
+    public bool CanSee(Guid squadId, Guid? teamId) => SeesAll || VisibleSquadIds.Contains(squadId) || teamId is { } team && ClubTeamIds.Contains(team);
 }
 
 internal sealed record SearchHit(SearchDoc Doc, double Score, string Link, IReadOnlyList<string> Badges);

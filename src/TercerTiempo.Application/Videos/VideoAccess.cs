@@ -12,6 +12,10 @@ internal static class VideoAccess
         if (video.IsDeleted)
             return VideoAccessLevel.None;
 
+        // El administrador los ve todos, sin comprarlos ni poder gestionarlos (canDelete va aparte).
+        if (user.IsAdmin)
+            return VideoAccessLevel.Admin;
+
         if (ownerSquad is not null && (clubOwner || SquadAccess.IsStaff(ownerSquad, user, clock) || SquadAccess.IsMember(ownerSquad, user)))
             return VideoAccessLevel.Owner;
 
@@ -42,5 +46,5 @@ internal static class VideoAccess
     }
 
     public static bool CanWatch(VideoAccessLevel level) =>
-        level is VideoAccessLevel.Owner or VideoAccessLevel.Purchased or VideoAccessLevel.Free;
+        level is VideoAccessLevel.Owner or VideoAccessLevel.Purchased or VideoAccessLevel.Free or VideoAccessLevel.Admin;
 }

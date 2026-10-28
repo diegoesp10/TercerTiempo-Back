@@ -15,8 +15,9 @@ internal static class SquadAccess
     public static bool IsMember(Squad squad, ICurrentUser user) =>
         user.PlayerId is { } playerId && squad.IsMember(playerId);
 
+    // El administrador ve cualquier plantilla (solo lectura: nunca es staff, miembro ni club de ninguna).
     public static bool CanView(Squad squad, ICurrentUser user, TimeProvider clock) =>
-        squad.CanBeViewedBy(user.CoachId, user.PlayerId, Today(clock));
+        user.IsAdmin || squad.CanBeViewedBy(user.CoachId, user.PlayerId, Today(clock));
 
     public static void EnsureCanView(Squad squad, ICurrentUser user, TimeProvider clock)
     {
@@ -35,8 +36,9 @@ internal static class SquadAccess
     public static async Task<bool> CanViewAsync(Squad squad, ICurrentUser user, TimeProvider clock, IClubStore clubs, CancellationToken cancellationToken) =>
         CanView(squad, user, clock) || await IsClubOfAsync(squad, user, clubs, cancellationToken);
 
+    // Quien ve lo interno de la plantilla (lesiones, notas del técnico...). El administrador también, solo para leer.
     public static async Task<bool> IsInsiderAsync(Squad squad, ICurrentUser user, TimeProvider clock, IClubStore clubs, CancellationToken cancellationToken) =>
-        IsStaff(squad, user, clock) || IsMember(squad, user) || await IsClubOfAsync(squad, user, clubs, cancellationToken);
+        user.IsAdmin || IsStaff(squad, user, clock) || IsMember(squad, user) || await IsClubOfAsync(squad, user, clubs, cancellationToken);
 
     public static async Task EnsureCanViewAsync(Squad squad, ICurrentUser user, TimeProvider clock, IClubStore clubs, CancellationToken cancellationToken)
     {

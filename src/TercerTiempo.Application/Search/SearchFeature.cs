@@ -137,6 +137,9 @@ internal sealed class SearchHandler(
     // Equipos propios (club: los suyos; técnico: los de sus plantillas; jugador: el suyo) y plantillas internas visibles.
     private async Task<SearchViewer> ViewerAsync(Guid userId, CancellationToken cancellationToken)
     {
+        // El administrador encuentra también las plantillas internas de todos los equipos (para verlas, no editarlas).
+        if (currentUser.IsAdmin) return new SearchViewer(new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>(), SeesAll: true);
+
         var today = SquadAccess.Today(clock);
         var teams = new HashSet<Guid>();
         var visible = new HashSet<Guid>();

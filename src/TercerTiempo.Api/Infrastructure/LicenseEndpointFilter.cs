@@ -31,7 +31,10 @@ internal sealed class LicenseEndpointFilter(LicenseScope scope) : IEndpointFilte
             case LicenseScope.Squad when http.Request.RouteValues.TryGetValue("squadId", out var squad) && Guid.TryParse(squad?.ToString(), out var squadId):
                 await gate.EnsureSquadAccessAsync(squadId, user, ct);
                 break;
-            case LicenseScope.Video when http.Request.RouteValues.TryGetValue("videoId", out var video) && Guid.TryParse(video?.ToString(), out var videoId):
+            // El reproductor no puede mandar el JWT: el stream va con el ticket, que solo se emite tras comprobar el acceso
+            // (también la licencia) en POST /ticket. Pedirle aquí la sesión lo rechazaba siempre.
+            case LicenseScope.Video when http.Request.RouteValues.TryGetValue("videoId", out var video) && Guid.TryParse(video?.ToString(), out var videoId)
+                && !(HttpMethods.IsGet(http.Request.Method) && http.Request.Path.Value?.EndsWith("/stream", StringComparison.Ordinal) == true):
                 await gate.EnsureVideoAccessAsync(videoId, user, ct);
                 break;
             case LicenseScope.SharedVideo when http.Request.RouteValues.TryGetValue("token", out var token) && token is string t:

@@ -186,7 +186,10 @@ internal sealed class ListSquadSuggestionsHandler(
 {
     public async Task<IReadOnlyList<SuggestionDto>> Handle(ListSquadSuggestionsQuery query, CancellationToken cancellationToken)
     {
-        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, query.SquadId, clock, cancellationToken);
+        // El administrador también las lee; resolverlas sigue siendo solo del club o del cuerpo técnico.
+        var squad = currentUser.IsAdmin
+            ? await squads.GetByIdAsync(query.SquadId, cancellationToken) ?? throw new NotFoundException(ErrorCode.SquadNotFound, query.SquadId)
+            : await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, query.SquadId, clock, cancellationToken);
         var list = await suggestions.GetBySquadAsync(squad.Id, cancellationToken);
         return await SuggestionMapper.ToDtosAsync(list, squad, matches, teams, performances, coaches, clubs, cancellationToken);
     }

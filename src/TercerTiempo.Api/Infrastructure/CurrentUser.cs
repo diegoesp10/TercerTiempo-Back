@@ -22,5 +22,7 @@ internal sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : IC
 
     public Guid? ClubId => ParseGuid(Principal?.FindFirstValue(AuthClaims.ClubId));
 
+    public bool IsAdmin => Principal?.HasClaim(AuthClaims.Admin, "true") == true;
+
     private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var id) ? id : null;
 }

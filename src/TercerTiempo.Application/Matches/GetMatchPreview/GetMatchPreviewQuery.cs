@@ -89,8 +89,9 @@ internal sealed class GetMatchPreviewHandler(
     {
         if (!currentUser.IsAuthenticated)
             throw new UnauthenticatedException();
-        // La previa es para quien prepara el partido: el cuerpo técnico y el club (sus dirigentes), siempre.
-        if (currentUser.AccountType is not (AccountType.Coach or AccountType.Club))
+        // La previa es para quien prepara el partido: el cuerpo técnico y el club (sus dirigentes), siempre. El
+        // administrador también la ve.
+        if (currentUser.AccountType is not (AccountType.Coach or AccountType.Club) && !currentUser.IsAdmin)
             throw new ForbiddenException(ErrorCode.MatchPreviewStaffOnly);
         // Y solo con un equipo con licencia vigente.
         if (!await licenses.IsViewerLicensedAsync(currentUser, cancellationToken))

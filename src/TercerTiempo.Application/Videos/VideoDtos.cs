@@ -11,6 +11,9 @@ public enum VideoAccessLevel
     Owner,
     Purchased,
     Free,
+
+    // El administrador: lo ve para el mantenimiento de la web, sin comprarlo ni gestionarlo.
+    Admin,
 }
 
 public sealed record MatchVideoDto(

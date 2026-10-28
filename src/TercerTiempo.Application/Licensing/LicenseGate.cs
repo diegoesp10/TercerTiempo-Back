@@ -50,8 +50,10 @@ internal sealed class LicenseGate(
         return status;
     }
 
+    // El administrador mira sin licencia propia (no es de ningún club) y sin tocar las de los equipos que mira.
     public async Task<bool> IsViewerLicensedAsync(ICurrentUser user, CancellationToken cancellationToken)
     {
+        if (user.IsAdmin) return true;
         if (_viewerLicensed is { } known) return known;
         _viewerLicensed = await ComputeViewerLicensedAsync(user, cancellationToken);
         return _viewerLicensed.Value;
@@ -80,6 +82,7 @@ internal sealed class LicenseGate(
 
     public async Task<bool> CanAccessSquadAsync(Squad squad, ICurrentUser user, CancellationToken cancellationToken)
     {
+        if (user.IsAdmin) return true;
         if (await StatusForTeamAsync(squad.TeamId, cancellationToken) == LicenseStatus.Expired) return false;
         if (await SquadAccess.IsInsiderAsync(squad, user, clock, clubs, cancellationToken)) return true;
         return await IsViewerLicensedAsync(user, cancellationToken);
@@ -94,6 +97,7 @@ internal sealed class LicenseGate(
 
     private async Task EnsureAsync(Squad squad, ICurrentUser user, CancellationToken cancellationToken)
     {
+        if (user.IsAdmin) return;
         if (await StatusForTeamAsync(squad.TeamId, cancellationToken) == LicenseStatus.Expired)
             throw new ForbiddenException(ErrorCode.LicenseRequired);
 
