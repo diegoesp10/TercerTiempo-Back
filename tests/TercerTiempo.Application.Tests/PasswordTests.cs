@@ -3,6 +3,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Auth;
@@ -74,7 +75,7 @@ public class PasswordTests
     {
         await using var fixture = await IdentityFixture.CreateAsync();
         var identity = fixture.Identity;
-        var userId = await identity.CreateUserAsync("pelayo.ruiz@example.com", Strong, default);
+        var userId = await fixture.RegisterAsync("pelayo.ruiz@example.com", Strong);
         var oldStamp = await identity.GetSessionStampAsync(userId, default);
         Assert.True(await fixture.Sessions.IsCurrentAsync(Principal(userId, oldStamp), default));
 
@@ -111,7 +112,7 @@ public class PasswordTests
     {
         await using var fixture = await IdentityFixture.CreateAsync();
         var identity = fixture.Identity;
-        await identity.CreateUserAsync("bloqueo@example.com", Strong, default);
+        await fixture.RegisterAsync("bloqueo@example.com", Strong);
 
         for (var i = 0; i < PasswordPolicy.MaxFailedAttempts - 1; i++)
             Assert.Null(await identity.ValidateCredentialsAsync("bloqueo@example.com", "Mala-Clave-" + i, default));
@@ -120,6 +121,44 @@ public class PasswordTests
         Assert.Equal(ErrorCode.AuthLockedOut, locked.Code);
         var stillLocked = await Assert.ThrowsAsync<InvalidCredentialsException>(() => identity.ValidateCredentialsAsync("bloqueo@example.com", Strong, default));
         Assert.Equal(ErrorCode.AuthLockedOut, stillLocked.Code);
+    }
+
+    [LocalSqlFact]
+    public async Task An_unfinished_registration_neither_logs_in_nor_holds_the_email()
+    {
+        await using var fixture = await IdentityFixture.CreateAsync();
+        var identity = fixture.Identity;
+
+        // Alta cortada después de crear el usuario: queda sin confirmar.
+        var abandoned = await identity.CreateUserAsync("alta.cortada@example.com", Strong, default);
+        Assert.Null(await identity.ValidateCredentialsAsync("alta.cortada@example.com", Strong, default));
+
+        var again = await fixture.RegisterAsync("alta.cortada@example.com", Strong);
+        Assert.NotEqual(abandoned, again);
+        Assert.Null(await fixture.Users.FindByIdAsync(abandoned.ToString()));
+        Assert.Equal(again, await identity.ValidateCredentialsAsync("alta.cortada@example.com", Strong, default));
+
+        var taken = await Assert.ThrowsAsync<ConflictException>(() => identity.CreateUserAsync("alta.cortada@example.com", Strong, default));
+        Assert.Equal(ErrorCode.AuthEmailTaken, taken.Code);
+    }
+
+    [LocalSqlFact]
+    public async Task A_failed_registration_is_discarded_but_a_confirmed_account_never_is()
+    {
+        await using var fixture = await IdentityFixture.CreateAsync();
+        var identity = fixture.Identity;
+
+        var done = await fixture.RegisterAsync("hecha@example.com", Strong);
+
+        // Marcada para confirmar pero sin guardar: el perfil no se pudo guardar y el alta se descarta.
+        var failed = await identity.CreateUserAsync("fallo@example.com", Strong, default);
+        await identity.ConfirmUserAsync(failed, default);
+        await identity.DiscardUnconfirmedUserAsync(failed);
+        await identity.DiscardUnconfirmedUserAsync(done);
+        fixture.EndRequest();
+
+        Assert.Null(await fixture.Users.FindByEmailAsync("fallo@example.com"));
+        Assert.Equal(done, await identity.ValidateCredentialsAsync("hecha@example.com", Strong, default));
     }
 
     private static ClaimsPrincipal Principal(Guid userId, string stamp) => new(new ClaimsIdentity(
@@ -147,12 +186,26 @@ public class PasswordTests
             _scope = provider.CreateAsyncScope();
             Clock = (ManualClock)provider.GetRequiredService<TimeProvider>();
             Sessions = provider.GetRequiredService<SessionStamps>();
-            Identity = new IdentityService(_scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>(), Sessions, Clock);
+            Users = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            Identity = new IdentityService(Users, Sessions, Clock, provider.GetRequiredService<ILogger<IdentityService>>());
         }
 
         public ManualClock Clock { get; }
         public SessionStamps Sessions { get; }
+        public UserManager<ApplicationUser> Users { get; }
         public IdentityService Identity { get; }
+
+        // Alta completa, como en el registro: la cuenta se confirma en el mismo guardado que su perfil.
+        public async Task<Guid> RegisterAsync(string email, string password)
+        {
+            var userId = await Identity.CreateUserAsync(email, password, default);
+            await Identity.ConfirmUserAsync(userId, default);
+            await _scope.ServiceProvider.GetRequiredService<AppDbContext>().SaveChangesAsync();
+            return userId;
+        }
+
+        // Fin de una petición que falló: lo que quedó sin guardar en el contexto no llega a la base.
+        public void EndRequest() => _scope.ServiceProvider.GetRequiredService<AppDbContext>().ChangeTracker.Clear();
 
         public static async Task<IdentityFixture> CreateAsync()
         {

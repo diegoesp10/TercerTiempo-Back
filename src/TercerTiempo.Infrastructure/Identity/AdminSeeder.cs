@@ -52,6 +52,7 @@ public static class AdminSeeder
             UserName = settings.UserName.Trim(),
             Email = settings.Email.Trim(),
             EmailConfirmed = true,
+            ConfirmedAt = DateTimeOffset.UtcNow,
         };
 
         // La contraseña del administrador sigue las mismas reglas que las de las cuentas. Si la configurada no las
@@ -103,6 +104,12 @@ public static class AdminSeeder
 
         if (!await users.IsInRoleAsync(user, AuthClaims.AdminRole))
             Ensure(await users.AddToRoleAsync(user, AuthClaims.AdminRole), "dar el rol Admin");
+
+        if (user.ConfirmedAt is null)
+        {
+            user.ConfirmedAt = DateTimeOffset.UtcNow;
+            Ensure(await users.UpdateAsync(user), "confirmar la cuenta del administrador");
+        }
 
         // Clave nueva y sin dar de alta: la app antigua deja de valer y el próximo login enseña el QR de la nueva.
         if (settings.ResetMfa && user.TwoFactorEnabled)

@@ -101,37 +101,48 @@ internal sealed class RegisterHandler(
 
         Guid profileId;
 
-        switch (command.AccountType)
+        // La cuenta nace sin confirmar y se confirma en el mismo guardado que su perfil. Si algo falla antes, se borra:
+        // nunca queda una cuenta a medias ocupando el email.
+        try
         {
-            case AccountType.Player:
-                var (squad, entry) = invite!;
-                var player = Player.Register(userId, entry.FullName, command.Position ?? entry.Position ?? Position.Midfielder, command.BirthDate, now);
-                stores.Players.Add(player);
-                squad.LinkPlayer(entry.Id, player.Id);
-                profileId = player.Id;
-                break;
+            switch (command.AccountType)
+            {
+                case AccountType.Player:
+                    var (squad, entry) = invite!;
+                    var player = Player.Register(userId, entry.FullName, command.Position ?? entry.Position ?? Position.Midfielder, command.BirthDate, now);
+                    stores.Players.Add(player);
+                    squad.LinkPlayer(entry.Id, player.Id);
+                    profileId = player.Id;
+                    break;
 
-            case AccountType.Coach:
-                var coach = Coach.Register(userId, command.DisplayName!, now);
-                stores.Coaches.Add(coach);
-                await redemption.RedeemAsync(appointment!, coach, now, cancellationToken);
-                profileId = coach.Id;
-                break;
+                case AccountType.Coach:
+                    var coach = Coach.Register(userId, command.DisplayName!, now);
+                    stores.Coaches.Add(coach);
+                    await redemption.RedeemAsync(appointment!, coach, now, cancellationToken);
+                    profileId = coach.Id;
+                    break;
 
-            default:
-                var club = Club.Register(userId, clubEntry!.Name, now);
-                foreach (var team in clubEntry.Teams)
-                {
-                    if (await stores.Clubs.GetByTeamAsync(team.Team.Id, cancellationToken) is null)
-                        club.AddTeam(team.Team.Id, now);
-                }
-                stores.Clubs.Add(club);
-                clubInvitation?.Redeem(club.Id, now);
-                profileId = club.Id;
-                break;
+                default:
+                    var club = Club.Register(userId, clubEntry!.Name, now);
+                    foreach (var team in clubEntry.Teams)
+                    {
+                        if (await stores.Clubs.GetByTeamAsync(team.Team.Id, cancellationToken) is null)
+                            club.AddTeam(team.Team.Id, now);
+                    }
+                    stores.Clubs.Add(club);
+                    clubInvitation?.Redeem(club.Id, now);
+                    profileId = club.Id;
+                    break;
+            }
+
+            await identity.ConfirmUserAsync(userId, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
         }
-
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        catch
+        {
+            await identity.DiscardUnconfirmedUserAsync(userId);
+            throw;
+        }
 
         var token = tokens.CreateToken(userId, email, command.AccountType, profileId, await identity.GetSessionStampAsync(userId, cancellationToken));
         var account = await AccountResolver.ForUserAsync(userId, stores, cancellationToken);

@@ -102,16 +102,58 @@ public class ClubInvitationBindingTests
         Assert.Empty(updated.AvailableFilials);
     }
 
-    private Task<AuthResponse> Register(string code, string club)
+    [Fact]
+    public async Task The_account_is_confirmed_in_the_same_save_as_its_club()
+    {
+        var invitation = ClubInvitation.Create(null, null, DateTimeOffset.UtcNow, _caudalB.Id);
+        _invitations.Add(invitation);
+        List<string> calls = [];
+
+        await Register(invitation.Code, "Caudal Deportivo", calls);
+
+        Assert.Equal([nameof(IIdentityService.CreateUserAsync), nameof(IIdentityService.ConfirmUserAsync), Save], calls.Take(3));
+        Assert.DoesNotContain(nameof(IIdentityService.DiscardUnconfirmedUserAsync), calls);
+    }
+
+    [Fact]
+    public async Task A_registration_that_fails_after_creating_the_account_leaves_no_account_behind()
+    {
+        var invitation = ClubInvitation.Create(null, null, DateTimeOffset.UtcNow, _caudalB.Id);
+        _invitations.Add(invitation);
+        List<string> calls = [];
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Register(invitation.Code, "Caudal Deportivo", calls, saveFails: true));
+
+        Assert.Equal(
+            [nameof(IIdentityService.CreateUserAsync), nameof(IIdentityService.ConfirmUserAsync), Save, nameof(IIdentityService.DiscardUnconfirmedUserAsync)],
+            calls);
+    }
+
+    private const string Save = nameof(IUnitOfWork.SaveChangesAsync);
+
+    private Task<AuthResponse> Register(string code, string club, List<string>? calls = null, bool saveFails = false)
     {
         var stores = Stores();
         var handler = new RegisterHandler(
-            Stub<IIdentityService>((method, _) => method == nameof(IIdentityService.GetSessionStampAsync) ? (object)Task.FromResult("stamp") : Task.FromResult(Guid.NewGuid())),
+            Stub<IIdentityService>((method, _) =>
+            {
+                calls?.Add(method);
+                return method switch
+                {
+                    nameof(IIdentityService.GetSessionStampAsync) => Task.FromResult("stamp"),
+                    nameof(IIdentityService.CreateUserAsync) => Task.FromResult(Guid.NewGuid()),
+                    _ => Task.CompletedTask,
+                };
+            }),
             stores,
             new AppointmentRedemption(stores.Appointments, stores.Squads, stores.Teams, stores.Licenses),
             Invitations(),
             Options.Create(new RegistrationOptions { ClubInviteRequired = true }),
-            Stub<IUnitOfWork>((_, _) => Task.FromResult(1)),
+            Stub<IUnitOfWork>((method, _) =>
+            {
+                calls?.Add(method);
+                return saveFails ? Task.FromException<int>(new InvalidOperationException("La base no responde")) : Task.FromResult(1);
+            }),
             Stub<ITokenService>((_, _) => new AuthToken("token", DateTimeOffset.UtcNow.AddHours(1))));
 
         return handler.Handle(new RegisterCommand("club@example.com", "secreto123", "secreto123", club, AccountType.Club, null, null, code), default);

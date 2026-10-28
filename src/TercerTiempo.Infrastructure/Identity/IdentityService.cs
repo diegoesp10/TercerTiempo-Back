@@ -2,6 +2,8 @@ using System.Globalization;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Common;
@@ -10,14 +12,26 @@ using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 
 namespace TercerTiempo.Infrastructure.Identity;
 
-internal sealed class IdentityService(UserManager<ApplicationUser> userManager, SessionStamps sessions, TimeProvider clock) : IIdentityService
+internal sealed class IdentityService(
+    UserManager<ApplicationUser> userManager,
+    SessionStamps sessions,
+    TimeProvider clock,
+    ILogger<IdentityService> logger) : IIdentityService
 {
     private static readonly TimeZoneInfo SiteZone = SiteClock.Resolve("Europe/Madrid");
 
     public async Task<Guid> CreateUserAsync(string email, string password, CancellationToken cancellationToken)
     {
-        if (await userManager.FindByEmailAsync(email) is not null)
-            throw new ConflictException(ErrorCode.AuthEmailTaken);
+        if (await userManager.FindByEmailAsync(email) is { } existing)
+        {
+            if (existing.ConfirmedAt is not null || await userManager.IsInRoleAsync(existing, AuthClaims.AdminRole))
+                throw new ConflictException(ErrorCode.AuthEmailTaken);
+
+            // Un alta anterior con este email se cortó a medias: se descarta para que la cuenta no se quede en el aire.
+            var removed = await userManager.DeleteAsync(existing);
+            if (!removed.Succeeded) throw new ConflictException(ErrorCode.AuthEmailTaken);
+            logger.LogInformation("Descartada la cuenta sin confirmar {UserId} para volver a dar de alta su email", existing.Id);
+        }
 
         var user = new ApplicationUser
         {
@@ -32,10 +46,31 @@ internal sealed class IdentityService(UserManager<ApplicationUser> userManager, 
         return user.Id;
     }
 
+    // El usuario lo sigue el mismo AppDbContext de la petición que guarda el perfil (UserManager y la unidad de trabajo
+    // comparten el contexto), así que la marca viaja en el SaveChanges del alta.
+    public async Task ConfirmUserAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var user = await RequireAsync(userId);
+        user.ConfirmedAt = clock.GetUtcNow();
+    }
+
+    // Borrado directo en la base: no pasa por el seguimiento de cambios, donde aún está el perfil que no se pudo guardar.
+    public async Task DiscardUnconfirmedUserAsync(Guid userId)
+    {
+        try
+        {
+            await userManager.Users.Where(u => u.Id == userId && u.ConfirmedAt == null).ExecuteDeleteAsync();
+        }
+        catch (Exception error)
+        {
+            logger.LogWarning(error, "No se ha podido borrar la cuenta sin confirmar {UserId}; la siguiente alta con su email la sustituirá", userId);
+        }
+    }
+
     public async Task<Guid?> ValidateCredentialsAsync(string email, string password, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByEmailAsync(email);
-        if (user is null) return null;
+        if (user is null || user.ConfirmedAt is null) return null;
 
         // El administrador solo entra por /api/admin/login: su sesión nunca es la de una cuenta de club, técnico o jugador.
         if (await userManager.IsInRoleAsync(user, AuthClaims.AdminRole)) return null;
