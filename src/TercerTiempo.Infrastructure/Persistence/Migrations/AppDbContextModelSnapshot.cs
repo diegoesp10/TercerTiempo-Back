@@ -2172,9 +2172,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Id = new Guid("01a16f00-0000-7000-8000-000000000011"),
                             Item = "Club",
-                            MonthlyPriceCents = 490,
+                            MonthlyPriceCents = 990,
                             SettingsId = new Guid("01a16f00-0000-7000-8000-000000000001"),
-                            YearlyPriceCents = 4900
+                            YearlyPriceCents = 9900
                         },
                         new
                         {

@@ -19,12 +19,12 @@ public class LicensingSettingsTests
 
         Assert.Equal(("EUR", 30, 2, 30), (settings.Currency, settings.TrialDays, settings.TrialStaffSeats, settings.MaxStaffSeats));
         Assert.Equal([15, 5], settings.ExpiryAlertDays);
-        Assert.Equal(490, settings.PriceCents(LicenseItem.Club, BillingInterval.Monthly));
+        Assert.Equal(990, settings.PriceCents(LicenseItem.Club, BillingInterval.Monthly));
         Assert.Equal(2500, settings.PriceCents(LicenseItem.StaffSeat, BillingInterval.Yearly));
-        // El club con 6 técnicos cuesta lo mismo que el antiguo Premium.
-        Assert.Equal(1990, settings.SubscriptionPriceCents(BillingInterval.Monthly, 6));
-        Assert.Equal(19900, settings.SubscriptionPriceCents(BillingInterval.Yearly, 6));
-        Assert.Equal(4900, settings.SubscriptionPriceCents(BillingInterval.Yearly, 0));
+        // El club con 6 técnicos: 9,90 € + 6 × 2,50 € al mes.
+        Assert.Equal(2490, settings.SubscriptionPriceCents(BillingInterval.Monthly, 6));
+        Assert.Equal(24900, settings.SubscriptionPriceCents(BillingInterval.Yearly, 6));
+        Assert.Equal(9900, settings.SubscriptionPriceCents(BillingInterval.Yearly, 0));
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class LicensingSettingsTests
         Assert.Equal(ErrorCode.CommonOutOfRange, Assert.Throws<DomainException>(() => settings.Update("EUR", 400, 2, 30, [15, 5], Prices(), TestData.Now)).Code);
         Assert.Equal(ErrorCode.CommonOutOfRange, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 5, 3, [15, 5], Prices(), TestData.Now)).Code);
         Assert.Equal(ErrorCode.LicensePlanInvalid, Assert.Throws<DomainException>(() => settings.Update("EUR", 30, 2, 30, [15, 5], [Prices()[0]], TestData.Now)).Code);
-        Assert.Equal(490, settings.PriceCents(LicenseItem.Club, BillingInterval.Monthly));
+        Assert.Equal(990, settings.PriceCents(LicenseItem.Club, BillingInterval.Monthly));
     }
 
     [Fact]

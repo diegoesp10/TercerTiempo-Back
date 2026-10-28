@@ -25,7 +25,7 @@ public class LicensesOverviewTests
         var row = Row(trial);
         Assert.Equal(LicenseBillingState.TrialWithPlan, row.State);
         Assert.Equal((true, 1), (row.Contracted, row.StaffSeats));
-        Assert.Equal(490 + 250, row.NextChargeCents);
+        Assert.Equal(990 + 250, row.NextChargeCents);
         Assert.Equal(0, row.OwedCents);
         Assert.True(row.HasAccess);
     }
@@ -41,13 +41,13 @@ public class LicensesOverviewTests
         var grace = Row(license, Today.AddDays(12));
         Assert.Equal(LicenseBillingState.Grace, grace.State);
         Assert.True(grace.HasAccess);
-        Assert.Equal(19900, grace.OwedCents);
+        Assert.Equal(24900, grace.OwedCents);
         Assert.Equal(Today.AddDays(11), grace.OwedSince);
 
         var unpaid = Row(license, Today.AddDays(20));
         Assert.Equal(LicenseBillingState.Unpaid, unpaid.State);
         Assert.False(unpaid.HasAccess);
-        Assert.Equal(19900, unpaid.OwedCents);
+        Assert.Equal(24900, unpaid.OwedCents);
     }
 
     [Fact]

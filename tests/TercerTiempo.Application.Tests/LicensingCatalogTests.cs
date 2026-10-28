@@ -56,7 +56,7 @@ public class LicensingCatalogTests
 
         var settings = await catalog.GetAsync();
 
-        Assert.Equal(490, settings.PriceCents(LicenseItem.Club, BillingInterval.Monthly));
+        Assert.Equal(990, settings.PriceCents(LicenseItem.Club, BillingInterval.Monthly));
         Assert.Equal(30, settings.TrialDays);
     }
 }

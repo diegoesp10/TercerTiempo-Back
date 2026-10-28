@@ -128,7 +128,7 @@ public class StripeLicenseGatewayTests
         Assert.Equal(("staff_seat", "Tercer Tiempo · Licencia de técnico"), (stripe.Requests[1].Form["metadata[item]"], stripe.Requests[1].Form["name"]));
         var update = stripe.Requests.Last().Form;
         Assert.Equal("none", update["proration_behavior"]);
-        Assert.Equal(("si_club", "prod_club", "4900", "year"),
+        Assert.Equal(("si_club", "prod_club", "9900", "year"),
             (update["items[0][id]"], update["items[0][price_data][product]"], update["items[0][price_data][unit_amount]"], update["items[0][price_data][recurring][interval]"]));
         Assert.Equal(("2", "prod_new", "2500"), (update["items[1][quantity]"], update["items[1][price_data][product]"], update["items[1][price_data][unit_amount]"]));
         Assert.DoesNotContain("items[1][id]", update.Keys);

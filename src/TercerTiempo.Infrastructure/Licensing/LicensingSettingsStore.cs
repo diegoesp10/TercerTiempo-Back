@@ -60,8 +60,8 @@ internal sealed class LicensePriceSettingsConfiguration : IEntityTypeConfigurati
                 Id = new Guid("01a16f00-0000-7000-8000-000000000011"),
                 SettingsId = LicensingSettings.SingletonId,
                 Item = LicenseItem.Club,
-                MonthlyPriceCents = 490,
-                YearlyPriceCents = 4900,
+                MonthlyPriceCents = 990,
+                YearlyPriceCents = 9900,
             },
             new
             {

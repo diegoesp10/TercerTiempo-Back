@@ -39,7 +39,7 @@ public sealed class LicensingSettings : AggregateRoot
             Id = SingletonId, Currency = DefaultCurrency, TrialDays = 30, TrialStaffSeats = 2, MaxStaffSeats = 30, ExpiryAlertDays = [15, 5],
             UpdatedAt = now,
         };
-        settings._prices.Add(LicensePriceSettings.Create(SingletonId, LicenseItem.Club, 490, 4900, null, null));
+        settings._prices.Add(LicensePriceSettings.Create(SingletonId, LicenseItem.Club, 990, 9900, null, null));
         settings._prices.Add(LicensePriceSettings.Create(SingletonId, LicenseItem.StaffSeat, 250, 2500, null, null));
         return settings;
     }
