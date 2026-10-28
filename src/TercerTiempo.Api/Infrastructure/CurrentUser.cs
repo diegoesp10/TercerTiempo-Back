@@ -24,5 +24,9 @@ internal sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : IC
 
     public bool IsAdmin => Principal?.HasClaim(AuthClaims.Admin, "true") == true;
 
+    public string? Email => Principal?.FindFirstValue(JwtRegisteredClaimNames.Email);
+
+    public string? SessionId => Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);
+
     private static Guid? ParseGuid(string? value) => Guid.TryParse(value, out var id) ? id : null;
 }

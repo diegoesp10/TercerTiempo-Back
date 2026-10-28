@@ -70,6 +70,11 @@ internal static class AdminEndpoints
             .WithSummary("Descargas en directo")
             .WithDescription("Lo que está descargando (o descargó por última vez) la sincronización de las ligas: cada liga con su fase y sus cifras y los últimos partidos, equipos, clasificaciones y plantillas tocados. Y la cola de actas pedidas a la federación: cada partido con su estado, los límites de asturfutbol.es (hora y día), la pausa si la hay y cuándo terminaría. Solo administradores.");
 
+        group.MapGet("/presence", (string? q, IAdminRepository admin, CancellationToken ct) => admin.GetPresenceAsync(q, ct))
+            .WithName("GetPresence")
+            .WithSummary("Gente en sesión")
+            .WithDescription("Las sesiones de las cuentas (club, cuerpo técnico y jugadores) con señales en los últimos 30 minutos: nombre, email, equipos, página en la que están, dispositivo y estado (online si han dado señales en los últimos 150 segundos, idle si no). `q` busca por nombre, email o equipo. Vive en memoria: solo para verlo, sin guardar nada. Solo administradores.");
+
         group.MapPost("/sheet-downloads/cancel", (bool? onlyFinished, IAdminRepository admin, CancellationToken ct) => admin.CancelSheetDownloadsAsync(onlyFinished ?? false, ct))
             .WithName("CancelSheetDownloads")
             .WithSummary("Vaciar la cola de actas")

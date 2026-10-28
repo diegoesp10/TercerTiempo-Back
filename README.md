@@ -198,6 +198,8 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/admin/jobs` | Trabajos en segundo plano, historial de ejecuciones, contadores de cada web y últimas llamadas |
 | POST | `/api/admin/jobs/{job}/run` | Lanzar ya un trabajo; con la federación en pausa, las actas quedan pedidas para cuando acabe (`pause` en la respuesta) |
 | GET | `/api/admin/live-downloads` | En directo: todos los trabajos con su avance y lo último que han tocado, la sincronización de las ligas y la cola de actas |
+| GET | `/api/admin/presence?q=` | Gente en sesión: las cuentas con la web abierta en los últimos 30 minutos (nombre, email, equipos, página, dispositivo, en línea o inactivo), con búsqueda |
+| POST/DELETE | `/api/presence` | Latido de la sesión (la web lo manda cada minuto con la página en la que está) y fin de la sesión al salir; vive en memoria, no se guarda |
 | GET/PUT | `/api/admin/football-sync` | Qué descarga la sincronización automática de las ligas (jornada en curso o temporada) |
 | POST | `/api/admin/football-sync/run` | Sincronizar ya la jornada en curso, unas fechas o la temporada, de todas o algunas ligas |
 

@@ -20,6 +20,7 @@ internal sealed class AdminRepository(
     ICommandHandler<UpdateFootballSyncSettingsCommand, FootballSyncSettingsDto> updateFootballSyncSettings,
     ICommandHandler<RunFootballSyncCommand, JobDto> runFootballSync,
     IQueryHandler<GetLiveDownloadsQuery, LiveDownloadsDto> liveDownloads,
+    IQueryHandler<TercerTiempo.Application.Presence.GetPresenceQuery, TercerTiempo.Application.Presence.PresenceOverviewDto> presence,
     IQueryHandler<TercerTiempo.Application.Licensing.ListPaymentEventsQuery, IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> paymentEvents,
     ICommandHandler<TercerTiempo.Application.Licensing.RetryPaymentEventCommand, bool> retryPaymentEvent,
     ICommandHandler<TercerTiempo.Application.Licensing.SimulateLicenseEventCommand, string> simulateLicenseEvent,
@@ -44,6 +45,9 @@ internal sealed class AdminRepository(
 
     public Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default) =>
         runJob.Handle(new RunJobCommand(job), cancellationToken);
+
+    public Task<TercerTiempo.Application.Presence.PresenceOverviewDto> GetPresenceAsync(string? query, CancellationToken cancellationToken = default) =>
+        presence.Handle(new TercerTiempo.Application.Presence.GetPresenceQuery(query), cancellationToken);
 
     public Task<FootballSyncSettingsDto> GetFootballSyncSettingsAsync(CancellationToken cancellationToken = default) =>
         footballSyncSettings.Handle(new GetFootballSyncSettingsQuery(), cancellationToken);

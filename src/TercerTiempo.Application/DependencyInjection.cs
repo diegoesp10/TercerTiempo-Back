@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddScoped<IErrorMessageResolver, ErrorMessageResolver>();
         services.AddSingleton<ISyncProgress, SyncProgress>();
         services.AddSingleton<Jobs.IJobProgress, Jobs.JobProgress>();
+        services.AddSingleton<Presence.PresenceBoard>();
         services.AddSingleton<Search.SearchIndexHolder>();
         services.AddScoped<AppointmentRedemption>();
         services.AddScoped<Licensing.ILicenseGate, Licensing.LicenseGate>();
