@@ -9,10 +9,14 @@
 #                             defecto solo a mano desde /jobs, porque la API de Visual Studio comparte la base).
 #   -Environment Production   API en Production con los secretos de .env.production (copia .env.example).
 #   -WithDatabase             solo en Production: arranca también el SQL Server del equipo (perfil "database").
+#   -Environment Pilot        piloto con clubes: lo mismo que Production (compose.production.yaml y encima
+#                             compose.pilot.yaml) con su propia base, tercertiempo_Piloto, en el SQL Server de Windows
+#                             del equipo (login de scripts/local-sql-login.sql), para abrirlo por un túnel. Genera
+#                             .env.pilot la primera vez; la contraseña de /jobs sale de los user-secrets.
 #   -SkipBuild                reutiliza la imagen existente.
 #   -ReplaceData              vuelve a copiar al volumen los escudos y fotos de src/TercerTiempo.Api/data.
 param(
-    [ValidateSet('Development', 'Production')][string]$Environment = 'Development',
+    [ValidateSet('Development', 'Production', 'Pilot')][string]$Environment = 'Development',
     [ValidateSet('Local', 'Container')][string]$Database,
     [switch]$WithDatabase,
     [switch]$WithJobs,
@@ -53,25 +57,42 @@ $envName = $Environment.ToLowerInvariant()
 $envFile = Join-Path $PSScriptRoot ".env.$envName"
 if (-not (Test-Path -LiteralPath $envFile)) {
     if ($Environment -eq 'Production') { throw 'Falta .env.production: copia .env.example y rellena los secretos de publicación.' }
-    @(
-        '# Generado por Start-Docker.ps1 para el entorno de desarrollo en Docker. No se versiona.'
-        'TT_DATA_VOLUME=tercer-tiempo-dev-data'
-        'TT_API_PORT=8181'
-        'TT_PUBLIC_URL=http://127.0.0.1:8180'
-        'TT_ADMIN_USER=diego'
-        '# Base de datos por defecto: Local (SQL Server de Windows) o Container.'
-        'TT_DEV_DATABASE=Container'
-        '# Login tercertiempo_app del SQL Server local (scripts/local-sql-login.sql).'
-        'TT_LOCAL_SQL_PASSWORD='
-        "TT_SQL_PASSWORD=$(New-Secret 20)"
-        'TT_SQL_PORT=14333'
-    ) | Set-Content -LiteralPath $envFile -Encoding ascii
-    Write-Host "Creado $envFile con una contraseña de sa aleatoria." -ForegroundColor Cyan
+    if ($Environment -eq 'Pilot') {
+        @(
+            '# Generado por Start-Docker.ps1 para el piloto con clubes (como publicación, con su propia base). No se versiona.'
+            'TT_DATA_VOLUME=tercer-tiempo-pilot-data'
+            'TT_API_PORT=8181'
+            '# Dirección por la que entran los clubes (la del túnel): CORS y vuelta de los pagos.'
+            'TT_PUBLIC_URL=http://127.0.0.1:8180'
+            'TT_ADMIN_USER=diego'
+            "TT_JWT_KEY=$(New-Secret 48)"
+            '# Base del piloto en el SQL Server de Windows del equipo; el login tercertiempo_app es el de .env.development.'
+            'TT_PILOT_DATABASE=tercertiempo_Piloto'
+            'TT_LICENSING_PROVIDER=mock'
+            'TT_ADMIN_RESET_MFA=false'
+        ) | Set-Content -LiteralPath $envFile -Encoding ascii
+        Write-Host "Creado $envFile con una clave JWT aleatoria." -ForegroundColor Cyan
+    } else {
+        @(
+            '# Generado por Start-Docker.ps1 para el entorno de desarrollo en Docker. No se versiona.'
+            'TT_DATA_VOLUME=tercer-tiempo-dev-data'
+            'TT_API_PORT=8181'
+            'TT_PUBLIC_URL=http://127.0.0.1:8180'
+            'TT_ADMIN_USER=diego'
+            '# Base de datos por defecto: Local (SQL Server de Windows) o Container.'
+            'TT_DEV_DATABASE=Container'
+            '# Login tercertiempo_app del SQL Server local (scripts/local-sql-login.sql).'
+            'TT_LOCAL_SQL_PASSWORD='
+            "TT_SQL_PASSWORD=$(New-Secret 20)"
+            'TT_SQL_PORT=14333'
+        ) | Set-Content -LiteralPath $envFile -Encoding ascii
+        Write-Host "Creado $envFile con una contraseña de sa aleatoria." -ForegroundColor Cyan
+    }
 }
 $settings = Read-EnvFile $envFile
 
-# La contraseña de /jobs del entorno de desarrollo es la de los user-secrets de la API (nunca se escribe en disco).
-if ($Environment -eq 'Development' -and -not $settings['TT_ADMIN_PASSWORD']) {
+# La contraseña de /jobs del desarrollo y del piloto es la de los user-secrets de la API (nunca se escribe en disco).
+if ($Environment -in 'Development', 'Pilot' -and -not $settings['TT_ADMIN_PASSWORD']) {
     $secret = dotnet user-secrets list --project src/TercerTiempo.Api 2>$null | Select-String '^Admin:Password = '
     if ($secret) { $env:TT_ADMIN_PASSWORD = ($secret.Line -split ' = ', 2)[1] }
 }
@@ -83,7 +104,10 @@ $dataVolume = $settings['TT_DATA_VOLUME']
 if (-not $dataVolume) { throw "Falta TT_DATA_VOLUME en $envFile." }
 Invoke-Native { docker volume create $dataVolume | Out-Null } "No se pudo preparar el volumen $dataVolume."
 
-$compose = @('compose', '-f', 'compose.yaml', '-f', "compose.$envName.yaml", '--env-file', $envFile)
+# El piloto es publicación con su propia base: compose.production.yaml y, encima, compose.pilot.yaml.
+$compose = @('compose', '-f', 'compose.yaml')
+if ($Environment -eq 'Pilot') { $compose += @('-f', 'compose.production.yaml') }
+$compose += @('-f', "compose.$envName.yaml", '--env-file', $envFile)
 if ($Environment -eq 'Production' -and $WithDatabase) { $compose += @('--profile', 'database') }
 
 # Desarrollo: la cadena de conexión depende de qué SQL Server se use (la variable del proceso manda sobre el .env).
@@ -106,6 +130,18 @@ if ($Environment -eq 'Development') {
         $compose += @('--profile', 'container-db')
     }
     Write-Host "Base de datos de desarrollo: $Database" -ForegroundColor Cyan
+}
+
+# Piloto: su propia base en el SQL Server de Windows, con el mismo login que el desarrollo con -Database Local.
+if ($Environment -eq 'Pilot') {
+    $localPassword = $settings['TT_LOCAL_SQL_PASSWORD']
+    $devFile = Join-Path $PSScriptRoot '.env.development'
+    if (-not $localPassword -and (Test-Path -LiteralPath $devFile)) { $localPassword = (Read-EnvFile $devFile)['TT_LOCAL_SQL_PASSWORD'] }
+    if (-not $localPassword) { throw 'Falta TT_LOCAL_SQL_PASSWORD (en .env.pilot o en .env.development): la del login de scripts/local-sql-login.sql.' }
+    $pilotDatabase = if ($settings['TT_PILOT_DATABASE']) { $settings['TT_PILOT_DATABASE'] } else { 'tercertiempo_Piloto' }
+    $env:TT_DB_CONNECTION = "Server=host.docker.internal,1433;Database=$pilotDatabase;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
+    if (docker ps -q --filter 'name=^tercer-tiempo-db$') { Invoke-Native { docker stop tercer-tiempo-db | Out-Null } 'No se pudo parar tercer-tiempo-db.' }
+    Write-Host "Base de datos del piloto: $pilotDatabase (SQL Server de Windows del equipo)" -ForegroundColor Cyan
 }
 
 if (-not $SkipBuild) {
@@ -139,5 +175,9 @@ if ($Environment -eq 'Development') {
     } else {
         Write-Host 'Base de datos: el SQL Server local del equipo (TercerTiempo)' -ForegroundColor Green
     }
+}
+if ($Environment -eq 'Pilot') {
+    Write-Host 'Piloto: se entra por la web (http://127.0.0.1:8180) y se abre a los clubes con un túnel, p. ej.' -ForegroundColor Green
+    Write-Host '  cloudflared tunnel --url http://127.0.0.1:8180' -ForegroundColor Green
 }
 docker @compose ps

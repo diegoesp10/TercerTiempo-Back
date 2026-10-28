@@ -1,0 +1,11 @@
+# Piloto con clubes: lo mismo que publicación (compose.production.yaml, que se aplica antes que este fichero) con su
+# propia base, tercertiempo_Piloto, en el SQL Server de Windows del equipo, para abrir la web a los clubes que lo
+# prueban con un túnel (Cloudflare Tunnel o ngrok). Start-Docker.ps1 -Environment Pilot arma la cadena de conexión
+# (TT_DB_CONNECTION) y combina los ficheros:
+#   .\Start-Docker.ps1 -Environment Pilot
+services:
+  api:
+    environment:
+      # Todas las visitas entran por el túnel y el Nginx del frontal: sin la IP que manda el túnel compartirían el
+      # límite de peticiones (y un bloqueo los dejaría fuera a todos a la vez).
+      Throttling__TrustForwardedHeaders: "true"

@@ -426,6 +426,7 @@ que la web y la API comparten origen. Con Docker Desktop en modo Linux:
 .\Start-Docker.ps1 -Database Container                # desarrollo con un SQL Server propio en un contenedor
 .\Start-Docker.ps1 -Environment Production           # publicación: secretos de .env.production
 .\Start-Docker.ps1 -Environment Production -WithDatabase   # publicación con el SQL Server en este equipo
+.\Start-Docker.ps1 -Environment Pilot                # piloto con clubes: publicación con la base tercertiempo_Piloto
 .\Start-Docker.ps1 -SkipBuild                         # reutiliza la imagen
 .\Start-Docker.ps1 -ReplaceData                       # vuelve a copiar escudos y fotos de src/TercerTiempo.Api/data
 ```
@@ -438,6 +439,17 @@ Desde el repositorio del frontal, su `Start-Docker.ps1` arranca también la API 
 | Base de datos | `-Database Local`: el SQL Server de Windows del equipo por `host.docker.internal,1433` con el login de `scripts/local-sql-login.sql` (misma base que Visual Studio, sin SQL en Docker). `-Database Container`: SQL Server 2022 Developer en `tercer-tiempo-db`, volumen `tercer-tiempo-dev-sql`, desde SSMS en `127.0.0.1,14333` (usuario `sa`) | Externa (`TT_DB_CONNECTION`) o, con `-WithDatabase`, SQL Server Express en `tercer-tiempo-db` sin puertos publicados (volumen `tercer-tiempo-sql`) |
 | Secretos | `.env.development`, que genera el script la primera vez (contraseña de `sa` aleatoria); la de `/jobs` sale de los user-secrets | `.env.production` (copia de `.env.example`): cadena de conexión, `TT_JWT_KEY`, `TT_ADMIN_PASSWORD`, `TT_PUBLIC_URL`, claves de Stripe |
 | Ficheros (escudos, fotos, vídeos) | Volumen `tercer-tiempo-dev-data` | Volumen `tercer-tiempo-data` |
+
+**Piloto** (`-Environment Pilot`, `compose.pilot.yaml` encima de `compose.production.yaml`): lo mismo que publicación
+(`Production`, `/jobs` con Microsoft Authenticator, sin `/docs`, todos los trabajos por horario) para que unos clubes lo
+prueben desde este equipo abriendo la web con un túnel (`cloudflared tunnel --url http://127.0.0.1:8180`). Usa su
+propia base, `tercertiempo_Piloto`, en el SQL Server de Windows con el login `tercertiempo_app` (la contraseña se toma
+de `.env.development`), y su volumen `tercer-tiempo-pilot-data`. `.env.pilot` se genera la primera vez (clave JWT
+aleatoria; `TT_PUBLIC_URL` es la del túnel cuando sea fija) y la contraseña de `/jobs` sale de los user-secrets. Como
+todas las visitas llegan por el túnel y Nginx, el limitador de peticiones usa la IP que manda el túnel
+(`Throttling:TrustForwardedHeaders`). La base se creó como copia de la de desarrollo (`BACKUP ... WITH COPY_ONLY` y
+`RESTORE ... WITH MOVE`); sus contadores de peticiones a asturfutbol.es son aparte, así que mientras corre el piloto no
+conviene que la API de Visual Studio lance también los scrapeos de actas.
 
 - Para usar el SQL Server local, la API del contenedor (Linux) no puede entrar con la autenticación de Windows: en el
   servidor hay que activar la autenticación mixta y TCP/IP (puerto 1433) y crear el login con
