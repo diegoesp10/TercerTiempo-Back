@@ -344,10 +344,9 @@ federación (`OfficialSheets:Sources` = `asturfutbol`; `SyncOfficialSheetCommand
 `Application/OfficialSheets/PublicSheetSources.cs`). El acta guarda de qué web salió (`Provider`, `SourceUrl`). Antes
 de acceder a la web se consulta SQL: las actas completas no se vuelven a descargar.
 
-**BeSoccer se quitó el 24-10-2026** por riesgo legal (su aviso legal reserva sus bases de datos y prohíbe reproducir su
-contenido). Las actas que se habían bajado de allí siguen en la base pero **ocultas**: el almacén solo devuelve las de
-webs que están en `OfficialSheets:Sources`, y la descarga las sustituye por la de la federación en los partidos de
-equipos con plantilla.
+Si alguna vez se guardaron actas de una web que ya no está en `OfficialSheets:Sources`, siguen en la base pero
+**ocultas**: el almacén solo devuelve las de las webs configuradas, y la descarga las sustituye por la de la federación
+en los partidos de equipos con plantilla.
 
 El proceso en segundo plano (`OfficialSheetSyncWorker`, cada `BackgroundScanMinutes` desde la última pasada guardada,
 lotes de `BackgroundBatch`) solo planifica los partidos de equipos con plantilla en la app y los que alguien abre. El
