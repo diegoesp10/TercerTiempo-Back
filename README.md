@@ -195,7 +195,8 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST | `/api/admin/login` | Sesión del administrador (rol `Admin`); su token abre todo `/api/admin/*`. En publicación devuelve el reto MFA en vez del token |
 | POST | `/api/admin/login/mfa` | Segundo paso del administrador en publicación: billete + código de Microsoft Authenticator → token |
 | GET | `/api/admin/jobs` | Trabajos en segundo plano, historial de ejecuciones, contadores de cada web y últimas llamadas |
-| POST | `/api/admin/jobs/{job}/run` | Lanzar ya `football-data` u `official-sheets` |
+| POST | `/api/admin/jobs/{job}/run` | Lanzar ya un trabajo; con la federación en pausa, las actas quedan pedidas para cuando acabe (`pause` en la respuesta) |
+| GET | `/api/admin/live-downloads` | En directo: todos los trabajos con su avance y lo último que han tocado, la sincronización de las ligas y la cola de actas |
 | GET/PUT | `/api/admin/football-sync` | Qué descarga la sincronización automática de las ligas (jornada en curso o temporada) |
 | POST | `/api/admin/football-sync/run` | Sincronizar ya la jornada en curso, unas fechas o la temporada, de todas o algunas ligas |
 
@@ -300,6 +301,12 @@ duración y ejecución). Al arrancar se lee la última ejecución de cada trabaj
 que quedaron a medias se marcan como interrumpidas. Se guardan 30 días de llamadas y 180 de ejecuciones.
 
 La página oculta `/jobs` del frontal (sin enlace en el menú) muestra todo eso y permite lanzar cada trabajo a mano.
+Lanzar un trabajo abre «Descargas en directo» (`GET /api/admin/live-downloads`) en su apartado: ahí están todos los
+trabajos con su paso en curso y lo último que han tocado (`IJobProgress`, en memoria; el planificador abre y cierra cada
+ejecución y cada trabajo cuenta sus pasos). Si la federación está en pausa, las actas lanzadas a mano quedan pedidas
+para cuando acabe (no se la saltan) y la tarjeta enseña hasta cuándo y por qué. Las esperas largas de los trabajos van
+a trozos de un minuto mirando el reloj real (`WallClockDelay`): con el equipo suspendido el temporizador de .NET no
+avanza y una pausa de 30 minutos podía alargarse toda la noche.
 Solo entra el administrador: `POST /api/admin/login` con el usuario del rol `Admin`, que se crea al arrancar a partir
 de `Admin:UserName` (por defecto `diego`) y `Admin:Password`. La contraseña va en user-secrets, nunca en appsettings:
 

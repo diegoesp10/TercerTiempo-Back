@@ -193,6 +193,8 @@ public class RunJobHandlerTests
         public Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken) =>
             Task.FromResult(new JobsOverviewDto(
                 [new JobDto(JobNames.FootballData, "Datos", "", 60, true, true, null, null, null)], [], [], [], DateTimeOffset.UtcNow));
+
+        public Task<IReadOnlyList<JobLiveDto>> LiveAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<JobLiveDto>>([]);
     }
 }
 
@@ -219,6 +221,7 @@ public sealed class JobSqlFixture : IAsyncLifetime
         Options.Create(new OfficialSheetOptions { BackgroundScanMinutes = 60, BackgroundStartDelaySeconds = 5 }),
         Options.Create(new LicensingOptions()),
         _services.GetRequiredService<IServiceScopeFactory>(),
+        new JobProgress(TimeProvider.System),
         TimeProvider.System,
         NullLogger<JobScheduler>.Instance);
 

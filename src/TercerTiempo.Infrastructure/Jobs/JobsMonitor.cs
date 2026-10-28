@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.Sync;
 using TercerTiempo.Domain.Competitions;
+using TercerTiempo.Infrastructure.OfficialSheets;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
 
@@ -12,6 +13,8 @@ internal sealed class JobsMonitor(
     JobScheduler scheduler,
     AppDbContext db,
     ISyncProgress syncProgress,
+    IJobProgress jobProgress,
+    OfficialSheetQueue sheetQueue,
     IOptions<OfficialSheetOptions> sheetOptions,
     TimeProvider clock) : IJobsMonitor
 {
@@ -34,7 +37,36 @@ internal sealed class JobsMonitor(
     public async Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
+        var runs = await RecentRunsAsync(cancellationToken);
+        var sources = await SourcesAsync(now, cancellationToken);
+        var jobs = await JobsAsync(runs, sources, now, cancellationToken);
 
+        var recentQuery = db.Set<ScrapeRequest>().AsNoTracking();
+        if (provider is not null) recentQuery = recentQuery.Where(r => r.Provider == provider);
+        var recent = await recentQuery
+            .OrderByDescending(r => r.Id)
+            .Take(requests)
+            .Select(r => new ScrapeRequestDto(r.Id, r.At, r.Provider, r.Method, r.Url, r.StatusCode, r.DurationMs, r.Error, r.JobRunId))
+            .ToListAsync(cancellationToken);
+
+        return new JobsOverviewDto(jobs, sources, runs, recent, now);
+    }
+
+    public async Task<IReadOnlyList<JobLiveDto>> LiveAsync(CancellationToken cancellationToken)
+    {
+        var now = clock.GetUtcNow();
+        var jobs = await JobsAsync(await RecentRunsAsync(cancellationToken), await SourcesAsync(now, cancellationToken), now, cancellationToken);
+        return jobs
+            .Select(job =>
+            {
+                var live = jobProgress.Snapshot(job.Name);
+                return new JobLiveDto(job, live.StartedAt, live.Feed);
+            })
+            .ToList();
+    }
+
+    private async Task<List<JobRunDto>> RecentRunsAsync(CancellationToken cancellationToken)
+    {
         var runs = (await db.Set<JobRun>().AsNoTracking()
                 .OrderByDescending(r => r.StartedAt)
                 .Take(RunsShown)
@@ -49,6 +81,15 @@ internal sealed class JobsMonitor(
             var runId = runs[i].Id;
             runs[i] = runs[i] with { Requests = await db.Set<ScrapeRequest>().CountAsync(r => r.JobRunId == runId, cancellationToken) };
         }
+        return runs;
+    }
+
+    private async Task<List<JobDto>> JobsAsync(
+        IReadOnlyList<JobRunDto> runs, IReadOnlyList<ScrapeSourceDto> sources, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        // Las actas esperan a la federación: con la pausa a la vista se entiende por qué lanzarlas no empieza ya.
+        var federation = sources.FirstOrDefault(s => s.Provider == AsturfutbolOfficialSheetProvider.Name);
+        var sheetsPause = FederationPause.From(federation, sheetQueue.PausedUntil, now);
 
         var jobs = new List<JobDto>();
         foreach (var definition in scheduler.Definitions)
@@ -61,9 +102,11 @@ internal sealed class JobsMonitor(
                     .FirstOrDefaultAsync(cancellationToken);
 
             var (running, nextRunAt) = scheduler.State(definition.Name);
-            var progress = running && definition.Name == JobNames.FootballData && syncProgress.Snapshot() is { Running: true } sync
-                ? new JobProgressDto(sync.Current, sync.Done, sync.Total)
-                : null;
+            JobProgressDto? progress = null;
+            if (running && definition.Name == JobNames.FootballData && syncProgress.Snapshot() is { Running: true } sync)
+                progress = new JobProgressDto(sync.Current, sync.Done, sync.Total);
+            else if (running && jobProgress.Snapshot(definition.Name) is { Running: true } live && (live.Total > 0 || live.Current is not null))
+                progress = new JobProgressDto(live.Current, live.Done, live.Total);
 
             jobs.Add(new JobDto(
                 definition.Name,
@@ -75,18 +118,10 @@ internal sealed class JobsMonitor(
                 nextRunAt,
                 progress,
                 lastRun,
-                definition.Weekly?.Describe()));
+                definition.Weekly?.Describe(),
+                definition.Name == JobNames.OfficialSheets && !running ? sheetsPause : null));
         }
-
-        var recentQuery = db.Set<ScrapeRequest>().AsNoTracking();
-        if (provider is not null) recentQuery = recentQuery.Where(r => r.Provider == provider);
-        var recent = await recentQuery
-            .OrderByDescending(r => r.Id)
-            .Take(requests)
-            .Select(r => new ScrapeRequestDto(r.Id, r.At, r.Provider, r.Method, r.Url, r.StatusCode, r.DurationMs, r.Error, r.JobRunId))
-            .ToListAsync(cancellationToken);
-
-        return new JobsOverviewDto(jobs, await SourcesAsync(now, cancellationToken), runs, recent, now);
+        return jobs;
     }
 
     private async Task<IReadOnlyList<ScrapeSourceDto>> SourcesAsync(DateTimeOffset now, CancellationToken cancellationToken)

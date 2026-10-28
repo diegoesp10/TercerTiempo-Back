@@ -184,6 +184,8 @@ public class FootballSyncScopeTests
         public Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken) =>
             Task.FromResult(new JobsOverviewDto(
                 [new JobDto(JobNames.FootballData, "Datos", "", 60, true, true, null, null, null)], [], [], [], DateTimeOffset.UtcNow));
+
+        public Task<IReadOnlyList<JobLiveDto>> LiveAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<JobLiveDto>>([]);
     }
 
     // La web de futbolasturiano.es para una liga: dos partidos visibles en la API (uno fuera de la ventana pedida, dentro

@@ -44,9 +44,36 @@ public sealed record JobDto(
     JobProgressDto? Progress,
     JobRunDto? LastRun,
     [property: Description("Cuándo toca si va a día y hora fijos («Los lunes a las 7:00»); null si va por intervalo.")]
-    string? Schedule = null);
+    string? Schedule = null,
+    [property: Description("Solo las actas: la federación está en pausa y el trabajo sigue solo a esa hora; lanzarlo antes lo deja pedido para entonces.")]
+    JobPauseDto? Pause = null);
 
 public sealed record JobProgressDto(string? Current, int Done, int Total);
+
+public sealed record JobPauseDto(
+    DateTimeOffset Until,
+    [property: Description("rest (descanso entre tandas), session, retry, blocked, error, hour o day (tope de peticiones); null si no se sabe.")]
+    string? Kind,
+    string? Reason);
+
+// Un trabajo visto en directo: su estado y lo último que ha tocado en la ejecución en curso o en la última.
+public sealed record JobLiveDto(JobDto Job, DateTimeOffset? StartedAt, IReadOnlyList<JobEventDto> Feed);
+
+public static class FederationPause
+{
+    // La pausa guardada de la web manda; si no la hay, la espera del trabajo viene de sus topes de peticiones.
+    public static JobPauseDto? From(ScrapeSourceDto? source, DateTimeOffset? waitingUntil, DateTimeOffset now)
+    {
+        if (source?.PausedUntil is { } until) return new JobPauseDto(until, source.PauseKind, source.PauseReason);
+        if (waitingUntil is not { } waiting || waiting <= now) return null;
+
+        var maxDay = source?.MaxPerDay ?? 0;
+        var kind = maxDay > 0 && (source?.DayRequests ?? 0) >= maxDay ? "day"
+            : source?.MaxPerHour is { } maxHour && (source.HourRequests ?? 0) >= maxHour ? "hour"
+            : null;
+        return new JobPauseDto(waiting, kind, null);
+    }
+}
 
 public sealed record JobRunDto(
     Guid Id,
@@ -104,6 +131,9 @@ public enum JobLaunchResult
 public interface IJobsMonitor
 {
     Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken);
+
+    // Todos los trabajos con su avance y lo último que han tocado, para «Descargas en directo».
+    Task<IReadOnlyList<JobLiveDto>> LiveAsync(CancellationToken cancellationToken);
 
     // parameters llega tal cual al trabajo (p. ej. el SyncScope de los datos de las ligas); null = lo de su programación.
     JobLaunchResult Launch(string job, object? parameters = null);

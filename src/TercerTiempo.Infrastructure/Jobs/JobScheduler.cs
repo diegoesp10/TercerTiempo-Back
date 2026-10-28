@@ -58,6 +58,7 @@ internal sealed class JobScheduler
     private readonly Lock _lock = new();
     private readonly Dictionary<string, Slot> _slots;
     private readonly IServiceScopeFactory _scopes;
+    private readonly IJobProgress _progress;
     private readonly TimeProvider _clock;
     private readonly ILogger<JobScheduler> _logger;
 
@@ -66,10 +67,12 @@ internal sealed class JobScheduler
         IOptions<OfficialSheetOptions> sheets,
         IOptions<LicensingOptions> licensing,
         IServiceScopeFactory scopes,
+        IJobProgress progress,
         TimeProvider clock,
         ILogger<JobScheduler> logger)
     {
         _scopes = scopes;
+        _progress = progress;
         _clock = clock;
         _logger = logger;
 
@@ -237,7 +240,7 @@ internal sealed class JobScheduler
             if (wait <= TimeSpan.Zero) return false;
 
             using var delay = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            await Task.WhenAny(signal, Task.Delay(wait, _clock, delay.Token));
+            await Task.WhenAny(signal, Task.Delay(WallClockDelay.Step(wait), _clock, delay.Token));
             await delay.CancelAsync();
             cancellationToken.ThrowIfCancellationRequested();
         }
@@ -248,6 +251,7 @@ internal sealed class JobScheduler
     {
         var slot = _slots[job];
         lock (_lock) slot.Running = true;
+        _progress.Start(job);
 
         var run = new JobRun
         {
@@ -295,6 +299,7 @@ internal sealed class JobScheduler
         {
             JobContext.RunId = null;
             lock (_lock) slot.Running = false;
+            _progress.Finish(job);
             await FinishAsync(run.Id, status, summary, errors);
         }
     }

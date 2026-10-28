@@ -62,6 +62,7 @@ internal sealed class OfficialSheetSyncWorker(
     IServiceScopeFactory scopeFactory,
     OfficialSheetQueue queue,
     JobScheduler scheduler,
+    IJobProgress progress,
     IOptions<OfficialSheetOptions> options,
     TimeProvider clock,
     ILogger<OfficialSheetSyncWorker> logger) : BackgroundService
@@ -115,7 +116,7 @@ internal sealed class OfficialSheetSyncWorker(
                 {
                     var wait = at - clock.GetUtcNow();
                     if (wait <= TimeSpan.Zero) continue;
-                    timeout.CancelAfter(wait);
+                    timeout.CancelAfter(WallClockDelay.Step(wait));
                 }
 
                 var queued = queue.WaitAsync(timeout.Token).AsTask();
@@ -133,8 +134,7 @@ internal sealed class OfficialSheetSyncWorker(
                 var until = ex.RetryAt ?? clock.GetUtcNow().AddHours(24);
                 logger.LogWarning("Descargas de actas aplazadas hasta {Until}: {Message}", until, ex.Message);
                 queue.PausedUntil = until;
-                var delay = until - clock.GetUtcNow();
-                if (delay > TimeSpan.Zero) await Task.Delay(delay, clock, stoppingToken);
+                await clock.DelayUntilAsync(until, stoppingToken);
                 queue.PausedUntil = null;
             }
             catch (Exception ex)
@@ -288,9 +288,15 @@ internal sealed class OfficialSheetSyncWorker(
             // Lo que piden los usuarios va siempre por delante de la pasada general.
             await DrainQueueAsync(cancellationToken);
             if (queue.IsQueued(item.MatchId)) continue;
-            if (await SyncAsync(item.MatchId, cancellationToken, item.FederationAllowed) is { } error) errors.Add(error);
+            progress.Step(JobNames.OfficialSheets, "Actas que faltan o toca refrescar", done, due.Count);
+            if (await SyncAsync(item.MatchId, cancellationToken, item.FederationAllowed) is { } error)
+            {
+                errors.Add(error);
+                progress.Event(JobNames.OfficialSheets, error, JobEventTone.Warning, matchId: item.MatchId);
+            }
             done++;
         }
+        progress.Step(JobNames.OfficialSheets, null, done, due.Count);
 
         logger.LogInformation("Actas oficiales: pasada terminada, {Done} partidos consultados", done);
         return new JobOutcome($"{due.Count} actas pendientes, {done} partidos consultados, {done - errors.Count} sin error", errors);

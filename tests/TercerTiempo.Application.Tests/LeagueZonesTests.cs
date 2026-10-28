@@ -1,6 +1,7 @@
 using System.Reflection;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Competitions;
+using TercerTiempo.Application.Jobs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Referees;
@@ -54,9 +55,14 @@ public class LeagueZonesTests
         var store = new InMemorySeasonZoneStore();
         var unitOfWork = new CountingUnitOfWork();
         var competitions = Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition]));
-        var handler = new SyncLeagueZonesHandler(provider, competitions, store, unitOfWork, TimeProvider.System);
+        var progress = new JobProgress(TimeProvider.System);
+        var handler = new SyncLeagueZonesHandler(provider, competitions, store, progress, unitOfWork, TimeProvider.System);
 
         Assert.Equal(new LeagueZonesSynced(1, 1, 0), await handler.Handle(new SyncLeagueZonesCommand(), default));
+        // Lo que se ve en directo en la administración.
+        var live = progress.Snapshot(JobNames.LeagueZones);
+        Assert.Equal("1ª AsturFútbol: plazas nuevas · Ascenso directo 1.º · Descenso 20.º", live.Feed[0].Text);
+        Assert.Equal((1, 1), (live.Done, live.Total));
         Assert.Equal([(1, LeagueZoneKind.DirectPromotion), (20, LeagueZoneKind.Relegation)], store.Zones.Select(z => (z.Position, z.Kind)));
 
         Assert.Equal(new LeagueZonesSynced(1, 0, 0), await handler.Handle(new SyncLeagueZonesCommand(), default));

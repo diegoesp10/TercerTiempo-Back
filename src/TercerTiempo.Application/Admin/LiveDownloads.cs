@@ -10,7 +10,12 @@ using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Admin;
 
-public sealed record LiveDownloadsDto(SyncLiveDto Football, SheetQueueDto Sheets, DateTimeOffset GeneratedAt);
+public sealed record LiveDownloadsDto(
+    SyncLiveDto Football,
+    SheetQueueDto Sheets,
+    DateTimeOffset GeneratedAt,
+    [property: Description("Todos los trabajos en segundo plano (también ligas y actas) con su estado, su avance y lo último que han tocado.")]
+    IReadOnlyList<JobLiveDto> Jobs);
 
 public sealed record SheetQueueDto(
     int Pending,
@@ -105,15 +110,10 @@ internal sealed class GetLiveDownloadsHandler(
             .ToList();
 
         var source = await monitor.SourceAsync(Federation, cancellationToken);
-        var pausedUntil = source?.PausedUntil ?? (queue.PausedUntil > now ? queue.PausedUntil : null);
+        var pause = FederationPause.From(source, queue.PausedUntil, now);
+        var pausedUntil = pause?.Until;
         var maxHour = source?.MaxPerHour ?? 20;
         var maxDay = source is null ? 60 : source.MaxPerDay ?? 0;
-        // Sin pausa guardada, la espera de la cola viene de los topes de peticiones.
-        var pauseKind = source?.PausedUntil is not null ? source.PauseKind
-            : pausedUntil is null ? null
-            : maxDay > 0 && (source?.DayRequests ?? 0) >= maxDay ? "day"
-            : (source?.HourRequests ?? 0) >= maxHour ? "hour"
-            : null;
         var pending = rows.Where(r => r.Status is SheetDownloadStatus.Pending or SheetDownloadStatus.Downloading).ToList();
 
         // Una petición por acta y otra por cada jornada distinta (la página de la jornada se guarda un día en caché).
@@ -136,8 +136,8 @@ internal sealed class GetLiveDownloadsHandler(
             rows.Count(r => r.Status == SheetDownloadStatus.Missing),
             rows.Count(r => r.Status == SheetDownloadStatus.Failed),
             pausedUntil,
-            pauseKind,
-            source?.PausedUntil is not null ? source.PauseReason : null,
+            pause?.Kind,
+            pause?.Reason,
             source?.HourRequests ?? 0, maxHour, source?.DayRequests ?? 0, maxDay,
             source?.NextRequestAt,
             source?.BurstRequests ?? 0,
@@ -146,7 +146,7 @@ internal sealed class GetLiveDownloadsHandler(
             estimated,
             items);
 
-        return new LiveDownloadsDto(progress.Live(), sheets, now);
+        return new LiveDownloadsDto(progress.Live(), sheets, now, await monitor.LiveAsync(cancellationToken));
     }
 
     // Recorre las horas que vienen gastando lo que permiten los topes por hora y por día (en UTC, como los contadores).
