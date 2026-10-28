@@ -88,6 +88,7 @@ public class PlayerStatsCalculatorTests
         Assert.Equal(1, league.TeamPosition);
         Assert.Equal(2, league.PlayersCompared);
         Assert.Equal(1.38, league.LeagueAvgGoalsForPerMatch);
+        Assert.Equal(1.38, league.LeagueAvgGoalsAgainstPerMatch);
         Assert.Equal(75, league.GoalsPer90Percentile);
         Assert.Equal(75, league.RatingPercentile);
         Assert.Equal(1.75, league.TeamGoalsForPerMatch);

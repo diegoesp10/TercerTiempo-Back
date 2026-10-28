@@ -70,6 +70,7 @@ public sealed record LeagueComparisonDto(
     int TeamsCount,
     int? TeamPosition,
     double LeagueAvgGoalsForPerMatch,
+    double LeagueAvgGoalsAgainstPerMatch,
     double LeagueAvgPointsPerMatch,
     double? TeamGoalsForPerMatch,
     double? TeamGoalsAgainstPerMatch,

@@ -109,6 +109,14 @@ internal sealed class LicenseGate(
     {
         var video = await videos.GetByIdAsync(videoId, cancellationToken);
         if (video is null) return;
+        // Un vídeo público lo ve cualquiera que llegue al partido, con o sin cuenta (como un enlace compartido): basta la
+        // licencia del equipo que lo subió.
+        if (video.IsPublic && !user.IsAdmin)
+        {
+            if (await StatusForTeamAsync(video.TeamId, cancellationToken) == LicenseStatus.Expired)
+                throw new ForbiddenException(ErrorCode.LicenseRequired);
+            return;
+        }
         var squad = await squads.GetByIdAsync(video.SquadId, cancellationToken);
         if (squad is null) return;
         await EnsureAsync(squad, user, cancellationToken);

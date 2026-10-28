@@ -105,6 +105,7 @@ internal static class PlayerStatsCalculator
 
         var totalPlayed = standings.Sum(s => s.Played);
         var leagueAvgGoals = totalPlayed > 0 ? standings.Sum(s => s.GoalsFor) / (double)totalPlayed : 0;
+        var leagueAvgConceded = totalPlayed > 0 ? standings.Sum(s => s.GoalsAgainst) / (double)totalPlayed : 0;
         var leagueAvgPoints = totalPlayed > 0 ? standings.Sum(s => s.Points) / (double)totalPlayed : 0;
 
         var teamStanding = teamId is { } id ? standings.FirstOrDefault(s => s.TeamId == id) : null;
@@ -126,6 +127,7 @@ internal static class PlayerStatsCalculator
             TeamsCount: standings.Count,
             TeamPosition: teamStanding?.Position,
             LeagueAvgGoalsForPerMatch: Round(leagueAvgGoals),
+            LeagueAvgGoalsAgainstPerMatch: Round(leagueAvgConceded),
             LeagueAvgPointsPerMatch: Round(leagueAvgPoints),
             TeamGoalsForPerMatch: teamStanding is { Played: > 0 } ? Round(teamStanding.GoalsFor / (double)teamStanding.Played) : null,
             TeamGoalsAgainstPerMatch: teamStanding is { Played: > 0 } ? Round(teamStanding.GoalsAgainst / (double)teamStanding.Played) : null,
