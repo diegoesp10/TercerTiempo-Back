@@ -298,9 +298,11 @@ internal sealed class JobScheduler
         finally
         {
             JobContext.RunId = null;
+            // Primero se guarda el resultado: si no, durante un instante el trabajo ya no figura en marcha pero su
+            // última ejecución sí.
+            await FinishAsync(run.Id, status, summary, errors);
             lock (_lock) slot.Running = false;
             _progress.Finish(job);
-            await FinishAsync(run.Id, status, summary, errors);
         }
     }
 
