@@ -34,16 +34,7 @@ internal sealed class ImportRosterHandler(
     public async Task<SquadDetailDto> Handle(ImportRosterCommand command, CancellationToken cancellationToken)
     {
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
-        var now = clock.GetUtcNow();
-
-        foreach (var entry in await teams.GetRosterAsync(squad.TeamId, squad.SeasonId, cancellationToken))
-        {
-            // Las fichas con el mismo nombre añadidas a mano no se duplican.
-            if (squad.ActivePlayers.Any(p => p.RosterEntryId == entry.Id || p.NormalizedName == entry.NormalizedName))
-                continue;
-
-            squad.AddPlayer(entry.FullName, entry.Position, entry.ShirtNumber, entry.Id, now);
-        }
+        SquadOpening.ImportRoster(squad, await teams.GetRosterAsync(squad.TeamId, squad.SeasonId, cancellationToken), clock.GetUtcNow());
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
