@@ -20,6 +20,19 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "FakeDatos": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "docs",
+      "applicationUrl": "http://localhost:5080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ConnectionStrings__Default": "Server=localhost;Database=tercertiempo_DatosFake;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=True",
+        "FootballData__SyncIntervalMinutes": "0",
+        "OfficialSheets__Enabled": "false"
+      }
     }
   }
 }

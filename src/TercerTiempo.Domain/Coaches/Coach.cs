@@ -9,6 +9,9 @@ public sealed class Coach : AggregateRoot
     public string NormalizedName { get; private set; } = string.Empty;
     public DateTimeOffset RegisteredAt { get; private set; }
 
+    // Foto que sube el propio técnico desde su perfil (nadie más la cambia).
+    public string? PhotoKey { get; private set; }
+
     private Coach() { }
 
     public static Coach Register(Guid userId, string displayName, DateTimeOffset now)
@@ -31,4 +34,8 @@ public sealed class Coach : AggregateRoot
         DisplayName = name;
         NormalizedName = NameNormalizer.Normalize(name);
     }
+
+    public void SetPhoto(string photoKey) => PhotoKey = Guard.NotEmpty(photoKey, nameof(photoKey), 100);
+
+    public void ClearPhoto() => PhotoKey = null;
 }

@@ -13,10 +13,22 @@ internal static class SquadOpening
             return existing;
 
         var squad = Squad.Open(teamId, seasonId, now);
-        foreach (var entry in await teams.GetRosterAsync(teamId, seasonId, cancellationToken))
-            squad.AddPlayer(entry.FullName, entry.Position, entry.ShirtNumber, entry.Id, now);
+        ImportRoster(squad, await teams.GetRosterAsync(teamId, seasonId, cancellationToken), now);
 
         squads.Add(squad);
         return squad;
+    }
+
+    // Las fichas publicadas que aún no están en la plantilla. Un nombre que ya está no se duplica: lo añadió el club a
+    // mano o el proveedor publica al mismo jugador dos veces (dos fichas con distinto id y el mismo nombre).
+    public static void ImportRoster(Squad squad, IEnumerable<RosterEntry> roster, DateTimeOffset now)
+    {
+        foreach (var entry in roster)
+        {
+            if (squad.ActivePlayers.Any(p => p.RosterEntryId == entry.Id || p.NormalizedName == entry.NormalizedName))
+                continue;
+
+            squad.AddPlayer(entry.FullName, entry.Position, entry.ShirtNumber, entry.Id, now);
+        }
     }
 }

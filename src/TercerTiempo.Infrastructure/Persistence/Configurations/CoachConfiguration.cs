@@ -13,6 +13,7 @@ internal sealed class CoachConfiguration : IEntityTypeConfiguration<Coach>
 
         builder.Property(c => c.DisplayName).HasMaxLength(100).IsRequired();
         builder.Property(c => c.NormalizedName).HasMaxLength(100).IsRequired();
+        builder.Property(c => c.PhotoKey).HasMaxLength(100);
 
         builder.HasIndex(c => c.UserId).IsUnique();
     }

@@ -1,4 +1,5 @@
 using TercerTiempo.Application.Auth;
+using TercerTiempo.Application.Coaches.Photos;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Domain.Clubs;
@@ -11,7 +12,8 @@ public sealed record CoachDto(
     Guid Id,
     string DisplayName,
     IReadOnlyList<SquadSummaryDto> Squads,
-    IReadOnlyList<CoachAppointmentDto> Appointments);
+    IReadOnlyList<CoachAppointmentDto> Appointments,
+    string? PhotoUrl = null);
 
 public sealed record CoachAppointmentDto(
     Guid Id,
@@ -52,6 +54,6 @@ internal static class CoachMapper
                 appointment.ValidFrom, appointment.ValidUntil, appointment.StatusOn(today), squad?.Id));
         }
 
-        return new CoachDto(coach.Id, coach.DisplayName, summaries, appointments);
+        return new CoachDto(coach.Id, coach.DisplayName, summaries, appointments, coach.PhotoLink());
     }
 }

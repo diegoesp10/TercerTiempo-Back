@@ -1,4 +1,5 @@
 using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Application.Coaches.Photos;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Application.Teams;
@@ -84,7 +85,9 @@ internal static class SquadMapper
         var linkedMap = (await players.GetByIdsAsync(linkedIds, cancellationToken)).ToDictionary(p => p.Id);
 
         var staff = activeStaff
-            .Select(s => new SquadStaffDto(s.CoachId, coachMap.GetValueOrDefault(s.CoachId)?.DisplayName ?? "Técnico", s.Role, s.JoinedAt, s.ValidUntil))
+            .Select(s => new SquadStaffDto(
+                s.CoachId, coachMap.GetValueOrDefault(s.CoachId)?.DisplayName ?? "Técnico", s.Role, s.JoinedAt, s.ValidUntil,
+                coachMap.GetValueOrDefault(s.CoachId)?.PhotoLink()))
             .OrderBy(s => s.Role)
             .ThenBy(s => s.JoinedAt)
             .ToList();

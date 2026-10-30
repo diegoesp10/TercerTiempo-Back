@@ -41,6 +41,16 @@ public class ClubAsStaffTests
     }
 
     [Fact]
+    public async Task A_player_published_twice_by_the_provider_enters_the_squad_once()
+    {
+        var f = new Fixture(withSquad: false, publishedTwice: true);
+
+        await f.Open().Handle(new(f.Team.Id, null), default);
+
+        Assert.Equal(["Pelayo Fernández"], f.Squad.ActivePlayers.Select(p => p.FullName));
+    }
+
+    [Fact]
     public async Task A_club_cannot_open_the_squad_of_a_team_it_does_not_manage()
     {
         var f = new Fixture(withSquad: false);
@@ -153,13 +163,17 @@ public class ClubAsStaffTests
         public int Saves { get; private set; }
         private readonly Season _season;
         private readonly RosterEntry _rosterEntry;
+        private readonly List<RosterEntry> _roster = [];
 
-        public Fixture(bool withSquad = true)
+        public Fixture(bool withSquad = true, bool publishedTwice = false)
         {
             _season = Competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
             Competition.MarkCurrent(_season.Id);
             Club.AddTeam(Team.Id, Now);
             _rosterEntry = RosterEntry.Create(Team.Id, _season.Id, "Pelayo Fernández", Position.Forward, 9, null, Now);
+            _roster.Add(_rosterEntry);
+            if (publishedTwice)
+                _roster.Add(RosterEntry.Create(Team.Id, _season.Id, "Pelayo Fernández", null, 19, null, Now));
             Played = Match.Schedule(_season.Id, 1, Team.Id, Rival.Id, Now.AddDays(-2), null, null);
             Played.RecordResult(2, 1, Now.AddDays(-2).AddHours(2));
             Upcoming = Match.Schedule(_season.Id, 2, Team.Id, Rival.Id, Now.AddDays(3), null, null);
@@ -189,7 +203,7 @@ public class ClubAsStaffTests
         });
         private ITeamStore Teams => Stub<ITeamStore>((method, args) => method switch
         {
-            nameof(ITeamStore.GetRosterAsync) => Task.FromResult<IReadOnlyList<RosterEntry>>([_rosterEntry]),
+            nameof(ITeamStore.GetRosterAsync) => Task.FromResult<IReadOnlyList<RosterEntry>>(_roster),
             nameof(ITeamStore.GetByIdsAsync) => Task.FromResult<IReadOnlyList<Team>>([Team, Rival]),
             nameof(ITeamStore.GetByIdAsync) => Task.FromResult(new[] { Team, Rival }.FirstOrDefault(t => t.Id == (Guid)args![0]!)),
             _ => throw new NotSupportedException(method),

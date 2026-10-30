@@ -1,0 +1,13 @@
+# Datos falsos: el entorno de desarrollo (compose.development.yaml, que se aplica antes que este fichero) con su propia
+# base, tercertiempo_DatosFake, en el SQL Server de Windows del equipo. Es una copia del piloto en la que todos los
+# clubes tienen licencia y un entrenador, y hay plantillas, actas internas, lesiones, cuentas de jugador y notas a los
+# árbitros inventadas, para ver la app como si la usaran todos los clubes. Start-Docker.ps1 arma la cadena de conexión
+# (TT_DB_CONNECTION) y combina los ficheros:
+#   .\Start-Docker.ps1 -Environment FakeDatos
+services:
+  api:
+    environment:
+      # Nada sale fuera: ni scrapeos de futbolasturiano.es ni peticiones a asturfutbol.es (las actas guardadas se siguen
+      # viendo). Así los datos inventados no cambian y no se suman peticiones a las del piloto desde la misma IP.
+      FootballData__SyncIntervalMinutes: "0"
+      OfficialSheets__Enabled: "false"

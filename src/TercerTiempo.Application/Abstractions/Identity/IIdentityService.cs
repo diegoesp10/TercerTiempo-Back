@@ -5,7 +5,17 @@ public sealed record PasswordState(DateTimeOffset? ChangedAt, DateTimeOffset? Ne
 
 public interface IIdentityService
 {
+    // Crea la cuenta sin confirmar. El email solo está ocupado si es de una cuenta confirmada; la de un alta que se cortó
+    // a medias se sustituye.
     Task<Guid> CreateUserAsync(string email, string password, CancellationToken cancellationToken);
+
+    // Marca la cuenta como confirmada sin guardarla: se guarda en el mismo SaveChanges que su perfil, así que o quedan
+    // las dos cosas o ninguna.
+    Task ConfirmUserAsync(Guid userId, CancellationToken cancellationToken);
+
+    // Borra la cuenta si sigue sin confirmar (el alta ha fallado después de crearla). Nunca lanza: si no se puede, la
+    // cuenta sin confirmar no entra ni ocupa el email.
+    Task DiscardUnconfirmedUserAsync(Guid userId);
 
     // Cada fallo cuenta para el bloqueo temporal; con la cuenta bloqueada lanza auth.locked_out.
     Task<Guid?> ValidateCredentialsAsync(string email, string password, CancellationToken cancellationToken);

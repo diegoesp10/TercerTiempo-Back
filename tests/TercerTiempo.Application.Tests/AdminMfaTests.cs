@@ -5,6 +5,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Admin;
 using TercerTiempo.Application.Auth;
@@ -181,7 +182,7 @@ public class AdminMfaTests
             Provider = provider;
             _scope = provider.CreateAsyncScope();
             Users = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-            Identity = new IdentityService(Users, provider.GetRequiredService<SessionStamps>(), TimeProvider.System);
+            Identity = new IdentityService(Users, provider.GetRequiredService<SessionStamps>(), TimeProvider.System, provider.GetRequiredService<ILogger<IdentityService>>());
             SecondFactor = _scope.ServiceProvider.GetRequiredService<AdminSecondFactor>();
         }
 

@@ -31,7 +31,7 @@ public sealed record SquadDetailDto(
     IReadOnlyList<SquadStaffDto> Staff,
     IReadOnlyList<SquadPlayerDto> Players);
 
-public sealed record SquadStaffDto(Guid CoachId, string DisplayName, StaffRole Role, DateTimeOffset JoinedAt, DateOnly? ValidUntil);
+public sealed record SquadStaffDto(Guid CoachId, string DisplayName, StaffRole Role, DateTimeOffset JoinedAt, DateOnly? ValidUntil, string? PhotoUrl = null);
 
 public sealed record SquadPlayerDto(
     Guid Id,
