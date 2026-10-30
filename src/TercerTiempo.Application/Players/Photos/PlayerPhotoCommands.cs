@@ -17,11 +17,17 @@ public static class PlayerPhotos
 {
     public const int MaxBytes = 3 * 1024 * 1024;
 
-    public static string Route(Guid playerId, string photoKey)
+    // También para las fotos de los técnicos.
+    public static readonly IReadOnlySet<string> ContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "image/png", "image/jpeg", "image/webp" };
+
+    public static string Route(Guid playerId, string photoKey) => $"/api/players/{playerId}/photo?v={Version(photoKey)}";
+
+    // La versión va en la URL para que el navegador no enseñe la foto anterior después de cambiarla.
+    public static string Version(string photoKey)
     {
         var name = Path.GetFileNameWithoutExtension(photoKey);
         var dash = name.LastIndexOf('-');
-        return $"/api/players/{playerId}/photo?v={(dash >= 0 ? name[(dash + 1)..] : name)}";
+        return dash >= 0 ? name[(dash + 1)..] : name;
     }
 
     public static string? PhotoLink(this Player player) => player.PhotoKey is null ? null : Route(player.Id, player.PhotoKey);
@@ -37,14 +43,12 @@ public sealed record OpenPlayerPhotoQuery(Guid PlayerId) : IQuery<CrestFile?>;
 
 internal sealed class UploadMyPhotoValidator : AbstractValidator<UploadMyPhotoCommand>
 {
-    private static readonly HashSet<string> Allowed = new(StringComparer.OrdinalIgnoreCase) { "image/png", "image/jpeg", "image/webp" };
-
     public UploadMyPhotoValidator()
     {
         RuleFor(x => x.File).NotNull();
         RuleFor(x => x.File.Length).GreaterThan(0).WithCatalogMessage(ErrorCode.FileEmpty)
             .LessThanOrEqualTo(PlayerPhotos.MaxBytes).WithCatalogMessage(ErrorCode.PlayerPhotoTooLarge);
-        RuleFor(x => x.File.ContentType).Must(Allowed.Contains).WithCatalogMessage(ErrorCode.RosterPhotoFormat);
+        RuleFor(x => x.File.ContentType).Must(PlayerPhotos.ContentTypes.Contains).WithCatalogMessage(ErrorCode.RosterPhotoFormat);
     }
 }
 
