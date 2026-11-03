@@ -16,7 +16,7 @@ public sealed class OfficialSheetOptions
     public int BackgroundStartDelaySeconds { get; set; } = 20;
 
     // Cada semana (día y hora de la federación) se ponen en cola las actas de los últimos WeeklyQueueDays días de sus
-    // ligas, para que el fin de semana se baje solo. 0 lo desactiva.
+    // ligas, para que el fin de semana se baje solo. 0 lo desactiva; con BackgroundScanMinutes a 0 queda solo a mano.
     public DayOfWeek WeeklyQueueDay { get; set; } = DayOfWeek.Monday;
 
     public TimeOnly WeeklyQueueAt { get; set; } = new(7, 0);

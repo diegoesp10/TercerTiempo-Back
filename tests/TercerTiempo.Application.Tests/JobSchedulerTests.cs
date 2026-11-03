@@ -62,9 +62,20 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
         Assert.Equal(TimeSpan.FromDays(1), SchedulerWithSync(60).Get(JobNames.LeagueZones).Interval);
     }
 
-    private static JobScheduler SchedulerWithSync(int minutes) => new(
+    [Fact]
+    public void With_the_sheet_scans_off_the_weekly_queue_only_runs_by_hand()
+    {
+        var weekly = SchedulerWithSync(60, sheetMinutes: 0).Get(JobNames.WeeklySheets);
+
+        Assert.Null(weekly.Interval);
+        Assert.Null(weekly.Weekly);
+        Assert.True(weekly.Enabled);
+        Assert.NotNull(SchedulerWithSync(60).Get(JobNames.WeeklySheets).Weekly);
+    }
+
+    private static JobScheduler SchedulerWithSync(int minutes, int sheetMinutes = 60) => new(
         Options.Create(new FootballDataOptions { SyncIntervalMinutes = minutes }),
-        Options.Create(new OfficialSheetOptions()),
+        Options.Create(new OfficialSheetOptions { BackgroundScanMinutes = sheetMinutes }),
         Options.Create(new LicensingOptions()),
         new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
         new JobProgress(TimeProvider.System),
