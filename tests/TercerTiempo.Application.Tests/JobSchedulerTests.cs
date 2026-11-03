@@ -49,6 +49,28 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
         Assert.Equal("Los lunes a las 7:00", slot.Describe());
     }
 
+    [Fact]
+    public void With_the_league_sync_off_nothing_reads_futbolasturiano_on_its_own_but_it_can_be_launched_by_hand()
+    {
+        var off = SchedulerWithSync(0);
+
+        foreach (var job in new[] { JobNames.FootballData, JobNames.MatchOfficials, JobNames.LeagueZones })
+        {
+            Assert.Null(off.Get(job).Interval);
+            Assert.True(off.Get(job).Enabled);
+        }
+        Assert.Equal(TimeSpan.FromDays(1), SchedulerWithSync(60).Get(JobNames.LeagueZones).Interval);
+    }
+
+    private static JobScheduler SchedulerWithSync(int minutes) => new(
+        Options.Create(new FootballDataOptions { SyncIntervalMinutes = minutes }),
+        Options.Create(new OfficialSheetOptions()),
+        Options.Create(new LicensingOptions()),
+        new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+        new JobProgress(TimeProvider.System),
+        TimeProvider.System,
+        NullLogger<JobScheduler>.Instance);
+
     [LocalSqlFact]
     public async Task A_weekly_job_runs_on_its_day_and_catches_up_a_missed_one_on_start()
     {

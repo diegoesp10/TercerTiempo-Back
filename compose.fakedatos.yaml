@@ -7,7 +7,8 @@
 services:
   api:
     environment:
-      # Nada sale fuera: ni scrapeos de futbolasturiano.es ni peticiones a asturfutbol.es (las actas guardadas se siguen
-      # viendo). Así los datos inventados no cambian y no se suman peticiones a las del piloto desde la misma IP.
+      # Nada sale fuera: ni scrapeos de futbolasturiano.es (con la sincronización a 0 tampoco se leen solos los árbitros
+      # ni las plazas de las ligas) ni peticiones a asturfutbol.es (las actas guardadas se siguen viendo). Así los datos
+      # inventados no cambian y no se suman peticiones a las del piloto desde la misma IP.
       FootballData__SyncIntervalMinutes: "0"
       OfficialSheets__Enabled: "false"

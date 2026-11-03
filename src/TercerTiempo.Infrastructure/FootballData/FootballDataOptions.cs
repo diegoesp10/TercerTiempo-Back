@@ -11,7 +11,7 @@ public sealed class FootballDataOptions
     public string Provider { get; set; } = FutbolAsturianoProvider;
 
     // Minutos entre sincronizaciones, contados desde la última guardada en JobRuns (arrancar la API no la repite).
-    // 0 = solo a mano desde /jobs.
+    // 0 = solo a mano desde /jobs, y lo mismo los árbitros y las plazas de las ligas, que leen la misma web.
     public int SyncIntervalMinutes { get; set; } = 60;
 
     public FutbolAsturianoOptions FutbolAsturiano { get; set; } = new();

@@ -115,7 +115,7 @@ internal sealed class JobScheduler
             new(JobNames.LeagueZones,
                 "Plazas de las ligas",
                 "Lee en futbolasturiano.es qué puestos de cada liga son de ascenso directo, promoción de ascenso, promoción por la permanencia o descenso (los colores de su clasificación), para la clasificación y el previsor de resultados. Una página por liga y solo se guarda lo que cambia.",
-                TimeSpan.FromDays(1),
+                footballMinutes > 0 ? TimeSpan.FromDays(1) : null,
                 TimeSpan.FromMinutes(3),
                 true),
             new(JobNames.LicenseAlerts,
