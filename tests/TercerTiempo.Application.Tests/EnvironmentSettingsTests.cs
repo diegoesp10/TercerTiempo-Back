@@ -69,12 +69,10 @@ public class EnvironmentSettingsTests
         throw new DirectoryNotFoundException("No se encuentra src/TercerTiempo.Api subiendo desde la carpeta de los tests.");
     }
 
-    private static JobScheduler Scheduler(IConfiguration configuration) => new(
-        Options.Create(configuration.GetSection(FootballDataOptions.SectionName).Get<FootballDataOptions>()!),
-        Options.Create(configuration.GetSection(OfficialSheetOptions.SectionName).Get<OfficialSheetOptions>()!),
-        Options.Create(configuration.GetSection(LicensingOptions.SectionName).Get<LicensingOptions>()!),
+    private static JobScheduler Scheduler(IConfiguration configuration) => TestJobs.Scheduler(
         new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
-        new JobProgress(TimeProvider.System),
-        TimeProvider.System,
-        NullLogger<JobScheduler>.Instance);
+        configuration.GetSection(FootballDataOptions.SectionName).Get<FootballDataOptions>()!,
+        configuration.GetSection(OfficialSheetOptions.SectionName).Get<OfficialSheetOptions>()!,
+        configuration.GetValue<bool>("RealData:Ingest"),
+        configuration.GetSection(LicensingOptions.SectionName).Get<LicensingOptions>()!);
 }

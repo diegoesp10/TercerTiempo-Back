@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.DependencyInjection;
 using TercerTiempo.Infrastructure.Persistence;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
@@ -102,7 +103,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
 {
     public async Task<(byte[] Content, string? ContentType)?> PeekAsync(string key, CancellationToken ct)
     {
-        using var scope = scopes.CreateScope();
+        using var scope = scopes.CreateRealDataScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var cached = await db.Set<FederationHttpCache>().AsNoTracking()
             .Where(x => x.Key == key && x.StatusCode == 200 && x.Content != null)
@@ -113,7 +114,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
 
     public async Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct)
     {
-        using var scope = scopes.CreateScope();
+        using var scope = scopes.CreateRealDataScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
@@ -178,7 +179,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
 
     public async Task CompleteAsync(string provider, string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct)
     {
-        using var scope = scopes.CreateScope();
+        using var scope = scopes.CreateRealDataScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var cached = await db.Set<FederationHttpCache>().SingleAsync(x => x.Key == key, ct);
         cached.Content = response.Content;
@@ -196,7 +197,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
 
     public async Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, ProviderPause? pause, CancellationToken ct)
     {
-        using var scope = scopes.CreateScope();
+        using var scope = scopes.CreateRealDataScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
@@ -232,7 +233,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
     public async Task<ProviderPause> RejectAsync(
         string provider, string key, int? status, string what, DateTimeOffset now, TimeSpan firstPause, TimeSpan maxPause, CancellationToken ct)
     {
-        using var scope = scopes.CreateScope();
+        using var scope = scopes.CreateRealDataScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {

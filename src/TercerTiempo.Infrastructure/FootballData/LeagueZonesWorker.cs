@@ -5,6 +5,7 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Infrastructure.Jobs;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.FootballData;
 
@@ -17,6 +18,8 @@ internal sealed class LeagueZonesWorker(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Todo lo que hace este trabajo va a la base de datos reales.
+        using var realData = RealDataAmbient.Enter();
         var job = scheduler.Get(JobNames.LeagueZones);
         if (!job.Enabled) return;
         try

@@ -33,6 +33,7 @@ public static class ErrorCatalog
         (ErrorCode.JobNotFound, "El trabajo '{0}' no existe."),
         (ErrorCode.JobAlreadyRunning, "El trabajo '{0}' ya está en marcha."),
         (ErrorCode.JobDisabled, "El trabajo '{0}' está desactivado en la configuración."),
+        (ErrorCode.JobRealDataElsewhere, "Los datos reales los está descargando otro entorno ({1}): lanza '{0}' desde ese entorno."),
         (ErrorCode.SyncScheduledScopeInvalid, "La pasada automática solo puede ser la jornada en curso o la temporada completa."),
         (ErrorCode.AuthEmailTaken, "Ya existe una cuenta con ese email."),
         (ErrorCode.AuthPositionRequired, "Indica tu posición."),

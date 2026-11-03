@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Application.Tests;
 
@@ -284,6 +285,7 @@ public class FederationHttpSqlTests(FederationSqlFixture fixture) : IClassFixtur
     }
 }
 
+// El control de peticiones de la federación vive en la base de datos reales: la base de la prueba es una de esas.
 public sealed class FederationSqlFixture : IAsyncLifetime
 {
     private ServiceProvider _services = null!;
@@ -294,10 +296,12 @@ public sealed class FederationSqlFixture : IAsyncLifetime
         var name = $"TercerTiempo_FederationVerification_{Guid.NewGuid():N}";
         var connection = $"Server=localhost;Database={name};Integrated Security=True;TrustServerCertificate=True;Connect Timeout=10";
         _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(connection, sql => sql.EnableRetryOnFailure()).Options;
-        _services = new ServiceCollection().AddDbContext<AppDbContext>(o => o.UseSqlServer(connection, sql => sql.EnableRetryOnFailure()))
+        _services = new ServiceCollection()
+            .AddScoped<DatabaseTarget>()
+            .AddDbContext<AppDbContext>(o => o.UseSqlServer(connection, sql => sql.EnableRetryOnFailure()))
             .BuildServiceProvider();
-        await using var db = Db();
-        await db.Database.MigrateAsync();
+        await using var realData = new RealDataDbContext(new DbContextOptionsBuilder<RealDataDbContext>().UseSqlServer(connection).Options);
+        await realData.Database.MigrateAsync();
     }
     public AppDbContext Db() => new(_options);
     internal SqlAsturfutbolRequestStore Store() => new(_services.GetRequiredService<IServiceScopeFactory>());

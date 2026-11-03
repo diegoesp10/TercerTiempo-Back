@@ -1,5 +1,5 @@
 # Entorno de desarrollo: la API en Development, con lo de appsettings.Development.json. Aquí solo va lo propio de
-# Docker: la cadena de conexión y la contraseña del administrador. La base de datos es una de dos
+# Docker: las cadenas de conexión (la del entorno y la de la base de datos reales) y la contraseña del administrador. La base de datos es una de dos
 # (Start-Docker.ps1 -Database):
 #   Local      el SQL Server de Windows del equipo (la misma base que usa Visual Studio), por host.docker.internal con
 #              un login SQL (scripts/local-sql-login.sql); no se levanta ningún SQL en Docker. Sin -WithJobs se añade
@@ -13,6 +13,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.development}"
+      ConnectionStrings__RealData: "${TT_REAL_DB_CONNECTION:?Falta TT_REAL_DB_CONNECTION: arranca con Start-Docker.ps1}"
       Admin__Password: "${TT_ADMIN_PASSWORD:-}"
     depends_on:
       db:

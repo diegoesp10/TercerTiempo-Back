@@ -66,6 +66,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     {
         base.OnModelCreating(builder);
         builder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
+        // El estado de las descargas solo vive en la base de datos reales: el modelo lo tiene (las descargas usan este
+        // mismo contexto contra esa base), pero las migraciones del entorno no crean sus tablas.
+        foreach (var type in RealData.RealDataModel.SharedOnly)
+            builder.Entity(type).Metadata.SetIsTableExcludedFromMigrations(true);
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

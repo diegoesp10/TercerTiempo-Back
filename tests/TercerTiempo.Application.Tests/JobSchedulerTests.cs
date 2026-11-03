@@ -10,6 +10,7 @@ using TercerTiempo.Infrastructure.FootballData;
 using TercerTiempo.Infrastructure.Jobs;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Application.Tests;
 
@@ -18,6 +19,7 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
     [LocalSqlFact]
     public async Task Restarting_waits_for_the_interval_since_the_last_saved_run()
     {
+        using var realData = RealDataAmbient.Enter();
         await fixture.Reset();
         var lastStart = DateTimeOffset.UtcNow.AddMinutes(-10);
         await fixture.AddRun(JobNames.FootballData, lastStart, JobRunStatus.Succeeded);
@@ -30,6 +32,7 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
     [LocalSqlFact]
     public async Task Without_history_the_first_run_comes_shortly_after_starting()
     {
+        using var realData = RealDataAmbient.Enter();
         await fixture.Reset();
 
         var due = await fixture.Scheduler().FirstDueAsync(JobNames.FootballData, default);
@@ -73,18 +76,24 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
         Assert.NotNull(SchedulerWithSync(60).Get(JobNames.WeeklySheets).Weekly);
     }
 
-    private static JobScheduler SchedulerWithSync(int minutes, int sheetMinutes = 60) => new(
-        Options.Create(new FootballDataOptions { SyncIntervalMinutes = minutes }),
-        Options.Create(new OfficialSheetOptions { BackgroundScanMinutes = sheetMinutes }),
-        Options.Create(new LicensingOptions()),
+    private static JobScheduler SchedulerWithSync(int minutes, int sheetMinutes = 60) => TestJobs.Scheduler(
         new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
-        new JobProgress(TimeProvider.System),
-        TimeProvider.System,
-        NullLogger<JobScheduler>.Instance);
+        new FootballDataOptions { SyncIntervalMinutes = minutes },
+        new OfficialSheetOptions { BackgroundScanMinutes = sheetMinutes });
+
+    [Fact]
+    public void While_another_environment_downloads_the_real_data_its_jobs_cannot_be_launched_here()
+    {
+        var scheduler = TestJobs.SchedulerWhileAnotherIngests(new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
+
+        Assert.Equal(JobLaunchResult.Elsewhere, scheduler.Launch(JobNames.FootballData));
+        Assert.Equal(JobLaunchResult.Accepted, scheduler.Launch(JobNames.RealDataCopy));
+    }
 
     [LocalSqlFact]
     public async Task A_weekly_job_runs_on_its_day_and_catches_up_a_missed_one_on_start()
     {
+        using var realData = RealDataAmbient.Enter();
         await fixture.Reset();
         var scheduler = fixture.Scheduler();
         var slot = scheduler.Get(JobNames.WeeklySheets).Weekly!;
@@ -100,6 +109,7 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
     [LocalSqlFact]
     public async Task Runs_left_running_by_a_stopped_api_are_marked_interrupted()
     {
+        using var realData = RealDataAmbient.Enter();
         await fixture.Reset();
         await fixture.AddRun(JobNames.OfficialSheets, DateTimeOffset.UtcNow.AddMinutes(-5), JobRunStatus.Running);
 
@@ -112,6 +122,7 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
     [LocalSqlFact]
     public async Task External_calls_are_logged_and_counted_for_the_run_that_made_them()
     {
+        using var realData = RealDataAmbient.Enter();
         await fixture.Reset();
         var scheduler = fixture.Scheduler();
         var http = fixture.LoggedClient("futbolasturiano");
@@ -140,6 +151,7 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
     [LocalSqlFact]
     public async Task A_failed_run_is_saved_with_its_error()
     {
+        using var realData = RealDataAmbient.Enter();
         await fixture.Reset();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Scheduler().RunAsync(
@@ -174,6 +186,7 @@ public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixt
     [LocalSqlFact]
     public async Task What_was_asked_by_hand_reaches_the_job_once_and_the_run_keeps_its_scope()
     {
+        using var realData = RealDataAmbient.Enter();
         await fixture.Reset();
         var scheduler = fixture.Scheduler();
 
@@ -231,32 +244,40 @@ public class RunJobHandlerTests
     }
 }
 
+// Como en la API: una base del entorno y otra de datos reales, y el AppDbContext va a una u otra según RealDataAmbient.
 public sealed class JobSqlFixture : IAsyncLifetime
 {
     private ServiceProvider _services = null!;
-    private DbContextOptions<AppDbContext> _options = null!;
+    private DbContextOptions<AppDbContext> _environment = null!;
+    private DbContextOptions<AppDbContext> _realData = null!;
+    private string _realDataConnection = null!;
 
     public async Task InitializeAsync()
     {
         if (Environment.GetEnvironmentVariable("TT_RUN_LOCAL_SQL_TESTS") != "1") return;
-        var name = $"TercerTiempo_JobsVerification_{Guid.NewGuid():N}";
-        var connection = $"Server=localhost;Database={name};Integrated Security=True;TrustServerCertificate=True;Connect Timeout=10";
-        _options = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(connection).Options;
-        _services = new ServiceCollection().AddDbContext<AppDbContext>(o => o.UseSqlServer(connection)).BuildServiceProvider();
-        await using var db = Db();
-        await db.Database.MigrateAsync();
+        var suffix = Guid.NewGuid().ToString("N");
+        var environment = $"Server=localhost;Database=TercerTiempo_JobsVerification_{suffix};Integrated Security=True;TrustServerCertificate=True;Connect Timeout=10";
+        _realDataConnection = $"Server=localhost;Database=TercerTiempo_JobsVerificationReal_{suffix};Integrated Security=True;TrustServerCertificate=True;Connect Timeout=10";
+        var realData = _realDataConnection;
+        _environment = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(environment).Options;
+        _realData = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(realData).Options;
+        _services = new ServiceCollection()
+            .AddScoped<DatabaseTarget>()
+            .AddDbContext<AppDbContext>((sp, o) => o.UseSqlServer(sp.GetRequiredService<DatabaseTarget>().RealData ? realData : environment))
+            .BuildServiceProvider();
+
+        await using (var db = new AppDbContext(_environment)) await db.Database.MigrateAsync();
+        await using (var real = RealDb()) await real.Database.MigrateAsync();
     }
 
-    public AppDbContext Db() => new(_options);
+    public AppDbContext Db() => new(RealDataAmbient.Active ? _realData : _environment);
 
-    internal JobScheduler Scheduler() => new(
-        Options.Create(new FootballDataOptions { SyncIntervalMinutes = 60 }),
-        Options.Create(new OfficialSheetOptions { BackgroundScanMinutes = 60, BackgroundStartDelaySeconds = 5 }),
-        Options.Create(new LicensingOptions()),
+    internal RealDataDbContext RealDb() => new(new DbContextOptionsBuilder<RealDataDbContext>().UseSqlServer(_realDataConnection).Options);
+
+    internal JobScheduler Scheduler() => TestJobs.Scheduler(
         _services.GetRequiredService<IServiceScopeFactory>(),
-        new JobProgress(TimeProvider.System),
-        TimeProvider.System,
-        NullLogger<JobScheduler>.Instance);
+        new FootballDataOptions { SyncIntervalMinutes = 60 },
+        new OfficialSheetOptions { BackgroundScanMinutes = 60, BackgroundStartDelaySeconds = 5 });
 
     internal HttpClient LoggedClient(string provider) => new(new ScrapeLogHandler(
         provider, _services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, NullLogger<ScrapeLogHandler>.Instance)
@@ -273,16 +294,20 @@ public sealed class JobSqlFixture : IAsyncLifetime
 
     public async Task Reset()
     {
-        await using var db = Db();
-        await db.Set<ScrapeRequest>().ExecuteDeleteAsync();
+        await using (var real = new AppDbContext(_realData))
+        {
+            await real.Set<ScrapeRequest>().ExecuteDeleteAsync();
+            await real.Set<JobRun>().ExecuteDeleteAsync();
+        }
+        await using var db = new AppDbContext(_environment);
         await db.Set<JobRun>().ExecuteDeleteAsync();
     }
 
     public async Task DisposeAsync()
     {
-        if (_options is null) return;
-        await using var db = Db();
-        await db.Database.EnsureDeletedAsync();
+        if (_environment is null) return;
+        await using (var db = new AppDbContext(_environment)) await db.Database.EnsureDeletedAsync();
+        await using (var real = new AppDbContext(_realData)) await real.Database.EnsureDeletedAsync();
         await _services.DisposeAsync();
     }
 

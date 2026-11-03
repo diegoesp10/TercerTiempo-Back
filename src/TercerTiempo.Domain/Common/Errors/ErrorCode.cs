@@ -34,6 +34,7 @@ public static class ErrorCode
     public const string JobNotFound = "job.not_found";
     public const string JobAlreadyRunning = "job.already_running";
     public const string JobDisabled = "job.disabled";
+    public const string JobRealDataElsewhere = "job.real_data_elsewhere";
     public const string SyncScheduledScopeInvalid = "sync.scheduled_scope_invalid";
     public const string AuthEmailTaken = "auth.email_taken";
     public const string AuthPositionRequired = "auth.position_required";

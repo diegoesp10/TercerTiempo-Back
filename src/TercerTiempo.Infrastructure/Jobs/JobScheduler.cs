@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
@@ -10,11 +11,15 @@ using TercerTiempo.Infrastructure.FootballData;
 using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.Jobs;
 
+// RealData: descarga de las webs a la base de datos reales; solo la ejecuta el entorno que tiene el bloqueo
+// (RealDataLease) y su historial vive en esa base.
 internal sealed record JobDefinition(
-    string Name, string Title, string Description, TimeSpan? Interval, TimeSpan FirstRunDelay, bool Enabled, WeeklySlot? Weekly = null);
+    string Name, string Title, string Description, TimeSpan? Interval, TimeSpan FirstRunDelay, bool Enabled, WeeklySlot? Weekly = null,
+    bool RealData = false);
 
 // Un día y una hora fijos de cada semana, en la hora de la federación.
 internal sealed record WeeklySlot(DayOfWeek Day, TimeOnly At, TimeZoneInfo Zone)
@@ -32,7 +37,8 @@ internal sealed record WeeklySlot(DayOfWeek Day, TimeOnly At, TimeZoneInfo Zone)
     public string Describe() => $"Los {Spanish.DateTimeFormat.GetDayName(Day)} a las {At.ToString("H:mm", Spanish)}";
 }
 
-internal sealed record JobOutcome(string Summary, IReadOnlyList<string> Errors);
+// Quiet: no había nada que hacer y la ejecución no se guarda en el historial (la copia de los datos reales sin cambios).
+internal sealed record JobOutcome(string Summary, IReadOnlyList<string> Errors, bool Quiet = false);
 
 internal sealed record JobScope(string Kind, string Label);
 
@@ -59,6 +65,8 @@ internal sealed class JobScheduler
     private readonly Dictionary<string, Slot> _slots;
     private readonly IServiceScopeFactory _scopes;
     private readonly IJobProgress _progress;
+    private readonly IRealDataLease _lease;
+    private readonly string _environment;
     private readonly TimeProvider _clock;
     private readonly ILogger<JobScheduler> _logger;
 
@@ -66,6 +74,9 @@ internal sealed class JobScheduler
         IOptions<FootballDataOptions> football,
         IOptions<OfficialSheetOptions> sheets,
         IOptions<LicensingOptions> licensing,
+        IOptions<RealDataOptions> realData,
+        IRealDataLease lease,
+        IHostEnvironment environment,
         IServiceScopeFactory scopes,
         IJobProgress progress,
         TimeProvider clock,
@@ -73,11 +84,14 @@ internal sealed class JobScheduler
     {
         _scopes = scopes;
         _progress = progress;
+        _lease = lease;
+        _environment = environment.EnvironmentName;
         _clock = clock;
         _logger = logger;
 
         var footballMinutes = football.Value.SyncIntervalMinutes;
         var sheetMinutes = sheets.Value.BackgroundScanMinutes;
+        var ingest = lease.CanIngest;
         var weeklyDays = sheets.Value.WeeklyQueueDays;
         JobDefinition[] definitions =
         [
@@ -86,13 +100,15 @@ internal sealed class JobScheduler
                 $"Ligas, equipos, partidos, resultados, clasificaciones y plantillas desde el proveedor de datos ({football.Value.Provider}).",
                 footballMinutes > 0 ? TimeSpan.FromMinutes(footballMinutes) : null,
                 TimeSpan.FromSeconds(10),
-                true),
+                ingest,
+                RealData: true),
             new(JobNames.OfficialSheets,
                 "Actas públicas",
                 $"Busca las actas que faltan o toca refrescar (hasta {sheets.Value.BackgroundBatch} por pasada) en asturfutbol.es, con su límite de peticiones.",
                 sheetMinutes > 0 ? TimeSpan.FromMinutes(sheetMinutes) : null,
                 TimeSpan.FromSeconds(Math.Max(0, sheets.Value.BackgroundStartDelaySeconds)),
-                sheets.Value.Enabled),
+                ingest && sheets.Value.Enabled,
+                RealData: true),
             new(JobNames.LicenseRenewals,
                 "Renovaciones de licencias",
                 "Cobra (sin cobro real) el periodo siguiente de las suscripciones de licencia que llegan a su día de renovación. Solo con la pasarela simulada; con Stripe las renueva su webhook.",
@@ -104,25 +120,34 @@ internal sealed class JobScheduler
                 $"Pone en cola las actas de los partidos de los últimos {weeklyDays} días de las ligas de la federación asturiana (regionales y 3ª RFEF); se descargan en tandas con su límite de peticiones.",
                 weeklyDays > 0 && sheetMinutes > 0 ? TimeSpan.FromDays(7) : null,
                 TimeSpan.FromSeconds(30),
-                sheets.Value.Enabled && weeklyDays > 0,
-                sheetMinutes > 0 ? new WeeklySlot(sheets.Value.WeeklyQueueDay, sheets.Value.WeeklyQueueAt, SiteClock.Resolve(sheets.Value.Asturfutbol.TimeZone)) : null),
+                ingest && sheets.Value.Enabled && weeklyDays > 0,
+                sheetMinutes > 0 ? new WeeklySlot(sheets.Value.WeeklyQueueDay, sheets.Value.WeeklyQueueAt, SiteClock.Resolve(sheets.Value.Asturfutbol.TimeZone)) : null,
+                RealData: true),
             new(JobNames.MatchOfficials,
                 "Árbitros de los partidos",
                 "Guarda el equipo arbitral de cada partido: el de las actas de la federación ya descargadas (sin peticiones nuevas) y, para los jugados que sigan sin él, el que publique futbolasturiano.es en la página del partido (hasta 60 por pasada; se vuelve a mirar a los tres días, como mucho tres veces).",
                 footballMinutes > 0 ? TimeSpan.FromMinutes(Math.Max(footballMinutes, 60)) : null,
                 TimeSpan.FromMinutes(2),
-                true),
+                ingest,
+                RealData: true),
             new(JobNames.LeagueZones,
                 "Plazas de las ligas",
                 "Lee en futbolasturiano.es qué puestos de cada liga son de ascenso directo, promoción de ascenso, promoción por la permanencia o descenso (los colores de su clasificación), para la clasificación y el previsor de resultados. Una página por liga y solo se guarda lo que cambia.",
                 footballMinutes > 0 ? TimeSpan.FromDays(1) : null,
                 TimeSpan.FromMinutes(3),
-                true),
+                ingest,
+                RealData: true),
             new(JobNames.LicenseAlerts,
                 "Avisos de caducidad",
                 "Avisa en la campanita de cada club cuando su licencia va a acabar sin renovarse (la prueba sin contratar o la renovación cancelada), con los días de antelación de la administración, y da por resueltos los que ya no aplican.",
                 TimeSpan.FromHours(6),
                 TimeSpan.FromSeconds(45),
+                true),
+            new(JobNames.RealDataCopy,
+                "Datos reales",
+                "Trae a la base de este entorno lo nuevo de la base de datos reales que comparten todos los entornos (ligas, partidos, resultados, plantillas publicadas, árbitros y actas oficiales), sin peticiones a ninguna web. Respeta lo de cada club: su escudo y las fichas que gestiona.",
+                TimeSpan.FromMinutes(Math.Max(1, realData.Value.CopyMinutes)),
+                TimeSpan.FromSeconds(5),
                 true),
         ];
         _slots = definitions.ToDictionary(d => d.Name, d => new Slot(d));
@@ -142,6 +167,7 @@ internal sealed class JobScheduler
     {
         if (!_slots.TryGetValue(job, out var slot)) return JobLaunchResult.NotFound;
         if (!slot.Definition.Enabled) return JobLaunchResult.Disabled;
+        if (slot.Definition.RealData && !_lease.IsHeld) return JobLaunchResult.Elsewhere;
 
         lock (_lock)
         {
@@ -193,6 +219,7 @@ internal sealed class JobScheduler
     public async Task<DateTimeOffset?> FirstDueAsync(string job, CancellationToken cancellationToken)
     {
         var definition = Get(job);
+        await WhenCanRunAsync(job, cancellationToken);
         var now = _clock.GetUtcNow();
 
         using var scope = _scopes.CreateScope();
@@ -220,6 +247,11 @@ internal sealed class JobScheduler
         var due = lastStart.Value + interval;
         return due > earliest ? due : earliest;
     }
+
+    // Las descargas de datos reales esperan a que este proceso tenga el bloqueo (si otro entorno está descargando, hasta que
+    // pare); los demás trabajos, nada.
+    public Task WhenCanRunAsync(string job, CancellationToken cancellationToken) =>
+        Get(job).RealData ? _lease.WhenHeldAsync(cancellationToken) : Task.CompletedTask;
 
     // Espera a la hora prevista o a que se lance a mano desde /jobs; devuelve si ha sido a mano.
     public async Task<bool> WaitAsync(string job, DateTimeOffset? due, CancellationToken cancellationToken)
@@ -250,6 +282,12 @@ internal sealed class JobScheduler
         string job, bool manual, Func<CancellationToken, Task<JobOutcome>> work, CancellationToken cancellationToken, JobScope? scope = null)
     {
         var slot = _slots[job];
+        if (slot.Definition.RealData && !_lease.IsHeld)
+        {
+            _logger.LogInformation("{Job}: no se ejecuta, los datos reales los descarga otro entorno", job);
+            return;
+        }
+
         lock (_lock) slot.Running = true;
         _progress.Start(job);
 
@@ -262,11 +300,13 @@ internal sealed class JobScheduler
             StartedAt = _clock.GetUtcNow(),
             ScopeKind = scope?.Kind,
             ScopeLabel = scope?.Label,
+            Environment = _environment,
         };
 
         var status = JobRunStatus.Succeeded;
         string? summary = null;
         IReadOnlyList<string> errors = [];
+        var quiet = false;
         try
         {
             await SaveAsync(db => db.Add(run));
@@ -276,6 +316,7 @@ internal sealed class JobScheduler
             summary = outcome.Summary;
             errors = outcome.Errors;
             status = errors.Count == 0 ? JobRunStatus.Succeeded : JobRunStatus.Partial;
+            quiet = outcome.Quiet && errors.Count == 0;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -300,13 +341,18 @@ internal sealed class JobScheduler
             JobContext.RunId = null;
             // Primero se guarda el resultado: si no, durante un instante el trabajo ya no figura en marcha pero su
             // última ejecución sí.
-            await FinishAsync(run.Id, status, summary, errors);
+            await FinishAsync(run.Id, status, summary, errors, quiet);
             lock (_lock) slot.Running = false;
             _progress.Finish(job);
+
+            // Lo que acaba de bajar a la base de datos reales llega enseguida a la de este entorno.
+            if (slot.Definition.RealData) Launch(JobNames.RealDataCopy);
         }
     }
 
-    private async Task FinishAsync(Guid runId, string status, string? summary, IReadOnlyList<string> errors)
+    // Cada ejecución se cierra en la base de su trabajo: las descargas en la de los datos reales (junto con su registro de
+    // llamadas), los demás en la del entorno.
+    private async Task FinishAsync(Guid runId, string status, string? summary, IReadOnlyList<string> errors, bool quiet)
     {
         try
         {
@@ -315,20 +361,28 @@ internal sealed class JobScheduler
             var now = _clock.GetUtcNow();
 
             var run = await db.Set<JobRun>().SingleOrDefaultAsync(r => r.Id == runId);
-            if (run is not null)
+            if (run is not null && quiet)
+            {
+                db.Remove(run);
+                await db.SaveChangesAsync();
+            }
+            else if (run is not null)
             {
                 run.Status = status;
                 run.FinishedAt = now;
                 run.Summary = summary is { Length: > 1000 } ? summary[..1000] : summary;
                 run.Errors = errors.Count == 0 ? null : string.Join('\n', errors);
-                run.Requests = await db.Set<ScrapeRequest>().CountAsync(r => r.JobRunId == runId);
+                run.Requests = RealDataAmbient.Active ? await db.Set<ScrapeRequest>().CountAsync(r => r.JobRunId == runId) : 0;
                 await db.SaveChangesAsync();
             }
 
-            var requestCutoff = now - RequestRetention;
             var runCutoff = now - RunRetention;
-            await db.Set<ScrapeRequest>().Where(r => r.At < requestCutoff).ExecuteDeleteAsync();
             await db.Set<JobRun>().Where(r => r.StartedAt < runCutoff).ExecuteDeleteAsync();
+            if (RealDataAmbient.Active)
+            {
+                var requestCutoff = now - RequestRetention;
+                await db.Set<ScrapeRequest>().Where(r => r.At < requestCutoff).ExecuteDeleteAsync();
+            }
         }
         catch (Exception ex)
         {

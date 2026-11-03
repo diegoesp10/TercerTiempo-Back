@@ -5,6 +5,7 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.Referees;
 using TercerTiempo.Infrastructure.Jobs;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.Referees;
 
@@ -17,6 +18,8 @@ internal sealed class MatchOfficialsWorker(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Todo lo que hace este trabajo va a la base de datos reales.
+        using var realData = RealDataAmbient.Enter();
         var job = scheduler.Get(JobNames.MatchOfficials);
         if (!job.Enabled) return;
         try

@@ -1,5 +1,6 @@
 ﻿# Construye y arranca la API de Tercer Tiempo en Docker. Lo que distingue a cada entorno está en
 # src/TercerTiempo.Api/appsettings.{Entorno}.json; los compose y los .env solo llevan lo de Docker y los secretos.
+# Todos los entornos comparten la base de datos reales, tercertiempo_DatosReales, en el mismo SQL Server que su base.
 #   -Environment Development  (por defecto) API en Development; genera .env.development la primera vez y, si no
 #                             está ahí, toma la contraseña de /jobs de los user-secrets del proyecto.
 #   -Database Local           solo en Development: el SQL Server de Windows del equipo (la base de Visual Studio) con
@@ -135,6 +136,7 @@ if ($Environment -eq 'Development') {
         $localPassword = $settings['TT_LOCAL_SQL_PASSWORD']
         if (-not $localPassword) { throw 'Falta TT_LOCAL_SQL_PASSWORD en .env.development (login de scripts/local-sql-login.sql).' }
         $env:TT_DB_CONNECTION = "Server=host.docker.internal,1433;Database=TercerTiempo;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
+        $env:TT_REAL_DB_CONNECTION = "Server=host.docker.internal,1433;Database=tercertiempo_DatosReales;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
         # El SQL del contenedor no hace falta: si estaba en marcha, se para (sus datos siguen en su volumen).
         if (docker ps -q --filter 'name=^tercer-tiempo-db$') { Invoke-Native { docker stop tercer-tiempo-db | Out-Null } 'No se pudo parar tercer-tiempo-db.' }
         if (-not $WithJobs) {
@@ -148,6 +150,7 @@ if ($Environment -eq 'Development') {
             $settings['TT_SQL_PORT'] = '14333'
         }
         $env:TT_DB_CONNECTION = "Server=db;Database=TercerTiempo;User Id=sa;Password=$($settings['TT_SQL_PASSWORD']);TrustServerCertificate=True;Encrypt=True"
+        $env:TT_REAL_DB_CONNECTION = "Server=db;Database=tercertiempo_DatosReales;User Id=sa;Password=$($settings['TT_SQL_PASSWORD']);TrustServerCertificate=True;Encrypt=True"
         $compose += @('--profile', 'container-db')
     }
     Write-Host "Base de datos de desarrollo: $Database" -ForegroundColor Cyan
@@ -168,6 +171,7 @@ if ($Environment -in 'Pilot', 'FakeDatos') {
         $databaseLabel = 'de los datos falsos'
     }
     $env:TT_DB_CONNECTION = "Server=host.docker.internal,1433;Database=$ownDatabase;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
+    $env:TT_REAL_DB_CONNECTION = "Server=host.docker.internal,1433;Database=tercertiempo_DatosReales;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
     if (docker ps -q --filter 'name=^tercer-tiempo-db$') { Invoke-Native { docker stop tercer-tiempo-db | Out-Null } 'No se pudo parar tercer-tiempo-db.' }
     Write-Host "Base de datos ${databaseLabel}: $ownDatabase (SQL Server de Windows del equipo)" -ForegroundColor Cyan
 }

@@ -1,11 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TercerTiempo.Infrastructure.Persistence;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.Jobs;
 
-// Apunta en ScrapeRequests cada llamada que sale hacia una web externa, con la ejecución que la ha hecho (si la hay).
-// Si no se puede apuntar, la llamada sigue su curso.
+// Apunta en ScrapeRequests (en la base de datos reales) cada llamada que sale hacia una web externa, con la ejecución que
+// la ha hecho (si la hay). Si no se puede apuntar, la llamada sigue su curso.
 internal sealed class ScrapeLogHandler(string provider, IServiceScopeFactory scopes, TimeProvider clock, ILogger<ScrapeLogHandler> logger) : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -30,7 +31,7 @@ internal sealed class ScrapeLogHandler(string provider, IServiceScopeFactory sco
         try
         {
             var url = request.RequestUri?.AbsoluteUri ?? "";
-            using var scope = scopes.CreateScope();
+            using var scope = scopes.CreateRealDataScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             db.Add(new ScrapeRequest
             {

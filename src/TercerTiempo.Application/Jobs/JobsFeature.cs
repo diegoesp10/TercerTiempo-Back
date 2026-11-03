@@ -14,6 +14,7 @@ public static class JobNames
     public const string LicenseAlerts = "license-alerts";
     public const string MatchOfficials = "match-officials";
     public const string LeagueZones = "league-zones";
+    public const string RealDataCopy = "real-data";
 }
 
 public static class JobRunStatus
@@ -31,7 +32,19 @@ public sealed record JobsOverviewDto(
     IReadOnlyList<ScrapeSourceDto> Sources,
     IReadOnlyList<JobRunDto> Runs,
     IReadOnlyList<ScrapeRequestDto> Requests,
-    DateTimeOffset GeneratedAt);
+    DateTimeOffset GeneratedAt,
+    [property: Description("Quién descarga ahora los datos reales (la base que comparten todos los entornos); null si nadie.")]
+    RealDataIngesterDto? Ingester = null);
+
+public sealed record RealDataIngesterDto(
+    string Environment,
+    string Machine,
+    DateTimeOffset Since,
+    DateTimeOffset HeartbeatAt,
+    [property: Description("Es este mismo proceso.")]
+    bool ThisProcess,
+    [property: Description("Este entorno puede descargar (RealData:Ingest) cuando el otro pare.")]
+    bool ThisEnvironmentCanIngest);
 
 public sealed record JobDto(
     string Name,
@@ -46,7 +59,9 @@ public sealed record JobDto(
     [property: Description("Cuándo toca si va a día y hora fijos («Los lunes a las 7:00»); null si va por intervalo.")]
     string? Schedule = null,
     [property: Description("Solo las actas: la federación está en pausa y el trabajo sigue solo a esa hora; lanzarlo antes lo deja pedido para entonces.")]
-    JobPauseDto? Pause = null);
+    JobPauseDto? Pause = null,
+    [property: Description("Descarga de las webs a la base de datos reales: solo la hace el entorno que tiene el bloqueo.")]
+    bool RealData = false);
 
 public sealed record JobProgressDto(string? Current, int Done, int Total);
 
@@ -86,7 +101,9 @@ public sealed record JobRunDto(
     IReadOnlyList<string> Errors,
     int Requests,
     [property: Description("Qué abarcó (datos de las ligas): «Jornada en curso (21 oct – 28 oct)», «Temporada completa»…")]
-    string? Scope);
+    string? Scope,
+    [property: Description("Entorno que la hizo (en las descargas, el que tenía el bloqueo).")]
+    string? Environment = null);
 
 // Contadores del control de peticiones de cada web (hora y día en curso) y lo que se ha llamado en las últimas 24 h.
 public sealed record ScrapeSourceDto(
@@ -126,6 +143,8 @@ public enum JobLaunchResult
     NotFound,
     AlreadyRunning,
     Disabled,
+    // Descarga de datos reales y ahora la hace otro entorno.
+    Elsewhere,
 }
 
 public interface IJobsMonitor
@@ -170,6 +189,9 @@ internal static class JobLauncher
             case JobLaunchResult.NotFound: throw new NotFoundException(ErrorCode.JobNotFound, job);
             case JobLaunchResult.AlreadyRunning: throw new ConflictException(ErrorCode.JobAlreadyRunning, job);
             case JobLaunchResult.Disabled: throw new ConflictException(ErrorCode.JobDisabled, job);
+            case JobLaunchResult.Elsewhere:
+                var ingester = (await monitor.GetOverviewAsync(null, 1, cancellationToken)).Ingester;
+                throw new ConflictException(ErrorCode.JobRealDataElsewhere, job, ingester?.Environment ?? "otro");
         }
 
         var overview = await monitor.GetOverviewAsync(null, 1, cancellationToken);

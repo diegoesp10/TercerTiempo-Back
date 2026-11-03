@@ -10,4 +10,5 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: FakeDatos
       ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION: arranca con Start-Docker.ps1}"
+      ConnectionStrings__RealData: "${TT_REAL_DB_CONNECTION:?Falta TT_REAL_DB_CONNECTION: arranca con Start-Docker.ps1}"
       Admin__Password: "${TT_ADMIN_PASSWORD:-}"

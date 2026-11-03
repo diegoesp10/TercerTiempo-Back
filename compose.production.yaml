@@ -9,6 +9,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.production}"
+      ConnectionStrings__RealData: "${TT_REAL_DB_CONNECTION:?Falta TT_REAL_DB_CONNECTION en .env.production}"
       Jwt__Key: "${TT_JWT_KEY:?Falta TT_JWT_KEY en .env.production (al menos 32 caracteres)}"
       Admin__Password: "${TT_ADMIN_PASSWORD:?Falta TT_ADMIN_PASSWORD en .env.production}"
       Admin__ResetMfa: "${TT_ADMIN_RESET_MFA:-false}"

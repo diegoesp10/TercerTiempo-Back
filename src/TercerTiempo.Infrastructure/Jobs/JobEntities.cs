@@ -18,6 +18,9 @@ internal sealed class JobRun
     // Datos de las ligas: CurrentRound, DateRange o FullSeason, y su descripción («Jornada en curso (21 oct – 28 oct)»).
     public string? ScopeKind { get; set; }
     public string? ScopeLabel { get; set; }
+
+    // Entorno que la hizo: en la base de datos reales, el que estaba descargando.
+    public string? Environment { get; set; }
 }
 
 // Cada llamada real a una web externa (lo servido desde la caché no sale de aquí).
@@ -45,6 +48,7 @@ internal sealed class JobRunConfiguration : IEntityTypeConfiguration<JobRun>
         b.Property(x => x.Summary).HasMaxLength(1000);
         b.Property(x => x.ScopeKind).HasMaxLength(20);
         b.Property(x => x.ScopeLabel).HasMaxLength(200);
+        b.Property(x => x.Environment).HasMaxLength(40);
         b.HasIndex(x => new { x.Job, x.StartedAt });
     }
 }

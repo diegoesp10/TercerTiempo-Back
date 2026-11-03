@@ -38,6 +38,7 @@ using TercerTiempo.Infrastructure.Security;
 using TercerTiempo.Infrastructure.Teams;
 using TercerTiempo.Infrastructure.Persistence;
 using TercerTiempo.Infrastructure.Persistence.Stores;
+using TercerTiempo.Infrastructure.RealData;
 using TercerTiempo.Infrastructure.Videos;
 
 namespace TercerTiempo.Infrastructure;
@@ -61,18 +62,34 @@ public static class DependencyInjection
     {
         var connectionString = configuration.GetConnectionString("Default")
             ?? throw new InvalidOperationException("Falta la cadena de conexión ConnectionStrings:Default (SQL Server).");
+        var realDataConnection = configuration.GetConnectionString("RealData") is { Length: > 0 } realData
+            ? realData
+            : throw new InvalidOperationException("Falta la cadena de conexión ConnectionStrings:RealData (base de datos reales que comparten los entornos).");
 
         // SQL Server. Varios agregados cargan dos colecciones a la vez (plantilla: staff y fichas; acta oficial: líneas y
         // sucesos): en consultas separadas se evita el producto cartesiano de una sola JOIN. Reintentos ante errores
         // transitorios (arranque del servidor, cortes breves de red).
         services.AddSingleton<Search.SearchIndexInvalidator>();
+        // La base del entorno o, en las descargas, la de los datos reales (RealDataAmbient).
+        services.AddSingleton(new RealDataConnections(connectionString, realDataConnection));
+        services.AddScoped<DatabaseTarget>();
         services.AddDbContext<AppDbContext>((sp, options) => options
-            .UseSqlServer(connectionString, sql => sql
+            .UseSqlServer(sp.GetRequiredService<DatabaseTarget>().RealData ? realDataConnection : connectionString, sql => sql
                 .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
                 .EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorNumbersToAdd: null)
                 .CommandTimeout(60))
             .AddInterceptors(sp.GetRequiredService<Search.SearchIndexInvalidator>()));
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
+        services.AddDbContext<RealDataDbContext>(options => options.UseSqlServer(realDataConnection, sql => sql.CommandTimeout(120)));
+
+        // Datos reales: un solo entorno descarga a la vez (RealDataLease) y todos copian la base compartida a la suya.
+        services.AddOptions<RealDataOptions>().Bind(configuration.GetSection(RealDataOptions.SectionName));
+        services.AddSingleton<RealDataLease>();
+        services.AddSingleton<IRealDataLease>(sp => sp.GetRequiredService<RealDataLease>());
+        services.AddHostedService(sp => sp.GetRequiredService<RealDataLease>());
+        services.AddSingleton<RealDataCopier>();
+        services.AddHostedService<RealDataCopyWorker>();
+        services.AddScoped<TercerTiempo.Application.Abstractions.RealData.IRealData, RealDataGateway>();
 
         services.AddScoped<IPlayerStore, PlayerStore>();
         services.AddScoped<ICoachStore, CoachStore>();
@@ -217,7 +234,11 @@ public static class DependencyInjection
 
         services.AddOptions<CrestOptions>()
             .Bind(configuration.GetSection(CrestOptions.SectionName));
-        services.AddSingleton<ICrestStorage, FileSystemCrestStorage>();
+        // Los escudos que se descargan van a la base de datos reales; los de los clubes y los que se sirven, a ficheros.
+        services.AddSingleton<FileSystemCrestStorage>();
+        services.AddScoped<ICrestStorage>(sp => sp.GetRequiredService<DatabaseTarget>().RealData
+            ? ActivatorUtilities.CreateInstance<RealDataCrestStorage>(sp)
+            : sp.GetRequiredService<FileSystemCrestStorage>());
         services.AddSingleton<IPlayerPhotoStorage, FileSystemPlayerPhotoStorage>();
         services.AddScoped<IErrorMessageStore, ErrorMessageStore>();
 
@@ -273,9 +294,15 @@ public static class DependencyInjection
         services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
     }
 
+    // Primero la base de datos reales (y, si está vacía y este entorno la crea, sus datos desde la base del entorno, antes
+    // de que las migraciones del entorno quiten las tablas que ya solo viven en ella); después la del entorno.
     public static async Task MigrateDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
     {
         using var scope = services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RealDataDbContext>().Database.MigrateAsync(cancellationToken);
+        if (scope.ServiceProvider.GetRequiredService<IOptions<RealDataOptions>>().Value.SeedFromThisEnvironment)
+            await scope.ServiceProvider.GetRequiredService<RealDataCopier>().SeedAsync(cancellationToken);
+
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.MigrateAsync(cancellationToken);
     }

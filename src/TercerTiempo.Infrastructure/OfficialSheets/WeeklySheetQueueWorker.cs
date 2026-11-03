@@ -8,6 +8,7 @@ using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Infrastructure.Jobs;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets;
 
@@ -24,6 +25,8 @@ internal sealed class WeeklySheetQueueWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Todo lo que hace este trabajo va a la base de datos reales.
+        using var realData = RealDataAmbient.Enter();
         var job = scheduler.Get(JobNames.WeeklySheets);
         if (!job.Enabled) return;
         try

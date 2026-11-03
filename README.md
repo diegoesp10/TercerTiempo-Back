@@ -492,10 +492,10 @@ ninguno lleva secretos: esos van en los user-secrets (Visual Studio) o en los `.
 
 | Entorno | Se arranca con | Lo que lo distingue | Secretos y lo propio de Docker |
 |---|---|---|---|
-| `Development` | Visual Studio (perfiles `http`/`https`) o `.\Start-Docker.ps1` | `appsettings.Development.json`: base `TercerTiempo`, `/docs` abierto, sin MFA, clave JWT de desarrollo y todos los trabajos por horario | user-secrets; en Docker `compose.development.yaml` y `.env.development` (con `-Database Local` y sin `-WithJobs`, además `compose.nojobs.yaml`: trabajos solo a mano) |
-| `FakeDatos` | Visual Studio (perfil `FakeDatos`) o `.\Start-Docker.ps1 -Environment FakeDatos` | `appsettings.FakeDatos.json`: como desarrollo con la base `tercertiempo_DatosFake` y nada que salga fuera (ni futbolasturiano.es ni asturfutbol.es) | user-secrets; en Docker `compose.fakedatos.yaml` y `.env.fakedatos` |
-| `Pilot` | `.\Start-Docker.ps1 -Environment Pilot` | `appsettings.Pilot.json`: como publicación (MFA, sin `/docs`, todos los trabajos), pasarela de licencias simulada y el limitador con la IP que manda el túnel | `compose.production.yaml`, `compose.pilot.yaml` y `.env.pilot` |
-| `Production` | `.\Start-Docker.ps1 -Environment Production` | `appsettings.Production.json`: MFA del administrador y pasarela de licencias | `compose.production.yaml` y `.env.production` (copia de `.env.example`) |
+| `Development` | Visual Studio (perfiles `http`/`https`) o `.\Start-Docker.ps1` | `appsettings.Development.json`: base `TercerTiempo`, `/docs` abierto, sin MFA, clave JWT de desarrollo y todos los trabajos por horario; puede descargar los datos reales | user-secrets; en Docker `compose.development.yaml` y `.env.development` (con `-Database Local` y sin `-WithJobs`, además `compose.nojobs.yaml`: trabajos solo a mano) |
+| `FakeDatos` | Visual Studio (perfil `FakeDatos`) o `.\Start-Docker.ps1 -Environment FakeDatos` | `appsettings.FakeDatos.json`: como desarrollo con la base `tercertiempo_DatosFake` y nada que salga fuera (ni futbolasturiano.es ni asturfutbol.es): nunca descarga, solo copia los datos reales | user-secrets; en Docker `compose.fakedatos.yaml` y `.env.fakedatos` |
+| `Pilot` | `.\Start-Docker.ps1 -Environment Pilot` | `appsettings.Pilot.json`: como publicación (MFA, sin `/docs`, todos los trabajos; puede descargar los datos reales), pasarela de licencias simulada y el limitador con la IP que manda el túnel | `compose.production.yaml`, `compose.pilot.yaml` y `.env.pilot` |
+| `Production` | `.\Start-Docker.ps1 -Environment Production` | `appsettings.Production.json`: MFA del administrador, pasarela de licencias y puede descargar los datos reales | `compose.production.yaml` y `.env.production` (copia de `.env.example`) |
 
 Lo que se cambia desde la administración (qué abarca la pasada automática de las ligas, los ajustes de las licencias) se
 guarda en la base de datos de cada entorno. En el código, `IsLocalDevelopment()` (Development y FakeDatos) es lo que
@@ -511,6 +511,40 @@ Development, `FakeDatos` → FakeDatos). En los dos casos el log de arranque lo 
 ```powershell
 docker ps --filter name=tercer-tiempo-api --format "{{.Names}}"
 ```
+
+### Datos reales compartidos
+
+Lo público de las webs vive en una base propia, **`tercertiempo_DatosReales`**, que comparten todos los entornos:
+ligas, temporadas, equipos, partidos y resultados, clasificaciones y plazas, la plantilla publicada, los árbitros de
+cada partido y las actas oficiales, más el estado de sus descargas (registro y límites de peticiones, sesión de la
+federación, cola de actas, ajustes de la pasada de las ligas y escudos descargados). Tiene su modelo y sus migraciones
+(`RealDataDbContext`, `Persistence/RealDataMigrations`). La base de cada entorno se queda con lo de la app (usuarios,
+clubes, licencias, plantillas y actas internas, lesiones, vídeos, notas a los árbitros…) y una **copia** de los datos
+reales con los mismos Id.
+
+- **Quién descarga.** Solo un proceso a la vez: el que tiene el bloqueo de la base real (`sp_getapplock` de sesión en
+  `RealDataLease`). Pueden descargar los entornos con `RealData:Ingest` (Development, Pilot, Production; FakeDatos
+  nunca); si el que descarga se para, el bloqueo se suelta y lo coge el siguiente en un minuto. Sus trabajos (datos de
+  las ligas, actas, árbitros, plazas, actas del fin de semana) escriben directamente en la base real
+  (`RealDataAmbient`), con su historial y sus llamadas. `/jobs` dice qué entorno descarga; en los demás, lanzarlos
+  avisa de que se hace desde ese entorno.
+- **La copia.** Cada entorno tiene el trabajo «Datos reales» (`RealDataCopier`), cada `RealData:CopyMinutes` (5), al
+  arrancar y en cuanto termina una descarga en ese proceso: trae lo nuevo en una sola transacción sobre una foto fija de
+  la base real, sin peticiones a ninguna web. Respeta lo de cada entorno: el escudo que sube un club, las fichas que
+  gestiona el club (con su foto y si están ocultas) y lo que ya no está en la base real pero el entorno usa (un partido
+  con acta interna, un árbitro con notas). Los escudos descargados se escriben en los ficheros de cada entorno.
+- **Lo que pide un usuario.** Un acta que falta se pide a la cola compartida (`SheetDownloads`) y la descarga el entorno
+  que tiene el bloqueo; llega con la siguiente copia.
+- **Lo que cambia la administración** de los datos reales (ajustes de la pasada, cola de actas, temporada en curso,
+  importar un escudo) se hace contra la base real (`IRealData`) y se copia enseguida.
+- **Conexión.** `ConnectionStrings:RealData`: en Visual Studio, la de `appsettings.Development.json` o
+  `appsettings.FakeDatos.json`; en Docker la arma `Start-Docker.ps1` en el mismo SQL Server que la base del entorno
+  (`TT_REAL_DB_CONNECTION`, también en `.env.production`). El login `tercertiempo_app` necesita `db_owner` en ella
+  (`scripts/local-sql-login.sql`).
+- **Crearla.** Se creó el 03-11-2026 desde la base de desarrollo, que era la más al día, arrancando una vez con
+  `--RealData:SeedFromThisEnvironment=true`: si la base real está vacía, se llena con los datos reales de la base del
+  entorno (sin lo de los clubes) y con el estado de sus descargas, antes de que la migración del entorno quite esas
+  tablas.
 
 ### Claves
 

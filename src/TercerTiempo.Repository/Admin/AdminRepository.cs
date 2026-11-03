@@ -3,6 +3,8 @@ using TercerTiempo.Application.Admin;
 using TercerTiempo.Application.Clubs.Invitations;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.Teams.ImportCrest;
+using TercerTiempo.Application.Abstractions.RealData;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace TercerTiempo.Repository.Admin;
 
@@ -15,24 +17,18 @@ internal sealed class AdminRepository(
     ICommandHandler<TercerTiempo.Application.Privacy.UpsertCookieCommand, TercerTiempo.Application.Privacy.CookiePolicyDto> upsertCookie,
     ICommandHandler<TercerTiempo.Application.Privacy.DeleteCookieCommand, TercerTiempo.Application.Privacy.CookiePolicyDto> deleteCookie,
     ICommandHandler<TercerTiempo.Application.Privacy.PublishCookiePolicyCommand, TercerTiempo.Application.Privacy.CookiePolicyDto> publishCookies,
-    ICommandHandler<TercerTiempo.Application.Seasons.SetCurrentSeasonCommand, IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> setCurrentSeason,
-    IQueryHandler<GetFootballSyncSettingsQuery, FootballSyncSettingsDto> footballSyncSettings,
-    ICommandHandler<UpdateFootballSyncSettingsCommand, FootballSyncSettingsDto> updateFootballSyncSettings,
-    ICommandHandler<RunFootballSyncCommand, JobDto> runFootballSync,
-    IQueryHandler<GetLiveDownloadsQuery, LiveDownloadsDto> liveDownloads,
+    IRealData realData,
     IQueryHandler<TercerTiempo.Application.Presence.GetPresenceQuery, TercerTiempo.Application.Presence.PresenceOverviewDto> presence,
     IQueryHandler<TercerTiempo.Application.Licensing.ListPaymentEventsQuery, IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> paymentEvents,
     ICommandHandler<TercerTiempo.Application.Licensing.RetryPaymentEventCommand, bool> retryPaymentEvent,
     ICommandHandler<TercerTiempo.Application.Licensing.SimulateLicenseEventCommand, string> simulateLicenseEvent,
-    ICommandHandler<TercerTiempo.Application.OfficialSheets.CancelSheetDownloadsCommand, int> cancelSheetDownloads,
     IQueryHandler<GetLicensesOverviewQuery, LicensesOverviewDto> licenses,
     IQueryHandler<GetLicensingSettingsQuery, LicensingSettingsDto> licensingSettings,
     ICommandHandler<UpdateLicensingSettingsCommand, LicensingSettingsDto> updateLicensingSettings,
     IQueryHandler<ListClubInvitationsQuery, IReadOnlyList<ClubInvitationDto>> listInvitations,
     IQueryHandler<SearchInvitationClubsQuery, IReadOnlyList<InvitationClubDto>> searchInvitationClubs,
     ICommandHandler<CreateClubInvitationCommand, ClubInvitationDto> createInvitation,
-    ICommandHandler<RevokeClubInvitationCommand, ClubInvitationDto> revokeInvitation,
-    ICommandHandler<ImportTeamCrestCommand, TeamCrestImportDto> importCrest) : IAdminRepository
+    ICommandHandler<RevokeClubInvitationCommand, ClubInvitationDto> revokeInvitation) : IAdminRepository
 {
     public Task<AdminAuthResponse> LoginAsync(AdminLoginCommand command, CancellationToken cancellationToken = default) =>
         login.Handle(command, cancellationToken);
@@ -49,23 +45,35 @@ internal sealed class AdminRepository(
     public Task<TercerTiempo.Application.Presence.PresenceOverviewDto> GetPresenceAsync(string? query, CancellationToken cancellationToken = default) =>
         presence.Handle(new TercerTiempo.Application.Presence.GetPresenceQuery(query), cancellationToken);
 
+    // Los ajustes de la pasada de las ligas, la cola de actas, la temporada en curso y los escudos son datos reales: van a
+    // la base compartida (IRealData) y lo que cambia se copia enseguida a la de este entorno.
     public Task<FootballSyncSettingsDto> GetFootballSyncSettingsAsync(CancellationToken cancellationToken = default) =>
-        footballSyncSettings.Handle(new GetFootballSyncSettingsQuery(), cancellationToken);
+        realData.RunAsync(sp => sp.GetRequiredService<IQueryHandler<GetFootballSyncSettingsQuery, FootballSyncSettingsDto>>()
+            .Handle(new GetFootballSyncSettingsQuery(), cancellationToken));
 
     public Task<FootballSyncSettingsDto> UpdateFootballSyncSettingsAsync(UpdateFootballSyncSettingsCommand command, CancellationToken cancellationToken = default) =>
-        updateFootballSyncSettings.Handle(command, cancellationToken);
+        realData.RunAsync(sp => sp.GetRequiredService<ICommandHandler<UpdateFootballSyncSettingsCommand, FootballSyncSettingsDto>>()
+            .Handle(command, cancellationToken));
 
     public Task<JobDto> RunFootballSyncAsync(RunFootballSyncCommand command, CancellationToken cancellationToken = default) =>
-        runFootballSync.Handle(command, cancellationToken);
+        realData.RunAsync(sp => sp.GetRequiredService<ICommandHandler<RunFootballSyncCommand, JobDto>>().Handle(command, cancellationToken));
 
     public Task<LiveDownloadsDto> GetLiveDownloadsAsync(CancellationToken cancellationToken = default) =>
-        liveDownloads.Handle(new GetLiveDownloadsQuery(), cancellationToken);
+        realData.RunAsync(sp => sp.GetRequiredService<IQueryHandler<GetLiveDownloadsQuery, LiveDownloadsDto>>()
+            .Handle(new GetLiveDownloadsQuery(), cancellationToken));
 
     public Task<int> CancelSheetDownloadsAsync(bool onlyFinished, CancellationToken cancellationToken = default) =>
-        cancelSheetDownloads.Handle(new TercerTiempo.Application.OfficialSheets.CancelSheetDownloadsCommand(onlyFinished), cancellationToken);
+        realData.RunAsync(sp => sp.GetRequiredService<ICommandHandler<TercerTiempo.Application.OfficialSheets.CancelSheetDownloadsCommand, int>>()
+            .Handle(new TercerTiempo.Application.OfficialSheets.CancelSheetDownloadsCommand(onlyFinished), cancellationToken));
 
-    public Task<IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> SetCurrentSeasonAsync(Guid seasonYearId, CancellationToken cancellationToken = default) =>
-        setCurrentSeason.Handle(new TercerTiempo.Application.Seasons.SetCurrentSeasonCommand(seasonYearId), cancellationToken);
+    public async Task<IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> SetCurrentSeasonAsync(Guid seasonYearId, CancellationToken cancellationToken = default)
+    {
+        var seasons = await realData.RunAsync(sp => sp
+            .GetRequiredService<ICommandHandler<TercerTiempo.Application.Seasons.SetCurrentSeasonCommand, IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>>>()
+            .Handle(new TercerTiempo.Application.Seasons.SetCurrentSeasonCommand(seasonYearId), cancellationToken));
+        realData.RequestCopy();
+        return seasons;
+    }
 
     public Task<TercerTiempo.Application.Privacy.AnalyticsReportDto> GetAnalyticsAsync(TercerTiempo.Application.Privacy.GetAnalyticsReportQuery query, CancellationToken cancellationToken = default) =>
         analytics.Handle(query, cancellationToken);
@@ -109,8 +117,13 @@ internal sealed class AdminRepository(
     public Task<ClubInvitationDto> RevokeClubInvitationAsync(Guid id, CancellationToken cancellationToken = default) =>
         revokeInvitation.Handle(new RevokeClubInvitationCommand(id), cancellationToken);
 
-    public Task<TeamCrestImportDto> ImportTeamCrestAsync(Guid teamId, string url, CancellationToken cancellationToken = default) =>
-        importCrest.Handle(new ImportTeamCrestCommand(teamId, url), cancellationToken);
+    public async Task<TeamCrestImportDto> ImportTeamCrestAsync(Guid teamId, string url, CancellationToken cancellationToken = default)
+    {
+        var crest = await realData.RunAsync(sp => sp.GetRequiredService<ICommandHandler<ImportTeamCrestCommand, TeamCrestImportDto>>()
+            .Handle(new ImportTeamCrestCommand(teamId, url), cancellationToken));
+        realData.RequestCopy();
+        return crest;
+    }
 }
 
 public sealed record ImportCrestRequest(string Url);

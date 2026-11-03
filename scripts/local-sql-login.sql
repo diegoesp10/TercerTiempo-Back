@@ -14,3 +14,13 @@ IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'tercertiempo
 -- db_owner: la API aplica las migraciones al arrancar (crea y cambia tablas).
 ALTER ROLE [db_owner] ADD MEMBER [tercertiempo_app];
 GO
+-- La base de datos reales, que comparten todos los entornos: la crea la API al arrancar por primera vez (con un login que
+-- pueda crear bases, como el de Windows de Visual Studio); después los contenedores entran con este mismo usuario.
+IF DB_ID(N'tercertiempo_DatosReales') IS NOT NULL
+BEGIN
+    EXEC (N'USE [tercertiempo_DatosReales];
+        IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N''tercertiempo_app'')
+            CREATE USER [tercertiempo_app] FOR LOGIN [tercertiempo_app];
+        ALTER ROLE [db_owner] ADD MEMBER [tercertiempo_app];');
+END
+GO

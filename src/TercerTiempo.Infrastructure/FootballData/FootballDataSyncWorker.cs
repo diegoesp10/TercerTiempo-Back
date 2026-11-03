@@ -7,6 +7,7 @@ using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Sync;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Infrastructure.Jobs;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.FootballData;
 
@@ -19,6 +20,8 @@ internal sealed class FootballDataSyncWorker(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Todo lo que hace este trabajo va a la base de datos reales.
+        using var realData = RealDataAmbient.Enter();
         var job = scheduler.Get(JobNames.FootballData);
         try
         {

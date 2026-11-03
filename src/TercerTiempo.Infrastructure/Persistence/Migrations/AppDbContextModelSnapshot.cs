@@ -584,6 +584,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "job.real_data_elsewhere",
+                            Language = "es",
+                            Message = "Los datos reales los está descargando otro entorno ({1}): lanza '{0}' desde ese entorno."
+                        },
+                        new
+                        {
                             Code = "sync.scheduled_scope_invalid",
                             Language = "es",
                             Message = "La pasada automática solo puede ser la jornada en curso o la temporada completa."
@@ -1889,7 +1895,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("FootballSyncSettings", (string)null);
+                    b.ToTable("FootballSyncSettings", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
 
                     b.HasData(
                         new
@@ -5428,7 +5437,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasKey("MatchId");
 
-                    b.ToTable("MatchOfficialLookups", (string)null);
+                    b.ToTable("MatchOfficialLookups", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Referees.Referee", b =>
@@ -6162,6 +6174,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Environment")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<string>("Errors")
                         .HasColumnType("nvarchar(max)");
 
@@ -6253,7 +6269,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Provider", "At");
 
-                    b.ToTable("ScrapeRequests", (string)null);
+                    b.ToTable("ScrapeRequests", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Infrastructure.Licensing.MockCheckoutSession", b =>
@@ -6418,7 +6437,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Key");
 
-                    b.ToTable("FederationHttpCache", (string)null);
+                    b.ToTable("FederationHttpCache", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol.FederationRequestState", b =>
@@ -6467,7 +6489,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("FederationRequestStates", (string)null);
+                    b.ToTable("FederationRequestStates", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Infrastructure.OfficialSheets.SheetDownload", b =>
@@ -6503,7 +6528,70 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Status", "Sequence");
 
-                    b.ToTable("SheetDownloads", (string)null);
+                    b.ToTable("SheetDownloads", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("TercerTiempo.Infrastructure.RealData.RealDataIngester", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset>("HeartbeatAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Machine")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("Since")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("RealDataIngester", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("TercerTiempo.Infrastructure.RealData.TeamCrestImage", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("SavedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("TeamId");
+
+                    b.ToTable("TeamCrestImages", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

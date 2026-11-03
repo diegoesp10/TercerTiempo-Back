@@ -13,18 +13,52 @@ using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets;
 
-internal sealed class OfficialSheetQueue : IOfficialSheetQueue, ISheetDownloadSignal
+// Las actas que piden los usuarios. Si este proceso no es el que descarga los datos reales, la petición va a la cola
+// compartida (SheetDownloads de la base de datos reales) y la atiende el entorno que descarga.
+internal sealed class OfficialSheetQueue(
+    IServiceScopeFactory scopes,
+    IRealDataLease lease,
+    IOptions<OfficialSheetOptions> options,
+    TimeProvider clock,
+    ILogger<OfficialSheetQueue> logger) : IOfficialSheetQueue, ISheetDownloadSignal
 {
+    private static readonly TimeSpan ForwardAgain = TimeSpan.FromMinutes(10);
+
     private readonly Lock _batchLock = new();
     private TaskCompletionSource _batch = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private readonly Channel<Guid> _channel = Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = true });
     private readonly ConcurrentDictionary<Guid, byte> _queued = new();
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _forwarded = new();
 
-    public bool Enqueue(Guid matchId) => _queued.TryAdd(matchId, 0) && _channel.Writer.TryWrite(matchId);
+    public bool Enqueue(Guid matchId)
+    {
+        if (lease.IsHeld) return _queued.TryAdd(matchId, 0) && _channel.Writer.TryWrite(matchId);
+
+        var now = clock.GetUtcNow();
+        if (!options.Value.Enabled || (_forwarded.TryGetValue(matchId, out var at) && now - at < ForwardAgain)) return false;
+        _forwarded[matchId] = now;
+        _ = ForwardAsync(matchId, now);
+        return true;
+    }
+
+    private async Task ForwardAsync(Guid matchId, DateTimeOffset now)
+    {
+        try
+        {
+            using var scope = scopes.CreateRealDataScope();
+            await scope.ServiceProvider.GetRequiredService<ISheetDownloadStore>().RequestAsync([matchId], now, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _forwarded.TryRemove(matchId, out _);
+            logger.LogWarning(ex, "No se pudo pedir el acta del partido {MatchId} al entorno que descarga", matchId);
+        }
+    }
 
     public bool IsQueued(Guid matchId) => _queued.ContainsKey(matchId);
 
@@ -72,10 +106,13 @@ internal sealed class OfficialSheetSyncWorker(
         var settings = options.Value;
         if (!settings.Enabled) return;
 
+        // Todo lo que hace este trabajo va a la base de datos reales.
+        using var realData = RealDataAmbient.Enter();
         var job = scheduler.Get(JobNames.OfficialSheets);
         DateTimeOffset? nextScan;
         try
         {
+            await scheduler.WhenCanRunAsync(job.Name, stoppingToken);
             await RestoreStateAsync(stoppingToken);
             nextScan = await scheduler.FirstDueAsync(job.Name, stoppingToken);
             if (nextScan is not null) logger.LogInformation("Próxima pasada de actas: {Due}", nextScan);
@@ -111,12 +148,19 @@ internal sealed class OfficialSheetSyncWorker(
                 }
                 scheduler.ScheduleNext(job.Name, nextScan);
 
+                // Como mucho un minuto: las actas que piden los demás entornos llegan por SheetDownloads, sin aviso en
+                // este proceso.
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                var poll = TimeSpan.FromMinutes(1);
                 if (nextScan is { } at)
                 {
                     var wait = at - clock.GetUtcNow();
                     if (wait <= TimeSpan.Zero) continue;
-                    timeout.CancelAfter(WallClockDelay.Step(wait));
+                    timeout.CancelAfter(WallClockDelay.Step(wait < poll ? wait : poll));
+                }
+                else
+                {
+                    timeout.CancelAfter(poll);
                 }
 
                 var queued = queue.WaitAsync(timeout.Token).AsTask();
@@ -253,6 +297,8 @@ internal sealed class OfficialSheetSyncWorker(
             {
                 await SyncAsync(matchId, cancellationToken);
                 queue.Done(matchId);
+                // Quien la ha pedido la está esperando: a la base de este entorno enseguida.
+                scheduler.Launch(JobNames.RealDataCopy);
             }
             catch (ProviderThrottledException)
             {
