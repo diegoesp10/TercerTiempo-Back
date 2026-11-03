@@ -50,7 +50,7 @@ título y descripción con el flujo de uso, esquema Bearer y candado/401 solo en
 
 Disponibilidad por entorno (sección `OpenApi` de la configuración):
 
-- **Development**: siempre publicada y sin autenticación (salvo que configures `OpenApi:BasicAuth`, que entonces también aplica).
+- **Development y FakeDatos**: siempre publicada y sin autenticación (salvo que configures `OpenApi:BasicAuth`, que entonces también aplica).
 - **Otros entornos**: desactivada por defecto. Para exponerla en producción hay que habilitarla **y** protegerla con
   Basic Auth; sin credenciales no se publica (y se registra un aviso). Tanto `/docs` como `/openapi` piden usuario y
   contraseña:
@@ -426,6 +426,8 @@ que la web y la API comparten origen. Con Docker Desktop en modo Linux:
 .\Start-Docker.ps1                                   # desarrollo: API en Development (base según TT_DEV_DATABASE)
 .\Start-Docker.ps1 -Database Local                    # desarrollo con el SQL Server de Windows (la base de Visual Studio)
 .\Start-Docker.ps1 -Database Container                # desarrollo con un SQL Server propio en un contenedor
+.\Start-Docker.ps1 -Database Local -WithJobs          # desarrollo con la base de Visual Studio y los trabajos por horario
+.\Start-Docker.ps1 -Environment FakeDatos            # datos falsos: base tercertiempo_DatosFake, nada sale fuera
 .\Start-Docker.ps1 -Environment Production           # publicación: secretos de .env.production
 .\Start-Docker.ps1 -Environment Production -WithDatabase   # publicación con el SQL Server en este equipo
 .\Start-Docker.ps1 -Environment Pilot                # piloto con clubes: publicación con la base tercertiempo_Piloto
@@ -437,13 +439,14 @@ Desde el repositorio del frontal, su `Start-Docker.ps1` arranca también la API 
 
 | | Desarrollo (`compose.development.yaml`) | Publicación (`compose.production.yaml`) |
 |---|---|---|
-| `ASPNETCORE_ENVIRONMENT` | `Development`: `/docs`, errores detallados, clave JWT de desarrollo | `Production`: sin `/docs` (salvo `OpenApi:Enabled` con Basic Auth) |
+| `ASPNETCORE_ENVIRONMENT` | `Development` (`appsettings.Development.json`): `/docs`, errores detallados, clave JWT de desarrollo | `Production` (`appsettings.Production.json`): sin `/docs` (salvo `OpenApi:Enabled` con Basic Auth) |
 | Base de datos | `-Database Local`: el SQL Server de Windows del equipo por `host.docker.internal,1433` con el login de `scripts/local-sql-login.sql` (misma base que Visual Studio, sin SQL en Docker). `-Database Container`: SQL Server 2022 Developer en `tercer-tiempo-db`, volumen `tercer-tiempo-dev-sql`, desde SSMS en `127.0.0.1,14333` (usuario `sa`) | Externa (`TT_DB_CONNECTION`) o, con `-WithDatabase`, SQL Server Express en `tercer-tiempo-db` sin puertos publicados (volumen `tercer-tiempo-sql`) |
 | Secretos | `.env.development`, que genera el script la primera vez (contraseña de `sa` aleatoria); la de `/jobs` sale de los user-secrets | `.env.production` (copia de `.env.example`): cadena de conexión, `TT_JWT_KEY`, `TT_ADMIN_PASSWORD`, `TT_PUBLIC_URL`, claves de Stripe |
 | Ficheros (escudos, fotos, vídeos) | Volumen `tercer-tiempo-dev-data` | Volumen `tercer-tiempo-data` |
 
-**Piloto** (`-Environment Pilot`, `compose.pilot.yaml` encima de `compose.production.yaml`): lo mismo que publicación
-(`Production`, `/jobs` con Microsoft Authenticator, sin `/docs`, todos los trabajos por horario) para que unos clubes lo
+**Piloto** (`-Environment Pilot`, `compose.pilot.yaml` encima de `compose.production.yaml`): la API en `Pilot`
+(`appsettings.Pilot.json`), lo mismo que publicación (`/jobs` con Microsoft Authenticator, sin `/docs`, todos los
+trabajos por horario) para que unos clubes lo
 prueben desde este equipo abriendo la web con un túnel (`cloudflared tunnel --url http://127.0.0.1:8180`). Usa su
 propia base, `tercertiempo_Piloto`, en el SQL Server de Windows con el login `tercertiempo_app` (la contraseña se toma
 de `.env.development`), y su volumen `tercer-tiempo-pilot-data`. `.env.pilot` se genera la primera vez (clave JWT
@@ -459,7 +462,8 @@ conviene que la API de Visual Studio lance también los scrapeos de actas.
   `TT_DEV_DATABASE=Local` lo deja por defecto. Las dos API (Visual Studio y Docker) pueden compartir la base: el
   historial de trabajos y los contadores de peticiones a las webs están en SQL. Aun así, con `-Database Local` la API
   del contenedor no lanza scrapeos por horario (se lanzan a mano desde su `/jobs`), para no duplicar los de Visual
-  Studio; `-WithJobs` los activa.
+  Studio: el script añade `compose.nojobs.yaml`, que pone a 0 la sincronización de las ligas (y con ella los árbitros
+  y las plazas) y los barridos de actas (y con ellos las del fin de semana). `-WithJobs` los activa.
 - Memoria acotada: API 512 MB, SQL Server del contenedor 1 GB de uso interno (1,5 GB de contenedor) y web 64 MB
   (`TT_API_MEMORY`, `TT_SQL_MEMORY_MB`, `TT_SQL_CONTAINER_MEMORY`).
 - La API escucha en el 8080 del contenedor y solo se publica en el loopback (`127.0.0.1:8181`); los visitantes entran
@@ -480,15 +484,34 @@ docker build --target test .                                                    
 
 ## Configuración y secretos
 
-- `Jwt:Key` (mínimo 32 caracteres) solo está definida en `appsettings.Development.json` para desarrollo.
+### Dónde está la configuración de cada entorno
+
+Cada entorno es un `ASPNETCORE_ENVIRONMENT` con su `src/TercerTiempo.Api/appsettings.{Entorno}.json` encima de
+`appsettings.json`, que tiene lo común y los valores de publicación. Cada fichero de entorno lleva solo lo que cambia, y
+ninguno lleva secretos: esos van en los user-secrets (Visual Studio) o en los `.env.*` (Docker), que no se versionan.
+
+| Entorno | Se arranca con | Lo que lo distingue | Secretos y lo propio de Docker |
+|---|---|---|---|
+| `Development` | Visual Studio (perfiles `http`/`https`) o `.\Start-Docker.ps1` | `appsettings.Development.json`: base `TercerTiempo`, `/docs` abierto, sin MFA, clave JWT de desarrollo y todos los trabajos por horario | user-secrets; en Docker `compose.development.yaml` y `.env.development` (con `-Database Local` y sin `-WithJobs`, además `compose.nojobs.yaml`: trabajos solo a mano) |
+| `FakeDatos` | Visual Studio (perfil `FakeDatos`) o `.\Start-Docker.ps1 -Environment FakeDatos` | `appsettings.FakeDatos.json`: como desarrollo con la base `tercertiempo_DatosFake` y nada que salga fuera (ni futbolasturiano.es ni asturfutbol.es) | user-secrets; en Docker `compose.fakedatos.yaml` y `.env.fakedatos` |
+| `Pilot` | `.\Start-Docker.ps1 -Environment Pilot` | `appsettings.Pilot.json`: como publicación (MFA, sin `/docs`, todos los trabajos), pasarela de licencias simulada y el limitador con la IP que manda el túnel | `compose.production.yaml`, `compose.pilot.yaml` y `.env.pilot` |
+| `Production` | `.\Start-Docker.ps1 -Environment Production` | `appsettings.Production.json`: MFA del administrador y pasarela de licencias | `compose.production.yaml` y `.env.production` (copia de `.env.example`) |
+
+Lo que se cambia desde la administración (qué abarca la pasada automática de las ligas, los ajustes de las licencias) se
+guarda en la base de datos de cada entorno. En el código, `IsLocalDevelopment()` (Development y FakeDatos) es lo que
+.NET solo hace en Development: leer los user-secrets, publicar `/docs` sin contraseña y no redirigir a HTTPS.
+
+### Claves
+
+- `Jwt:Key` (mínimo 32 caracteres) solo está definida en `appsettings.Development.json` y `appsettings.FakeDatos.json`.
   Para otros entornos usa user-secrets o variables de entorno:
 
 ```bash
 dotnet user-secrets set "Jwt:Key" "una-clave-larga-y-aleatoria" --project src/TercerTiempo.Api
 ```
 
-- `ConnectionStrings:Default` (SQL Server) está vacía en `appsettings.json` a propósito: en desarrollo la da
-  `appsettings.Development.json`; en otros entornos, user-secrets o la variable `ConnectionStrings__Default`
+- `ConnectionStrings:Default` (SQL Server) está vacía en `appsettings.json` a propósito: en desarrollo la dan
+  `appsettings.Development.json` y `appsettings.FakeDatos.json`; en otros entornos, user-secrets o la variable `ConnectionStrings__Default`
   (p. ej. `Server=mi-servidor;Database=TercerTiempo;User Id=tercertiempo;Password=...;Encrypt=True`). La conexión
   reintenta ante errores transitorios y usa consultas divididas para las colecciones.
 - `Cors:AllowedOrigins` incluye el frontend de Vite (`http://localhost:5173`).

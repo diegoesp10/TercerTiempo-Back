@@ -8,6 +8,10 @@ using TercerTiempo.Repository;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// .NET solo lee los user-secrets en Development; FakeDatos usa los mismos (la contraseña del administrador).
+if (builder.Environment.IsEnvironment(HostEnvironmentExtensions.FakeDatos))
+    builder.Configuration.AddUserSecrets<Program>(optional: true);
+
 builder.Services
     .AddApplication()
     .AddRepositoryLayer()
@@ -43,11 +47,11 @@ app.UseRequestLocalization(new RequestLocalizationOptions()
     .AddSupportedCultures("es-ES", "en-US")
     .AddSupportedUICultures("es-ES", "en-US"));
 
-// Documento OpenAPI (/openapi/v1.json) y referencia interactiva (/docs): siempre en Development;
+// Documento OpenAPI (/openapi/v1.json) y referencia interactiva (/docs): siempre en Development y FakeDatos;
 // en otros entornos solo con OpenApi:Enabled y Basic Auth.
 app.UseOpenApiDocs();
 
-if (!app.Environment.IsDevelopment() && !behindProxy)
+if (!app.Environment.IsLocalDevelopment() && !behindProxy)
     app.UseHttpsRedirection();
 
 app.UseCors();

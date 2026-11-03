@@ -46,7 +46,7 @@ public static class OpenApiExtensions
     public static WebApplication UseOpenApiDocs(this WebApplication app)
     {
         var options = app.Services.GetRequiredService<IOptions<OpenApiDocsOptions>>().Value;
-        var isDevelopment = app.Environment.IsDevelopment();
+        var isDevelopment = app.Environment.IsLocalDevelopment();
 
         if (!(options.Enabled ?? isDevelopment))
         {

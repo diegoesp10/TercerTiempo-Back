@@ -1,0 +1,8 @@
+# Trabajos programados solo a mano desde /jobs. Start-Docker.ps1 lo añade en Development con -Database Local y sin
+# -WithJobs: la API de Visual Studio comparte esa base y ya los lanza ella. Con la sincronización de ligas a 0 tampoco
+# se lanzan solos los árbitros ni las plazas de las ligas; con los barridos de actas a 0, tampoco las del fin de semana.
+services:
+  api:
+    environment:
+      FootballData__SyncIntervalMinutes: "0"
+      OfficialSheets__BackgroundScanMinutes: "0"

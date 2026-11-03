@@ -1,4 +1,5 @@
-﻿# Construye y arranca la API de Tercer Tiempo en Docker.
+﻿# Construye y arranca la API de Tercer Tiempo en Docker. Lo que distingue a cada entorno está en
+# src/TercerTiempo.Api/appsettings.{Entorno}.json; los compose y los .env solo llevan lo de Docker y los secretos.
 #   -Environment Development  (por defecto) API en Development; genera .env.development la primera vez y, si no
 #                             está ahí, toma la contraseña de /jobs de los user-secrets del proyecto.
 #   -Database Local           solo en Development: el SQL Server de Windows del equipo (la base de Visual Studio) con
@@ -6,16 +7,18 @@
 #   -Database Container       solo en Development: un SQL Server propio en el contenedor tercer-tiempo-db.
 #                             Sin -Database se usa TT_DEV_DATABASE de .env.development (Container si no está).
 #   -WithJobs                 con -Database Local, la API del contenedor también lanza los scrapeos por horario (por
-#                             defecto solo a mano desde /jobs, porque la API de Visual Studio comparte la base).
+#                             defecto se añade compose.nojobs.yaml y van solo a mano desde /jobs, porque la API de
+#                             Visual Studio comparte la base).
 #   -Environment Production   API en Production con los secretos de .env.production (copia .env.example).
 #   -WithDatabase             solo en Production: arranca también el SQL Server del equipo (perfil "database").
-#   -Environment Pilot        piloto con clubes: lo mismo que Production (compose.production.yaml y encima
-#                             compose.pilot.yaml) con su propia base, tercertiempo_Piloto, en el SQL Server de Windows
-#                             del equipo (login de scripts/local-sql-login.sql), para abrirlo por un túnel. Genera
-#                             .env.pilot la primera vez; la contraseña de /jobs sale de los user-secrets.
-#   -Environment FakeDatos    datos falsos: lo mismo que Development (compose.development.yaml y encima
-#                             compose.fakedatos.yaml) con la base tercertiempo_DatosFake del SQL Server de Windows del
-#                             equipo (login de scripts/local-sql-login.sql) y sin trabajos que salgan fuera. Genera
+#   -Environment Pilot        piloto con clubes: API en Pilot (appsettings.Pilot.json, como publicación) con los
+#                             secretos de compose.production.yaml y encima compose.pilot.yaml, y su propia base,
+#                             tercertiempo_Piloto, en el SQL Server de Windows del equipo (login de
+#                             scripts/local-sql-login.sql), para abrirlo por un túnel. Genera .env.pilot la primera
+#                             vez; la contraseña de /jobs sale de los user-secrets.
+#   -Environment FakeDatos    datos falsos: API en FakeDatos (appsettings.FakeDatos.json: desarrollo con la base
+#                             tercertiempo_DatosFake y sin trabajos que salgan fuera) con compose.fakedatos.yaml y el
+#                             login de scripts/local-sql-login.sql del SQL Server de Windows del equipo. Genera
 #                             .env.fakedatos la primera vez; la contraseña de /jobs sale de los user-secrets.
 #   -SkipBuild                reutiliza la imagen existente.
 #   -ReplaceData              vuelve a copiar al volumen los escudos y fotos de src/TercerTiempo.Api/data.
@@ -72,7 +75,6 @@ if (-not (Test-Path -LiteralPath $envFile)) {
             "TT_JWT_KEY=$(New-Secret 48)"
             '# Base del piloto en el SQL Server de Windows del equipo; el login tercertiempo_app es el de .env.development.'
             'TT_PILOT_DATABASE=tercertiempo_Piloto'
-            'TT_LICENSING_PROVIDER=mock'
             'TT_ADMIN_RESET_MFA=false'
         ) | Set-Content -LiteralPath $envFile -Encoding ascii
         Write-Host "Creado $envFile con una clave JWT aleatoria." -ForegroundColor Cyan
@@ -120,11 +122,9 @@ $dataVolume = $settings['TT_DATA_VOLUME']
 if (-not $dataVolume) { throw "Falta TT_DATA_VOLUME en $envFile." }
 Invoke-Native { docker volume create $dataVolume | Out-Null } "No se pudo preparar el volumen $dataVolume."
 
-# El piloto es publicación con su propia base: compose.production.yaml y, encima, compose.pilot.yaml. Los datos falsos
-# son desarrollo con su propia base: compose.development.yaml y, encima, compose.fakedatos.yaml.
+# El piloto toma los secretos de publicación: compose.production.yaml y, encima, compose.pilot.yaml.
 $compose = @('compose', '-f', 'compose.yaml')
 if ($Environment -eq 'Pilot') { $compose += @('-f', 'compose.production.yaml') }
-if ($Environment -eq 'FakeDatos') { $compose += @('-f', 'compose.development.yaml') }
 $compose += @('-f', "compose.$envName.yaml", '--env-file', $envFile)
 if ($Environment -eq 'Production' -and $WithDatabase) { $compose += @('--profile', 'database') }
 
@@ -137,7 +137,10 @@ if ($Environment -eq 'Development') {
         $env:TT_DB_CONNECTION = "Server=host.docker.internal,1433;Database=TercerTiempo;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
         # El SQL del contenedor no hace falta: si estaba en marcha, se para (sus datos siguen en su volumen).
         if (docker ps -q --filter 'name=^tercer-tiempo-db$') { Invoke-Native { docker stop tercer-tiempo-db | Out-Null } 'No se pudo parar tercer-tiempo-db.' }
-        if (-not $WithJobs) { $env:TT_SYNC_MINUTES = '0'; $env:TT_SHEETS_MINUTES = '0' }
+        if (-not $WithJobs) {
+            $compose += @('-f', 'compose.nojobs.yaml')
+            Write-Host 'Trabajos programados: solo a mano desde /jobs (compose.nojobs.yaml; -WithJobs los activa)' -ForegroundColor Cyan
+        }
     } else {
         if (-not $settings['TT_SQL_PASSWORD']) {
             $settings['TT_SQL_PASSWORD'] = New-Secret 20
