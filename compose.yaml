@@ -1,12 +1,12 @@
 name: tercer-tiempo-back
 
 # API de Tercer Tiempo. El contenedor del frontal (repositorio TercerTiempo-Front) la alcanza como "api" en la red
-# compartida tercer-tiempo-net. Este fichero es la base común; el entorno lo añade compose.development.yaml o
-# compose.production.yaml. Start-Docker.ps1 crea la red y los volúmenes y combina los ficheros.
+# compartida tercer-tiempo-net. Este fichero es la base común; el entorno lo añade su compose.{entorno}.yaml, que también
+# pone el nombre del contenedor con el entorno (tercer-tiempo-api-development, -fakedatos, -pilot o -production).
+# Start-Docker.ps1 crea la red y los volúmenes y combina los ficheros.
 services:
   api:
     image: tercer-tiempo-api:local
-    container_name: tercer-tiempo-api
     build:
       context: .
       dockerfile: Dockerfile

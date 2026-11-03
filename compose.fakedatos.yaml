@@ -6,6 +6,7 @@
 #   .\Start-Docker.ps1 -Environment FakeDatos
 services:
   api:
+    container_name: tercer-tiempo-api-fakedatos
     environment:
       ASPNETCORE_ENVIRONMENT: FakeDatos
       ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION: arranca con Start-Docker.ps1}"

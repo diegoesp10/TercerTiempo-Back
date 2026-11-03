@@ -501,6 +501,17 @@ Lo que se cambia desde la administración (qué abarca la pasada automática de 
 guarda en la base de datos de cada entorno. En el código, `IsLocalDevelopment()` (Development y FakeDatos) es lo que
 .NET solo hace en Development: leer los user-secrets, publicar `/docs` sin contraseña y no redirigir a HTTPS.
 
+**En qué entorno está la API que corre.** En Docker, el contenedor lleva el entorno en el nombre
+(`tercer-tiempo-api-development`, `-fakedatos`, `-pilot` o `-production`; lo pone cada `compose.{entorno}.yaml`), así que
+lo dicen `docker ps`, Docker Desktop y el final de `Start-Docker.ps1`. Solo hay uno a la vez: cambiar de entorno
+recrea el contenedor con el nombre nuevo, y el `Start-Docker.ps1` del frontal avisa si la API en marcha no es la del
+entorno pedido (no la cambia sola, por si es el piloto). En Visual Studio es el perfil elegido (`http`/`https` →
+Development, `FakeDatos` → FakeDatos). En los dos casos el log de arranque lo escribe: `Hosting environment: …`.
+
+```powershell
+docker ps --filter name=tercer-tiempo-api --format "{{.Names}}"
+```
+
 ### Claves
 
 - `Jwt:Key` (mínimo 32 caracteres) solo está definida en `appsettings.Development.json` y `appsettings.FakeDatos.json`.

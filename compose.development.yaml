@@ -9,6 +9,7 @@
 # Las variables salen de .env.development, que Start-Docker.ps1 genera la primera vez.
 services:
   api:
+    container_name: tercer-tiempo-api-development
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.development}"

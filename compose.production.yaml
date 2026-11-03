@@ -5,6 +5,7 @@
 #   docker compose -f compose.yaml -f compose.production.yaml --env-file .env.production --profile database up -d
 services:
   api:
+    container_name: tercer-tiempo-api-production
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.production}"

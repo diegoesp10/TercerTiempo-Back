@@ -6,5 +6,6 @@
 #   .\Start-Docker.ps1 -Environment Pilot
 services:
   api:
+    container_name: tercer-tiempo-api-pilot
     environment:
       ASPNETCORE_ENVIRONMENT: Pilot

@@ -195,7 +195,7 @@ if (Test-Path -LiteralPath $localData) {
 
 Invoke-Native { docker @compose up -d --wait --wait-timeout 240 } 'La API no alcanzó un estado saludable. Consulta docker compose logs.'
 $apiPort = if ($settings['TT_API_PORT']) { $settings['TT_API_PORT'] } else { '8181' }
-Write-Host "API Docker ($Environment) lista: http://127.0.0.1:$apiPort/api/health" -ForegroundColor Green
+Write-Host "API Docker ($Environment) lista en el contenedor tercer-tiempo-api-${envName}: http://127.0.0.1:$apiPort/api/health" -ForegroundColor Green
 if ($Environment -eq 'Development') {
     Write-Host "Referencia de la API: http://127.0.0.1:$apiPort/docs" -ForegroundColor Green
     if ($Database -eq 'Container') {
