@@ -96,6 +96,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             throw new ConflictException(ErrorCode.PassAlreadyRedeemed);
         }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.All(e => e.State == EntityState.Deleted))
+        {
+            // Borrar lo que otra petición acaba de borrar (dos cancelaciones de la misma subida de vídeo, por ejemplo)
+            // no es un error: se da por hecho y se guarda el resto.
+            foreach (var entry in ex.Entries) entry.State = EntityState.Detached;
+            result = await base.SaveChangesAsync(cancellationToken);
+        }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 }
             && ex.Entries.Any(e => e.Entity is SquadPlayer { PlayerId: not null }))
         {
