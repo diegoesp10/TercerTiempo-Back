@@ -427,7 +427,7 @@ que la web y la API comparten origen. Con Docker Desktop en modo Linux:
 .\Start-Docker.ps1 -Database Local                    # desarrollo con el SQL Server de Windows (la base de Visual Studio)
 .\Start-Docker.ps1 -Database Container                # desarrollo con un SQL Server propio en un contenedor
 .\Start-Docker.ps1 -Database Local -WithJobs          # desarrollo con la base de Visual Studio y los trabajos por horario
-.\Start-Docker.ps1 -Environment FakeDatos            # datos falsos: base tercertiempo_DatosFake, nada sale fuera
+.\Start-Docker.ps1 -Environment FakeDatos            # datos falsos: base tercertiempo_DatosFake (clubes inventados)
 .\Start-Docker.ps1 -Environment Production           # publicación: secretos de .env.production
 .\Start-Docker.ps1 -Environment Production -WithDatabase   # publicación con el SQL Server en este equipo
 .\Start-Docker.ps1 -Environment Pilot                # piloto con clubes: publicación con la base tercertiempo_Piloto
@@ -493,7 +493,7 @@ ninguno lleva secretos: esos van en los user-secrets (Visual Studio) o en los `.
 | Entorno | Se arranca con | Lo que lo distingue | Secretos y lo propio de Docker |
 |---|---|---|---|
 | `Development` | Visual Studio (perfiles `http`/`https`) o `.\Start-Docker.ps1` | `appsettings.Development.json`: base `TercerTiempo`, `/docs` abierto, sin MFA, clave JWT de desarrollo y todos los trabajos por horario; puede descargar los datos reales | user-secrets; en Docker `compose.development.yaml` y `.env.development` (con `-Database Local` y sin `-WithJobs`, además `compose.nojobs.yaml`: trabajos solo a mano) |
-| `FakeDatos` | Visual Studio (perfil `FakeDatos`) o `.\Start-Docker.ps1 -Environment FakeDatos` | `appsettings.FakeDatos.json`: como desarrollo con la base `tercertiempo_DatosFake` y nada que salga fuera (ni futbolasturiano.es ni asturfutbol.es): nunca descarga, solo copia los datos reales | user-secrets; en Docker `compose.fakedatos.yaml` y `.env.fakedatos` |
+| `FakeDatos` | Visual Studio (perfil `FakeDatos`) o `.\Start-Docker.ps1 -Environment FakeDatos` | `appsettings.FakeDatos.json`: como desarrollo con la base `tercertiempo_DatosFake` (clubes, plantillas y actas internas inventados); descarga los datos reales como los demás | user-secrets; en Docker `compose.fakedatos.yaml` y `.env.fakedatos` |
 | `Pilot` | `.\Start-Docker.ps1 -Environment Pilot` | `appsettings.Pilot.json`: como publicación (MFA, sin `/docs`, todos los trabajos; puede descargar los datos reales), pasarela de licencias simulada y el limitador con la IP que manda el túnel | `compose.production.yaml`, `compose.pilot.yaml` y `.env.pilot` |
 | `Production` | `.\Start-Docker.ps1 -Environment Production` | `appsettings.Production.json`: MFA del administrador, pasarela de licencias y puede descargar los datos reales | `compose.production.yaml` y `.env.production` (copia de `.env.example`) |
 
@@ -523,14 +523,16 @@ clubes, licencias, plantillas y actas internas, lesiones, vídeos, notas a los �
 reales con los mismos Id.
 
 - **Quién descarga.** Solo un proceso a la vez: el que tiene el bloqueo de la base real (`sp_getapplock` de sesión en
-  `RealDataLease`). Pueden descargar los entornos con `RealData:Ingest` (Development, Pilot, Production; FakeDatos
-  nunca); si el que descarga se para, el bloqueo se suelta y lo coge el siguiente en un minuto. Sus trabajos (datos de
-  las ligas, actas, árbitros, plazas, actas del fin de semana) escriben directamente en la base real
-  (`RealDataAmbient`), con su historial y sus llamadas. `/jobs` dice qué entorno descarga; en los demás, lanzarlos
-  avisa de que se hace desde ese entorno.
+  `RealDataLease`). Todos los entornos pueden (`RealData:Ingest` en Development, FakeDatos, Pilot y Production), así
+  que descarga el que esté en marcha; si hay varios, el primero que arrancó, y si se para, el bloqueo se suelta y lo
+  coge otro en un minuto. Sus trabajos (datos de las ligas, actas, árbitros, plazas, actas del fin de semana) escriben
+  directamente en la base real (`RealDataAmbient`), con su historial y sus llamadas; los límites de peticiones a las
+  webs también están ahí, así que cambiar de entorno no los reinicia. `/jobs` dice qué entorno descarga; en los
+  demás, lanzarlos avisa de que se hace desde ese entorno.
 - **La copia.** Cada entorno tiene el trabajo «Datos reales» (`RealDataCopier`), cada `RealData:CopyMinutes` (5), al
-  arrancar y en cuanto termina una descarga en ese proceso: trae lo nuevo en una sola transacción sobre una foto fija de
-  la base real, sin peticiones a ninguna web. Respeta lo de cada entorno: el escudo que sube un club, las fichas que
+  arrancar (a los 5 segundos) y en cuanto termina una descarga en ese proceso: trae lo nuevo en una sola transacción
+  sobre una foto fija de la base real, sin peticiones a ninguna web. Un entorno parado no copia nada, claro: lo que se
+  descargó mientras tanto le llega en cuanto arranca. Respeta lo de cada entorno: el escudo que sube un club, las fichas que
   gestiona el club (con su foto y si están ocultas) y lo que ya no está en la base real pero el entorno usa (un partido
   con acta interna, un árbitro con notas). Los escudos descargados se escriben en los ficheros de cada entorno.
 - **Lo que pide un usuario.** Un acta que falta se pide a la cola compartida (`SheetDownloads`) y la descarga el entorno

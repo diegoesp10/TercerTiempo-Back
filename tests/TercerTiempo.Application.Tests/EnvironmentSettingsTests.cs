@@ -24,26 +24,29 @@ public class EnvironmentSettingsTests
     public void Only_publication_asks_the_administrator_for_the_authenticator_code(string environment, bool mfa) =>
         Assert.Equal(mfa, Load(environment).GetValue<bool>("Admin:RequireMfa"));
 
+    // Sea cual sea el entorno que esté en marcha, descarga los datos reales a la base compartida (de uno en uno, por el
+    // bloqueo) y los demás los copian al arrancar.
     [Theory]
     [InlineData("Development")]
+    [InlineData("FakeDatos")]
     [InlineData("Pilot")]
     [InlineData("Production")]
-    public void Outside_fake_data_the_jobs_that_read_the_web_run_on_their_own(string environment)
+    public void Every_environment_downloads_the_real_data_on_its_own(string environment)
     {
-        var scheduler = Scheduler(Load(environment));
+        var configuration = Load(environment);
+        var scheduler = Scheduler(configuration);
 
+        Assert.True(configuration.GetValue<bool>("RealData:Ingest"));
         Assert.All(JobsThatReadTheWeb, job => Assert.True(scheduler.Get(job).Enabled && scheduler.Get(job).Interval is not null, job));
     }
 
     [Fact]
-    public void Fake_data_uses_its_own_database_and_never_reads_the_web_on_its_own()
+    public void Fake_data_uses_its_own_database_and_the_shared_real_data()
     {
         var configuration = Load("FakeDatos");
-        var scheduler = Scheduler(configuration);
 
         Assert.Contains("Database=tercertiempo_DatosFake;", configuration.GetConnectionString("Default"));
-        Assert.False(configuration.GetValue<bool>("OfficialSheets:Enabled"));
-        Assert.All(JobsThatReadTheWeb, job => Assert.True(!scheduler.Get(job).Enabled || scheduler.Get(job).Interval is null, job));
+        Assert.Contains("Database=tercertiempo_DatosReales;", configuration.GetConnectionString("RealData"));
     }
 
     [Fact]

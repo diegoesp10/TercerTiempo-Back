@@ -18,7 +18,7 @@
 #                             scripts/local-sql-login.sql), para abrirlo por un túnel. Genera .env.pilot la primera
 #                             vez; la contraseña de /jobs sale de los user-secrets.
 #   -Environment FakeDatos    datos falsos: API en FakeDatos (appsettings.FakeDatos.json: desarrollo con la base
-#                             tercertiempo_DatosFake y sin trabajos que salgan fuera) con compose.fakedatos.yaml y el
+#                             tercertiempo_DatosFake, de clubes inventados) con compose.fakedatos.yaml y el
 #                             login de scripts/local-sql-login.sql del SQL Server de Windows del equipo. Genera
 #                             .env.fakedatos la primera vez; la contraseña de /jobs sale de los user-secrets.
 #   -SkipBuild                reutiliza la imagen existente.
