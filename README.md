@@ -527,7 +527,9 @@ reales con los mismos Id.
   que descarga el que esté en marcha; si hay varios, el primero que arrancó, y si se para, el bloqueo se suelta y lo
   coge otro en un minuto. Sus trabajos (datos de las ligas, actas, árbitros, plazas, actas del fin de semana) escriben
   directamente en la base real (`RealDataAmbient`), con su historial y sus llamadas; los límites de peticiones a las
-  webs también están ahí, así que cambiar de entorno no los reinicia. `/jobs` dice qué entorno descarga; en los
+  webs también están ahí, así que cambiar de entorno no los reinicia. Lo poco del entorno que una descarga necesita
+  (qué equipos tienen plantilla, para pedir sus actas a la federación) lo lee por `IEnvironmentData`, de la base del
+  entorno. `/jobs` dice qué entorno descarga; en los
   demás, lanzarlos avisa de que se hace desde ese entorno.
 - **La copia.** Cada entorno tiene el trabajo «Datos reales» (`RealDataCopier`), cada `RealData:CopyMinutes` (5), al
   arrancar (a los 5 segundos) y en cuanto termina una descarga en ese proceso: trae lo nuevo en una sola transacción

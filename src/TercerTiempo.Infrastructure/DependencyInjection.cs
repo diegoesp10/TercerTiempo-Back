@@ -90,6 +90,7 @@ public static class DependencyInjection
         services.AddSingleton<RealDataCopier>();
         services.AddHostedService<RealDataCopyWorker>();
         services.AddScoped<TercerTiempo.Application.Abstractions.RealData.IRealData, RealDataGateway>();
+        services.AddScoped<TercerTiempo.Application.Abstractions.RealData.IEnvironmentData, EnvironmentDataGateway>();
 
         services.AddScoped<IPlayerStore, PlayerStore>();
         services.AddScoped<ICoachStore, CoachStore>();

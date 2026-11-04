@@ -2,11 +2,11 @@ using System.Reflection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
+using TercerTiempo.Application.Abstractions.RealData;
 using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
-using TercerTiempo.Domain.Squads;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
 namespace TercerTiempo.Application.Tests;
@@ -68,7 +68,7 @@ public class FederationDatabaseFirstTests
         var handler = new PlanOfficialSheetSyncHandler(
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
             Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([match])),
-            Stub<ISquadStore>((_, _) => Task.FromResult<IReadOnlyList<Squad>>([Squad.Create(match.HomeTeamId, season.Id, Guid.NewGuid(), Now)])),
+            Stub<IEnvironmentData>((_, _) => Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid> { match.HomeTeamId })),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([sheet])),
             AllSources, Options.Create(new PublicSheetOptions()), new OfficialSheetSyncMemory(), TimeProvider.System);
         Assert.Empty(await handler.Handle(new(20), default));
@@ -86,7 +86,7 @@ public class FederationDatabaseFirstTests
         var handler = new PlanOfficialSheetSyncHandler(
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
             Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([withSquad, others])),
-            Stub<ISquadStore>((_, _) => Task.FromResult<IReadOnlyList<Squad>>([Squad.Create(ours, season.Id, Guid.NewGuid(), Now)])),
+            Stub<IEnvironmentData>((_, _) => Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid> { ours })),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([])),
             AllSources, Options.Create(new PublicSheetOptions { Sources = ["otra-web", "asturfutbol"] }), new OfficialSheetSyncMemory(), TimeProvider.System);
         Assert.Equal([new PlannedSheet(withSquad.Id, true), new PlannedSheet(others.Id, false)], await handler.Handle(new(20), default));
@@ -140,7 +140,7 @@ public class FederationDatabaseFirstTests
         var handler = new PlanOfficialSheetSyncHandler(
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
             Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([withSquad, others])),
-            Stub<ISquadStore>((_, _) => Task.FromResult<IReadOnlyList<Squad>>([Squad.Create(ours, season.Id, Guid.NewGuid(), Now)])),
+            Stub<IEnvironmentData>((_, _) => Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid> { ours })),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([fromRemovedSource])),
             AllSources, Options.Create(new PublicSheetOptions()), new OfficialSheetSyncMemory(), TimeProvider.System);
 

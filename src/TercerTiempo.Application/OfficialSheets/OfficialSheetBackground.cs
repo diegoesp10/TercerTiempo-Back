@@ -3,13 +3,13 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
+using TercerTiempo.Application.Abstractions.RealData;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
-using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
@@ -120,10 +120,11 @@ public sealed record PlannedSheet(Guid MatchId, bool FederationAllowed);
 // Planificar solo lee SQL: partidos jugados sin acta o pendientes desde hace al menos un día. Primero los de equipos
 // con plantilla en la app y después todos los demás, de los más recientes a los más antiguos. Los demás solo se buscan
 // en las webs que aguantan más tráfico; a la federación únicamente van los que importan o alguien abre.
+// Corre contra la base de datos reales; las plantillas, que son del entorno, se leen por IEnvironmentData.
 internal sealed class PlanOfficialSheetSyncHandler(
     ICompetitionStore competitions,
     IMatchStore matches,
-    ISquadStore squads,
+    IEnvironmentData environment,
     IOfficialSheetStore sheets,
     IEnumerable<IPublicSheetSource> sources,
     IOptions<PublicSheetOptions> options,
@@ -156,7 +157,7 @@ internal sealed class PlanOfficialSheetSyncHandler(
             if (pending.Count == 0)
                 continue;
 
-            var teamsWithSquad = (await squads.GetBySeasonAsync(season.Id, cancellationToken)).Select(s => s.TeamId).ToHashSet();
+            var teamsWithSquad = await environment.TeamsWithSquadAsync(season.Id, cancellationToken);
             due.AddRange(pending
                 .Select(m => (m, teamsWithSquad.Contains(m.HomeTeamId) || teamsWithSquad.Contains(m.AwayTeamId)))
                 .Where(d => d.Item2 || othersReachable));

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.RealData;
 using TercerTiempo.Application.Abstractions.Teams;
 using TercerTiempo.Application.Jobs;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Infrastructure.Jobs;
 using TercerTiempo.Infrastructure.Persistence;
 using TercerTiempo.Infrastructure.Teams;
@@ -21,6 +22,17 @@ internal sealed class RealDataGateway(IServiceScopeFactory scopes, JobScheduler 
     }
 
     public void RequestCopy() => scheduler.Launch(JobNames.RealDataCopy);
+}
+
+// Lo contrario: desde una descarga (que corre contra la base real) lee lo del entorno, en un ámbito que va a su base.
+internal sealed class EnvironmentDataGateway(IServiceScopeFactory scopes) : IEnvironmentData
+{
+    public async Task<IReadOnlySet<Guid>> TeamsWithSquadAsync(Guid seasonId, CancellationToken cancellationToken)
+    {
+        using var scope = scopes.CreateEnvironmentScope();
+        var squads = await scope.ServiceProvider.GetRequiredService<ISquadStore>().GetBySeasonAsync(seasonId, cancellationToken);
+        return squads.Select(s => s.TeamId).ToHashSet();
+    }
 }
 
 // Escudos que se descargan de las webs: en la base de datos reales, para que cada entorno los copie a sus ficheros. Se
