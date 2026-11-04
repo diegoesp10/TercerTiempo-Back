@@ -146,6 +146,7 @@ public static class DependencyInjection
             .ValidateOnStart();
 
         services.AddOptions<AdminOptions>().Bind(configuration.GetSection(AdminOptions.SectionName));
+        services.AddOptions<AccountLockoutOptions>().Bind(configuration.GetSection(AccountLockoutOptions.SectionName));
         services.AddOptions<TercerTiempo.Application.Clubs.Invitations.RegistrationOptions>()
             .Bind(configuration.GetSection(TercerTiempo.Application.Clubs.Invitations.RegistrationOptions.SectionName));
 

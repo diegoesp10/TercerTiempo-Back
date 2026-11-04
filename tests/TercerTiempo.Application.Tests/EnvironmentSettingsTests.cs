@@ -24,6 +24,15 @@ public class EnvironmentSettingsTests
     public void Only_publication_asks_the_administrator_for_the_authenticator_code(string environment, bool mfa) =>
         Assert.Equal(mfa, Load(environment).GetValue<bool>("Admin:RequireMfa"));
 
+    // Probar el login en local no deja la cuenta 15 minutos fuera; en publicación, cinco fallos la bloquean.
+    [Theory]
+    [InlineData("Development", false)]
+    [InlineData("FakeDatos", false)]
+    [InlineData("Pilot", true)]
+    [InlineData("Production", true)]
+    public void Only_publication_locks_accounts_after_failed_logins(string environment, bool lockout) =>
+        Assert.Equal(lockout, Load(environment).GetValue<bool>("Lockout:Enabled"));
+
     // Sea cual sea el entorno que esté en marcha, descarga los datos reales a la base compartida (de uno en uno, por el
     // bloqueo) y los demás los copian al arrancar.
     [Theory]

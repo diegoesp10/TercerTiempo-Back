@@ -18,6 +18,7 @@ internal sealed class AdminSecondFactor(
     SessionStamps sessions,
     IDataProtectionProvider protection,
     IOptions<AdminOptions> options,
+    IOptions<AccountLockoutOptions> lockout,
     TimeProvider clock) : IAdminSecondFactor
 {
     public static readonly TimeSpan TicketLifetime = TimeSpan.FromMinutes(5);
@@ -82,7 +83,7 @@ internal sealed class AdminSecondFactor(
         if (digits.Length != 6 || await WasUsedAsync(user, digits, now)
             || !await users.VerifyTwoFactorTokenAsync(user, users.Options.Tokens.AuthenticatorTokenProvider, digits))
         {
-            await users.AccessFailedAsync(user);
+            if (lockout.Value.Enabled) await users.AccessFailedAsync(user);
             if (await LockedMinutesAsync(user) is { } nowLocked) throw new ConflictException(ErrorCode.AuthLockedOut, nowLocked);
             throw new ValidationException([new ValidationFailure("code", ErrorCatalog.Format(ErrorCode.AdminMfaInvalidCode))
             {
@@ -110,7 +111,7 @@ internal sealed class AdminSecondFactor(
 
     private async Task<int?> LockedMinutesAsync(ApplicationUser user)
     {
-        if (!await users.IsLockedOutAsync(user)) return null;
+        if (!lockout.Value.Enabled || !await users.IsLockedOutAsync(user)) return null;
         var end = await users.GetLockoutEndDateAsync(user) ?? clock.GetUtcNow();
         return Math.Max(1, (int)Math.Ceiling((end - clock.GetUtcNow()).TotalMinutes));
     }

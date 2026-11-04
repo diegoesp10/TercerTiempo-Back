@@ -182,7 +182,7 @@ public class AdminMfaTests
             Provider = provider;
             _scope = provider.CreateAsyncScope();
             Users = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-            Identity = new IdentityService(Users, provider.GetRequiredService<SessionStamps>(), TimeProvider.System, provider.GetRequiredService<ILogger<IdentityService>>());
+            Identity = new IdentityService(Users, provider.GetRequiredService<SessionStamps>(), Microsoft.Extensions.Options.Options.Create(new AccountLockoutOptions()), TimeProvider.System, provider.GetRequiredService<ILogger<IdentityService>>());
             SecondFactor = _scope.ServiceProvider.GetRequiredService<AdminSecondFactor>();
         }
 

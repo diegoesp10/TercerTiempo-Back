@@ -4,6 +4,7 @@ using FluentValidation.Results;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Common;
@@ -15,6 +16,7 @@ namespace TercerTiempo.Infrastructure.Identity;
 internal sealed class IdentityService(
     UserManager<ApplicationUser> userManager,
     SessionStamps sessions,
+    IOptions<AccountLockoutOptions> lockout,
     TimeProvider clock,
     ILogger<IdentityService> logger) : IIdentityService
 {
@@ -78,7 +80,7 @@ internal sealed class IdentityService(
         if (await LockedMinutesAsync(user) is { } locked) throw new InvalidCredentialsException(ErrorCode.AuthLockedOut, locked);
         if (!await userManager.CheckPasswordAsync(user, password))
         {
-            await userManager.AccessFailedAsync(user);
+            await CountFailureAsync(user);
             if (await LockedMinutesAsync(user) is { } nowLocked) throw new InvalidCredentialsException(ErrorCode.AuthLockedOut, nowLocked);
             return null;
         }
@@ -90,11 +92,11 @@ internal sealed class IdentityService(
     public async Task<Guid?> ValidateAdminAsync(string userName, string password, bool secondFactorPending, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByNameAsync(userName);
-        if (user is null || await userManager.IsLockedOutAsync(user)) return null;
+        if (user is null || await LockedMinutesAsync(user) is not null) return null;
 
         if (!await userManager.CheckPasswordAsync(user, password))
         {
-            await userManager.AccessFailedAsync(user);
+            await CountFailureAsync(user);
             return null;
         }
 
@@ -129,7 +131,7 @@ internal sealed class IdentityService(
         if (await LockedMinutesAsync(user) is { } locked) throw new ConflictException(ErrorCode.AuthLockedOut, locked);
         if (!await userManager.CheckPasswordAsync(user, currentPassword))
         {
-            await userManager.AccessFailedAsync(user);
+            await CountFailureAsync(user);
             if (await LockedMinutesAsync(user) is { } nowLocked) throw new ConflictException(ErrorCode.AuthLockedOut, nowLocked);
             throw Invalid("currentPassword", ErrorCode.AuthCurrentPasswordWrong);
         }
@@ -156,11 +158,17 @@ internal sealed class IdentityService(
     private async Task<ApplicationUser> RequireAsync(Guid userId) =>
         await userManager.FindByIdAsync(userId.ToString()) ?? throw new UnauthenticatedException();
 
+    // Con el bloqueo apagado (desarrollo y datos falsos) los fallos ni se cuentan ni dejan a nadie fuera.
     private async Task<int?> LockedMinutesAsync(ApplicationUser user)
     {
-        if (!await userManager.IsLockedOutAsync(user)) return null;
+        if (!lockout.Value.Enabled || !await userManager.IsLockedOutAsync(user)) return null;
         var end = await userManager.GetLockoutEndDateAsync(user) ?? clock.GetUtcNow();
         return Math.Max(1, (int)Math.Ceiling((end - clock.GetUtcNow()).TotalMinutes));
+    }
+
+    private async Task CountFailureAsync(ApplicationUser user)
+    {
+        if (lockout.Value.Enabled) await userManager.AccessFailedAsync(user);
     }
 
     private static string LocalTime(DateTimeOffset at) =>

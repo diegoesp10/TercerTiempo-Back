@@ -124,6 +124,22 @@ public class PasswordTests
     }
 
     [LocalSqlFact]
+    public async Task Without_lockout_failed_logins_are_not_counted_and_the_right_password_still_enters()
+    {
+        await using var fixture = await IdentityFixture.CreateAsync();
+        var identity = fixture.WithoutLockout;
+        var userId = await fixture.RegisterAsync("sin.bloqueo@example.com", Strong);
+
+        for (var i = 0; i < PasswordPolicy.MaxFailedAttempts + 2; i++)
+            Assert.Null(await identity.ValidateCredentialsAsync("sin.bloqueo@example.com", "Mala-Clave-" + i, default));
+
+        Assert.Equal(userId, await identity.ValidateCredentialsAsync("sin.bloqueo@example.com", Strong, default));
+        var user = await fixture.Users.FindByIdAsync(userId.ToString());
+        Assert.Equal(0, user!.AccessFailedCount);
+        Assert.Null(user.LockoutEnd);
+    }
+
+    [LocalSqlFact]
     public async Task An_unfinished_registration_neither_logs_in_nor_holds_the_email()
     {
         await using var fixture = await IdentityFixture.CreateAsync();
@@ -187,13 +203,16 @@ public class PasswordTests
             Clock = (ManualClock)provider.GetRequiredService<TimeProvider>();
             Sessions = provider.GetRequiredService<SessionStamps>();
             Users = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-            Identity = new IdentityService(Users, Sessions, Clock, provider.GetRequiredService<ILogger<IdentityService>>());
+            Identity = new IdentityService(Users, Sessions, Microsoft.Extensions.Options.Options.Create(new AccountLockoutOptions()), Clock, provider.GetRequiredService<ILogger<IdentityService>>());
+            // Como en desarrollo y datos falsos: los fallos no bloquean.
+            WithoutLockout = new IdentityService(Users, Sessions, Microsoft.Extensions.Options.Options.Create(new AccountLockoutOptions { Enabled = false }), Clock, provider.GetRequiredService<ILogger<IdentityService>>());
         }
 
         public ManualClock Clock { get; }
         public SessionStamps Sessions { get; }
         public UserManager<ApplicationUser> Users { get; }
         public IdentityService Identity { get; }
+        public IdentityService WithoutLockout { get; }
 
         // Alta completa, como en el registro: la cuenta se confirma en el mismo guardado que su perfil.
         public async Task<Guid> RegisterAsync(string email, string password)
