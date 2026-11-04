@@ -185,5 +185,5 @@ internal sealed class RegisterHandler(
             : throw new ConflictException(ErrorCode.AuthClubAlreadyRegistered, entry.Name);
 
     private static ValidationException ClubNameError(string code, params object[] args) =>
-        new([new ValidationFailure(nameof(RegisterCommand.DisplayName), ErrorCatalog.Format(code, args)) { ErrorCode = code }]);
+        new([new ValidationFailure(nameof(RegisterCommand.DisplayName), ErrorCatalog.Format(code, args)) { ErrorCode = code, CustomState = args }]);
 }

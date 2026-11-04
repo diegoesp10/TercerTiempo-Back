@@ -44,7 +44,7 @@ internal sealed class GetPlayerDashboardHandler(
         var seasonMatches = await matches.GetBySeasonAsync(season.Id, cancellationToken);
         var table = await standings.GetBySeasonAsync(season.Id, cancellationToken);
 
-        // Solo se compara contra actas visibles: plantillas públicas de la liga y la propia.
+        // La comparación es de medias de la liga: entran la propia plantilla y las públicas (las que abren sus actas a pases).
         var comparableSquadIds = (await squads.GetBySeasonAsync(season.Id, cancellationToken))
             .Where(s => s.Id == squad.Id || s.Visibility == SquadVisibility.Public)
             .Select(s => s.Id)

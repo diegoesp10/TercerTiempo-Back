@@ -135,7 +135,6 @@ public interface ILicenseGate
     Task<bool> CanAccessSquadAsync(Squad squad, ICurrentUser user, CancellationToken cancellationToken);
     Task EnsureSquadAccessAsync(Guid squadId, ICurrentUser user, CancellationToken cancellationToken);
     Task EnsureVideoAccessAsync(Guid videoId, ICurrentUser user, CancellationToken cancellationToken);
-    Task EnsureSharedVideoAccessAsync(string token, CancellationToken cancellationToken);
     Task EnsurePlayerAccessAsync(ICurrentUser user, CancellationToken cancellationToken);
 
     // Sin licencia vigente nadie del club (club, cuerpo técnico ni jugadores) puede trabajar con los datos de ese equipo.

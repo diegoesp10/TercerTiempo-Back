@@ -261,14 +261,15 @@ public class SquadTests
     }
 
     [Fact]
-    public void Public_squad_is_visible_to_anyone()
+    public void Public_squad_only_opens_to_requests_not_to_anyone()
     {
         var (squad, _) = TestData.NewSquad();
 
         squad.SetVisibility(SquadVisibility.Public);
 
-        Assert.True(squad.CanBeViewedBy(null, null, TestData.Today));
-        Assert.True(squad.CanBeViewedBy(Guid.NewGuid(), Guid.NewGuid(), TestData.Today));
+        // Lo interno solo lo ve quien entra con un pase del partido; la visibilidad no abre la plantilla.
+        Assert.False(squad.CanBeViewedBy(null, null, TestData.Today));
+        Assert.False(squad.CanBeViewedBy(Guid.NewGuid(), Guid.NewGuid(), TestData.Today));
     }
 
     [Fact]

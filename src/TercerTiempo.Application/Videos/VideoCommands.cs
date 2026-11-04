@@ -4,10 +4,12 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Passes;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.Passes;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Domain.Videos;
@@ -47,7 +49,6 @@ internal sealed class UploadMatchVideoHandler(
     ITeamStore teams,
     IMatchVideoStore videos,
     IVideoStorage storage,
-    IOptions<VideoOptions> options,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<UploadMatchVideoCommand, MatchVideoDto>
 {
@@ -65,63 +66,13 @@ internal sealed class UploadMatchVideoHandler(
         var video = MatchVideo.Upload(
             squad.Id, squad.TeamId, match.Id, match.SeasonId, uploader.CoachId, command.Part,
             command.Title, command.File.FileName, command.File.ContentType, command.File.Length, storageKey,
-            options.Value.DefaultPriceCents, clock.GetUtcNow(), uploader.ClubId);
+            clock.GetUtcNow(), uploader.ClubId);
 
         videos.Add(video);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
-        return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDelete: true);
-    }
-}
-
-public sealed record PurchaseVideoCommand(Guid VideoId) : ICommand<MatchVideoDto>;
-
-internal sealed class PurchaseVideoValidator : AbstractValidator<PurchaseVideoCommand>
-{
-    public PurchaseVideoValidator() => RuleFor(x => x.VideoId).NotEmpty();
-}
-
-internal sealed class PurchaseVideoHandler(
-    ICurrentUser currentUser,
-    ICoachStore coaches,
-    IClubStore clubs,
-    ISquadStore squads,
-    ITeamStore teams,
-    IMatchVideoStore videos,
-    IVideoPurchaseStore purchases,
-    IPaymentGateway payments,
-    IUnitOfWork unitOfWork,
-    TimeProvider clock) : ICommandHandler<PurchaseVideoCommand, MatchVideoDto>
-{
-    public async Task<MatchVideoDto> Handle(PurchaseVideoCommand command, CancellationToken cancellationToken)
-    {
-        var coach = await Resolvers.CurrentCoachAsync(currentUser, coaches, cancellationToken);
-
-        var video = await videos.GetByIdAsync(command.VideoId, cancellationToken);
-        if (video is null || video.IsDeleted)
-            throw new NotFoundException(ErrorCode.VideoNotFound, command.VideoId);
-
-        var ownerSquad = await squads.GetByIdAsync(video.SquadId, cancellationToken);
-        var purchased = await VideoAccess.PurchasedAsync(video, coach.Id, videos, purchases, cancellationToken);
-        var level = VideoAccess.LevelFor(video, ownerSquad, currentUser, purchased, clock);
-
-        if (level != VideoAccessLevel.Locked)
-            throw level == VideoAccessLevel.Owner ? new ConflictException(ErrorCode.VideoOwnerAccess) : new ConflictException(ErrorCode.VideoAlreadyPurchased);
-
-        var team = await teams.GetByIdAsync(video.TeamId, cancellationToken);
-        var payment = await payments.ChargeAsync(
-            new PaymentRequest(currentUser.UserId!.Value, video.PriceCents, video.Currency, $"Vídeo «{video.Title}» de {team?.Name ?? "equipo"}"),
-            cancellationToken);
-
-        if (!payment.Succeeded)
-            throw payment.Error is { } paymentError ? new ConflictException(ErrorCode.VideoPaymentRejected, paymentError) : new ConflictException(ErrorCode.VideoPaymentFailed);
-
-        purchases.Add(VideoPurchase.Create(video.Id, coach.Id, video.PriceCents, video.Currency, payment.Reference, clock.GetUtcNow()));
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-
-        var uploader = await VideoManagers.UploaderNameAsync(video, coaches, clubs, cancellationToken);
-        return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader, VideoAccessLevel.Purchased, canDelete: false);
+        return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDownload: true, canDelete: true);
     }
 }
 
@@ -157,7 +108,7 @@ internal sealed class DeleteVideoHandler(
     }
 }
 
-public sealed record IssueVideoTicketCommand(Guid VideoId) : ICommand<VideoTicketDto>;
+public sealed record IssueVideoTicketCommand(Guid VideoId, bool Download = false) : ICommand<VideoTicketDto>;
 
 internal sealed class IssueVideoTicketValidator : AbstractValidator<IssueVideoTicketCommand>
 {
@@ -169,28 +120,35 @@ internal sealed class IssueVideoTicketHandler(
     ISquadStore squads,
     IClubStore clubs,
     IMatchVideoStore videos,
-    IVideoPurchaseStore purchases,
+    IMatchPassStore passes,
     IVideoTickets tickets,
     TimeProvider clock) : ICommandHandler<IssueVideoTicketCommand, VideoTicketDto>
 {
     public async Task<VideoTicketDto> Handle(IssueVideoTicketCommand command, CancellationToken cancellationToken)
     {
+        if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId)
+            throw new UnauthenticatedException();
+
         var video = await videos.GetByIdAsync(command.VideoId, cancellationToken);
         if (video is null || video.IsDeleted)
             throw new NotFoundException(ErrorCode.VideoNotFound, command.VideoId);
 
-        if (!video.IsPublic && (!currentUser.IsAuthenticated || currentUser.UserId is null))
-            throw new UnauthenticatedException();
-
         var ownerSquad = await squads.GetByIdAsync(video.SquadId, cancellationToken);
-        var purchased = await VideoAccess.PurchasedAsync(video, currentUser.CoachId, videos, purchases, cancellationToken);
+        var pass = await PassAccess.ForAsync(currentUser, video.SquadId, video.MatchId, passes, cancellationToken);
         var clubOwner = ownerSquad is not null && await SquadAccess.IsClubOfAsync(ownerSquad, currentUser, clubs, cancellationToken);
-        var level = VideoAccess.LevelFor(video, ownerSquad, currentUser, purchased, clock, clubOwner);
+        var level = VideoAccess.LevelFor(video, ownerSquad, currentUser, pass, clock, clubOwner);
 
         if (!VideoAccess.CanWatch(level))
             throw level == VideoAccessLevel.Locked ? new ForbiddenException(ErrorCode.VideoLocked) : new ForbiddenException(ErrorCode.VideoNotAllowed);
 
-        var (ticket, expiresAt) = tickets.Issue(video.Id, currentUser.UserId ?? Guid.Empty, level == VideoAccessLevel.Free && video.IsPublic);
+        if (command.Download)
+        {
+            var manager = ownerSquad is not null && (clubOwner || SquadAccess.IsStaff(ownerSquad, currentUser, clock));
+            if (!VideoAccess.CanDownload(level, manager, pass))
+                throw new ForbiddenException(ErrorCode.VideoDownloadDenied);
+        }
+
+        var (ticket, expiresAt) = tickets.Issue(video.Id, userId, command.Download);
         return new VideoTicketDto(video.Id, ticket, expiresAt);
     }
 }

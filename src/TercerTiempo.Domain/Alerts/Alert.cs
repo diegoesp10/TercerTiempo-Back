@@ -6,6 +6,9 @@ public enum AlertKind
 {
     // La licencia del club acaba sin renovarse (prueba sin contratar o renovación cancelada).
     LicenseExpiring = 1,
+
+    // Alguien pide acceso al acta interna o al vídeo de un partido del club.
+    PassRequest = 2,
 }
 
 // Aviso para un club dentro de la app: la campanita de su panel. Solo los reciben las cuentas de club (ni el cuerpo

@@ -177,9 +177,10 @@ public sealed class Squad : AggregateRoot
             ?? throw new DomainException(ErrorCode.InviteCodeNotFound, code);
     }
 
+    // Lo interno solo lo ven su cuerpo técnico y sus jugadores (el club y el administrador, aparte). Que la plantilla sea
+    // pública no lo enseña a nadie: deja que otros pidan el acceso a lo de cada partido con un pase.
     public bool CanBeViewedBy(Guid? coachId, Guid? playerId, DateOnly today) =>
-        Visibility == SquadVisibility.Public
-        || (coachId is { } c && IsStaff(c, today))
+        (coachId is { } c && IsStaff(c, today))
         || (playerId is { } p && IsMember(p));
 
     public static DateOnly Today(DateTimeOffset now) => DateOnly.FromDateTime(now.UtcDateTime);

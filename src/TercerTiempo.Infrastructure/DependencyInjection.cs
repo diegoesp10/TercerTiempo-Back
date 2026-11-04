@@ -107,9 +107,11 @@ public static class DependencyInjection
         services.AddScoped<ICoachAppointmentStore, CoachAppointmentStore>();
         services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
         services.AddScoped<IMatchVideoStore, MatchVideoStore>();
-        services.AddScoped<IVideoPurchaseStore, VideoPurchaseStore>();
         services.AddScoped<IVideoUploadStore, VideoUploadStore>();
-        services.AddScoped<IVideoShareStore, VideoShareStore>();
+        services.AddScoped<TercerTiempo.Domain.Passes.IMatchPassStore, MatchPassStore>();
+        services.AddScoped<TercerTiempo.Domain.Passes.IMatchPassRequestStore, MatchPassRequestStore>();
+        services.AddScoped<TercerTiempo.Domain.Passes.IMatchPassPriceStore, MatchPassPriceStore>();
+        services.AddScoped<TercerTiempo.Domain.Passes.IPassSaleStore, PassSaleStore>();
         services.AddScoped<ILicenseStore, LicenseStore>();
         services.AddScoped<TercerTiempo.Domain.Alerts.IAlertStore, TercerTiempo.Infrastructure.Alerts.AlertStore>();
         services.AddScoped<TercerTiempo.Domain.Referees.IRefereeStore, TercerTiempo.Infrastructure.Referees.RefereeStore>();
@@ -257,6 +259,8 @@ public static class DependencyInjection
     {
         services.AddOptions<VideoOptions>()
             .Bind(configuration.GetSection(VideoOptions.SectionName));
+        services.AddOptions<TercerTiempo.Application.Passes.PassOptions>()
+            .Bind(configuration.GetSection(TercerTiempo.Application.Passes.PassOptions.SectionName));
 
         // Licencias por equipo: planes, precios, prueba y pasarela («mock» = pago simulado, «stripe»).
         services.AddOptions<LicensingOptions>()

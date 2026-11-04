@@ -225,8 +225,14 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("RegisteredAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int>("SheetPassPriceCents")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("VideoPassPriceCents")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -1192,7 +1198,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "squad.private",
                             Language = "es",
-                            Message = "Los datos de esta plantilla son privados: solo su cuerpo técnico y sus jugadores pueden verlos."
+                            Message = "Los datos de esta plantilla son privados: solo su club, su cuerpo técnico y sus jugadores pueden verlos."
                         },
                         new
                         {
@@ -1706,30 +1712,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
-                            Code = "video.owner_access",
-                            Language = "es",
-                            Message = "Este vídeo es de tu plantilla: ya puedes verlo."
-                        },
-                        new
-                        {
-                            Code = "video.already_purchased",
-                            Language = "es",
-                            Message = "Ya tienes acceso a este vídeo."
-                        },
-                        new
-                        {
-                            Code = "video.payment_failed",
-                            Language = "es",
-                            Message = "El pago no se ha completado."
-                        },
-                        new
-                        {
-                            Code = "video.payment_rejected",
-                            Language = "es",
-                            Message = "El pago no se ha completado: {0}"
-                        },
-                        new
-                        {
                             Code = "video.ticket_invalid",
                             Language = "es",
                             Message = "El ticket de reproducción no es válido o ha caducado."
@@ -1739,30 +1721,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "video.part_invalid",
                             Language = "es",
                             Message = "Indica si el vídeo es el partido completo, la primera parte o la segunda."
-                        },
-                        new
-                        {
-                            Code = "video.visibility_invalid",
-                            Language = "es",
-                            Message = "La visibilidad tiene que ser Private o Public."
-                        },
-                        new
-                        {
-                            Code = "video.share_invalid",
-                            Language = "es",
-                            Message = "Este enlace para ver el vídeo no es válido, ha caducado o se ha revocado."
-                        },
-                        new
-                        {
-                            Code = "video.share_not_found",
-                            Language = "es",
-                            Message = "El enlace '{0}' no existe."
-                        },
-                        new
-                        {
-                            Code = "video.share_hours_range",
-                            Language = "es",
-                            Message = "La validez del enlace tiene que estar entre 1 hora y {0} horas."
                         },
                         new
                         {
@@ -1816,13 +1774,139 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "video.locked",
                             Language = "es",
-                            Message = "Este vídeo es de pago: compra el acceso para verlo."
+                            Message = "Este vídeo es privado: pide acceso al club o canjea un pase de este partido."
                         },
                         new
                         {
                             Code = "video.not_allowed",
                             Language = "es",
-                            Message = "Solo la plantilla que subió el vídeo y los técnicos que lo han comprado pueden verlo."
+                            Message = "Solo el club, el cuerpo técnico y los jugadores de la plantilla, y quien tenga un pase de este partido, pueden ver este vídeo."
+                        },
+                        new
+                        {
+                            Code = "video.download_denied",
+                            Language = "es",
+                            Message = "Tu acceso a este vídeo no incluye la descarga del archivo."
+                        },
+                        new
+                        {
+                            Code = "video.storage_full",
+                            Language = "es",
+                            Message = "No queda espacio para guardar un vídeo de {0}: avisa al administrador."
+                        },
+                        new
+                        {
+                            Code = "pass.not_found",
+                            Language = "es",
+                            Message = "Ese código de pase no existe: revisa que esté bien escrito."
+                        },
+                        new
+                        {
+                            Code = "pass.empty",
+                            Language = "es",
+                            Message = "El pase tiene que incluir el acta interna, el vídeo o los dos."
+                        },
+                        new
+                        {
+                            Code = "pass.download_needs_video",
+                            Language = "es",
+                            Message = "La descarga solo se puede dar junto con el vídeo."
+                        },
+                        new
+                        {
+                            Code = "pass.revoked",
+                            Language = "es",
+                            Message = "El club ha retirado este pase."
+                        },
+                        new
+                        {
+                            Code = "pass.expired",
+                            Language = "es",
+                            Message = "Este pase caducó sin canjearse: pide otro al club."
+                        },
+                        new
+                        {
+                            Code = "pass.already_redeemed",
+                            Language = "es",
+                            Message = "Este pase ya lo ha canjeado otra persona."
+                        },
+                        new
+                        {
+                            Code = "pass.already_yours",
+                            Language = "es",
+                            Message = "Ya canjeaste este pase: lo tienes en «Mis pases»."
+                        },
+                        new
+                        {
+                            Code = "pass.not_for_you",
+                            Language = "es",
+                            Message = "Este pase es para la persona que lo solicitó."
+                        },
+                        new
+                        {
+                            Code = "pass.paid_cannot_revoke",
+                            Language = "es",
+                            Message = "Este pase ya está pagado: quien lo compró conserva el acceso."
+                        },
+                        new
+                        {
+                            Code = "pass.no_club",
+                            Language = "es",
+                            Message = "Este equipo no tiene club en Tercer Tiempo: sin club no hay pases ni solicitudes."
+                        },
+                        new
+                        {
+                            Code = "pass.no_video",
+                            Language = "es",
+                            Message = "La plantilla no tiene vídeo de este partido: el pase no puede incluirlo."
+                        },
+                        new
+                        {
+                            Code = "pass.own_team",
+                            Language = "es",
+                            Message = "Ya ves todo lo interno de este partido: es de tu equipo."
+                        },
+                        new
+                        {
+                            Code = "pass.match_not_played",
+                            Language = "es",
+                            Message = "Solo hay pases de partidos ya jugados."
+                        },
+                        new
+                        {
+                            Code = "pass.payment_failed",
+                            Language = "es",
+                            Message = "El pago no se ha completado."
+                        },
+                        new
+                        {
+                            Code = "pass.payment_rejected",
+                            Language = "es",
+                            Message = "El pago no se ha completado: {0}"
+                        },
+                        new
+                        {
+                            Code = "pass_request.not_found",
+                            Language = "es",
+                            Message = "La solicitud '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "pass_request.closed",
+                            Language = "es",
+                            Message = "Esta solicitud ya está resuelta."
+                        },
+                        new
+                        {
+                            Code = "pass_request.duplicate",
+                            Language = "es",
+                            Message = "Ya tienes una solicitud pendiente de este partido."
+                        },
+                        new
+                        {
+                            Code = "pass_request.squad_private",
+                            Language = "es",
+                            Message = "Esta plantilla no acepta solicitudes: su acta interna es privada."
                         });
                 });
 
@@ -4749,6 +4833,265 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("OfficialSheetLines", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Passes.MatchPass", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AllowsDownload")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ForUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IncludesSheet")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IncludesVideo")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("PriceCents")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Recipient")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset?>("RedeemedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RedeemedByName")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<Guid?>("RedeemedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedByClubId");
+
+                    b.HasIndex("CreatedByCoachId");
+
+                    b.HasIndex("ForUserId");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("RedeemedByUserId");
+
+                    b.HasIndex("TeamId");
+
+                    b.HasIndex("SquadId", "MatchId");
+
+                    b.ToTable("MatchPasses", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Passes.MatchPassPrice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("SheetPriceCents")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("VideoPriceCents")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("SquadId", "MatchId")
+                        .IsUnique();
+
+                    b.ToTable("MatchPassPrices", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Passes.MatchPassRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid?>("PassId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RequesterName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<Guid>("RequesterUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("WantsSheet")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("WantsVideo")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("RequesterUserId");
+
+                    b.HasIndex("SquadId");
+
+                    b.HasIndex("TeamId");
+
+                    b.ToTable("MatchPassRequests", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Passes.PassSale", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AmountCents")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("BuyerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ClubShareCents")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ClubSharePercent")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("PaidAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("PassId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PaymentReference")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("PlatformShareCents")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("PassId")
+                        .IsUnique();
+
+                    b.ToTable("PassSales", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Performances.PerformanceSuggestion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5868,11 +6211,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
-
                     b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -5888,9 +6226,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
-
-                    b.Property<int>("PriceCents")
-                        .HasColumnType("int");
 
                     b.Property<Guid>("SeasonId")
                         .HasColumnType("uniqueidentifier");
@@ -5923,11 +6258,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("UploadedByCoachId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Visibility")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("MatchId");
@@ -5943,85 +6273,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("UploadedByCoachId");
 
                     b.ToTable("MatchVideos", (string)null);
-                });
-
-            modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoPurchase", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("AmountCents")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("CoachId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
-
-                    b.Property<string>("PaymentReference")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<DateTimeOffset>("PurchasedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("VideoId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CoachId");
-
-                    b.HasIndex("VideoId", "CoachId")
-                        .IsUnique();
-
-                    b.ToTable("VideoPurchases", (string)null);
-                });
-
-            modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoShareLink", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid?>("CreatedByClubId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("CreatedByCoachId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("ExpiresAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset?>("RevokedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Token")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<Guid>("VideoId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByClubId");
-
-                    b.HasIndex("CreatedByCoachId");
-
-                    b.HasIndex("Token")
-                        .IsUnique();
-
-                    b.HasIndex("VideoId");
-
-                    b.ToTable("VideoShareLinks", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoUploadSession", b =>
@@ -6961,6 +7212,91 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Passes.MatchPass", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Passes.MatchPassPrice", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Passes.MatchPassRequest", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Teams.Team", null)
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Performances.PerformanceSuggestion", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Matches.Match", null)
@@ -7436,40 +7772,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("UploadedByCoachId")
                         .OnDelete(DeleteBehavior.Restrict);
-                });
-
-            modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoPurchase", b =>
-                {
-                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
-                        .WithMany()
-                        .HasForeignKey("CoachId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("TercerTiempo.Domain.Videos.MatchVideo", null)
-                        .WithMany()
-                        .HasForeignKey("VideoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoShareLink", b =>
-                {
-                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
-                        .WithMany()
-                        .HasForeignKey("CreatedByClubId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
-                        .WithMany()
-                        .HasForeignKey("CreatedByCoachId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("TercerTiempo.Domain.Videos.MatchVideo", null)
-                        .WithMany()
-                        .HasForeignKey("VideoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoUploadSession", b =>

@@ -3,12 +3,6 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Videos;
 
-public enum VideoVisibility
-{
-    Private = 1,
-    Public = 2,
-}
-
 public enum VideoPart
 {
     Full = 1,
@@ -27,29 +21,22 @@ public sealed class MatchVideo : AggregateRoot
     public Guid? UploadedByCoachId { get; private set; }
     public Guid? UploadedByClubId { get; private set; }
     public VideoPart Part { get; private set; }
-    public VideoVisibility Visibility { get; private set; } = VideoVisibility.Private;
     public string Title { get; private set; } = string.Empty;
     public string FileName { get; private set; } = string.Empty;
     public string ContentType { get; private set; } = string.Empty;
     public long SizeBytes { get; private set; }
 
     public string StorageKey { get; private set; } = string.Empty;
-
-    public int PriceCents { get; private set; }
-
-    public string Currency { get; private set; } = "EUR";
     public DateTimeOffset UploadedAt { get; private set; }
     public DateTimeOffset? DeletedAt { get; private set; }
 
     public bool IsDeleted => DeletedAt is not null;
-    public bool IsFree => PriceCents == 0;
-    public bool IsPublic => Visibility == VideoVisibility.Public;
 
     private MatchVideo() { }
 
     public static MatchVideo Upload(
         Guid squadId, Guid teamId, Guid matchId, Guid seasonId, Guid? coachId, VideoPart part,
-        string? title, string fileName, string contentType, long sizeBytes, string storageKey, int priceCents, DateTimeOffset now, Guid? clubId = null)
+        string? title, string fileName, string contentType, long sizeBytes, string storageKey, DateTimeOffset now, Guid? clubId = null)
     {
         VideoOwner.EnsureValid(coachId, clubId);
         if (sizeBytes < MinSizeBytes)
@@ -75,18 +62,8 @@ public sealed class MatchVideo : AggregateRoot
             ContentType = Guard.NotEmpty(contentType, "tipo de contenido", 100),
             SizeBytes = sizeBytes,
             StorageKey = Guard.NotEmpty(storageKey, nameof(storageKey), 500),
-            PriceCents = Guard.NotNegative(priceCents, "precio"),
             UploadedAt = now,
         };
-    }
-
-    public void SetPrice(int priceCents) => PriceCents = Guard.NotNegative(priceCents, "precio");
-
-    public void SetVisibility(VideoVisibility visibility)
-    {
-        if (!Enum.IsDefined(visibility))
-            throw new DomainException(ErrorCode.VideoVisibilityInvalid);
-        Visibility = visibility;
     }
 
     public void Delete(DateTimeOffset now)
@@ -111,33 +88,8 @@ public sealed class MatchVideo : AggregateRoot
     }
 }
 
-public sealed class VideoPurchase : AggregateRoot
-{
-    public Guid VideoId { get; private set; }
-    public Guid CoachId { get; private set; }
-    public int AmountCents { get; private set; }
-    public string Currency { get; private set; } = "EUR";
-
-    public string PaymentReference { get; private set; } = string.Empty;
-
-    public DateTimeOffset PurchasedAt { get; private set; }
-
-    private VideoPurchase() { }
-
-    public static VideoPurchase Create(Guid videoId, Guid coachId, int amountCents, string currency, string paymentReference, DateTimeOffset now) =>
-        new()
-        {
-            Id = NewId(),
-            VideoId = Guard.NotEmpty(videoId, nameof(videoId)),
-            CoachId = Guard.NotEmpty(coachId, nameof(coachId)),
-            AmountCents = Guard.NotNegative(amountCents, "importe"),
-            Currency = Guard.NotEmpty(currency, "moneda", 3),
-            PaymentReference = Guard.NotEmpty(paymentReference, "referencia de pago", 200),
-            PurchasedAt = now,
-        };
-}
-
-// Subida por trozos: el archivo se recibe en orden y se guarda en un temporal hasta completarlo.
+// Subida por trozos: el archivo se recibe en orden y se guarda en un temporal hasta completarlo. Cada trozo recibido
+// renueva la caducidad, así un partido entero con una conexión lenta no caduca mientras sigue subiendo.
 public sealed class VideoUploadSession : AggregateRoot
 {
     public Guid SquadId { get; private set; }
@@ -157,7 +109,7 @@ public sealed class VideoUploadSession : AggregateRoot
     public DateTimeOffset ExpiresAt { get; private set; }
 
     public bool IsComplete => ReceivedBytes == SizeBytes;
-    public int NextChunk => (int)(ReceivedBytes / ChunkSize);
+    public int NextChunk => IsComplete ? TotalChunks : (int)(ReceivedBytes / ChunkSize);
     public int TotalChunks => (int)((SizeBytes + ChunkSize - 1) / ChunkSize);
 
     private VideoUploadSession() { }
@@ -208,10 +160,11 @@ public sealed class VideoUploadSession : AggregateRoot
             throw new DomainException(ErrorCode.VideoUploadChunkSize, expected);
     }
 
-    public void Received(long length, DateTimeOffset now)
+    public void Received(long length, DateTimeOffset now, TimeSpan lifetime)
     {
         ReceivedBytes += length;
         UpdatedAt = now;
+        ExpiresAt = now + lifetime;
     }
 
     public void EnsureComplete()
@@ -221,59 +174,13 @@ public sealed class VideoUploadSession : AggregateRoot
     }
 }
 
-// Enlace público al visor con caducidad: lo genera el cuerpo técnico y lo puede revocar.
-public sealed class VideoShareLink : AggregateRoot
-{
-    public Guid VideoId { get; private set; }
-    public Guid? CreatedByCoachId { get; private set; }
-    public Guid? CreatedByClubId { get; private set; }
-    public string Token { get; private set; } = string.Empty;
-    public DateTimeOffset CreatedAt { get; private set; }
-    public DateTimeOffset ExpiresAt { get; private set; }
-    public DateTimeOffset? RevokedAt { get; private set; }
-
-    private VideoShareLink() { }
-
-    public static VideoShareLink Create(Guid videoId, Guid? coachId, string token, DateTimeOffset now, TimeSpan lifetime, Guid? clubId = null)
-    {
-        VideoOwner.EnsureValid(coachId, clubId);
-        return new()
-        {
-            Id = NewId(),
-            VideoId = Guard.NotEmpty(videoId, nameof(videoId)),
-            CreatedByCoachId = coachId,
-            CreatedByClubId = clubId,
-            Token = Guard.NotEmpty(token, "token", 100),
-            CreatedAt = now,
-            ExpiresAt = now + lifetime,
-        };
-    }
-
-    public bool IsValid(DateTimeOffset now) => RevokedAt is null && now <= ExpiresAt;
-
-    public void Revoke(DateTimeOffset now) => RevokedAt ??= now;
-}
-
-public interface IVideoShareStore
-{
-    Task<VideoShareLink?> GetByTokenAsync(string token, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<VideoShareLink>> GetByVideoAsync(Guid videoId, CancellationToken cancellationToken = default);
-    void Add(VideoShareLink link);
-}
-
 public interface IMatchVideoStore
 {
     Task<MatchVideo?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<MatchVideo>> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MatchVideo>> GetBySquadsAsync(IEnumerable<Guid> squadIds, CancellationToken cancellationToken = default);
     void Add(MatchVideo video);
-}
-
-public interface IVideoPurchaseStore
-{
-    Task<VideoPurchase?> GetAsync(Guid videoId, Guid coachId, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<VideoPurchase>> GetByCoachAsync(Guid coachId, CancellationToken cancellationToken = default);
-    void Add(VideoPurchase purchase);
 }
 
 public interface IVideoUploadStore

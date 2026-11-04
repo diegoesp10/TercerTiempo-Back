@@ -50,7 +50,10 @@ public class ClubInvitationBindingTests
         Assert.Equal("Caudal Deportivo", lookup.ClubName);
 
         var other = await Assert.ThrowsAsync<ValidationException>(() => Register(invitation.Code, "Barcia CF"));
-        Assert.Equal(ErrorCode.AuthClubInviteOtherClub, Assert.Single(other.Errors).ErrorCode);
+        var failure = Assert.Single(other.Errors);
+        Assert.Equal(ErrorCode.AuthClubInviteOtherClub, failure.ErrorCode);
+        // La API rehace el mensaje desde el catálogo con estos argumentos: sin ellos saldría «{0}» en vez del club.
+        Assert.Equal(new object[] { "Caudal Deportivo" }, failure.CustomState);
         Assert.Empty(_clubs);
 
         await Register(invitation.Code, "Caudal Deportivo");

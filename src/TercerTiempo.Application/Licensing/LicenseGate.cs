@@ -1,9 +1,11 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Passes;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Licensing;
+using TercerTiempo.Domain.Passes;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Videos;
@@ -15,7 +17,7 @@ internal sealed class LicenseGate(
     IClubStore clubs,
     ISquadStore squads,
     IMatchVideoStore videos,
-    IVideoShareStore shares,
+    IMatchPassStore passes,
     IPlayerStore players,
     IUnitOfWork unitOfWork,
     ILicensingCatalog catalog,
@@ -109,9 +111,9 @@ internal sealed class LicenseGate(
     {
         var video = await videos.GetByIdAsync(videoId, cancellationToken);
         if (video is null) return;
-        // Un vídeo público lo ve cualquiera que llegue al partido, con o sin cuenta (como un enlace compartido): basta la
+        // Quien tiene un pase del partido no necesita licencia propia: la ha pagado (o se la ha dado el club). Basta la
         // licencia del equipo que lo subió.
-        if (video.IsPublic && !user.IsAdmin)
+        if (!user.IsAdmin && (await PassAccess.ForAsync(user, video.SquadId, video.MatchId, passes, cancellationToken)).Video)
         {
             if (await StatusForTeamAsync(video.TeamId, cancellationToken) == LicenseStatus.Expired)
                 throw new ForbiddenException(ErrorCode.LicenseRequired);
@@ -120,16 +122,6 @@ internal sealed class LicenseGate(
         var squad = await squads.GetByIdAsync(video.SquadId, cancellationToken);
         if (squad is null) return;
         await EnsureAsync(squad, user, cancellationToken);
-    }
-
-    public async Task EnsureSharedVideoAccessAsync(string token, CancellationToken cancellationToken)
-    {
-        var link = await shares.GetByTokenAsync(token, cancellationToken);
-        if (link is null) return;
-        var video = await videos.GetByIdAsync(link.VideoId, cancellationToken);
-        if (video is null) return;
-        if (await StatusForTeamAsync(video.TeamId, cancellationToken) == LicenseStatus.Expired)
-            throw new ForbiddenException(ErrorCode.LicenseRequired);
     }
 
     public async Task EnsureTeamLicensedAsync(Guid teamId, CancellationToken cancellationToken)

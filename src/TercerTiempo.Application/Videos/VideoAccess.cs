@@ -1,50 +1,37 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Passes;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Application.Videos;
 
+// Un vídeo nunca es público: lo ven el club, el cuerpo técnico y los jugadores de la plantilla, el administrador y quien
+// tenga un pase del partido que lo incluya.
 internal static class VideoAccess
 {
-    public static VideoAccessLevel LevelFor(MatchVideo video, Squad? ownerSquad, ICurrentUser user, bool purchased, TimeProvider clock, bool clubOwner = false)
+    public static VideoAccessLevel LevelFor(MatchVideo video, Squad? ownerSquad, ICurrentUser user, MatchInsight pass, TimeProvider clock, bool clubOwner = false)
     {
         if (video.IsDeleted)
             return VideoAccessLevel.None;
 
-        // El administrador los ve todos, sin comprarlos ni poder gestionarlos (canDelete va aparte).
         if (user.IsAdmin)
             return VideoAccessLevel.Admin;
 
         if (ownerSquad is not null && (clubOwner || SquadAccess.IsStaff(ownerSquad, user, clock) || SquadAccess.IsMember(ownerSquad, user)))
             return VideoAccessLevel.Owner;
 
-        // Un vídeo público lo ve cualquiera que llegue al partido, sin cuenta ni pago.
-        if (video.IsPublic || video.IsFree)
-            return VideoAccessLevel.Free;
+        if (pass.Video)
+            return VideoAccessLevel.Pass;
 
-        if (!user.IsAuthenticated)
-            return VideoAccessLevel.None;
-
-        if (purchased)
-            return VideoAccessLevel.Purchased;
-
-        return user.CoachId is not null ? VideoAccessLevel.Locked : VideoAccessLevel.None;
+        // De una plantilla pública se puede pedir el acceso; de una privada ni siquiera se enseña que haya vídeo.
+        return ownerSquad?.Visibility == SquadVisibility.Public ? VideoAccessLevel.Locked : VideoAccessLevel.None;
     }
 
-    public static async Task<bool> PurchasedAsync(MatchVideo video, Guid? coachId, IMatchVideoStore videos, IVideoPurchaseStore purchases, CancellationToken cancellationToken)
-    {
-        if (coachId is not { } id) return false;
-
-        var siblings = (await videos.GetByMatchAsync(video.MatchId, cancellationToken))
-            .Where(v => v.SquadId == video.SquadId)
-            .Select(v => v.Id)
-            .ToHashSet();
-        siblings.Add(video.Id);
-
-        return (await purchases.GetByCoachAsync(id, cancellationToken)).Any(p => siblings.Contains(p.VideoId));
-    }
+    // Descargar el archivo: quien lo gestiona (club y cuerpo técnico vigente) y quien tenga un pase con descarga.
+    public static bool CanDownload(VideoAccessLevel level, bool manager, MatchInsight pass) =>
+        (level == VideoAccessLevel.Owner && manager) || (level == VideoAccessLevel.Pass && pass.Download);
 
     public static bool CanWatch(VideoAccessLevel level) =>
-        level is VideoAccessLevel.Owner or VideoAccessLevel.Purchased or VideoAccessLevel.Free or VideoAccessLevel.Admin;
+        level is VideoAccessLevel.Owner or VideoAccessLevel.Pass or VideoAccessLevel.Admin;
 }

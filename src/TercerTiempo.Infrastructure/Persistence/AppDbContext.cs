@@ -57,9 +57,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<TercerTiempo.Domain.Competitions.SeasonYear> SeasonYears => Set<TercerTiempo.Domain.Competitions.SeasonYear>();
     public DbSet<TercerTiempo.Domain.Competitions.FootballSyncSettings> FootballSyncSettings => Set<TercerTiempo.Domain.Competitions.FootballSyncSettings>();
     public DbSet<LicensePayment> LicensePayments => Set<LicensePayment>();
-    public DbSet<VideoPurchase> VideoPurchases => Set<VideoPurchase>();
     public DbSet<VideoUploadSession> VideoUploads => Set<VideoUploadSession>();
-    public DbSet<VideoShareLink> VideoShareLinks => Set<VideoShareLink>();
+    public DbSet<Domain.Passes.MatchPass> MatchPasses => Set<Domain.Passes.MatchPass>();
+    public DbSet<Domain.Passes.MatchPassRequest> MatchPassRequests => Set<Domain.Passes.MatchPassRequest>();
+    public DbSet<Domain.Passes.MatchPassPrice> MatchPassPrices => Set<Domain.Passes.MatchPassPrice>();
+    public DbSet<Domain.Passes.PassSale> PassSales => Set<Domain.Passes.PassSale>();
     public DbSet<ErrorMessage> ErrorMessages => Set<ErrorMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -89,6 +91,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is SquadPlayer))
         {
             throw new ConflictException(ErrorCode.PlayerInviteChanged);
+        }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is Domain.Passes.MatchPass))
+        {
+            throw new ConflictException(ErrorCode.PassAlreadyRedeemed);
         }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 }
             && ex.Entries.Any(e => e.Entity is SquadPlayer { PlayerId: not null }))

@@ -8,30 +8,25 @@ public class VideoTests
 {
     private static MatchVideo Video(VideoPart part = VideoPart.Full) => MatchVideo.Upload(
         Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), part,
-        "Partido", "partido.mp4", "video/mp4", 2048, "file.mp4", 500, TestData.Now);
+        "Partido", "partido.mp4", "video/mp4", 2048, "file.mp4", TestData.Now);
 
     [Fact]
-    public void Club_can_be_the_uploader_and_share_link_creator()
+    public void Club_can_be_the_uploader()
     {
         var clubId = Guid.NewGuid();
         var video = MatchVideo.Upload(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), null, VideoPart.Full,
-            null, "partido.mp4", "video/mp4", 2048, "file.mp4", 500, TestData.Now, clubId);
+            null, "partido.mp4", "video/mp4", 2048, "file.mp4", TestData.Now, clubId);
         Assert.Null(video.UploadedByCoachId);
         Assert.Equal(clubId, video.UploadedByClubId);
-        var link = VideoShareLink.Create(video.Id, null, new string('a', 48), TestData.Now, TimeSpan.FromDays(1), clubId);
-        Assert.Equal(clubId, link.CreatedByClubId);
-        Assert.Null(link.CreatedByCoachId);
-        Assert.True(link.IsValid(TestData.Now.AddHours(23)));
-        Assert.False(link.IsValid(TestData.Now.AddDays(1).AddSeconds(1)));
-        link.Revoke(TestData.Now.AddHours(1));
-        Assert.False(link.IsValid(TestData.Now.AddHours(2)));
     }
 
     [Fact]
     public void Video_requires_exactly_one_responsible_account()
     {
-        Assert.Throws<DomainException>(() => VideoShareLink.Create(Guid.NewGuid(), null, "token", TestData.Now, TimeSpan.FromDays(1)));
-        Assert.Throws<DomainException>(() => VideoShareLink.Create(Guid.NewGuid(), Guid.NewGuid(), "token", TestData.Now, TimeSpan.FromDays(1), Guid.NewGuid()));
+        Assert.Throws<DomainException>(() => MatchVideo.Upload(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), null,
+            VideoPart.Full, null, "partido.mp4", "video/mp4", 2048, "file.mp4", TestData.Now));
+        Assert.Throws<DomainException>(() => MatchVideo.Upload(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            VideoPart.Full, null, "partido.mp4", "video/mp4", 2048, "file.mp4", TestData.Now, Guid.NewGuid()));
     }
 
     [Fact]
@@ -55,12 +50,50 @@ public class VideoTests
         Assert.Throws<DomainException>(() => session.EnsureAccepts(1, chunkSize, TestData.Now));
         Assert.Throws<DomainException>(() => session.EnsureAccepts(0, 1, TestData.Now));
         session.EnsureAccepts(0, chunkSize, TestData.Now);
-        session.Received(chunkSize, TestData.Now);
+        session.Received(chunkSize, TestData.Now, TimeSpan.FromDays(1));
         Assert.Throws<DomainException>(session.EnsureComplete);
         session.EnsureAccepts(1, 1024, TestData.Now);
-        session.Received(1024, TestData.Now);
+        session.Received(1024, TestData.Now, TimeSpan.FromDays(1));
         session.EnsureComplete();
         Assert.True(session.IsComplete);
         Assert.Throws<DomainException>(() => session.EnsureAccepts(session.NextChunk, 1024, TestData.Now.AddDays(2)));
+    }
+
+    [Fact]
+    public void Upload_session_stays_alive_while_chunks_keep_arriving()
+    {
+        const int chunkSize = 1024 * 1024;
+        var lifetime = TimeSpan.FromHours(24);
+        var session = VideoUploadSession.Begin(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), VideoPart.Full,
+            null, "partido.mp4", "video/mp4", chunkSize * 3L, chunkSize, "uploads/test.part", TestData.Now, lifetime);
+
+        // Una subida lenta de un partido entero puede durar más que la caducidad inicial: cada trozo la renueva.
+        for (var i = 0; i < 3; i++)
+        {
+            var at = TestData.Now.AddHours(20 * (i + 1));
+            session.EnsureAccepts(i, chunkSize, at);
+            session.Received(chunkSize, at, lifetime);
+        }
+
+        Assert.True(session.IsComplete);
+        Assert.Equal(TestData.Now.AddHours(60) + lifetime, session.ExpiresAt);
+    }
+
+    [Fact]
+    public void Finished_upload_reports_no_chunk_left_even_with_a_short_last_chunk()
+    {
+        const int chunkSize = 1024 * 1024;
+        const long size = chunkSize * 2L + 12345;
+        var session = VideoUploadSession.Begin(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), VideoPart.Full,
+            null, "partido.mp4", "video/mp4", size, chunkSize, "uploads/test.part", TestData.Now, TimeSpan.FromHours(24));
+
+        session.Received(chunkSize, TestData.Now, TimeSpan.FromHours(24));
+        session.Received(chunkSize, TestData.Now, TimeSpan.FromHours(24));
+        Assert.Equal(2, session.NextChunk);
+
+        session.Received(12345, TestData.Now, TimeSpan.FromHours(24));
+        Assert.True(session.IsComplete);
+        Assert.Equal(session.TotalChunks, session.NextChunk);
+        Assert.Throws<DomainException>(() => session.EnsureAccepts(2, 0, TestData.Now));
     }
 }

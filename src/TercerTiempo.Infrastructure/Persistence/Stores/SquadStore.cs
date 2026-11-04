@@ -38,5 +38,13 @@ internal sealed class SquadStore(AppDbContext db) : ISquadStore
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Squad>> GetByTeamIdsAsync(IEnumerable<Guid> teamIds, CancellationToken cancellationToken = default)
+    {
+        var list = teamIds.Distinct().ToList();
+        if (list.Count == 0) return [];
+
+        return await db.Squads.Where(s => list.Contains(s.TeamId)).ToListAsync(cancellationToken);
+    }
+
     public void Add(Squad squad) => db.Squads.Add(squad);
 }

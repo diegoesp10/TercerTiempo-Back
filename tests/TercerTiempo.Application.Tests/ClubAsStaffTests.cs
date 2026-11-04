@@ -4,6 +4,7 @@ using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Clubs.ManageTeams;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Passes;
 using TercerTiempo.Application.Squads.MatchSheet;
 using TercerTiempo.Application.Videos;
 using TercerTiempo.Domain.Clubs;
@@ -116,10 +117,11 @@ public class ClubAsStaffTests
         Assert.False(await SquadAccess.IsManagerAsync(f.Squad, admin, TimeProvider.System, noClubs, default));
 
         var video = MatchVideo.Upload(f.Squad.Id, f.Team.Id, f.Played.Id, f.Squad.SeasonId, null, VideoPart.Full, null, "partido.mp4", "video/mp4",
-            50_000_000, "clave", 500, Now, f.Club.Id);
-        var level = VideoAccess.LevelFor(video, f.Squad, admin, purchased: false, TimeProvider.System);
+            50_000_000, "clave", Now, f.Club.Id);
+        var level = VideoAccess.LevelFor(video, f.Squad, admin, MatchInsight.None, TimeProvider.System);
         Assert.Equal(VideoAccessLevel.Admin, level);
         Assert.True(VideoAccess.CanWatch(level));
+        Assert.False(VideoAccess.CanDownload(level, manager: false, MatchInsight.None));
 
         var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
             f.Record(admin).Handle(new(f.Squad.Id, f.Played.Id, [Line(f.Squad.ActivePlayers.Single().Id)]), default));

@@ -12,6 +12,10 @@ public sealed class Club : AggregateRoot
     public string NormalizedName { get; private set; } = string.Empty;
     public DateTimeOffset RegisteredAt { get; private set; }
 
+    // Precios generales de los pases de sus partidos (acta interna y vídeo); cada partido puede tener el suyo.
+    public int SheetPassPriceCents { get; private set; }
+    public int VideoPassPriceCents { get; private set; }
+
     public IReadOnlyCollection<ClubTeam> Teams => _teams.AsReadOnly();
 
     private Club() { }
@@ -35,6 +39,12 @@ public sealed class Club : AggregateRoot
         var trimmed = Guard.NotEmpty(name, "nombre", 120);
         Name = trimmed;
         NormalizedName = NameNormalizer.Normalize(trimmed);
+    }
+
+    public void SetPassPrices(int sheetPriceCents, int videoPriceCents)
+    {
+        SheetPassPriceCents = Guard.InRange(sheetPriceCents, 0, Passes.MatchPass.MaxPriceCents, "precio del acta");
+        VideoPassPriceCents = Guard.InRange(videoPriceCents, 0, Passes.MatchPass.MaxPriceCents, "precio del vídeo");
     }
 
     public bool Manages(Guid teamId) => _teams.Any(t => t.TeamId == teamId);

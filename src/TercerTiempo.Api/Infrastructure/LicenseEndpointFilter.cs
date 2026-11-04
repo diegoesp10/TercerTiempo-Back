@@ -7,7 +7,6 @@ internal enum LicenseScope
 {
     Squad,
     Video,
-    SharedVideo,
     Player,
 
     // Rutas del club sobre uno de sus equipos (/teams/{teamId}/...): fichas, fotos y escudo.
@@ -31,14 +30,11 @@ internal sealed class LicenseEndpointFilter(LicenseScope scope) : IEndpointFilte
             case LicenseScope.Squad when http.Request.RouteValues.TryGetValue("squadId", out var squad) && Guid.TryParse(squad?.ToString(), out var squadId):
                 await gate.EnsureSquadAccessAsync(squadId, user, ct);
                 break;
-            // El reproductor no puede mandar el JWT: el stream va con el ticket, que solo se emite tras comprobar el acceso
-            // (también la licencia) en POST /ticket. Pedirle aquí la sesión lo rechazaba siempre.
+            // El reproductor y la descarga no pueden mandar el JWT: van con un ticket, que solo se emite tras comprobar el
+            // acceso (también la licencia) en POST /ticket o /download-ticket. Pedirles aquí la sesión los rechazaba siempre.
             case LicenseScope.Video when http.Request.RouteValues.TryGetValue("videoId", out var video) && Guid.TryParse(video?.ToString(), out var videoId)
-                && !(HttpMethods.IsGet(http.Request.Method) && http.Request.Path.Value?.EndsWith("/stream", StringComparison.Ordinal) == true):
+                && !(HttpMethods.IsGet(http.Request.Method) && IsTicketRoute(http.Request.Path.Value)):
                 await gate.EnsureVideoAccessAsync(videoId, user, ct);
-                break;
-            case LicenseScope.SharedVideo when http.Request.RouteValues.TryGetValue("token", out var token) && token is string t:
-                await gate.EnsureSharedVideoAccessAsync(t, ct);
                 break;
             case LicenseScope.Team when http.Request.RouteValues.TryGetValue("teamId", out var team) && Guid.TryParse(team?.ToString(), out var teamId):
                 await gate.EnsureTeamLicensedAsync(teamId, ct);
@@ -50,6 +46,9 @@ internal sealed class LicenseEndpointFilter(LicenseScope scope) : IEndpointFilte
 
         return await next(context);
     }
+
+    private static bool IsTicketRoute(string? path) =>
+        path is not null && (path.EndsWith("/stream", StringComparison.Ordinal) || path.EndsWith("/download", StringComparison.Ordinal));
 }
 
 internal static class LicenseFilterExtensions

@@ -97,6 +97,19 @@ internal sealed class FileSystemVideoStorage(IOptions<VideoOptions> options) : I
         return Task.CompletedTask;
     }
 
+    public Task<long?> AvailableBytesAsync(CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Root);
+        try
+        {
+            return Task.FromResult<long?>(new DriveInfo(Root).AvailableFreeSpace);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            return Task.FromResult<long?>(null);
+        }
+    }
+
     private string ResolveUpload(string uploadKey)
     {
         var uploads = Path.Combine(Root, "uploads");
@@ -129,14 +142,22 @@ internal sealed class FakePaymentGateway(ILogger<FakePaymentGateway> logger) : I
     }
 }
 
+// Caducidad deslizante: cada petición por rangos del reproductor renueva el ticket, así no se corta a mitad de un
+// partido; el tope absoluto evita que un ticket filtrado sirva para siempre.
 internal sealed class MemoryVideoTickets(IMemoryCache cache, IOptions<VideoOptions> options, TimeProvider clock) : IVideoTickets
 {
-    public (string Ticket, DateTimeOffset ExpiresAt) Issue(Guid videoId, Guid userId, bool requiresPublicVideo = false)
+    public (string Ticket, DateTimeOffset ExpiresAt) Issue(Guid videoId, Guid userId, bool download = false)
     {
         var ticket = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
-        var expiresAt = clock.GetUtcNow().AddMinutes(options.Value.TicketMinutes);
+        var settings = options.Value;
+        var now = clock.GetUtcNow();
+        var expiresAt = now.AddHours(settings.TicketMaxHours);
 
-        cache.Set(Key(ticket), new VideoPlaybackGrant(videoId, requiresPublicVideo), expiresAt);
+        cache.Set(Key(ticket), new VideoPlaybackGrant(videoId, download), new MemoryCacheEntryOptions
+        {
+            SlidingExpiration = TimeSpan.FromMinutes(settings.TicketMinutes),
+            AbsoluteExpiration = expiresAt,
+        });
         return (ticket, expiresAt);
     }
 

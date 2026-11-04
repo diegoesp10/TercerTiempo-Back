@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Videos;
+using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Videos;
 using TercerTiempo.Infrastructure.Videos;
 
@@ -12,21 +13,26 @@ namespace TercerTiempo.Application.Tests;
 public class VideoTicketTests
 {
     [Fact]
-    public async Task Public_ticket_stops_working_when_the_video_becomes_private()
+    public async Task Playback_ticket_does_not_download_but_a_download_ticket_does()
     {
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var tickets = new MemoryVideoTickets(cache, Options.Create(new VideoOptions()), TimeProvider.System);
         var video = MatchVideo.Upload(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            VideoPart.Full, null, "video.webm", "video/webm", 2048, "video.webm", 500, DateTimeOffset.UtcNow);
-        video.SetVisibility(VideoVisibility.Public);
-        var ticket = tickets.Issue(video.Id, Guid.Empty, requiresPublicVideo: true).Ticket;
+            VideoPart.Full, null, "video.webm", "video/webm", 2048, "video.webm", DateTimeOffset.UtcNow);
         var videos = Proxy<IMatchVideoStore>((_, _) => Task.FromResult<MatchVideo?>(video));
         var storage = Proxy<IVideoStorage>((_, _) => Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
         var handler = new OpenVideoStreamHandler(tickets, videos, storage);
-        var stream = await handler.Handle(new(video.Id, ticket), default);
+
+        var playback = tickets.Issue(video.Id, Guid.NewGuid()).Ticket;
+        var stream = await handler.Handle(new(video.Id, playback), default);
         await stream.Content.DisposeAsync();
-        video.SetVisibility(VideoVisibility.Private);
-        await Assert.ThrowsAsync<ForbiddenException>(() => handler.Handle(new(video.Id, ticket), default));
+        var denied = await Assert.ThrowsAsync<ForbiddenException>(() => handler.Handle(new(video.Id, playback, Download: true), default));
+        Assert.Equal(ErrorCode.VideoDownloadDenied, denied.Code);
+
+        var download = tickets.Issue(video.Id, Guid.NewGuid(), download: true).Ticket;
+        var file = await handler.Handle(new(video.Id, download, Download: true), default);
+        Assert.Equal("video.webm", file.FileName);
+        await file.Content.DisposeAsync();
     }
 
     [Fact]

@@ -38,7 +38,7 @@ public sealed record BeginVideoUploadCommand(
     VideoPart Part,
     string? Title,
     string FileName,
-    [property: Description("video/mp4 o video/webm.")]
+    [property: Description("video/mp4 o video/webm; un partido entero a 1080p (unos 6 GB) cabe de sobra en Videos:MaxSizeMb.")]
     string ContentType,
     long SizeBytes) : ICommand<VideoUploadDto>;
 
@@ -156,6 +156,12 @@ internal sealed class BeginVideoUploadHandler(
         await VideoUploads.PurgeExpiredAsync(uploader.CoachId, uploader.ClubId, uploads, storage, clock, cancellationToken);
 
         var settings = options.Value;
+
+        // El archivo entero tiene que caber, con margen, antes de empezar: mejor avisar ahora que a mitad de 6 GB.
+        if (await storage.AvailableBytesAsync(cancellationToken) is { } free
+            && free < command.SizeBytes + (long)settings.MinFreeSpaceMb * 1024 * 1024)
+            throw new ConflictException(ErrorCode.VideoStorageFull, $"{command.SizeBytes / (1024d * 1024 * 1024):0.#} GB");
+
         var storageKey = await storage.BeginUploadAsync(command.FileName, cancellationToken);
         var session = VideoUploadSession.Begin(
             squad.Id, match.Id, uploader.CoachId, command.Part, command.Title, command.FileName, command.ContentType.ToLowerInvariant(),
@@ -181,6 +187,7 @@ internal sealed class AppendVideoChunkHandler(
     ISquadStore squads,
     IClubStore clubs,
     IVideoStorage storage,
+    IOptions<VideoOptions> options,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<AppendVideoChunkCommand, VideoUploadDto>
 {
@@ -194,7 +201,7 @@ internal sealed class AppendVideoChunkHandler(
         if (written != command.Length)
             throw new DomainException(ErrorCode.VideoUploadChunkSize, command.Length);
 
-        session.Received(written, now);
+        session.Received(written, now, TimeSpan.FromHours(options.Value.UploadExpiryHours));
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return VideoUploads.ToDto(session);
@@ -211,7 +218,6 @@ internal sealed class CompleteVideoUploadHandler(
     IMatchVideoStore videos,
     IVideoUploadStore uploads,
     IVideoStorage storage,
-    IOptions<VideoOptions> options,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<CompleteVideoUploadCommand, MatchVideoDto>
 {
@@ -230,14 +236,14 @@ internal sealed class CompleteVideoUploadHandler(
         var video = MatchVideo.Upload(
             squad.Id, squad.TeamId, match.Id, match.SeasonId, uploader.CoachId, session.Part,
             session.Title, session.FileName, session.ContentType, session.SizeBytes, storageKey,
-            options.Value.DefaultPriceCents, clock.GetUtcNow(), uploader.ClubId);
+            clock.GetUtcNow(), uploader.ClubId);
 
         videos.Add(video);
         uploads.Remove(session);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
-        return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDelete: true);
+        return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDownload: true, canDelete: true);
     }
 }
 

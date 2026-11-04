@@ -26,7 +26,7 @@ internal static class SquadEndpoints
             .AllowAnonymous()
             .WithName("GetSquad")
             .WithSummary("Detalle de una plantilla")
-            .WithDescription("Staff y jugadores. Visible para su club, cuerpo técnico, jugadores vinculados y, si es pública, para cualquiera. Los códigos personales solo se devuelven al club y al cuerpo técnico vigente.")
+            .WithDescription("Staff y jugadores. Solo para su club, su cuerpo técnico, sus jugadores vinculados y el administrador (aunque sea pública). Los códigos personales solo se devuelven al club y al cuerpo técnico vigente.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
@@ -60,7 +60,7 @@ internal static class SquadEndpoints
         group.MapPut("/{squadId:guid}/visibility", (Guid squadId, SquadVisibilityRequest request, ISquadsRepository squads, CancellationToken ct) => squads.SetVisibilityAsync(squadId, request, ct))
             .WithName("SetSquadVisibility")
             .WithSummary("Cambiar la visibilidad de la plantilla")
-            .WithDescription("Private: solo cuerpo técnico y jugadores vinculados ven actas y estadísticas. Public: cualquiera.")
+            .WithDescription("Lo interno (actas internas, estadísticas y vídeos) solo lo ven el club, el cuerpo técnico y los jugadores vinculados. Private: nadie más puede pedirlo. Public: cualquier cuenta puede solicitar al club el acceso a un partido; nada se ve hasta que el club aprueba y la persona canjea su pase.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
@@ -129,7 +129,7 @@ internal static class SquadEndpoints
             .DisableAntiforgery()
             .WithName("UploadMatchVideo")
             .WithSummary("Subir el vídeo de un partido de una sola vez")
-            .WithDescription("Solo el cuerpo técnico. multipart/form-data con el campo file (mp4 o webm hasta Videos:MaxSizeMb), part (Full, FirstHalf o SecondHalf; Full por defecto) y title opcional. Para archivos grandes usa la subida por trozos (…/video/uploads). La plantilla que lo sube lo ve gratis; los técnicos de otras plantillas compran el acceso al partido (todas sus partes) al precio por defecto (Videos:DefaultPriceCents).")
+            .WithDescription("Club propietario o cuerpo técnico vigente. multipart/form-data con el campo file (mp4 o webm hasta Videos:MaxSizeMb), part (Full, FirstHalf o SecondHalf; Full por defecto) y title opcional. Para un partido entero usa la subida por trozos (…/video/uploads). Solo lo ve la plantilla y quien tenga un pase del partido con vídeo.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -138,7 +138,7 @@ internal static class SquadEndpoints
         group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video/uploads", (Guid squadId, Guid matchId, BeginVideoUploadRequest request, ISquadsRepository squads, CancellationToken ct) => squads.BeginVideoUploadAsync(squadId, matchId, request, ct))
             .WithName("BeginVideoUpload")
             .WithSummary("Empezar una subida de vídeo por trozos")
-            .WithDescription("Solo el cuerpo técnico. Declara parte, archivo, tipo (mp4 o webm) y tamaño (hasta Videos:MaxSizeMb). Devuelve el id de la subida y el tamaño de trozo (Videos:ChunkSizeMb); los trozos se envían en orden a PUT …/video-uploads/{uploadId}/chunks/{index} y al final se llama a …/complete. La sesión caduca a las Videos:UploadExpiryHours horas.")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Declara parte, archivo, tipo (mp4 o webm) y tamaño (hasta Videos:MaxSizeMb; un partido entero en 1080p ronda los 6 GB). 409 si no queda espacio en el servidor. Devuelve el id de la subida y el tamaño de trozo (Videos:ChunkSizeMb); los trozos se envían en orden a PUT …/video-uploads/{uploadId}/chunks/{index} y al final se llama a …/complete. La sesión caduca si pasan Videos:UploadExpiryHours horas sin recibir ningún trozo.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -184,7 +184,7 @@ internal static class SquadEndpoints
         group.MapGet("/{squadId:guid}/injuries", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.ListInjuriesAsync(squadId, ct))
             .WithName("ListSquadInjuries")
             .WithSummary("Lesiones de la plantilla (abiertas primero)")
-            .WithDescription("Cuerpo técnico y jugadores vinculados; el público no las ve aunque la plantilla sea pública.")
+            .WithDescription("Cuerpo técnico y jugadores vinculados; nadie de fuera las ve, ni con un pase.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 

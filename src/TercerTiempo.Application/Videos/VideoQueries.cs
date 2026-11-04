@@ -2,9 +2,11 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Passes;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.Passes;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Domain.Videos;
@@ -22,7 +24,7 @@ internal sealed class ListMatchVideosHandler(
     ITeamStore teams,
     ICoachStore coaches,
     IMatchVideoStore videos,
-    IVideoPurchaseStore purchases,
+    IMatchPassStore passes,
     TimeProvider clock) : IQueryHandler<ListMatchVideosQuery, IReadOnlyList<MatchVideoDto>>
 {
     public async Task<IReadOnlyList<MatchVideoDto>> Handle(ListMatchVideosQuery query, CancellationToken cancellationToken)
@@ -46,12 +48,7 @@ internal sealed class ListMatchVideosHandler(
         foreach (var uploaderId in list.Where(v => v.UploadedByClubId != null).Select(v => v.UploadedByClubId!.Value).Distinct())
             if (await clubs.GetByIdAsync(uploaderId, cancellationToken) is { } uploader) clubMap[uploaderId] = uploader;
 
-        var purchasedIds = currentUser.CoachId is { } coachId
-            ? (await purchases.GetByCoachAsync(coachId, cancellationToken)).Select(p => p.VideoId).ToHashSet()
-            : [];
-
-        // Comprar cualquier parte de un partido da acceso a las demás partes de esa plantilla.
-        var purchasedSquads = list.Where(v => purchasedIds.Contains(v.Id)).Select(v => v.SquadId).ToHashSet();
+        var insight = await PassAccess.AllAsync(currentUser, passes, cancellationToken);
         var club = currentUser.ClubId is { } clubId ? await clubs.GetByIdAsync(clubId, cancellationToken) : null;
 
         return list
@@ -60,19 +57,23 @@ internal sealed class ListMatchVideosHandler(
             .Select(v =>
             {
                 var ownerSquad = squadMap.GetValueOrDefault(v.SquadId);
-                var level = VideoAccess.LevelFor(v, ownerSquad, currentUser, purchasedSquads.Contains(v.SquadId), clock, club?.Manages(v.TeamId) == true);
-                var canDelete = ownerSquad is not null && (SquadAccess.IsStaff(ownerSquad, currentUser, clock) || club?.Manages(v.TeamId) == true);
+                var pass = insight.GetValueOrDefault((v.SquadId, v.MatchId), MatchInsight.None);
+                var clubOwner = club?.Manages(v.TeamId) == true;
+                var level = VideoAccess.LevelFor(v, ownerSquad, currentUser, pass, clock, clubOwner);
+                var manager = ownerSquad is not null && (SquadAccess.IsStaff(ownerSquad, currentUser, clock) || clubOwner);
 
-                return VideoMapper.ToDto(v,
+                return (Level: level, Dto: VideoMapper.ToDto(v,
                     teamMap.GetValueOrDefault(v.TeamId)?.Name ?? "Equipo",
                     v.UploadedByClubId is { } id ? clubMap.GetValueOrDefault(id)?.Name ?? "Club" : v.UploadedByCoachId is { } coach ? coachMap.GetValueOrDefault(coach)?.DisplayName ?? "Cuerpo técnico" : "Equipo",
-                    level, canDelete);
+                    level, VideoAccess.CanDownload(level, manager, pass), manager));
             })
+            .Where(x => x.Level != VideoAccessLevel.None)
+            .Select(x => x.Dto)
             .ToList();
     }
 }
 
-public sealed record OpenVideoStreamQuery(Guid VideoId, string Ticket) : IQuery<VideoStreamDto>;
+public sealed record OpenVideoStreamQuery(Guid VideoId, string Ticket, bool Download = false) : IQuery<VideoStreamDto>;
 
 internal sealed class OpenVideoStreamHandler(
     IVideoTickets tickets,
@@ -85,10 +86,12 @@ internal sealed class OpenVideoStreamHandler(
             ?? throw new ForbiddenException(ErrorCode.VideoTicketInvalid);
         if (grant.VideoId != query.VideoId) throw new ForbiddenException(ErrorCode.VideoTicketInvalid);
 
+        // El ticket de reproducción no sirve para descargar: la descarga tiene el suyo.
+        if (query.Download && !grant.Download) throw new ForbiddenException(ErrorCode.VideoDownloadDenied);
+
         var video = await videos.GetByIdAsync(grant.VideoId, cancellationToken);
         if (video is null || video.IsDeleted)
             throw new NotFoundException(ErrorCode.VideoNotFound, grant.VideoId);
-        if (grant.RequiresPublicVideo && !video.IsPublic) throw new ForbiddenException(ErrorCode.VideoNotAllowed);
 
         var content = await storage.OpenReadAsync(video.StorageKey, cancellationToken);
         return new VideoStreamDto(content, video.ContentType, video.FileName, video.SizeBytes);

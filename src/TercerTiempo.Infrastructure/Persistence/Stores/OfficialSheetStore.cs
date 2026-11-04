@@ -36,16 +36,12 @@ internal sealed class MatchVideoStore(AppDbContext db) : IMatchVideoStore
     public async Task<IReadOnlyList<MatchVideo>> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default) =>
         await db.MatchVideos.Where(v => v.MatchId == matchId && v.DeletedAt == null).ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<MatchVideo>> GetBySquadsAsync(IEnumerable<Guid> squadIds, CancellationToken cancellationToken = default)
+    {
+        var list = squadIds.Distinct().ToList();
+        if (list.Count == 0) return [];
+        return await db.MatchVideos.Where(v => list.Contains(v.SquadId) && v.DeletedAt == null).ToListAsync(cancellationToken);
+    }
+
     public void Add(MatchVideo video) => db.MatchVideos.Add(video);
-}
-
-internal sealed class VideoPurchaseStore(AppDbContext db) : IVideoPurchaseStore
-{
-    public Task<VideoPurchase?> GetAsync(Guid videoId, Guid coachId, CancellationToken cancellationToken = default) =>
-        db.VideoPurchases.FirstOrDefaultAsync(p => p.VideoId == videoId && p.CoachId == coachId, cancellationToken);
-
-    public async Task<IReadOnlyList<VideoPurchase>> GetByCoachAsync(Guid coachId, CancellationToken cancellationToken = default) =>
-        await db.VideoPurchases.Where(p => p.CoachId == coachId).ToListAsync(cancellationToken);
-
-    public void Add(VideoPurchase purchase) => db.VideoPurchases.Add(purchase);
 }
