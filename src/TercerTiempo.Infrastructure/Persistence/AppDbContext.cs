@@ -66,6 +66,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Domain.Trainings.Exercise> Exercises => Set<Domain.Trainings.Exercise>();
     public DbSet<Domain.Trainings.TrainingSession> TrainingSessions => Set<Domain.Trainings.TrainingSession>();
     public DbSet<Domain.Trainings.MatchCallUp> MatchCallUps => Set<Domain.Trainings.MatchCallUp>();
+    public DbSet<Domain.Trainings.TrialPlayer> TrialPlayers => Set<Domain.Trainings.TrialPlayer>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

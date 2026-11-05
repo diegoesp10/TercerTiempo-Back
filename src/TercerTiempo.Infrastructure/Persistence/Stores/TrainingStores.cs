@@ -45,9 +45,40 @@ internal sealed class TrainingStore(AppDbContext db) : ITrainingStore
             .OrderBy(s => s.StartsAt)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<TrainingSession>> GetByTrialPlayerAsync(Guid trialPlayerId, CancellationToken cancellationToken = default) =>
+        await db.TrainingSessions
+            .Where(s => s.Attendance.Any(a => a.TrialPlayerId == trialPlayerId))
+            .OrderBy(s => s.StartsAt)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyDictionary<Guid, TrialAttendanceCounts>> CountTrialAttendanceAsync(Guid squadId, CancellationToken cancellationToken = default)
+    {
+        var rows = await db.TrainingSessions
+            .Where(s => s.SquadId == squadId)
+            .SelectMany(s => s.Attendance)
+            .Where(a => a.TrialPlayerId != null)
+            .GroupBy(a => a.TrialPlayerId!.Value)
+            .Select(g => new { TrialPlayerId = g.Key, Sessions = g.Count(), Attended = g.Count(a => a.Status == AttendanceStatus.Attended) })
+            .ToListAsync(cancellationToken);
+        return rows.ToDictionary(r => r.TrialPlayerId, r => new TrialAttendanceCounts(r.Sessions, r.Attended));
+    }
+
     public void Add(TrainingSession session) => db.TrainingSessions.Add(session);
 
     public void Remove(TrainingSession session) => db.TrainingSessions.Remove(session);
+}
+
+internal sealed class TrialPlayerStore(AppDbContext db) : ITrialPlayerStore
+{
+    public Task<TrialPlayer?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.TrialPlayers.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<TrialPlayer>> GetBySquadAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        await db.TrialPlayers.Where(t => t.SquadId == squadId).OrderBy(t => t.PromotedAt != null).ThenBy(t => t.FullName).ToListAsync(cancellationToken);
+
+    public void Add(TrialPlayer trialPlayer) => db.TrialPlayers.Add(trialPlayer);
+
+    public void Remove(TrialPlayer trialPlayer) => db.TrialPlayers.Remove(trialPlayer);
 }
 
 internal sealed class CallUpStore(AppDbContext db) : ICallUpStore

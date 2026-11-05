@@ -38,13 +38,12 @@ public enum CallUpStatus
     Published = 2,
 }
 
-// Lo que contesta cada jugador a la convocatoria: el convocado confirma o avisa de que no puede; el que no va, se da
-// por enterado.
+// Lo que hace cada jugador con la convocatoria: el convocado la firma; el que no va, se da por enterado. No hay avisos
+// de «no puedo» para los partidos: la convocatoria es la que emite el cuerpo técnico y lo que cambie se habla con él.
 public enum CallUpResponse
 {
     Pending = 1,
     Confirmed = 2,
-    Declined = 3,
     Acknowledged = 4,
 }
 

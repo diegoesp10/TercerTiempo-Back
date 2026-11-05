@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Trainings;
+using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Trainings;
 
 namespace TercerTiempo.Repository.Trainings;
@@ -36,13 +38,31 @@ public sealed record TrainingRequest(
 public sealed record TrainingItemsRequest(IReadOnlyList<TrainingItemInput> Items);
 
 public sealed record AttendanceRequest(
-    [property: Description("Expected (cuenta con venir), WillMiss (va a faltar), Attended (vino) o Missed (faltó).")]
+    [property: Description("Una línea por jugador (squadPlayerId) o jugador de prueba (trialPlayerId): Expected (cuenta con venir), WillMiss (va a faltar), Attended (vino) o Missed (faltó).")]
     IReadOnlyList<AttendanceInput> Entries);
 
 public sealed record AbsenceRequest(
     [property: Description("true: no va; false: al final sí va.")]
     bool WillMiss,
     string? Reason);
+
+public sealed record TrialPlayerRequest(
+    [property: Description("Nombre y apellidos de quien viene a prueba.")]
+    string FullName,
+    [property: Description("Opcional: de dónde viene, posición, contacto…")]
+    string? Notes);
+
+public sealed record PromoteTrialPlayerRequest(
+    [property: Description("Opcional: Goalkeeper, Defender, Midfielder o Forward.")]
+    Position? Position,
+    [property: Description("Opcional, 1-99.")]
+    int? ShirtNumber);
+
+public sealed record TrainingTrialPlayerRequest(
+    [property: Description("Jugador de prueba ya apuntado en la plantilla; si falta, se crea uno nuevo con fullName (o se reutiliza el que tenga ese nombre).")]
+    Guid? TrialPlayerId,
+    string? FullName,
+    string? Notes);
 
 public sealed record CallUpRequest(
     IReadOnlyList<Guid> CalledSquadPlayerIds,
@@ -54,9 +74,8 @@ public sealed record CallUpRequest(
     bool Publish);
 
 public sealed record CallUpResponseRequest(
-    [property: Description("Confirmed o Declined si vas convocado; Acknowledged si no vas.")]
-    CallUpResponse Response,
-    string? Note);
+    [property: Description("Confirmed (firmo que voy) si vas convocado; Acknowledged (enterado) si no vas.")]
+    CallUpResponse Response);
 
 public interface ITrainingsRepository
 {
@@ -74,6 +93,14 @@ public interface ITrainingsRepository
     Task<TrainingSessionDto> SetTrainingItemsAsync(Guid squadId, Guid sessionId, TrainingItemsRequest request, CancellationToken cancellationToken = default);
     Task<TrainingSessionDto> SetAttendanceAsync(Guid squadId, Guid sessionId, AttendanceRequest request, CancellationToken cancellationToken = default);
     Task<bool> DeleteTrainingAsync(Guid squadId, Guid sessionId, bool series, CancellationToken cancellationToken = default);
+    Task<TrainingSessionDto> AddTrialPlayerToTrainingAsync(Guid squadId, Guid sessionId, TrainingTrialPlayerRequest request, CancellationToken cancellationToken = default);
+    Task<TrainingSessionDto> RemoveTrialPlayerFromTrainingAsync(Guid squadId, Guid sessionId, Guid trialPlayerId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TrialPlayerDto>> ListTrialPlayersAsync(Guid squadId, CancellationToken cancellationToken = default);
+    Task<TrialPlayerDto> CreateTrialPlayerAsync(Guid squadId, TrialPlayerRequest request, CancellationToken cancellationToken = default);
+    Task<TrialPlayerDto> UpdateTrialPlayerAsync(Guid squadId, Guid trialPlayerId, TrialPlayerRequest request, CancellationToken cancellationToken = default);
+    Task<bool> DeleteTrialPlayerAsync(Guid squadId, Guid trialPlayerId, CancellationToken cancellationToken = default);
+    Task<SquadPlayerDto> PromoteTrialPlayerAsync(Guid squadId, Guid trialPlayerId, PromoteTrialPlayerRequest request, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<CallUpSummaryDto>> ListCallUpsAsync(Guid squadId, CancellationToken cancellationToken = default);
     Task<MatchCallUpDto> GetCallUpAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
@@ -98,6 +125,13 @@ internal sealed class TrainingsRepository(
     ICommandHandler<SetTrainingItemsCommand, TrainingSessionDto> setItems,
     ICommandHandler<SetAttendanceCommand, TrainingSessionDto> setAttendance,
     ICommandHandler<DeleteTrainingCommand, bool> deleteTraining,
+    ICommandHandler<AddTrialPlayerToTrainingCommand, TrainingSessionDto> addTrialToTraining,
+    ICommandHandler<RemoveTrialPlayerFromTrainingCommand, TrainingSessionDto> removeTrialFromTraining,
+    IQueryHandler<ListTrialPlayersQuery, IReadOnlyList<TrialPlayerDto>> listTrialPlayers,
+    ICommandHandler<CreateTrialPlayerCommand, TrialPlayerDto> createTrialPlayer,
+    ICommandHandler<UpdateTrialPlayerCommand, TrialPlayerDto> updateTrialPlayer,
+    ICommandHandler<DeleteTrialPlayerCommand, bool> deleteTrialPlayer,
+    ICommandHandler<PromoteTrialPlayerCommand, SquadPlayerDto> promoteTrialPlayer,
     IQueryHandler<ListSquadCallUpsQuery, IReadOnlyList<CallUpSummaryDto>> listCallUps,
     IQueryHandler<GetMatchCallUpQuery, MatchCallUpDto> getCallUp,
     ICommandHandler<SaveMatchCallUpCommand, MatchCallUpDto> saveCallUp,
@@ -142,6 +176,27 @@ internal sealed class TrainingsRepository(
     public Task<bool> DeleteTrainingAsync(Guid squadId, Guid sessionId, bool series, CancellationToken cancellationToken = default) =>
         deleteTraining.Handle(new DeleteTrainingCommand(squadId, sessionId, series), cancellationToken);
 
+    public Task<TrainingSessionDto> AddTrialPlayerToTrainingAsync(Guid squadId, Guid sessionId, TrainingTrialPlayerRequest request, CancellationToken cancellationToken = default) =>
+        addTrialToTraining.Handle(new AddTrialPlayerToTrainingCommand(squadId, sessionId, request.TrialPlayerId, request.FullName, request.Notes), cancellationToken);
+
+    public Task<TrainingSessionDto> RemoveTrialPlayerFromTrainingAsync(Guid squadId, Guid sessionId, Guid trialPlayerId, CancellationToken cancellationToken = default) =>
+        removeTrialFromTraining.Handle(new RemoveTrialPlayerFromTrainingCommand(squadId, sessionId, trialPlayerId), cancellationToken);
+
+    public Task<IReadOnlyList<TrialPlayerDto>> ListTrialPlayersAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        listTrialPlayers.Handle(new ListTrialPlayersQuery(squadId), cancellationToken);
+
+    public Task<TrialPlayerDto> CreateTrialPlayerAsync(Guid squadId, TrialPlayerRequest request, CancellationToken cancellationToken = default) =>
+        createTrialPlayer.Handle(new CreateTrialPlayerCommand(squadId, request.FullName, request.Notes), cancellationToken);
+
+    public Task<TrialPlayerDto> UpdateTrialPlayerAsync(Guid squadId, Guid trialPlayerId, TrialPlayerRequest request, CancellationToken cancellationToken = default) =>
+        updateTrialPlayer.Handle(new UpdateTrialPlayerCommand(squadId, trialPlayerId, request.FullName, request.Notes), cancellationToken);
+
+    public Task<bool> DeleteTrialPlayerAsync(Guid squadId, Guid trialPlayerId, CancellationToken cancellationToken = default) =>
+        deleteTrialPlayer.Handle(new DeleteTrialPlayerCommand(squadId, trialPlayerId), cancellationToken);
+
+    public Task<SquadPlayerDto> PromoteTrialPlayerAsync(Guid squadId, Guid trialPlayerId, PromoteTrialPlayerRequest request, CancellationToken cancellationToken = default) =>
+        promoteTrialPlayer.Handle(new PromoteTrialPlayerCommand(squadId, trialPlayerId, request.Position, request.ShirtNumber), cancellationToken);
+
     public Task<IReadOnlyList<CallUpSummaryDto>> ListCallUpsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         listCallUps.Handle(new ListSquadCallUpsQuery(squadId), cancellationToken);
 
@@ -161,5 +216,5 @@ internal sealed class TrainingsRepository(
         myCallUps.Handle(new ListMyCallUpsQuery(), cancellationToken);
 
     public Task<MyCallUpDto> RespondCallUpAsync(Guid callUpId, CallUpResponseRequest request, CancellationToken cancellationToken = default) =>
-        respondCallUp.Handle(new RespondCallUpCommand(callUpId, request.Response, request.Note), cancellationToken);
+        respondCallUp.Handle(new RespondCallUpCommand(callUpId, request.Response), cancellationToken);
 }

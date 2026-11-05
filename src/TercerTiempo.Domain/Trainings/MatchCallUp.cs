@@ -7,7 +7,7 @@ namespace TercerTiempo.Domain.Trainings;
 
 // La convocatoria de un partido: a quién lleva el cuerpo técnico, dónde y a qué hora se queda. En borrador solo la ve
 // el cuerpo técnico; al publicarla se avisa a toda la plantilla (al que va y al que no) y cada jugador la firma desde la
-// app: el convocado confirma o dice que no puede, el que no va se da por enterado.
+// app: el convocado firma que va, el que no va se da por enterado.
 public sealed class MatchCallUp : AggregateRoot
 {
     private readonly List<CallUpEntry> _entries = [];
@@ -87,7 +87,7 @@ public sealed class MatchCallUp : AggregateRoot
         UpdatedAt = now;
     }
 
-    public CallUpEntry Respond(Guid squadPlayerId, CallUpResponse response, string? note, Match match, DateTimeOffset now)
+    public CallUpEntry Respond(Guid squadPlayerId, CallUpResponse response, Match match, DateTimeOffset now)
     {
         if (!IsPublished)
             throw new DomainException(ErrorCode.CallUpNotPublished);
@@ -99,12 +99,12 @@ public sealed class MatchCallUp : AggregateRoot
         var entry = _entries.FirstOrDefault(e => e.SquadPlayerId == squadPlayerId)
             ?? throw new DomainException(ErrorCode.SquadPlayerNotMember);
 
-        if (entry.Called && response == CallUpResponse.Acknowledged)
+        if (entry.Called && response != CallUpResponse.Confirmed)
             throw new DomainException(ErrorCode.CallUpInvalidResponse);
         if (!entry.Called && response != CallUpResponse.Acknowledged)
             throw new DomainException(ErrorCode.CallUpNotCalled);
 
-        entry.Respond(response, note, now);
+        entry.Respond(response, now);
         UpdatedAt = now;
         return entry;
     }
@@ -118,7 +118,6 @@ public sealed class CallUpEntry : Entity
     public Guid SquadPlayerId { get; private set; }
     public bool Called { get; private set; }
     public CallUpResponse Response { get; private set; }
-    public string? ResponseNote { get; private set; }
     public DateTimeOffset? RespondedAt { get; private set; }
     public DateTimeOffset? NotifiedAt { get; private set; }
 
@@ -133,22 +132,20 @@ public sealed class CallUpEntry : Entity
         Response = CallUpResponse.Pending,
     };
 
-    // true si cambia: entonces la respuesta anterior deja de valer y hay que volver a avisar al jugador.
+    // true si cambia: entonces la firma anterior deja de valer y hay que volver a avisar al jugador.
     internal bool SetCalled(bool called, DateTimeOffset now)
     {
         if (Called == called) return false;
         Called = called;
         Response = CallUpResponse.Pending;
-        ResponseNote = null;
         RespondedAt = null;
         NotifiedAt = null;
         return true;
     }
 
-    internal void Respond(CallUpResponse response, string? note, DateTimeOffset now)
+    internal void Respond(CallUpResponse response, DateTimeOffset now)
     {
         Response = response;
-        ResponseNote = string.IsNullOrWhiteSpace(note) ? null : Guard.NotEmpty(note, "nota", 300);
         RespondedAt = now;
     }
 

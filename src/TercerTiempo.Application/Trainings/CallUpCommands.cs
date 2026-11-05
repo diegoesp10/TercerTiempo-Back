@@ -40,7 +40,9 @@ public sealed record SaveMatchCallUpCommand(
     [property: Description("true: se publica (o se vuelve a publicar) y se avisa a la plantilla; false: se guarda como borrador si aún no estaba publicada.")]
     bool Publish) : ICommand<MatchCallUpDto>;
 
-public sealed record RespondCallUpCommand(Guid CallUpId, CallUpResponse Response, string? Note) : ICommand<MyCallUpDto>;
+// El jugador firma la convocatoria: Confirmed si va convocado, Acknowledged si no. Sin notas ni «no puedo»: lo que
+// cambie se habla con el cuerpo técnico, que es quien emite la convocatoria.
+public sealed record RespondCallUpCommand(Guid CallUpId, CallUpResponse Response) : ICommand<MyCallUpDto>;
 
 public sealed record ListMyCallUpsQuery : IQuery<IReadOnlyList<MyCallUpDto>>;
 
@@ -62,7 +64,6 @@ internal sealed class RespondCallUpValidator : AbstractValidator<RespondCallUpCo
     {
         RuleFor(x => x.CallUpId).NotEmpty();
         RuleFor(x => x.Response).IsInEnum();
-        RuleFor(x => x.Note).MaximumLength(300);
     }
 }
 
@@ -112,7 +113,7 @@ internal static class CallUps
             alerts.Add(entry.Called
                 ? Alert.ForPlayer(playerId, AlertKind.CallUp, $"{prefix}:{now.UtcTicks}",
                     $"Vas convocado: {fixture}",
-                    $"Entras en la convocatoria del partido del {When(match.KickoffAt)}.{meet} Confirma que vas o avisa de que no puedes.",
+                    $"Entras en la convocatoria del partido del {When(match.KickoffAt)}.{meet} Fírmala desde la app.",
                     "/mis-convocatorias", DayOf(match.KickoffAt), now)
                 : Alert.ForPlayer(playerId, AlertKind.NotCalledUp, $"{prefix}:{now.UtcTicks}",
                     $"No vas convocado: {fixture}",
@@ -212,7 +213,7 @@ internal sealed class SaveMatchCallUpHandler(
 }
 
 internal sealed class RespondCallUpHandler(
-    ICurrentUser currentUser, IPlayerStore players, ISquadStore squads, IClubStore clubs, IMatchStore matches, ITeamStore teams, ICallUpStore callUps,
+    ICurrentUser currentUser, IPlayerStore players, ISquadStore squads, IMatchStore matches, ITeamStore teams, ICallUpStore callUps,
     IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<RespondCallUpCommand, MyCallUpDto>
 {
@@ -229,23 +230,13 @@ internal sealed class RespondCallUpHandler(
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, callUp.MatchId);
 
         var now = clock.GetUtcNow();
-        var line = callUp.Respond(entry.Id, command.Response, command.Note, match, now);
+        var line = callUp.Respond(entry.Id, command.Response, match, now);
         var dto = await CallUps.MatchDtoAsync(match, teams, cancellationToken);
 
-        // El que mira el aviso de la convocatoria ya ha contestado: se da por resuelto.
+        // Firmada: el aviso de la convocatoria que tenía el jugador se da por resuelto. Al cuerpo técnico no le llega
+        // nada: la firma se ve en la propia convocatoria.
         foreach (var alert in await alerts.GetForAsync(null, player.Id, null, cancellationToken))
             if (alert.Key.StartsWith(CallUps.PlayerKeyPrefix(callUp.Id, line.Id), StringComparison.Ordinal)) alert.Resolve(now);
-
-        var staffPrefix = $"callup-declined:{line.Id}";
-        await StaffAlerts.ResolveAsync(squad, clubs, alerts, staffPrefix, clock, cancellationToken);
-        if (command.Response == CallUpResponse.Declined)
-        {
-            var note = string.IsNullOrWhiteSpace(line.ResponseNote) ? "" : $" Motivo: {line.ResponseNote}.";
-            await StaffAlerts.RaiseAsync(squad, clubs, alerts, AlertKind.CallUpDeclined, $"{staffPrefix}:{now.UtcTicks}",
-                $"{entry.FullName} no puede ir al partido",
-                $"{entry.FullName} dice que no puede ir a {CallUps.Fixture(dto)} ({CallUps.When(match.KickoffAt)}).{note}",
-                $"/plantillas/{squad.Id}/convocatorias/{match.Id}", CallUps.DayOf(match.KickoffAt), clock, cancellationToken);
-        }
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);

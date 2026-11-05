@@ -159,4 +159,70 @@ public class TrainingSessionTests
         Assert.Equal(3, session.Attendance.Count);
         Assert.Equal(AttendanceStatus.Expected, session.AttendanceOf(later.Id)!.Status);
     }
+
+    [Fact]
+    public void A_trial_player_gets_his_own_line_once_and_leaves_with_it()
+    {
+        var (squad, editor, _, _) = SquadWithTwoPlayers();
+        var session = Plan(squad, editor);
+        var trial = TrialPlayer.Create(squad, editor, "Iyán Cuervo", null, TestData.Now);
+
+        var line = session.AddTrialPlayer(trial, TestData.Now);
+        var again = session.AddTrialPlayer(trial, TestData.Now.AddMinutes(1));
+
+        Assert.Same(line, again);
+        Assert.Equal(3, session.Attendance.Count);
+        Assert.Equal((trial.Id, (Guid?)null, true, AttendanceStatus.Expected), (line.TrialPlayerId, line.SquadPlayerId, line.IsTrial, line.Status));
+        Assert.Equal(AttendanceStatus.Attended, session.SetTrialAttendance(trial.Id, AttendanceStatus.Attended, null, TestData.Now).Status);
+
+        session.RemoveTrialPlayer(trial.Id, TestData.Now);
+        Assert.Equal(2, session.Attendance.Count);
+        Assert.Equal(ErrorCode.TrialPlayerNotInSession, Assert.Throws<DomainException>(() => session.RemoveTrialPlayer(trial.Id, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.TrialPlayerNotInSession, Assert.Throws<DomainException>(() => session.SetTrialAttendance(trial.Id, AttendanceStatus.Missed, null, TestData.Now)).Code);
+    }
+
+    [Fact]
+    public void A_trial_player_of_another_squad_or_already_with_a_card_cannot_join()
+    {
+        var (squad, editor, _, _) = SquadWithTwoPlayers();
+        var (other, _) = TestData.NewSquad(Guid.NewGuid());
+        var session = Plan(squad, editor);
+        var stranger = TrialPlayer.Create(other, editor, "Iyán Cuervo", null, TestData.Now);
+        var promoted = TrialPlayer.Create(squad, editor, "Xuan Menéndez", null, TestData.Now);
+        promoted.Promote(squad, Position.Defender, 4, TestData.Now);
+
+        Assert.Equal(ErrorCode.TrialPlayerNotFound, Assert.Throws<DomainException>(() => session.AddTrialPlayer(stranger, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.TrialPlayerPromoted, Assert.Throws<DomainException>(() => session.AddTrialPlayer(promoted, TestData.Now)).Code);
+    }
+
+    [Fact]
+    public void Promoting_moves_the_trial_line_to_the_new_card_or_drops_it_if_the_card_already_has_one()
+    {
+        var (squad, editor, pelayo, _) = SquadWithTwoPlayers();
+        var session = Plan(squad, editor);
+        var trial = TrialPlayer.Create(squad, editor, "Iyán Cuervo", "Del Llanera", TestData.Now);
+        session.AddTrialPlayer(trial, TestData.Now);
+        session.SetTrialAttendance(trial.Id, AttendanceStatus.Attended, null, TestData.Now);
+
+        var card = trial.Promote(squad, Position.Midfielder, 14, TestData.Now.AddDays(1));
+        session.PromoteTrialPlayer(trial.Id, card.Id, TestData.Now.AddDays(1));
+
+        Assert.True(trial.IsPromoted);
+        Assert.Equal((card.Id, TestData.Now.AddDays(1)), (trial.PromotedSquadPlayerId, trial.PromotedAt));
+        Assert.Equal("Iyán Cuervo", card.FullName);
+        Assert.Contains(card, squad.ActivePlayers);
+        var moved = session.AttendanceOf(card.Id);
+        Assert.NotNull(moved);
+        Assert.Equal((AttendanceStatus.Attended, false), (moved.Status, moved.IsTrial));
+        Assert.Null(session.TrialAttendanceOf(trial.Id));
+        Assert.Equal(ErrorCode.TrialPlayerPromoted, Assert.Throws<DomainException>(() => trial.Promote(squad, null, null, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.TrialPlayerPromoted, Assert.Throws<DomainException>(() => trial.Update("Otro", null, TestData.Now)).Code);
+
+        // Si la ficha ya tenía línea (Pelayo), la de prueba sobra.
+        var second = TrialPlayer.Create(squad, editor, "Pelayo bis", null, TestData.Now);
+        session.AddTrialPlayer(second, TestData.Now);
+        session.PromoteTrialPlayer(second.Id, pelayo.Id, TestData.Now);
+        Assert.Null(session.TrialAttendanceOf(second.Id));
+        Assert.Equal(3, session.Attendance.Count);
+    }
 }

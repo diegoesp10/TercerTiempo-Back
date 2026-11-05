@@ -1369,6 +1369,36 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "training.attendance_target",
+                            Language = "es",
+                            Message = "Cada línea de asistencia es de un jugador de la plantilla o de un jugador de prueba, no de los dos."
+                        },
+                        new
+                        {
+                            Code = "trial_player.not_found",
+                            Language = "es",
+                            Message = "El jugador de prueba '{0}' no existe en esta plantilla."
+                        },
+                        new
+                        {
+                            Code = "trial_player.duplicate",
+                            Language = "es",
+                            Message = "Ya hay un jugador de prueba llamado '{0}' en esta plantilla."
+                        },
+                        new
+                        {
+                            Code = "trial_player.promoted",
+                            Language = "es",
+                            Message = "{0} ya tiene ficha en la plantilla: ya no es jugador de prueba."
+                        },
+                        new
+                        {
+                            Code = "trial_player.not_in_session",
+                            Language = "es",
+                            Message = "Ese jugador de prueba no está en este entrenamiento."
+                        },
+                        new
+                        {
                             Code = "exercise.not_found",
                             Language = "es",
                             Message = "El ejercicio '{0}' no existe en la biblioteca de la plantilla."
@@ -1425,7 +1455,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         {
                             Code = "callup.invalid_response",
                             Language = "es",
-                            Message = "Respuesta no válida: el convocado confirma o avisa de que no puede; el que no va se da por enterado."
+                            Message = "Respuesta no válida: el convocado firma la convocatoria; el que no va se da por enterado."
                         },
                         new
                         {
@@ -6366,10 +6396,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<string>("ResponseNote")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
-
                     b.Property<Guid>("SquadPlayerId")
                         .HasColumnType("uniqueidentifier");
 
@@ -6503,13 +6529,16 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("SessionId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("SquadPlayerId")
+                    b.Property<Guid?>("SquadPlayerId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("TrialPlayerId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
@@ -6518,10 +6547,20 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("SquadPlayerId");
 
-                    b.HasIndex("SessionId", "SquadPlayerId")
-                        .IsUnique();
+                    b.HasIndex("TrialPlayerId");
 
-                    b.ToTable("TrainingAttendances", (string)null);
+                    b.HasIndex("SessionId", "SquadPlayerId")
+                        .IsUnique()
+                        .HasFilter("[SquadPlayerId] IS NOT NULL");
+
+                    b.HasIndex("SessionId", "TrialPlayerId")
+                        .IsUnique()
+                        .HasFilter("[TrialPlayerId] IS NOT NULL");
+
+                    b.ToTable("TrainingAttendances", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_TrainingAttendances_OneSubject", "([SquadPlayerId] IS NOT NULL AND [TrialPlayerId] IS NULL) OR ([SquadPlayerId] IS NULL AND [TrialPlayerId] IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrainingItem", b =>
@@ -6622,6 +6661,59 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("SquadId", "StartsAt");
 
                     b.ToTable("TrainingSessions", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrialPlayer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("PromotedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("PromotedSquadPlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByClubId");
+
+                    b.HasIndex("CreatedByCoachId");
+
+                    b.HasIndex("PromotedSquadPlayerId");
+
+                    b.HasIndex("SquadId");
+
+                    b.ToTable("TrialPlayers", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Videos.MatchVideo", b =>
@@ -8282,8 +8374,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasOne("TercerTiempo.Domain.Squads.SquadPlayer", null)
                         .WithMany()
                         .HasForeignKey("SquadPlayerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Trainings.TrialPlayer", null)
+                        .WithMany()
+                        .HasForeignKey("TrialPlayerId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrainingItem", b =>
@@ -8310,6 +8406,30 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
                         .WithMany()
                         .HasForeignKey("CreatedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrialPlayer", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Squads.SquadPlayer", null)
+                        .WithMany()
+                        .HasForeignKey("PromotedSquadPlayerId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("TercerTiempo.Domain.Squads.Squad", null)

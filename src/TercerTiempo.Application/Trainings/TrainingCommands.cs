@@ -57,7 +57,11 @@ public sealed record UpdateTrainingCommand(
 
 public sealed record SetTrainingItemsCommand(Guid SquadId, Guid SessionId, IReadOnlyList<TrainingItemInput> Items) : ICommand<TrainingSessionDto>;
 
-public sealed record AttendanceInput(Guid SquadPlayerId, AttendanceStatus Status, string? Reason);
+// Cada línea es de un jugador de la plantilla o de uno de prueba apuntado a la sesión.
+public sealed record AttendanceInput(Guid? SquadPlayerId, Guid? TrialPlayerId, AttendanceStatus Status, string? Reason)
+{
+    public bool HasOneTarget => (SquadPlayerId is { } s && s != Guid.Empty) ^ (TrialPlayerId is { } t && t != Guid.Empty);
+}
 
 public sealed record SetAttendanceCommand(Guid SquadId, Guid SessionId, IReadOnlyList<AttendanceInput> Entries) : ICommand<TrainingSessionDto>;
 
@@ -166,7 +170,7 @@ internal sealed class SetAttendanceValidator : AbstractValidator<SetAttendanceCo
         RuleFor(x => x.Entries).NotNull();
         RuleForEach(x => x.Entries).ChildRules(entry =>
         {
-            entry.RuleFor(e => e.SquadPlayerId).NotEmpty();
+            entry.RuleFor(e => e.HasOneTarget).Equal(true).WithCatalogMessage(ErrorCode.TrainingAttendanceTarget);
             entry.RuleFor(e => e.Status).IsInEnum();
             entry.RuleFor(e => e.Reason).MaximumLength(200);
         });
@@ -217,8 +221,14 @@ internal static class TrainingAccess
     public static IReadOnlyList<TrainingItemDraft> Drafts(IEnumerable<TrainingItemInput> items) =>
         items.Select(i => new TrainingItemDraft(i.ExerciseId, i.Name, i.Type, i.DurationMinutes, i.Notes)).ToList();
 
-    public static async Task<TrainingSessionDto> DetailAsync(TrainingSession session, Squad squad, ICurrentUser user, TimeProvider clock, IClubStore clubs, CancellationToken cancellationToken) =>
-        TrainingMapper.ToDto(session, squad, await CanEditAsync(squad, user, clock, clubs, cancellationToken), ViewerEntry(squad, user), clock.GetUtcNow());
+    public static async Task<TrainingSessionDto> DetailAsync(
+        TrainingSession session, Squad squad, ICurrentUser user, TimeProvider clock, IClubStore clubs, ITrialPlayerStore trials, CancellationToken cancellationToken)
+    {
+        var trialMap = session.Attendance.Any(a => a.IsTrial)
+            ? (await trials.GetBySquadAsync(squad.Id, cancellationToken)).ToDictionary(t => t.Id)
+            : new Dictionary<Guid, TrialPlayer>();
+        return TrainingMapper.ToDto(session, squad, trialMap, await CanEditAsync(squad, user, clock, clubs, cancellationToken), ViewerEntry(squad, user), clock.GetUtcNow());
+    }
 }
 
 // Avisos al cuerpo técnico vigente y al club del equipo (si lo tiene): cada uno con su copia.
@@ -327,14 +337,14 @@ internal sealed class ListTrainingsHandler(ICurrentUser currentUser, ISquadStore
     }
 }
 
-internal sealed class GetTrainingHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, TimeProvider clock)
+internal sealed class GetTrainingHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, TimeProvider clock)
     : IQueryHandler<GetTrainingQuery, TrainingSessionDto>
 {
     public async Task<TrainingSessionDto> Handle(GetTrainingQuery query, CancellationToken cancellationToken)
     {
         var squad = await TrainingAccess.SquadForViewerAsync(squads, clubs, currentUser, query.SquadId, clock, cancellationToken);
         var session = await TrainingAccess.SessionOfAsync(squad, query.SessionId, trainings, cancellationToken);
-        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, cancellationToken);
+        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, cancellationToken);
     }
 }
 
@@ -369,7 +379,7 @@ internal sealed class PlanTrainingHandler(ICurrentUser currentUser, ISquadStore 
     }
 }
 
-internal sealed class UpdateTrainingHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class UpdateTrainingHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<UpdateTrainingCommand, TrainingSessionDto>
 {
     public async Task<TrainingSessionDto> Handle(UpdateTrainingCommand command, CancellationToken cancellationToken)
@@ -378,11 +388,11 @@ internal sealed class UpdateTrainingHandler(ICurrentUser currentUser, ISquadStor
         var session = await TrainingAccess.SessionOfAsync(squad, command.SessionId, trainings, cancellationToken);
         session.Update(command.Kind, command.Title, command.StartsAt, command.DurationMinutes, command.Location, command.Notes, clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, cancellationToken);
+        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, cancellationToken);
     }
 }
 
-internal sealed class SetTrainingItemsHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class SetTrainingItemsHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<SetTrainingItemsCommand, TrainingSessionDto>
 {
     public async Task<TrainingSessionDto> Handle(SetTrainingItemsCommand command, CancellationToken cancellationToken)
@@ -391,11 +401,11 @@ internal sealed class SetTrainingItemsHandler(ICurrentUser currentUser, ISquadSt
         var session = await TrainingAccess.SessionOfAsync(squad, command.SessionId, trainings, cancellationToken);
         session.ReplaceItems(TrainingAccess.Drafts(command.Items), clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, cancellationToken);
+        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, cancellationToken);
     }
 }
 
-internal sealed class SetAttendanceHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class SetAttendanceHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<SetAttendanceCommand, TrainingSessionDto>
 {
     public async Task<TrainingSessionDto> Handle(SetAttendanceCommand command, CancellationToken cancellationToken)
@@ -406,12 +416,19 @@ internal sealed class SetAttendanceHandler(ICurrentUser currentUser, ISquadStore
         session.EnsureAttendanceFor(squad.ActivePlayers, now);
         foreach (var entry in command.Entries)
         {
-            if (squad.ActivePlayers.All(p => p.Id != entry.SquadPlayerId))
-                throw new NotFoundException(ErrorCode.SquadPlayerNotFound, entry.SquadPlayerId);
-            session.SetAttendance(entry.SquadPlayerId, entry.Status, entry.Reason, now);
+            if (entry.SquadPlayerId is { } squadPlayerId)
+            {
+                if (squad.ActivePlayers.All(p => p.Id != squadPlayerId))
+                    throw new NotFoundException(ErrorCode.SquadPlayerNotFound, squadPlayerId);
+                session.SetAttendance(squadPlayerId, entry.Status, entry.Reason, now);
+            }
+            else if (entry.TrialPlayerId is { } trialPlayerId)
+            {
+                session.SetTrialAttendance(trialPlayerId, entry.Status, entry.Reason, now);
+            }
         }
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, cancellationToken);
+        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, cancellationToken);
     }
 }
 
@@ -438,7 +455,8 @@ internal sealed class DeleteTrainingHandler(ICurrentUser currentUser, ISquadStor
 }
 
 internal sealed class ReportTrainingAbsenceHandler(
-    ICurrentUser currentUser, IPlayerStore players, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITeamStore teams, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
+    ICurrentUser currentUser, IPlayerStore players, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, ITeamStore teams,
+    IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<ReportTrainingAbsenceCommand, TrainingSessionDto>
 {
     public async Task<TrainingSessionDto> Handle(ReportTrainingAbsenceCommand command, CancellationToken cancellationToken)
@@ -469,7 +487,7 @@ internal sealed class ReportTrainingAbsenceHandler(
         }
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, cancellationToken);
+        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, cancellationToken);
     }
 }
 

@@ -90,7 +90,7 @@ internal static class TrainingEndpoints
         group.MapPut("/{squadId:guid}/trainings/{sessionId:guid}/attendance", (Guid squadId, Guid sessionId, AttendanceRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.SetAttendanceAsync(squadId, sessionId, request, ct))
             .WithName("SetTrainingAttendance")
             .WithSummary("Marcar quién viene, quién va a faltar, quién vino y quién faltó")
-            .WithDescription("Club propietario o cuerpo técnico vigente. Solo las líneas enviadas cambian; el resto se queda como estaba. Motivo opcional en WillMiss y Missed.")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Solo las líneas enviadas cambian; el resto se queda como estaba. Cada línea es de un jugador de la plantilla (squadPlayerId) o de un jugador de prueba apuntado a la sesión (trialPlayerId). Motivo opcional en WillMiss y Missed.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
@@ -101,6 +101,63 @@ internal static class TrainingEndpoints
             .WithDescription("Con ?series=true se borran también las sesiones posteriores de la misma serie semanal.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{squadId:guid}/trainings/{sessionId:guid}/trial-players", (Guid squadId, Guid sessionId, TrainingTrialPlayerRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.AddTrialPlayerToTrainingAsync(squadId, sessionId, request, ct))
+            .WithName("AddTrialPlayerToTraining")
+            .WithSummary("Apuntar a un jugador de prueba a un entrenamiento")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Alguien sin ficha que viene a probar: uno ya conocido (trialPlayerId) o uno nuevo por su nombre (fullName; si ya hay uno a prueba con ese nombre se reutiliza). Entra en la lista de asistencia de esa sesión.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapDelete("/{squadId:guid}/trainings/{sessionId:guid}/trial-players/{trialPlayerId:guid}", (Guid squadId, Guid sessionId, Guid trialPlayerId, ITrainingsRepository trainings, CancellationToken ct) => trainings.RemoveTrialPlayerFromTrainingAsync(squadId, sessionId, trialPlayerId, ct))
+            .WithName("RemoveTrialPlayerFromTraining")
+            .WithSummary("Quitar a un jugador de prueba de un entrenamiento")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapGet("/{squadId:guid}/trial-players", (Guid squadId, ITrainingsRepository trainings, CancellationToken ct) => trainings.ListTrialPlayersAsync(squadId, ct))
+            .WithName("ListTrialPlayers")
+            .WithSummary("Jugadores a prueba de la plantilla")
+            .WithDescription("Con cuántos entrenamientos llevan y a cuántos vinieron; los que ya tienen ficha salen con promotedSquadPlayerId.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{squadId:guid}/trial-players", (Guid squadId, TrialPlayerRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.CreateTrialPlayerAsync(squadId, request, ct))
+            .WithName("CreateTrialPlayer")
+            .WithSummary("Apuntar a alguien que viene a prueba")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Solo el nombre y unas notas: sin ficha ni cuenta. Después se le apunta a los entrenamientos a los que venga.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPut("/{squadId:guid}/trial-players/{trialPlayerId:guid}", (Guid squadId, Guid trialPlayerId, TrialPlayerRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.UpdateTrialPlayerAsync(squadId, trialPlayerId, request, ct))
+            .WithName("UpdateTrialPlayer")
+            .WithSummary("Cambiar el nombre o las notas de un jugador de prueba")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapDelete("/{squadId:guid}/trial-players/{trialPlayerId:guid}", (Guid squadId, Guid trialPlayerId, ITrainingsRepository trainings, CancellationToken ct) => trainings.DeleteTrialPlayerAsync(squadId, trialPlayerId, ct))
+            .WithName("DeleteTrialPlayer")
+            .WithSummary("Borrar a un jugador de prueba (y sus asistencias)")
+            .WithDescription("No se puede borrar al que ya tiene ficha: su historial es ya del jugador de la plantilla.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{squadId:guid}/trial-players/{trialPlayerId:guid}/promote", (Guid squadId, Guid trialPlayerId, PromoteTrialPlayerRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.PromoteTrialPlayerAsync(squadId, trialPlayerId, request, ct))
+            .WithName("PromoteTrialPlayer")
+            .WithSummary("Hacerle ficha: pasa a jugador de la plantilla")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Se da de alta en la plantilla con su nombre (posición y dorsal opcionales) y sus asistencias de prueba pasan a su ficha. Devuelve la ficha nueva.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapGet("/{squadId:guid}/callups", (Guid squadId, ITrainingsRepository trainings, CancellationToken ct) => trainings.ListCallUpsAsync(squadId, ct))
             .WithName("ListSquadCallUps")
@@ -120,7 +177,7 @@ internal static class TrainingEndpoints
         group.MapPut("/{squadId:guid}/matches/{matchId:guid}/callup", (Guid squadId, Guid matchId, CallUpRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.SaveCallUpAsync(squadId, matchId, request, ct))
             .WithName("SaveMatchCallUp")
             .WithSummary("Guardar o publicar la convocatoria de un partido")
-            .WithDescription("Club propietario o cuerpo técnico vigente, solo antes del partido. Quién va, cita (hora y lugar) y notas. Al publicar se avisa en la app a cada jugador con cuenta, vaya o no; después, solo a quien le cambie la convocatoria. El convocado confirma o avisa de que no puede; el que no va se da por enterado.")
+            .WithDescription("Club propietario o cuerpo técnico vigente, solo antes del partido. Quién va, cita (hora y lugar) y notas. Al publicar se avisa en la app a cada jugador con cuenta, vaya o no; después, solo a quien le cambie la convocatoria. El convocado la firma; el que no va se da por enterado.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -154,7 +211,7 @@ internal static class TrainingEndpoints
         group.MapPut("/callups/{callUpId:guid}/response", (Guid callUpId, CallUpResponseRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.RespondCallUpAsync(callUpId, request, ct))
             .WithName("RespondCallUp")
             .WithSummary("Firmar la convocatoria")
-            .WithDescription("Convocado: Confirmed o Declined (con nota opcional). No convocado: Acknowledged. Hasta que empiece el partido; se puede cambiar. Si no puedes ir, el cuerpo técnico y el club reciben un aviso.")
+            .WithDescription("Convocado: Confirmed (firmo que voy). No convocado: Acknowledged (enterado). Hasta que empiece el partido. No hay avisos de «no puedo» para los partidos: eso se habla con el cuerpo técnico, que es quien emite la convocatoria.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)

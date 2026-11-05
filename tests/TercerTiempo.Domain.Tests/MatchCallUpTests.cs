@@ -55,13 +55,13 @@ public class MatchCallUpTests
     }
 
     [Fact]
-    public void Arrange_tells_who_changes_and_wipes_their_previous_answer()
+    public void Arrange_tells_who_changes_and_wipes_their_previous_signature()
     {
         var (squad, editor, pelayo, nel, xuan) = SquadWithThreePlayers();
         var match = TestData.ScheduledMatch();
         var callUp = Published(squad, editor, match, pelayo.Id, nel.Id);
-        callUp.Respond(pelayo.Id, CallUpResponse.Confirmed, null, match, TestData.Now);
-        callUp.Respond(xuan.Id, CallUpResponse.Acknowledged, null, match, TestData.Now);
+        callUp.Respond(pelayo.Id, CallUpResponse.Confirmed, match, TestData.Now);
+        callUp.Respond(xuan.Id, CallUpResponse.Acknowledged, match, TestData.Now);
 
         // Nel se cae y Xuan entra; Pelayo sigue igual.
         var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, xuan.Id }, null, null, "Llevad las dos equipaciones", TestData.Now.AddHours(1));
@@ -91,36 +91,38 @@ public class MatchCallUpTests
         Assert.Single(callUp.Called);
     }
 
+    // No hay «no puedo» para los partidos: el convocado firma y el que no va se da por enterado, nada más.
     [Fact]
-    public void The_called_player_confirms_or_declines_and_the_rest_only_acknowledge()
+    public void The_called_player_signs_and_the_rest_only_acknowledge()
     {
         var (squad, editor, pelayo, nel, _) = SquadWithThreePlayers();
         var match = TestData.ScheduledMatch();
         var callUp = Published(squad, editor, match, pelayo.Id);
 
-        var declined = callUp.Respond(pelayo.Id, CallUpResponse.Declined, "Lesionado", match, TestData.Now.AddHours(1));
-        var seen = callUp.Respond(nel.Id, CallUpResponse.Acknowledged, null, match, TestData.Now.AddHours(1));
+        var signed = callUp.Respond(pelayo.Id, CallUpResponse.Confirmed, match, TestData.Now.AddHours(1));
+        var seen = callUp.Respond(nel.Id, CallUpResponse.Acknowledged, match, TestData.Now.AddHours(1));
 
-        Assert.Equal((CallUpResponse.Declined, "Lesionado", TestData.Now.AddHours(1)), (declined.Response, declined.ResponseNote, declined.RespondedAt));
+        Assert.Equal((CallUpResponse.Confirmed, TestData.Now.AddHours(1)), (signed.Response, signed.RespondedAt));
         Assert.Equal(CallUpResponse.Acknowledged, seen.Response);
-        Assert.Equal(ErrorCode.CallUpInvalidResponse, Assert.Throws<DomainException>(() => callUp.Respond(pelayo.Id, CallUpResponse.Acknowledged, null, match, TestData.Now)).Code);
-        Assert.Equal(ErrorCode.CallUpInvalidResponse, Assert.Throws<DomainException>(() => callUp.Respond(pelayo.Id, CallUpResponse.Pending, null, match, TestData.Now)).Code);
-        Assert.Equal(ErrorCode.CallUpNotCalled, Assert.Throws<DomainException>(() => callUp.Respond(nel.Id, CallUpResponse.Confirmed, null, match, TestData.Now)).Code);
-        Assert.Equal(ErrorCode.SquadPlayerNotMember, Assert.Throws<DomainException>(() => callUp.Respond(Guid.NewGuid(), CallUpResponse.Confirmed, null, match, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.CallUpInvalidResponse, Assert.Throws<DomainException>(() => callUp.Respond(pelayo.Id, CallUpResponse.Acknowledged, match, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.CallUpInvalidResponse, Assert.Throws<DomainException>(() => callUp.Respond(pelayo.Id, CallUpResponse.Pending, match, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.CallUpInvalidResponse, Assert.Throws<DomainException>(() => callUp.Respond(pelayo.Id, (CallUpResponse)3, match, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.CallUpNotCalled, Assert.Throws<DomainException>(() => callUp.Respond(nel.Id, CallUpResponse.Confirmed, match, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.SquadPlayerNotMember, Assert.Throws<DomainException>(() => callUp.Respond(Guid.NewGuid(), CallUpResponse.Confirmed, match, TestData.Now)).Code);
     }
 
     [Fact]
-    public void Answers_only_count_on_a_published_call_up_before_kickoff()
+    public void Signatures_only_count_on_a_published_call_up_before_kickoff()
     {
         var (squad, editor, pelayo, _, _) = SquadWithThreePlayers();
         var match = TestData.ScheduledMatch();
         var draft = MatchCallUp.Draft(squad, match, editor, TestData.Now);
         draft.Arrange(squad, new HashSet<Guid> { pelayo.Id }, null, null, null, TestData.Now);
 
-        Assert.Equal(ErrorCode.CallUpNotPublished, Assert.Throws<DomainException>(() => draft.Respond(pelayo.Id, CallUpResponse.Confirmed, null, match, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.CallUpNotPublished, Assert.Throws<DomainException>(() => draft.Respond(pelayo.Id, CallUpResponse.Confirmed, match, TestData.Now)).Code);
 
         draft.Publish(TestData.Now);
-        var late = Assert.Throws<DomainException>(() => draft.Respond(pelayo.Id, CallUpResponse.Confirmed, null, match, match.KickoffAt));
+        var late = Assert.Throws<DomainException>(() => draft.Respond(pelayo.Id, CallUpResponse.Confirmed, match, match.KickoffAt));
         Assert.Equal(ErrorCode.CallUpMatchStarted, late.Code);
     }
 }

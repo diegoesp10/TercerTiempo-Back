@@ -119,11 +119,23 @@ public sealed class TrainingSession : AggregateRoot
 
     public TrainingAttendance SetAttendance(Guid squadPlayerId, AttendanceStatus status, string? reason, DateTimeOffset now)
     {
+        var entry = _attendance.FirstOrDefault(a => a.SquadPlayerId == squadPlayerId)
+            ?? throw new DomainException(ErrorCode.SquadPlayerNotMember);
+        return Set(entry, status, reason, now);
+    }
+
+    public TrainingAttendance SetTrialAttendance(Guid trialPlayerId, AttendanceStatus status, string? reason, DateTimeOffset now)
+    {
+        var entry = _attendance.FirstOrDefault(a => a.TrialPlayerId == trialPlayerId)
+            ?? throw new DomainException(ErrorCode.TrialPlayerNotInSession);
+        return Set(entry, status, reason, now);
+    }
+
+    private TrainingAttendance Set(TrainingAttendance entry, AttendanceStatus status, string? reason, DateTimeOffset now)
+    {
         if (!Enum.IsDefined(status))
             throw new DomainException(ErrorCode.TrainingAttendanceInvalid);
 
-        var entry = _attendance.FirstOrDefault(a => a.SquadPlayerId == squadPlayerId)
-            ?? throw new DomainException(ErrorCode.SquadPlayerNotMember);
         entry.Set(status, reason, now);
         UpdatedAt = now;
         return entry;
@@ -139,6 +151,45 @@ public sealed class TrainingSession : AggregateRoot
     }
 
     public TrainingAttendance? AttendanceOf(Guid squadPlayerId) => _attendance.FirstOrDefault(a => a.SquadPlayerId == squadPlayerId);
+
+    public TrainingAttendance? TrialAttendanceOf(Guid trialPlayerId) => _attendance.FirstOrDefault(a => a.TrialPlayerId == trialPlayerId);
+
+    // Un jugador de prueba viene a esta sesión: se le pasa lista como a los demás (si ya estaba, no cambia nada).
+    public TrainingAttendance AddTrialPlayer(TrialPlayer trialPlayer, DateTimeOffset now)
+    {
+        if (trialPlayer.SquadId != SquadId)
+            throw new DomainException(ErrorCode.TrialPlayerNotFound, trialPlayer.Id);
+        if (trialPlayer.IsPromoted)
+            throw new DomainException(ErrorCode.TrialPlayerPromoted, trialPlayer.FullName);
+
+        if (TrialAttendanceOf(trialPlayer.Id) is { } existing) return existing;
+        var entry = TrainingAttendance.ForTrial(Id, trialPlayer.Id, now);
+        _attendance.Add(entry);
+        UpdatedAt = now;
+        return entry;
+    }
+
+    public void RemoveTrialPlayer(Guid trialPlayerId, DateTimeOffset now)
+    {
+        var entry = TrialAttendanceOf(trialPlayerId)
+            ?? throw new DomainException(ErrorCode.TrialPlayerNotInSession);
+        _attendance.Remove(entry);
+        UpdatedAt = now;
+    }
+
+    // Al jugador de prueba le han hecho ficha: su línea pasa a ser la del jugador de la plantilla, con lo que ya se
+    // había anotado de él. Si por lo que sea ya tenía línea como jugador, se queda la de la ficha y se quita la de prueba.
+    public void PromoteTrialPlayer(Guid trialPlayerId, Guid squadPlayerId, DateTimeOffset now)
+    {
+        var entry = TrialAttendanceOf(trialPlayerId);
+        if (entry is null) return;
+
+        if (AttendanceOf(squadPlayerId) is not null)
+            _attendance.Remove(entry);
+        else
+            entry.MoveToSquadPlayer(squadPlayerId);
+        UpdatedAt = now;
+    }
 }
 
 public sealed class TrainingItem : Entity
@@ -174,13 +225,18 @@ public sealed class TrainingItem : Entity
     }
 }
 
+// Una línea de la lista: de un jugador de la plantilla (SquadPlayerId) o de uno que viene a prueba (TrialPlayerId),
+// nunca de los dos.
 public sealed class TrainingAttendance : Entity
 {
     public Guid SessionId { get; private set; }
-    public Guid SquadPlayerId { get; private set; }
+    public Guid? SquadPlayerId { get; private set; }
+    public Guid? TrialPlayerId { get; private set; }
     public AttendanceStatus Status { get; private set; }
     public string? Reason { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+
+    public bool IsTrial => TrialPlayerId is not null;
 
     private TrainingAttendance() { }
 
@@ -192,6 +248,21 @@ public sealed class TrainingAttendance : Entity
         Status = AttendanceStatus.Expected,
         UpdatedAt = now,
     };
+
+    internal static TrainingAttendance ForTrial(Guid sessionId, Guid trialPlayerId, DateTimeOffset now) => new()
+    {
+        Id = NewId(),
+        SessionId = sessionId,
+        TrialPlayerId = Guard.NotEmpty(trialPlayerId, nameof(trialPlayerId)),
+        Status = AttendanceStatus.Expected,
+        UpdatedAt = now,
+    };
+
+    internal void MoveToSquadPlayer(Guid squadPlayerId)
+    {
+        SquadPlayerId = Guard.NotEmpty(squadPlayerId, nameof(squadPlayerId));
+        TrialPlayerId = null;
+    }
 
     internal void Set(AttendanceStatus status, string? reason, DateTimeOffset now)
     {
@@ -209,6 +280,14 @@ public interface ITrainingStore
     Task<IReadOnlyList<TrainingSession>> GetBySquadAsync(Guid squadId, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TrainingSession>> GetUpcomingAsync(Guid squadId, DateTimeOffset from, int take, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TrainingSession>> GetSeriesAsync(Guid seriesId, DateTimeOffset from, CancellationToken cancellationToken = default);
+
+    // Las sesiones a las que vino (o se contaba con que viniera) un jugador de prueba.
+    Task<IReadOnlyList<TrainingSession>> GetByTrialPlayerAsync(Guid trialPlayerId, CancellationToken cancellationToken = default);
+
+    // Por jugador de prueba de la plantilla: en cuántas sesiones está y a cuántas vino.
+    Task<IReadOnlyDictionary<Guid, TrialAttendanceCounts>> CountTrialAttendanceAsync(Guid squadId, CancellationToken cancellationToken = default);
     void Add(TrainingSession session);
     void Remove(TrainingSession session);
 }
+
+public sealed record TrialAttendanceCounts(int Sessions, int Attended);

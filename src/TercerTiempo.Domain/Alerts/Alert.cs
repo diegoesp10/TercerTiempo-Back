@@ -16,10 +16,8 @@ public enum AlertKind
     // Para el jugador: la convocatoria se ha publicado y no entra en ella.
     NotCalledUp = 4,
 
-    // Para el cuerpo técnico y el club: un convocado dice que no puede ir.
-    CallUpDeclined = 5,
-
-    // Para el cuerpo técnico y el club: un jugador avisa de que falta a un entrenamiento.
+    // Para el cuerpo técnico y el club: un jugador avisa de que falta a un entrenamiento. (Los partidos no llevan
+    // avisos del jugador: la convocatoria la emite el cuerpo técnico y el jugador solo la firma.)
     TrainingAbsence = 6,
 }
 

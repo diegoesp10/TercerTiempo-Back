@@ -162,12 +162,16 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
   duración (15-300 min), lugar y notas; al crearla con repetición semanal se genera una sesión por día hasta la fecha
   tope (como mucho 60), unidas por `SeriesId`. Toda la plantilla activa entra como «cuenta con venir»
   (`TrainingAttendance`): el jugador con cuenta avisa de que falta antes de que empiece y el cuerpo técnico pasa lista
-  (vino, faltó, con motivo). La **convocatoria** de un partido (`MatchCallUp`, una por plantilla y partido, solo
-  mientras el partido no ha empezado) lleva una línea por jugador (`CallUpEntry`: convocado o no, respuesta y nota);
-  en borrador solo la ve quien la prepara y al **publicarla** se avisa a toda la plantilla por la campanita: el
-  convocado confirma o dice que no puede, el que no va se da por enterado. Si después cambia, solo se avisa a quien
-  entra o sale, y su respuesta anterior se borra. Los avisos (`Alert`) son ya de cualquier cuenta (club, técnico o
-  jugador): un «no puedo» o un «falto al entrenamiento» llega al cuerpo técnico vigente y al club del equipo.
+  (vino, faltó, con motivo). Los **jugadores a prueba** (`TrialPlayer`) son gente sin ficha que viene a entrenar: el
+  cuerpo técnico los apunta por su nombre, los mete en las sesiones a las que vienen (una línea de asistencia con
+  `TrialPlayerId` en vez de `SquadPlayerId`) y, si les **hace ficha** (`Promote`), pasan a la plantilla como
+  `SquadPlayer` y sus líneas de prueba se quedan a nombre de la ficha. La **convocatoria** de un partido
+  (`MatchCallUp`, una por plantilla y partido, solo mientras el partido no ha empezado) lleva una línea por jugador
+  (`CallUpEntry`: convocado o no y su firma); en borrador solo la ve quien la prepara y al **publicarla** se avisa a
+  toda la plantilla por la campanita: el convocado la firma, el que no va se da por enterado. No hay «no puedo» para
+  los partidos: la convocatoria la emite el cuerpo técnico y lo que cambie se habla con él. Si después cambia, solo
+  se avisa a quien entra o sale, y su firma anterior se borra. Los avisos (`Alert`) son ya de cualquier cuenta (club,
+  técnico o jugador): un «falto al entrenamiento» llega al cuerpo técnico vigente y al club del equipo.
 
 ## Casos de uso (endpoints)
 
@@ -206,13 +210,16 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST | `/api/squads/{id}/trainings` | Preparar un entrenamiento con sus ejercicios; con `repeatWeekdays` y `repeatUntil` crea una sesión por cada día (serie semanal, `seriesId`) |
 | GET / PUT / DELETE | `/api/squads/{id}/trainings/{sessionId}[?series=true]` | Detalle, cambiar datos y borrar (con `series`, también las posteriores de la serie) |
 | PUT | `/api/squads/{id}/trainings/{sessionId}/items` | Los ejercicios de la sesión, en orden (copias de la biblioteca o sueltos) |
-| PUT | `/api/squads/{id}/trainings/{sessionId}/attendance` | Pasar lista: cuenta con venir, avisa de que falta, vino o faltó, con motivo |
+| PUT | `/api/squads/{id}/trainings/{sessionId}/attendance` | Pasar lista: cuenta con venir, avisa de que falta, vino o faltó, con motivo; cada línea es de una ficha (`squadPlayerId`) o de un jugador a prueba (`trialPlayerId`) |
+| POST / DELETE | `/api/squads/{id}/trainings/{sessionId}/trial-players[/{trialPlayerId}]` | Apuntar a un **jugador a prueba** a la sesión (uno conocido por `trialPlayerId` o uno nuevo por `fullName`) / quitarlo de ella |
+| GET / POST / PUT / DELETE | `/api/squads/{id}/trial-players[/{trialPlayerId}]` | Los jugadores a prueba de la plantilla (nombre, notas, en cuántas sesiones están y a cuántas vinieron); el que ya tiene ficha no se borra |
+| POST | `/api/squads/{id}/trial-players/{trialPlayerId}/promote` | **Hacerle ficha**: alta en la plantilla con su nombre (posición y dorsal opcionales); sus asistencias de prueba pasan a la ficha |
 | GET | `/api/squads/{id}/callups` | **Convocatorias** de la plantilla con sus recuentos (los borradores solo para quien las prepara) |
 | GET / PUT | `/api/squads/{id}/matches/{matchId}/callup` | La convocatoria de un partido: quién va, cita y notas; `publish` la publica y avisa a toda la plantilla (al que va y al que no); después solo se avisa a quien le cambia |
 | GET | `/api/players/me/trainings` | Jugador: sus próximos entrenamientos con su estado de asistencia |
 | PUT | `/api/players/me/trainings/{sessionId}/absence` | Jugador: avisa de que no va (`willMiss`, motivo) o de que al final sí, antes de que empiece; el cuerpo técnico y el club reciben el aviso |
 | GET | `/api/players/me/callups` | Jugador: las convocatorias publicadas que le tocan (las de los partidos que quedan y la última semana) |
-| PUT | `/api/players/me/callups/{callUpId}/response` | Jugador: firma la convocatoria (`Confirmed` / `Declined` con nota si va convocado; `Acknowledged` si no); un `Declined` avisa al cuerpo técnico y al club |
+| PUT | `/api/players/me/callups/{callUpId}/response` | Jugador: firma la convocatoria (`Confirmed` si va convocado; `Acknowledged` si no). Sin «no puedo» ni notas: eso se habla con el cuerpo técnico, que es quien la emite |
 | GET | `/api/alerts` | Avisos de la campanita de la cuenta (club, técnico o jugador); `PUT /api/alerts/{id}/read` y `/api/alerts/read-all` los marcan leídos |
 | GET | `/api/players/me/invite/{code}` | Cuenta de jugador sin plantilla: solo la ficha asociada al código personal; nunca la plantilla completa |
 | POST / DELETE | `/api/players/me/squad` | Cuenta ya existente: vincularse con `{ "inviteCode": "..." }` (un solo uso, sin elegir ficha; la cuenta toma el nombre de la ficha) / desvincularse |

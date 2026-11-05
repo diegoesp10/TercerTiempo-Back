@@ -16,7 +16,8 @@ using TercerTiempo.Domain.Trainings;
 namespace TercerTiempo.Application.Tests;
 
 // Entrenamientos y convocatorias: los avisos de la campanita que van al jugador (va o no va convocado) y al cuerpo
-// técnico y al club (un jugador no puede ir al partido, un jugador falta al entrenamiento).
+// técnico y al club (un jugador falta al entrenamiento; los partidos no llevan avisos del jugador), y los jugadores
+// que vienen a prueba.
 public class TrainingAlertTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 16, 12, 0, 0, TimeSpan.Zero);
@@ -67,27 +68,18 @@ public class TrainingAlertTests
     }
 
     [Fact]
-    public async Task Declining_warns_the_staff_and_the_club_and_confirming_later_clears_it()
+    public async Task Signing_the_call_up_clears_the_player_alert_and_tells_the_staff_nothing()
     {
         var f = new Fixture();
         await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id], null, null, null, Publish: true), default);
 
-        var mine = await f.Respond(f.PelayoUser).Handle(new(f.CallUp.Id, CallUpResponse.Declined, "Lesionado"), default);
+        var mine = await f.Respond(f.PelayoUser).Handle(new(f.CallUp.Id, CallUpResponse.Confirmed), default);
 
-        Assert.Equal((CallUpResponse.Declined, "Lesionado"), (mine.Mine.Response, mine.Mine.ResponseNote));
+        Assert.Equal(CallUpResponse.Confirmed, mine.Mine.Response);
         Assert.True(Assert.Single(f.Alerts, a => a.PlayerId == f.PelayoAccount.Id).IsResolved);
-        var coachAlert = Assert.Single(f.Alerts, a => a.CoachId == f.Coach.Id);
-        var clubAlert = Assert.Single(f.Alerts, a => a.ClubId == f.Club.Id);
-        Assert.Equal((AlertKind.CallUpDeclined, "Pelayo Fernández no puede ir al partido"), (coachAlert.Kind, coachAlert.Title));
-        Assert.Contains("Motivo: Lesionado", clubAlert.Message);
-        Assert.Equal($"/plantillas/{f.Squad.Id}/convocatorias/{f.Upcoming.Id}", clubAlert.Link);
-
-        f.Clock.Advance(TimeSpan.FromMinutes(1));
-        await f.Respond(f.PelayoUser).Handle(new(f.CallUp.Id, CallUpResponse.Confirmed, null), default);
-
-        Assert.True(coachAlert.IsResolved);
-        Assert.True(clubAlert.IsResolved);
-        Assert.Equal(4, f.Alerts.Count);
+        // Los partidos no llevan avisos del jugador: la firma se ve en la convocatoria, la campanita del staff no suena.
+        Assert.DoesNotContain(f.Alerts, a => a.CoachId == f.Coach.Id || a.ClubId == f.Club.Id);
+        Assert.Equal(2, f.Alerts.Count);
     }
 
     [Fact]
@@ -96,9 +88,9 @@ public class TrainingAlertTests
         var f = new Fixture();
         await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id], null, null, null, Publish: true), default);
 
-        var stranger = await Assert.ThrowsAsync<ForbiddenException>(() => f.Respond(f.StrangerUser).Handle(new(f.CallUp.Id, CallUpResponse.Confirmed, null), default));
-        var notCalled = await Assert.ThrowsAsync<DomainException>(() => f.Respond(f.NelUser).Handle(new(f.CallUp.Id, CallUpResponse.Confirmed, null), default));
-        var seen = await f.Respond(f.NelUser).Handle(new(f.CallUp.Id, CallUpResponse.Acknowledged, null), default);
+        var stranger = await Assert.ThrowsAsync<ForbiddenException>(() => f.Respond(f.StrangerUser).Handle(new(f.CallUp.Id, CallUpResponse.Confirmed), default));
+        var notCalled = await Assert.ThrowsAsync<DomainException>(() => f.Respond(f.NelUser).Handle(new(f.CallUp.Id, CallUpResponse.Confirmed), default));
+        var seen = await f.Respond(f.NelUser).Handle(new(f.CallUp.Id, CallUpResponse.Acknowledged), default);
 
         Assert.Equal(ErrorCode.SquadPrivate, stranger.Code);
         Assert.Equal(ErrorCode.CallUpNotCalled, notCalled.Code);
@@ -167,6 +159,54 @@ public class TrainingAlertTests
         Assert.Empty(f.Alerts);
     }
 
+    [Fact]
+    public async Task A_trial_player_joins_a_session_by_name_and_is_reused_by_that_name()
+    {
+        var f = new Fixture();
+        var planned = await f.Plan().Handle(new(f.Squad.Id, TrainingKind.Season, null, Now.AddDays(1), 90, null, null, [], [DayOfWeek.Saturday, DayOfWeek.Sunday], DateOnly.FromDateTime(Now.AddDays(8).DateTime)), default);
+        var first = planned[0].Id;
+        var second = planned[1].Id;
+
+        var detail = await f.AddTrial().Handle(new(f.Squad.Id, first, null, "  Iyán Cuervo ", "Viene del Llanera"), default);
+        await f.AddTrial().Handle(new(f.Squad.Id, second, null, "iyan cuervo", null), default);
+
+        var trial = Assert.Single(f.Trials);
+        Assert.Equal(("Iyán Cuervo", "Viene del Llanera", false), (trial.FullName, trial.Notes, trial.IsPromoted));
+        var line = Assert.Single(detail.Attendance, a => a.Trial);
+        Assert.Equal((trial.Id, "Iyán Cuervo", AttendanceStatus.Expected), (line.TrialPlayerId, line.PlayerName, line.Status));
+        // Tres de la plantilla más el de prueba.
+        Assert.Equal(4, detail.Counts.Expected);
+        Assert.All(f.Trainings.Take(2), s => Assert.NotNull(s.TrialAttendanceOf(trial.Id)));
+
+        // El jugador de la plantilla lo ve en la lista pero no puede pasarle lista.
+        var seen = await f.ReportAbsence(f.PelayoUser).Handle(new(first, false, null), default);
+        Assert.Contains(seen.Attendance, a => a.Trial && a.TrialPlayerId == trial.Id);
+    }
+
+    [Fact]
+    public async Task Promoting_a_trial_player_adds_him_to_the_squad_and_keeps_his_attendance()
+    {
+        var f = new Fixture();
+        var planned = await f.Plan().Handle(new(f.Squad.Id, TrainingKind.Season, null, Now.AddDays(1), 90, null, null, [], [], null), default);
+        var session = planned[0].Id;
+        await f.AddTrial().Handle(new(f.Squad.Id, session, null, "Iyán Cuervo", null), default);
+        var trial = f.Trials.Single();
+        await f.SetAttendance().Handle(new(f.Squad.Id, session, [new(null, trial.Id, AttendanceStatus.Attended, null)]), default);
+
+        var card = await f.Promote().Handle(new(f.Squad.Id, trial.Id, Position.Midfielder, 14), default);
+
+        Assert.Equal(("Iyán Cuervo", Position.Midfielder, 14), (card.FullName, card.Position, card.ShirtNumber));
+        Assert.Contains(f.Squad.ActivePlayers, p => p.Id == card.Id);
+        Assert.Equal((card.Id, Now), (trial.PromotedSquadPlayerId, trial.PromotedAt));
+        var line = f.Trainings.Single().AttendanceOf(card.Id);
+        Assert.NotNull(line);
+        Assert.Equal((AttendanceStatus.Attended, (Guid?)null), (line.Status, line.TrialPlayerId));
+        Assert.Null(f.Trainings.Single().TrialAttendanceOf(trial.Id));
+
+        var again = await Assert.ThrowsAsync<DomainException>(() => f.Promote().Handle(new(f.Squad.Id, trial.Id, null, null), default));
+        Assert.Equal(ErrorCode.TrialPlayerPromoted, again.Code);
+    }
+
     private sealed class Fixture
     {
         public FakeClock Clock { get; } = new(Now);
@@ -185,6 +225,7 @@ public class TrainingAlertTests
         public List<Alert> Alerts { get; } = [];
         public List<MatchCallUp> CallUps { get; } = [];
         public List<TrainingSession> Trainings { get; } = [];
+        public List<TrialPlayer> Trials { get; } = [];
         public MatchCallUp CallUp => CallUps.Single();
         public int Saves { get; private set; }
 
@@ -210,12 +251,18 @@ public class TrainingAlertTests
             new(user ?? CoachUser, Squads, Coaches, Clubs, Matches, Teams, CallUpStore, AlertStore, Unit, Clock);
 
         public RespondCallUpHandler Respond(ICurrentUser user) =>
-            new(user, Players, Squads, Clubs, Matches, Teams, CallUpStore, AlertStore, Unit, Clock);
+            new(user, Players, Squads, Matches, Teams, CallUpStore, AlertStore, Unit, Clock);
 
         public PlanTrainingHandler Plan() => new(CoachUser, Squads, Coaches, Clubs, TrainingStore, Unit, Clock);
 
         public ReportTrainingAbsenceHandler ReportAbsence(ICurrentUser user) =>
-            new(user, Players, Squads, Clubs, TrainingStore, Teams, AlertStore, Unit, Clock);
+            new(user, Players, Squads, Clubs, TrainingStore, TrialStore, Teams, AlertStore, Unit, Clock);
+
+        public SetAttendanceHandler SetAttendance() => new(CoachUser, Squads, Clubs, TrainingStore, TrialStore, Unit, Clock);
+
+        public AddTrialPlayerToTrainingHandler AddTrial() => new(CoachUser, Squads, Coaches, Clubs, TrainingStore, TrialStore, Unit, Clock);
+
+        public PromoteTrialPlayerHandler Promote() => new(CoachUser, Squads, Clubs, TrialStore, TrainingStore, Unit, Clock);
 
         private ISquadStore Squads => Stub<ISquadStore>((method, args) => method switch
         {
@@ -264,7 +311,15 @@ public class TrainingAlertTests
         private ITrainingStore TrainingStore => Stub<ITrainingStore>((method, args) => method switch
         {
             nameof(ITrainingStore.GetByIdAsync) => Task.FromResult(Trainings.FirstOrDefault(s => s.Id == (Guid)args![0]!)),
+            nameof(ITrainingStore.GetByTrialPlayerAsync) => Task.FromResult<IReadOnlyList<TrainingSession>>(Trainings.Where(s => s.TrialAttendanceOf((Guid)args![0]!) is not null).ToList()),
             nameof(ITrainingStore.Add) => Run(() => Trainings.Add((TrainingSession)args![0]!)),
+            _ => throw new NotSupportedException(method),
+        });
+        private ITrialPlayerStore TrialStore => Stub<ITrialPlayerStore>((method, args) => method switch
+        {
+            nameof(ITrialPlayerStore.GetByIdAsync) => Task.FromResult(Trials.FirstOrDefault(t => t.Id == (Guid)args![0]!)),
+            nameof(ITrialPlayerStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<TrialPlayer>>(Trials.Where(t => t.SquadId == (Guid)args![0]!).ToList()),
+            nameof(ITrialPlayerStore.Add) => Run(() => Trials.Add((TrialPlayer)args![0]!)),
             _ => throw new NotSupportedException(method),
         });
         private IAlertStore AlertStore => Stub<IAlertStore>((method, args) => method switch

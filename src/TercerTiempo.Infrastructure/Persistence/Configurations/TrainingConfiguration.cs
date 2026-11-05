@@ -82,13 +82,41 @@ internal sealed class TrainingAttendanceConfiguration : IEntityTypeConfiguration
         builder.ToTable("TrainingAttendances");
         builder.HasKey(a => a.Id);
         builder.Property(a => a.Id).ValueGeneratedNever();
+        builder.Ignore(a => a.IsTrial);
         builder.Property(a => a.Status).HasConversion<string>().HasMaxLength(20);
         builder.Property(a => a.Reason).HasMaxLength(200);
 
-        // La ficha se queda aunque el jugador cause baja; si se borra la plantilla, cascada por la sesión.
+        // La ficha se queda aunque el jugador cause baja; si se borra la plantilla, cascada por la sesión. El jugador de
+        // prueba se borra desde su almacén quitando antes sus líneas (SQL Server no admite dos caminos en cascada).
         builder.HasOne<SquadPlayer>().WithMany().HasForeignKey(a => a.SquadPlayerId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<TrialPlayer>().WithMany().HasForeignKey(a => a.TrialPlayerId).OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasIndex(a => new { a.SessionId, a.SquadPlayerId }).IsUnique();
+        // Una línea por jugador y sesión; los nulos no cuentan (cada línea es de un jugador o de un jugador de prueba).
+        builder.HasIndex(a => new { a.SessionId, a.SquadPlayerId }).IsUnique().HasFilter("[SquadPlayerId] IS NOT NULL");
+        builder.HasIndex(a => new { a.SessionId, a.TrialPlayerId }).IsUnique().HasFilter("[TrialPlayerId] IS NOT NULL");
+        builder.ToTable(t => t.HasCheckConstraint("CK_TrainingAttendances_OneSubject",
+            "([SquadPlayerId] IS NOT NULL AND [TrialPlayerId] IS NULL) OR ([SquadPlayerId] IS NULL AND [TrialPlayerId] IS NOT NULL)"));
+    }
+}
+
+internal sealed class TrialPlayerConfiguration : IEntityTypeConfiguration<TrialPlayer>
+{
+    public void Configure(EntityTypeBuilder<TrialPlayer> builder)
+    {
+        builder.ToTable("TrialPlayers");
+        builder.ConfigureAggregate();
+        builder.Ignore(t => t.IsPromoted);
+
+        builder.Property(t => t.FullName).HasMaxLength(150).IsRequired();
+        builder.Property(t => t.NormalizedName).HasMaxLength(150).IsRequired();
+        builder.Property(t => t.Notes).HasMaxLength(500);
+
+        builder.HasOne<Squad>().WithMany().HasForeignKey(t => t.SquadId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Coach>().WithMany().HasForeignKey(t => t.CreatedByCoachId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Club>().WithMany().HasForeignKey(t => t.CreatedByClubId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<SquadPlayer>().WithMany().HasForeignKey(t => t.PromotedSquadPlayerId).OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(t => t.SquadId);
     }
 }
 
@@ -125,7 +153,6 @@ internal sealed class CallUpEntryConfiguration : IEntityTypeConfiguration<CallUp
         builder.HasKey(e => e.Id);
         builder.Property(e => e.Id).ValueGeneratedNever();
         builder.Property(e => e.Response).HasConversion<string>().HasMaxLength(20);
-        builder.Property(e => e.ResponseNote).HasMaxLength(300);
 
         builder.HasOne<SquadPlayer>().WithMany().HasForeignKey(e => e.SquadPlayerId).OnDelete(DeleteBehavior.Restrict);
 

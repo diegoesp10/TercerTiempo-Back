@@ -173,6 +173,11 @@ public static class ErrorCode
     public const string TrainingItemsTooMany = "training.items_too_many";
     public const string TrainingAttendanceInvalid = "training.attendance_invalid";
     public const string TrainingAbsencePast = "training.absence_past";
+    public const string TrainingAttendanceTarget = "training.attendance_target";
+    public const string TrialPlayerNotFound = "trial_player.not_found";
+    public const string TrialPlayerDuplicate = "trial_player.duplicate";
+    public const string TrialPlayerPromoted = "trial_player.promoted";
+    public const string TrialPlayerNotInSession = "trial_player.not_in_session";
     public const string ExerciseNotFound = "exercise.not_found";
     public const string ExerciseInvalidType = "exercise.invalid_type";
     public const string ExerciseDurationRange = "exercise.duration_range";
