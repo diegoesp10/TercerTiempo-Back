@@ -1,8 +1,9 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.IdentityModel.JsonWebTokens;
 using TercerTiempo.Application.Abstractions.Identity;
 
-namespace TercerTiempo.Api.Infrastructure;
+namespace TercerTiempo.Hosting;
 
 internal sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : ICurrentUser
 {

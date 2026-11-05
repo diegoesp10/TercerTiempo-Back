@@ -3,6 +3,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 COPY Directory.Build.props ./
 COPY src/TercerTiempo.Api/TercerTiempo.Api.csproj src/TercerTiempo.Api/
+COPY src/TercerTiempo.Hosting/TercerTiempo.Hosting.csproj src/TercerTiempo.Hosting/
 COPY src/TercerTiempo.Application/TercerTiempo.Application.csproj src/TercerTiempo.Application/
 COPY src/TercerTiempo.Domain/TercerTiempo.Domain.csproj src/TercerTiempo.Domain/
 COPY src/TercerTiempo.Infrastructure/TercerTiempo.Infrastructure.csproj src/TercerTiempo.Infrastructure/

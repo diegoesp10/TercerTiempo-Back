@@ -1,5 +1,6 @@
-﻿# Construye y arranca la API de Tercer Tiempo en Docker. Lo que distingue a cada entorno está en
-# src/TercerTiempo.Api/appsettings.{Entorno}.json; los compose y los .env solo llevan lo de Docker y los secretos.
+﻿# Construye y arranca la API y el servicio de vídeo de Tercer Tiempo en Docker. Lo que distingue a cada entorno está en
+# src/TercerTiempo.Api/appsettings.{Entorno}.json (y src/TercerTiempo.Videos/appsettings.{Entorno}.json); los compose y
+# los .env solo llevan lo de Docker y los secretos.
 # Todos los entornos comparten la base de datos reales, tercertiempo_DatosReales, en el mismo SQL Server que su base.
 #   -Environment Development  (por defecto) API en Development; genera .env.development la primera vez y, si no
 #                             está ahí, toma la contraseña de /jobs de los user-secrets del proyecto.
@@ -21,7 +22,7 @@
 #                             tercertiempo_DatosFake, de clubes inventados) con compose.fakedatos.yaml y el
 #                             login de scripts/local-sql-login.sql del SQL Server de Windows del equipo. Genera
 #                             .env.fakedatos la primera vez; la contraseña de /jobs sale de los user-secrets.
-#   -SkipBuild                reutiliza la imagen existente.
+#   -SkipBuild                reutiliza las imágenes existentes.
 #   -ReplaceData              vuelve a copiar al volumen los escudos y fotos de src/TercerTiempo.Api/data.
 param(
     [ValidateSet('Development', 'Production', 'Pilot', 'FakeDatos')][string]$Environment = 'Development',
@@ -177,7 +178,7 @@ if ($Environment -in 'Pilot', 'FakeDatos') {
 }
 
 if (-not $SkipBuild) {
-    Invoke-Native { docker @compose build api } 'No se pudo construir la imagen de la API.'
+    Invoke-Native { docker @compose build api videos } 'No se pudieron construir las imágenes de la API y del servicio de vídeo.'
 }
 
 # Copia al volumen los escudos y fotos guardados en local cuando el volumen está vacío (o con -ReplaceData). La
@@ -197,9 +198,11 @@ if (Test-Path -LiteralPath $localData) {
     } 'No se pudieron copiar los ficheros locales al volumen.'
 }
 
-Invoke-Native { docker @compose up -d --wait --wait-timeout 240 } 'La API no alcanzó un estado saludable. Consulta docker compose logs.'
+Invoke-Native { docker @compose up -d --wait --wait-timeout 300 } 'La API o el servicio de vídeo no alcanzaron un estado saludable. Consulta docker compose logs.'
 $apiPort = if ($settings['TT_API_PORT']) { $settings['TT_API_PORT'] } else { '8181' }
+$videosPort = if ($settings['TT_VIDEOS_PORT']) { $settings['TT_VIDEOS_PORT'] } else { '8182' }
 Write-Host "API Docker ($Environment) lista en el contenedor tercer-tiempo-api-${envName}: http://127.0.0.1:$apiPort/api/health" -ForegroundColor Green
+Write-Host "Servicio de vídeo ($Environment) listo en el contenedor tercer-tiempo-videos-${envName}: http://127.0.0.1:$videosPort/media/health (ffmpeg comprime los vídeos subidos)" -ForegroundColor Green
 if ($Environment -eq 'Development') {
     Write-Host "Referencia de la API: http://127.0.0.1:$apiPort/docs" -ForegroundColor Green
     if ($Database -eq 'Container') {

@@ -135,6 +135,9 @@ internal sealed class JobsMonitor(
                 ?? (definition.RealData ? await RealDataAsync(Last) : await EnvironmentAsync(Last));
 
             var (running, nextRunAt) = scheduler.State(definition.Name);
+            // Lo que hace otro proceso se sabe por su historial: en marcha si su última ejecución sigue abierta.
+            if (definition.External)
+                running = lastRun is { Status: JobRunStatus.Running } && now - lastRun.StartedAt < TimeSpan.FromHours(12);
             JobProgressDto? progress = null;
             if (running && definition.Name == JobNames.FootballData && syncProgress.Snapshot() is { Running: true } sync)
                 progress = new JobProgressDto(sync.Current, sync.Done, sync.Total);
@@ -153,7 +156,8 @@ internal sealed class JobsMonitor(
                 lastRun,
                 definition.Weekly?.Describe(),
                 definition.Name == JobNames.OfficialSheets && !running ? sheetsPause : null,
-                definition.RealData));
+                definition.RealData,
+                definition.External));
         }
         return jobs;
     }

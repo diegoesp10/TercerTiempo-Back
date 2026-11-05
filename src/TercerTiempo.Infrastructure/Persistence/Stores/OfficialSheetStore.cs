@@ -44,4 +44,16 @@ internal sealed class MatchVideoStore(AppDbContext db) : IMatchVideoStore
     }
 
     public void Add(MatchVideo video) => db.MatchVideos.Add(video);
+
+    public Task<MatchVideo?> GetNextPendingAsync(int maxAttempts, CancellationToken cancellationToken = default) =>
+        db.MatchVideos
+            .Where(v => v.DeletedAt == null && v.Status == VideoStatus.Uploaded && v.ProcessingAttempts < maxAttempts)
+            .OrderBy(v => v.UploadedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<MatchVideo>> GetProcessingAsync(CancellationToken cancellationToken = default) =>
+        await db.MatchVideos.Where(v => v.Status == VideoStatus.Processing).ToListAsync(cancellationToken);
+
+    public Task<bool> IsDeletedAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.MatchVideos.AsNoTracking().AnyAsync(v => v.Id == id && v.DeletedAt != null, cancellationToken);
 }

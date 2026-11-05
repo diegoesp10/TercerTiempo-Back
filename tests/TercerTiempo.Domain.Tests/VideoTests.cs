@@ -96,4 +96,71 @@ public class VideoTests
         Assert.Equal(session.TotalChunks, session.NextChunk);
         Assert.Throws<DomainException>(() => session.EnsureAccepts(2, 0, TestData.Now));
     }
+
+    [Fact]
+    public void Uploaded_video_waits_for_compression_and_the_compressed_file_replaces_the_original()
+    {
+        var video = Video();
+        Assert.Equal(VideoStatus.Uploaded, video.Status);
+        Assert.True(video.AwaitsProcessing(maxAttempts: 2));
+        Assert.Equal(ErrorCode.VideoNotProcessing, Assert.Throws<DomainException>(() => video.ReportProgress(10)).Code);
+
+        video.StartProcessing(TestData.Now);
+        Assert.Equal(VideoStatus.Processing, video.Status);
+        Assert.Equal(1, video.ProcessingAttempts);
+        Assert.False(video.AwaitsProcessing(2));
+        Assert.Equal(ErrorCode.VideoNotPending, Assert.Throws<DomainException>(() => video.StartProcessing(TestData.Now)).Code);
+
+        video.ReportProgress(140);
+        Assert.Equal(100, video.ProcessingProgress);
+
+        video.Compressed("new.mp4", 1024, "video/mp4", "partido.mp4", 5760, 1080, TestData.Now.AddHours(1));
+        Assert.Equal(VideoStatus.Ready, video.Status);
+        Assert.Equal("new.mp4", video.StorageKey);
+        Assert.Equal(1024, video.SizeBytes);
+        Assert.Equal(2048, video.OriginalSizeBytes);
+        Assert.Equal(5760, video.DurationSeconds);
+        Assert.Equal(1080, video.Height);
+        Assert.Equal(TestData.Now.AddHours(1), video.ProcessedAt);
+        Assert.False(video.AwaitsProcessing(2));
+    }
+
+    [Fact]
+    public void Light_video_is_kept_as_uploaded_and_a_failed_compression_keeps_serving_the_original()
+    {
+        var kept = Video();
+        kept.StartProcessing(TestData.Now);
+        kept.KeepOriginal(90, 720, TestData.Now);
+        Assert.Equal(VideoStatus.Ready, kept.Status);
+        Assert.Equal("file.mp4", kept.StorageKey);
+        Assert.Null(kept.OriginalSizeBytes);
+
+        var failed = Video();
+        failed.StartProcessing(TestData.Now);
+        failed.FailProcessing(new string('x', 2000), TestData.Now);
+        Assert.Equal(VideoStatus.Failed, failed.Status);
+        Assert.Equal("file.mp4", failed.StorageKey);
+        Assert.Equal(MatchVideo.MaxErrorLength, failed.ProcessingError!.Length);
+        Assert.False(failed.AwaitsProcessing(2));
+    }
+
+    [Fact]
+    public void Interrupted_compression_goes_back_to_the_queue_without_spending_an_attempt()
+    {
+        var video = Video();
+        video.StartProcessing(TestData.Now);
+        video.ReportProgress(40);
+
+        video.Requeue();
+
+        Assert.Equal(VideoStatus.Uploaded, video.Status);
+        Assert.Equal(0, video.ProcessingAttempts);
+        Assert.Equal(0, video.ProcessingProgress);
+        Assert.True(video.AwaitsProcessing(2));
+
+        // Con los intentos agotados se deja de intentar y se sigue sirviendo el original.
+        video.StartProcessing(TestData.Now);
+        video.FailProcessing("ffmpeg", TestData.Now);
+        Assert.False(video.AwaitsProcessing(1));
+    }
 }

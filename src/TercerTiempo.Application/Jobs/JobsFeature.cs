@@ -15,6 +15,9 @@ public static class JobNames
     public const string MatchOfficials = "match-officials";
     public const string LeagueZones = "league-zones";
     public const string RealDataCopy = "real-data";
+
+    // Lo ejecuta el servicio de vídeo (otro proceso), una ejecución por vídeo subido.
+    public const string VideoTranscode = "video-transcode";
 }
 
 public static class JobRunStatus
@@ -61,7 +64,9 @@ public sealed record JobDto(
     [property: Description("Solo las actas: la federación está en pausa y el trabajo sigue solo a esa hora; lanzarlo antes lo deja pedido para entonces.")]
     JobPauseDto? Pause = null,
     [property: Description("Descarga de las webs a la base de datos reales: solo la hace el entorno que tiene el bloqueo.")]
-    bool RealData = false);
+    bool RealData = false,
+    [property: Description("Lo ejecuta otro proceso (el servicio de vídeo) cuando le llega trabajo: no tiene horario ni se lanza desde aquí.")]
+    bool External = false);
 
 public sealed record JobProgressDto(string? Current, int Done, int Total);
 

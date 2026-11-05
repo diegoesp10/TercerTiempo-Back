@@ -3,8 +3,10 @@
     <Project Path="src/TercerTiempo.Api/TercerTiempo.Api.csproj" />
     <Project Path="src/TercerTiempo.Application/TercerTiempo.Application.csproj" />
     <Project Path="src/TercerTiempo.Domain/TercerTiempo.Domain.csproj" />
+    <Project Path="src/TercerTiempo.Hosting/TercerTiempo.Hosting.csproj" />
     <Project Path="src/TercerTiempo.Infrastructure/TercerTiempo.Infrastructure.csproj" />
     <Project Path="src/TercerTiempo.Repository/TercerTiempo.Repository.csproj" />
+    <Project Path="src/TercerTiempo.Videos/TercerTiempo.Videos.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/TercerTiempo.Application.Tests/TercerTiempo.Application.Tests.csproj" />

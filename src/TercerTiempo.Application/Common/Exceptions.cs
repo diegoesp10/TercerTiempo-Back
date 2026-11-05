@@ -11,4 +11,7 @@ public sealed class ForbiddenException(string code, params object[] args) : Code
 
 public sealed class UnauthenticatedException() : CodedException(ErrorCode.AuthUnauthenticated);
 
+// Otra petición cambió la misma fila entre leerla y guardarla.
+public sealed class ConcurrentChangeException() : CodedException(ErrorCode.CommonConcurrentChange);
+
 public sealed class InvalidCredentialsException(string code = ErrorCode.AuthInvalidCredentials, params object[] args) : CodedException(code, args);

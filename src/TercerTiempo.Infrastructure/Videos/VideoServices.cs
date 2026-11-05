@@ -110,6 +110,34 @@ internal sealed class FileSystemVideoStorage(IOptions<VideoOptions> options) : I
         }
     }
 
+    // --- Compresión (ffmpeg trabaja con rutas): el resultado se escribe en processing/ y se publica al terminar ---
+
+    public string PathOf(string storageKey) => Resolve(storageKey);
+
+    public string NewProcessingPath(string extension)
+    {
+        var folder = Path.Combine(Root, "processing");
+        Directory.CreateDirectory(folder);
+        return Path.Combine(folder, $"{Guid.CreateVersion7():N}{extension}");
+    }
+
+    public string Publish(string processingPath, string extension)
+    {
+        var key = $"{Guid.CreateVersion7():N}{extension}";
+        File.Move(processingPath, Path.Combine(Root, key));
+        return key;
+    }
+
+    // Restos de compresiones que no acabaron (el servicio se paró a medias).
+    public int CleanProcessing()
+    {
+        var folder = Path.Combine(Root, "processing");
+        if (!Directory.Exists(folder)) return 0;
+        var files = Directory.GetFiles(folder);
+        foreach (var file in files) File.Delete(file);
+        return files.Length;
+    }
+
     private string ResolveUpload(string uploadKey)
     {
         var uploads = Path.Combine(Root, "uploads");

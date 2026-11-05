@@ -62,23 +62,63 @@ public class EnvironmentSettingsTests
     public void The_pilot_limits_requests_by_the_ip_the_tunnel_sends() =>
         Assert.True(Load("Pilot").GetValue<bool>("Throttling:TrustForwardedHeaders"));
 
-    private static IConfiguration Load(string environment)
+    // El servicio de vídeo valida el JWT que firma la API: misma clave, emisor y audiencia en cada entorno (en Pilot y
+    // Production las dos claves llegan por TT_JWT_KEY, así que aquí las dos están vacías).
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("FakeDatos")]
+    [InlineData("Pilot")]
+    [InlineData("Production")]
+    public void The_video_service_validates_the_tokens_the_api_signs(string environment)
     {
-        var api = ApiFolder();
+        var api = Load(environment);
+        var videos = Load(environment, VideoService);
+
+        foreach (var key in new[] { "Jwt:Key", "Jwt:Issuer", "Jwt:Audience" })
+            Assert.Equal(api[key], videos[key]);
+        if (environment is "Development" or "FakeDatos")
+            Assert.True(api["Jwt:Key"]?.Length >= 32);
+    }
+
+    // Los dos procesos leen la misma base, y la subida por trozos del frontal cuenta con los mismos límites en los dos.
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("FakeDatos")]
+    [InlineData("Pilot")]
+    [InlineData("Production")]
+    public void The_video_service_shares_the_database_and_the_video_limits_of_the_api(string environment)
+    {
+        var api = Load(environment);
+        var videos = Load(environment, VideoService);
+
+        Assert.Equal(api.GetConnectionString("Default"), videos.GetConnectionString("Default"));
+        Assert.Equal(api.GetConnectionString("RealData"), videos.GetConnectionString("RealData"));
+        foreach (var key in new[] { "Videos:Directory", "Videos:ChunkSizeMb", "Videos:MaxSizeMb", "Videos:AllowedContentTypes:0", "Videos:AllowedContentTypes:1" })
+            Assert.Equal(api[key], videos[key]);
+        Assert.True(videos.GetValue<bool>("VideoProcessing:Enabled"));
+        Assert.Equal(1080, videos.GetValue<int>("VideoProcessing:MaxHeight"));
+    }
+
+    private const string Api = "TercerTiempo.Api";
+    private const string VideoService = "TercerTiempo.Videos";
+
+    private static IConfiguration Load(string environment, string project = Api)
+    {
+        var folder = ProjectFolder(project);
         return new ConfigurationBuilder()
-            .AddJsonFile(Path.Combine(api, "appsettings.json"))
-            .AddJsonFile(Path.Combine(api, $"appsettings.{environment}.json"))
+            .AddJsonFile(Path.Combine(folder, "appsettings.json"))
+            .AddJsonFile(Path.Combine(folder, $"appsettings.{environment}.json"))
             .Build();
     }
 
-    private static string ApiFolder()
+    private static string ProjectFolder(string project)
     {
         for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
         {
-            var api = Path.Combine(folder.FullName, "src", "TercerTiempo.Api");
-            if (File.Exists(Path.Combine(api, "appsettings.json"))) return api;
+            var candidate = Path.Combine(folder.FullName, "src", project);
+            if (File.Exists(Path.Combine(candidate, "appsettings.json"))) return candidate;
         }
-        throw new DirectoryNotFoundException("No se encuentra src/TercerTiempo.Api subiendo desde la carpeta de los tests.");
+        throw new DirectoryNotFoundException($"No se encuentra src/{project} subiendo desde la carpeta de los tests.");
     }
 
     private static JobScheduler Scheduler(IConfiguration configuration) => TestJobs.Scheduler(

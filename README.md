@@ -5,8 +5,9 @@ técnicos de sus equipos temporada a temporada mediante **nombramientos** con un
 nombrado gestiona la plantilla de su equipo (fichas importadas de futbolasturiano.es o añadidas a mano) y, tras cada
 partido, registra el **acta interna**: minutos, goles, asistencias, tiros, tarjetas... de cada jugador; la **nota** no
 la pone nadie: se calcula con esos datos. Esa acta se **compara con el acta oficial** que publica la federación
-(asturfutbol.es) y, si el equipo graba el partido, el cuerpo técnico puede **subir el vídeo**, que su plantilla ve
-gratis y el resto de técnicos previo pago. Cada **jugador** se da de alta con el código personal de su ficha y ve
+(asturfutbol.es) y, si el equipo graba el partido, el club o el cuerpo técnico puede **subir el vídeo** (lo atiende el
+**servicio de vídeo**, un segundo proceso que lo sirve y lo comprime sin bajar de 1080p), que su plantilla ve gratis y
+quien tenga un pase del partido. Cada **jugador** se da de alta con el código personal de su ficha y ve
 cuánto aporta: a nivel individual, a su equipo y frente al resto de la liga. Los datos de cada plantilla son
 **privados** salvo que su cuerpo técnico la haga pública.
 
@@ -21,7 +22,14 @@ dotnet run --project src/TercerTiempo.Api --launch-profile http
 ```
 
 La API escucha en `http://localhost:5080`; la referencia OpenAPI en `http://localhost:5080/docs` y el documento en
-`http://localhost:5080/openapi/v1.json`.
+`http://localhost:5080/openapi/v1.json`. Los vídeos (subida, reproducción, descarga y compresión) los atiende el
+**servicio de vídeo**, otro proceso de la misma solución que se arranca aparte (en Visual Studio, los dos proyectos a la
+vez) y escucha en `http://localhost:5081` con su propia referencia en `/docs`; para comprimir necesita `ffmpeg` en el
+PATH (`winget install Gyan.FFmpeg`; sin él los vídeos se quedan en cola, tal cual se subieron):
+
+```bash
+dotnet run --project src/TercerTiempo.Videos --launch-profile http
+```
 Al arrancar crea la base de datos si no existe, aplica las migraciones pendientes y sincroniza las ligas con el
 proveedor configurado: una base de datos vacía queda lista para usar con los datos reales en unos minutos. La cadena
 de conexión de desarrollo (`appsettings.Development.json`) apunta a la instancia local por defecto con autenticación de
@@ -66,10 +74,12 @@ OpenApi__Enabled=true OpenApi__BasicAuth__Username=docs OpenApi__BasicAuth__Pass
 | Proyecto | Responsabilidad | Depende de |
 |---|---|---|
 | `TercerTiempo.Domain` | Entidades, value objects, reglas de negocio, eventos de dominio y contratos de persistencia (`ISquadStore`, `IClubStore`, `ICoachAppointmentStore`, `IOfficialSheetStore`, `IMatchVideoStore`...). Sin frameworks. | — |
-| `TercerTiempo.Application` | Casos de uso (commands/queries con handlers), DTOs, validación (FluentValidation), cálculo de estadísticas, reglas de acceso a cada plantilla, comparador de actas y abstracciones que implementa la infraestructura (`IIdentityService`, `ITokenService`, `ICurrentUser`, `IFootballDataProvider`, `IOfficialSheetProvider`, `IVideoStorage`, `IPaymentGateway`, `IVideoTickets`). | Domain |
+| `TercerTiempo.Application` | Casos de uso (commands/queries con handlers), DTOs, validación (FluentValidation), cálculo de estadísticas, reglas de acceso a cada plantilla, comparador de actas, el orquestador de la compresión de vídeos (`VideoProcessor`) y abstracciones que implementa la infraestructura (`IIdentityService`, `ITokenService`, `ICurrentUser`, `IFootballDataProvider`, `IOfficialSheetProvider`, `IVideoStorage`, `IVideoTranscoder`, `IPaymentGateway`, `IVideoTickets`). | Domain |
 | `TercerTiempo.Repository` | Fachada entre la API y la aplicación: una interfaz por recurso (`IAuthRepository`, `IClubsRepository`, `ICoachesRepository`, `ISquadsRepository`, `IPlayersRepository`, `ICompetitionsRepository`, `ITeamsRepository`, `IMatchesRepository`, `IVideosRepository`, `IStatsRepository`, `IAdminRepository`) que despacha el command/query correspondiente. Cada endpoint la llama en una línea. | Application |
-| `TercerTiempo.Infrastructure` | EF Core + SQL Server (stores), ASP.NET Identity, emisión de JWT, proveedores de datos de fútbol y el worker de sincronización, lector de actas de asturfutbol.es, almacenamiento de vídeos en disco, tickets de reproducción y pasarela de pago simulada. | Application |
-| `TercerTiempo.Api` | Minimal APIs agrupadas por recurso, autenticación JWT, CORS, documento OpenAPI nativo + referencia Scalar, `ProblemDetails` global. | Repository, Infrastructure |
+| `TercerTiempo.Infrastructure` | EF Core + SQL Server (stores), ASP.NET Identity, emisión de JWT, proveedores de datos de fútbol y los workers de sincronización, lector de actas de asturfutbol.es, almacenamiento de vídeos en disco, ffmpeg (`FfmpegTranscoder`), tickets de reproducción y pasarela de pago simulada. `AddInfrastructure` registra todo (la API); `AddInfrastructureCore`, lo mismo sin los trabajos en segundo plano (el servicio de vídeo). | Application |
+| `TercerTiempo.Hosting` | Lo común de los dos procesos web: autenticación JWT y políticas, usuario de la petición (`ICurrentUser`), errores como `ProblemDetails`, límite de llamadas, puerta de licencias (`RequireLicense`), salud y documento OpenAPI nativo + referencia Scalar (cada proceso pone su título y su flujo). | Application, Infrastructure |
+| `TercerTiempo.Api` | Minimal APIs agrupadas por recurso y composición de dependencias; aplica las migraciones y lanza los trabajos en segundo plano. | Repository, Hosting |
+| `TercerTiempo.Videos` | **Servicio de vídeo**: Minimal APIs bajo `/media` (subida por trozos, tickets, reproducción y descarga por rangos, borrado) y el worker que comprime con ffmpeg. Mismas capas, misma base y mismos permisos que la API; otro proceso para que el vídeo no la cargue. | Repository, Hosting |
 
 Flujo de una petición:
 
@@ -174,7 +184,6 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/squads/{id}/matches` | Partidos del equipo con el número de líneas registradas en cada acta |
 | GET / PUT | `/api/squads/{id}/matches/{matchId}/sheet` | Consultar / registrar el acta interna de un partido (idempotente; `played = false` borra la línea) |
 | GET | `/api/squads/{id}/matches/{matchId}/sheet/comparison` | **Comparador**: acta interna frente a la oficial guardada en SQL, jugador a jugador, con las discrepancias. `refresh` no fuerza descargas |
-| POST | `/api/squads/{id}/matches/{matchId}/video` | Subir el vídeo del partido (multipart `file` + `title`) |
 | GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
 | GET | `/api/squads/{id}/players/{squadPlayerId}/profile` | Ficha para gráficos: serie partido a partido con el desglose de la nota, perfil por 90' y media/máximo de la plantilla |
 | GET | `/api/squads/{id}/timeline` | Evolución del equipo: resultado, puntos acumulados, nota media y mejor nota de cada partido |
@@ -188,10 +197,8 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/teams/{id}/crest` | Escudo guardado (descargado de la federación); `crestUrl` apunta aquí cuando existe. Público |
 | GET | `/api/matches/{id}` | Detalle con las actas de ambas plantillas (cada una solo si es visible para el usuario) |
 | GET | `/api/matches/{id}/official-sheet` | Acta oficial de la federación (o `NotPlayed` / `Pending` / `Unavailable`); público |
-| GET | `/api/matches/{id}/videos` | Vídeos del partido con el acceso del usuario a cada uno |
-| POST | `/api/videos/{id}/purchase`, `/api/videos/{id}/ticket` | Comprar el acceso (técnicos de otras plantillas) / ticket de reproducción |
-| GET | `/api/videos/{id}/stream?ticket=` | Streaming con rangos (206) para el reproductor |
-| DELETE | `/api/videos/{id}` | Eliminar el vídeo (solo el cuerpo técnico que lo subió) |
+| GET | `/api/matches/{id}/videos` | Vídeos del partido con el acceso del usuario a cada uno y su estado de compresión (`status`, `progress`, tamaño original) |
+| — | `/media/squads/{id}/matches/{matchId}/video/uploads`, `/media/squads/{id}/video-uploads/{uploadId}/…`, `/media/videos/{id}/ticket`, `/media/videos/{id}/stream?ticket=`, `/media/videos/{id}/download-ticket`, `/media/videos/{id}/download?ticket=`, `DELETE /media/videos/{id}` | **Servicio de vídeo** (otro proceso, mismo token): subida por trozos, tickets, reproducción y descarga por rangos (206) y borrado. Ver *Vídeos de partido* |
 | GET | `/api/league/table?competitionId=` | Clasificación de una liga (sin parámetro, la de la plantilla del usuario) |
 | POST | `/api/admin/login` | Sesión del administrador (rol `Admin`); su token abre todo `/api/admin/*`. En publicación devuelve el reto MFA en vez del token |
 | POST | `/api/admin/login/mfa` | Segundo paso del administrador en publicación: billete + código de Microsoft Authenticator → token |
@@ -298,7 +305,8 @@ la temporada nueva y la hace actual; el administrador puede cambiarla con `PUT /
 ## Trabajos en segundo plano y página /jobs
 
 Los dos scrapeos periódicos son trabajos (`Infrastructure/Jobs/JobScheduler.cs`): `football-data` (datos de las ligas)
-y `official-sheets` (pasada de actas públicas). Cada ejecución queda en la tabla `JobRuns` (automática o a mano, estado,
+y `official-sheets` (pasada de actas públicas); `video-transcode` es un trabajo **externo**: lo ejecuta el servicio de
+vídeo, una ejecución por vídeo subido, y aquí solo se enseña su historial (sin horario ni lanzamiento a mano). Cada ejecución queda en la tabla `JobRuns` (automática o a mano, estado,
 resumen, errores y llamadas hechas) y cada llamada real a una web externa en `ScrapeRequests` (proveedor, URL, código,
 duración y ejecución). Al arrancar se lee la última ejecución de cada trabajo y se espera a que pase su intervalo; las
 que quedaron a medias se marcan como interrumpidas. Se guardan 30 días de llamadas y 180 de ejecuciones.
@@ -398,29 +406,60 @@ fichas de equipo, ni campos, ni escudos, porque bloquea la IP tras unas pocas pe
 
 ## Vídeos de partido
 
-El cuerpo técnico sube el vídeo del partido entero o en dos partes (`VideoPart`: `Full`, `FirstHalf`, `SecondHalf`;
-nunca mezcladas y cada parte una sola vez por plantilla). Solo mp4 y webm (los demás formatos no se reproducen en el
-navegador) hasta `Videos:MaxSizeMb` (4 GB). La subida va **por trozos y es reanudable**: `POST
-/api/squads/{id}/matches/{matchId}/video/uploads` abre una sesión (`VideoUploadSession`, tabla `VideoUploads`, caduca a las
-`Videos:UploadExpiryHours`), los trozos de `Videos:ChunkSizeMb` se envían en orden a `PUT
-/api/squads/{id}/video-uploads/{uploadId}/chunks/{index}` (cuerpo binario; cada trozo se escribe desde el offset ya
+Todo lo del vídeo lo atiende el **servicio de vídeo** (`src/TercerTiempo.Videos`), un segundo proceso web de la
+solución con las mismas capas, la misma base de datos y las mismas reglas de acceso que la API, para que subir, servir y
+comprimir vídeos de varios GB no cargue a la API. Sus rutas van bajo `/media` y acepta el mismo JWT (misma `Jwt:Key`,
+emisor y audiencia; en local, los dos proyectos comparten los user-secrets). En Docker es el contenedor `videos`, con
+ffmpeg en la imagen; en Visual Studio se arranca junto a la API (puerto 5081). La API conserva la lista de vídeos de un
+partido (`GET /api/matches/{id}/videos`), que ahora lleva el estado de la compresión.
+
+**Subida.** El club o el cuerpo técnico sube el vídeo del partido entero o en dos partes (`VideoPart`: `Full`,
+`FirstHalf`, `SecondHalf`; nunca mezcladas y cada parte una sola vez por plantilla), solo de un partido ya jugado y solo
+mp4 o webm (los demás formatos no se reproducen en el navegador) hasta `Videos:MaxSizeMb` (20 GB). La subida va **por
+trozos y es reanudable**: `POST /media/squads/{id}/matches/{matchId}/video/uploads` abre una sesión
+(`VideoUploadSession`, tabla `VideoUploads`, caduca a las `Videos:UploadExpiryHours` sin recibir trozos), los trozos de
+`Videos:ChunkSizeMb` (16 MB, lo que admite el Nginx del frontal) se envían en orden a `PUT
+/media/squads/{id}/video-uploads/{uploadId}/chunks/{index}` (cuerpo binario; cada trozo se escribe desde el offset ya
 confirmado, así un reintento nunca corrompe el temporal) y `…/complete` publica el vídeo; `GET …/video-uploads/{uploadId}`
-dice por dónde va para reanudar. El `POST …/video` multipart de una sola vez sigue existiendo para archivos pequeños. Se
-guarda en disco (`Videos:Directory`, nombre aleatorio; temporales en `uploads/`) con `IVideoStorage`. Acceso
-(`VideoAccess`): la plantilla que lo subió (staff vigente y jugadores vinculados) lo ve gratis (`Owner`); los técnicos de
-otras plantillas lo ven **previo pago** del precio del vídeo (`Videos:DefaultPriceCents`, `Locked` → `Purchased`; comprar
-cualquier parte da acceso a todas las partes del partido de esa plantilla); nadie
-más. Como el reproductor del navegador no puede enviar el JWT, `POST /api/videos/{id}/ticket` emite un ticket de corta
-vida (`Videos:TicketMinutes`, en memoria) y `GET /api/videos/{id}/stream?ticket=` sirve el archivo con soporte de rangos.
-La pasarela de pago es una abstracción (`IPaymentGateway`); la única implementación, `FakePaymentGateway`, aprueba todos
-los cobros y los deja en el log: para cobrar de verdad hay que implementar Stripe (u otra) detrás de esa interfaz. La
-retransmisión en directo queda para más adelante.
+dice por dónde va para reanudar. El `POST …/video` multipart de una sola vez sigue existiendo para archivos pequeños.
+Antes de empezar se comprueba que el archivo cabe en el disco con margen (`Videos:MinFreeSpaceMb`). Se guarda en disco
+(`Videos:Directory`, nombre aleatorio; temporales en `uploads/`, compresiones en curso en `processing/`) con
+`IVideoStorage` (`FileSystemVideoStorage`); en Docker es el volumen de datos que comparten la API y el servicio.
+
+**Compresión.** Un partido entero grabado con un móvil a 1080p pesa unos 6 GB (8 Mbps). Al publicarse, el vídeo queda
+`Uploaded` (en cola) y el worker del servicio (`VideoProcessingWorker` → `VideoProcessor` → `FfmpegTranscoder`) lo
+recomprime de uno en uno con ffmpeg a **H.264 sin bajar de 1080p** (solo se reduce lo que venga por encima de
+`VideoProcessing:MaxHeight`), calidad constante `VideoProcessing:Crf` (22, visualmente igual que el original), preset
+`medium`, audio AAC a 128 kbps y `faststart`: entre dos y tres veces menos. Un archivo que ya venga en H.264/MP4 a
+1080p o menos y por debajo de `VideoProcessing:SkipBelowKbps` se deja tal cual (`TranscodePlan`). Estados
+(`VideoStatus`): `Uploaded` → `Processing` (con `progress` en %, leído de `-progress` de ffmpeg y guardado cada pocos
+segundos) → `Ready`, o `Failed` con el motivo (como mucho `VideoProcessing:MaxAttempts` intentos). **En todos los estados
+el vídeo se ve y se descarga**: hasta `Ready` se sirve el original; al terminar, tras comprobar con ffprobe que el
+comprimido dura lo mismo, se cambia la clave de almacenamiento, se guarda el tamaño original (`OriginalSizeBytes`,
+duración y alto) y se borra el archivo subido. Si falla, se conserva el original. Borrar un vídeo que se está comprimiendo
+para ffmpeg (`IVideoProcessingSignal`) y descarta lo hecho; la fila lleva un `rowversion`, así que si el compresor y una
+petición tocan a la vez el mismo vídeo quien llega tarde se entera (`ConcurrentChangeException`) y no pisa nada. Al
+arrancar, lo que quedó `Processing` en la parada anterior vuelve a la cola y se limpia `processing/`. Cada compresión
+queda en `JobRuns` como una ejecución del trabajo `video-transcode` («Compresión de vídeos» en `/jobs`, con su resumen:
+«CD Vallobín - Real Titánico (partido completo): de 5,9 GB a 2,3 GB (1080p) en 95 min»). Un partido entero a 1080p
+tarda alrededor de una hora y media con los dos núcleos del contenedor (`TT_VIDEOS_CPUS`). Sin ffmpeg instalado
+(`VideoProcessing:FfmpegPath`), el worker avisa y los vídeos se quedan en cola.
+
+**Acceso** (`VideoAccess`): un vídeo nunca es público. Lo ven la plantilla que lo subió (club, cuerpo técnico vigente y
+jugadores vinculados: `Owner`), el administrador (`Admin`) y quien tenga un pase del partido que lo incluya (`Pass`);
+de una plantilla pública se puede pedir el acceso al club (`Locked`). Descargan el archivo el club, el cuerpo técnico y
+los pases con descarga. Como el reproductor no puede enviar el JWT, `POST /media/videos/{id}/ticket` emite un ticket
+de vida deslizante (`Videos:TicketMinutes`, tope `Videos:TicketMaxHours`, en memoria del servicio) y
+`GET /media/videos/{id}/stream?ticket=` sirve el archivo con soporte de rangos (206); la descarga tiene su propio ticket
+(`…/download-ticket` y `…/download?ticket=`). Todas las rutas pasan por la puerta de licencias del equipo que subió el
+vídeo. La retransmisión en directo queda para más adelante.
 
 ## Docker
 
-La API y el frontal se levantan en contenedores con sus imágenes, unidos por la red `tercer-tiempo-net`: el Nginx del
-frontal ([TercerTiempo-Front](https://github.com/diegoesp10/TercerTiempo-Front)) reenvía `/api` al contenedor `api`, así
-que la web y la API comparten origen. Con Docker Desktop en modo Linux:
+La API, el servicio de vídeo y el frontal se levantan en contenedores con sus imágenes, unidos por la red
+`tercer-tiempo-net`: el Nginx del frontal ([TercerTiempo-Front](https://github.com/diegoesp10/TercerTiempo-Front))
+reenvía `/api` al contenedor `api` y `/media` al contenedor `videos`, así que la web, la API y el servicio de vídeo
+comparten origen. Con Docker Desktop en modo Linux:
 
 ```powershell
 .\Start-Docker.ps1                                   # desarrollo: API en Development (base según TT_DEV_DATABASE)
@@ -431,7 +470,7 @@ que la web y la API comparten origen. Con Docker Desktop en modo Linux:
 .\Start-Docker.ps1 -Environment Production           # publicación: secretos de .env.production
 .\Start-Docker.ps1 -Environment Production -WithDatabase   # publicación con el SQL Server en este equipo
 .\Start-Docker.ps1 -Environment Pilot                # piloto con clubes: publicación con la base tercertiempo_Piloto
-.\Start-Docker.ps1 -SkipBuild                         # reutiliza la imagen
+.\Start-Docker.ps1 -SkipBuild                         # reutiliza las imágenes
 .\Start-Docker.ps1 -ReplaceData                       # vuelve a copiar escudos y fotos de src/TercerTiempo.Api/data
 ```
 
@@ -464,10 +503,14 @@ conviene que la API de Visual Studio lance también los scrapeos de actas.
   del contenedor no lanza scrapeos por horario (se lanzan a mano desde su `/jobs`), para no duplicar los de Visual
   Studio: el script añade `compose.nojobs.yaml`, que pone a 0 la sincronización de las ligas (y con ella los árbitros
   y las plazas) y los barridos de actas (y con ellos las del fin de semana). `-WithJobs` los activa.
-- Memoria acotada: API 512 MB, SQL Server del contenedor 1 GB de uso interno (1,5 GB de contenedor) y web 64 MB
+- Memoria acotada: API 512 MB, servicio de vídeo 2 GB y dos núcleos para ffmpeg (`TT_VIDEOS_MEMORY`,
+  `TT_VIDEOS_CPUS`), SQL Server del contenedor 1 GB de uso interno (1,5 GB de contenedor) y web 64 MB
   (`TT_API_MEMORY`, `TT_SQL_MEMORY_MB`, `TT_SQL_CONTAINER_MEMORY`).
-- La API escucha en el 8080 del contenedor y solo se publica en el loopback (`127.0.0.1:8181`); los visitantes entran
-  por la web (`127.0.0.1:8180`). `GET /api/health` comprueba la API y su conexión con SQL Server (lo usa Docker).
+- La API y el servicio de vídeo escuchan en el 8080 de su contenedor y solo se publican en el loopback
+  (`127.0.0.1:8181` y `127.0.0.1:8182`); los visitantes entran por la web (`127.0.0.1:8180`). `GET /api/health` y
+  `GET /media/health` comprueban cada proceso y su conexión con SQL Server (lo usa Docker). El contenedor `videos`
+  (`Dockerfile.videos`, Alpine con ffmpeg) arranca cuando la API ya está sana, porque las migraciones las aplica ella, y
+  comparte su volumen de datos.
 - En el contenedor `ReverseProxy:Enabled = true`: la API lee la IP y el esquema del visitante de `X-Forwarded-*` y no
   redirige a HTTPS (el TLS lo pone quien publique la web, p. ej. un túnel de Cloudflare como en el portfolio).
 - La imagen es Alpine con ICU y `tzdata` (cultura `es-ES`, hora de `Europe/Madrid`), usuario sin privilegios y sistema
@@ -477,9 +520,10 @@ conviene que la API de Visual Studio lance también los scrapeos de actas.
 
 ```powershell
 docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development ps
-docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development logs -f api
+docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development logs -f api videos
 docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development down   # conserva los volúmenes
 docker build --target test .                                                                # tests dentro de la build
+docker build -f Dockerfile.videos --target test .                                           # la compresión real con ffmpeg
 ```
 
 ## Configuración y secretos
@@ -487,7 +531,9 @@ docker build --target test .                                                    
 ### Dónde está la configuración de cada entorno
 
 Cada entorno es un `ASPNETCORE_ENVIRONMENT` con su `src/TercerTiempo.Api/appsettings.{Entorno}.json` encima de
-`appsettings.json`, que tiene lo común y los valores de publicación. Cada fichero de entorno lleva solo lo que cambia, y
+`appsettings.json`, que tiene lo común y los valores de publicación (el servicio de vídeo tiene los suyos en
+`src/TercerTiempo.Videos`, con lo mismo que necesita: conexiones, JWT, límites de los vídeos y `VideoProcessing`; un
+test comprueba que coinciden con los de la API en cada entorno). Cada fichero de entorno lleva solo lo que cambia, y
 ninguno lleva secretos: esos van en los user-secrets (Visual Studio) o en los `.env.*` (Docker), que no se versionan.
 
 | Entorno | Se arranca con | Lo que lo distingue | Secretos y lo propio de Docker |
@@ -502,7 +548,8 @@ guarda en la base de datos de cada entorno. En el código, `IsLocalDevelopment()
 .NET solo hace en Development: leer los user-secrets, publicar `/docs` sin contraseña y no redirigir a HTTPS.
 
 **En qué entorno está la API que corre.** En Docker, el contenedor lleva el entorno en el nombre
-(`tercer-tiempo-api-development`, `-fakedatos`, `-pilot` o `-production`; lo pone cada `compose.{entorno}.yaml`), así que
+(`tercer-tiempo-api-development`, `-fakedatos`, `-pilot` o `-production`, y lo mismo `tercer-tiempo-videos-*`; lo pone
+cada `compose.{entorno}.yaml`), así que
 lo dicen `docker ps`, Docker Desktop y el final de `Start-Docker.ps1`. Solo hay uno a la vez: cambiar de entorno
 recrea el contenedor con el nombre nuevo, y el `Start-Docker.ps1` del frontal avisa si la API en marcha no es la del
 entorno pedido (no la cambia sola, por si es el piloto). En Visual Studio es el perfil elegido (`http`/`https` →
@@ -552,8 +599,10 @@ reales con los mismos Id.
 
 ### Claves
 
-- `Jwt:Key` (mínimo 32 caracteres) solo está definida en `appsettings.Development.json` y `appsettings.FakeDatos.json`.
-  Para otros entornos usa user-secrets o variables de entorno:
+- `Jwt:Key` (mínimo 32 caracteres) solo está definida en `appsettings.Development.json` y `appsettings.FakeDatos.json`
+  (de la API y del servicio de vídeo, que valida los mismos tokens). Para otros entornos usa user-secrets (los dos
+  proyectos comparten el mismo almacén, `tercer-tiempo-api`) o variables de entorno (`TT_JWT_KEY` llega a los dos
+  contenedores):
 
 ```bash
 dotnet user-secrets set "Jwt:Key" "una-clave-larga-y-aleatoria" --project src/TercerTiempo.Api
@@ -564,13 +613,14 @@ dotnet user-secrets set "Jwt:Key" "una-clave-larga-y-aleatoria" --project src/Te
   (p. ej. `Server=mi-servidor;Database=TercerTiempo;User Id=tercertiempo;Password=...;Encrypt=True`). La conexión
   reintenta ante errores transitorios y usa consultas divididas para las colecciones.
 - `Cors:AllowedOrigins` incluye el frontend de Vite (`http://localhost:5173`).
-- `OfficialSheets:*` (asturfutbol.es: URL base, ritmo, códigos de sección, minutos reglamentarios) y `Videos:*`
-  (carpeta, tamaño máximo, precio por defecto, formatos, vida de los tickets): ver `appsettings.json`.
+- `OfficialSheets:*` (asturfutbol.es: URL base, ritmo, códigos de sección, minutos reglamentarios), `Videos:*`
+  (carpeta, tamaño máximo, trozo, formatos, vida de los tickets) y, en el servicio de vídeo, `VideoProcessing:*` (CRF,
+  preset, alto máximo, audio, umbral para dejar tal cual, intentos, rutas de ffmpeg y ffprobe): ver cada `appsettings.json`.
 
 ## Migraciones y tests
 
 ```bash
-dotnet ef migrations add NombreDeLaMigracion --project src/TercerTiempo.Infrastructure --startup-project src/TercerTiempo.Api --output-dir Persistence/Migrations
+dotnet ef migrations add NombreDeLaMigracion --project src/TercerTiempo.Infrastructure --startup-project src/TercerTiempo.Api --context AppDbContext --output-dir Persistence/Migrations
 ```
 
 ```bash

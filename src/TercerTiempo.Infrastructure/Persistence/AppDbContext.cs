@@ -96,6 +96,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             throw new ConflictException(ErrorCode.PassAlreadyRedeemed);
         }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is MatchVideo && e.State == EntityState.Modified))
+        {
+            // El compresor y una petición (borrar el vídeo) tocaron la misma fila: quien llega tarde se entera y decide.
+            throw new ConcurrentChangeException();
+        }
         catch (DbUpdateConcurrencyException ex) when (ex.Entries.All(e => e.State == EntityState.Deleted))
         {
             // Borrar lo que otra petición acaba de borrar (dos cancelaciones de la misma subida de vídeo, por ejemplo)

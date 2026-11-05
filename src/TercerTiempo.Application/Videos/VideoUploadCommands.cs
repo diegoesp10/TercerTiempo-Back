@@ -218,6 +218,7 @@ internal sealed class CompleteVideoUploadHandler(
     IMatchVideoStore videos,
     IVideoUploadStore uploads,
     IVideoStorage storage,
+    IVideoProcessingSignal processing,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<CompleteVideoUploadCommand, MatchVideoDto>
 {
@@ -241,6 +242,7 @@ internal sealed class CompleteVideoUploadHandler(
         videos.Add(video);
         uploads.Remove(session);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        processing.Wake();
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
         return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDownload: true, canDelete: true);

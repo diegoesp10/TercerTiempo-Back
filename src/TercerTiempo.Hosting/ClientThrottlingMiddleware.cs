@@ -1,18 +1,26 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using TercerTiempo.Application.Abstractions.Errors;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Infrastructure.Security;
 
-namespace TercerTiempo.Api.Infrastructure;
+namespace TercerTiempo.Hosting;
 
 internal sealed class ClientThrottlingMiddleware(RequestDelegate next, ClientThrottle throttle, ILogger<ClientThrottlingMiddleware> logger)
 {
+    // Las rutas de la API y las del servicio de vídeo; lo demás (documentación, salud) no cuenta.
+    private static readonly PathString[] ThrottledPrefixes = ["/api", "/media"];
+
     public async Task InvokeAsync(HttpContext context)
     {
         var settings = throttle.Settings;
-        if (!settings.Enabled || HttpMethods.IsOptions(context.Request.Method) || !context.Request.Path.StartsWithSegments("/api"))
+        if (!settings.Enabled || HttpMethods.IsOptions(context.Request.Method) || !ThrottledPrefixes.Any(prefix => context.Request.Path.StartsWithSegments(prefix)))
         {
             await next(context);
             return;
@@ -67,7 +75,7 @@ internal sealed class ClientThrottlingMiddleware(RequestDelegate next, ClientThr
     }
 }
 
-internal static class ClientThrottlingExtensions
+public static class ClientThrottlingExtensions
 {
     public static IApplicationBuilder UseClientThrottling(this IApplicationBuilder app) => app.UseMiddleware<ClientThrottlingMiddleware>();
 }

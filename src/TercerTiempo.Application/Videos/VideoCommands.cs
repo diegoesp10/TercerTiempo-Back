@@ -49,6 +49,7 @@ internal sealed class UploadMatchVideoHandler(
     ITeamStore teams,
     IMatchVideoStore videos,
     IVideoStorage storage,
+    IVideoProcessingSignal processing,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<UploadMatchVideoCommand, MatchVideoDto>
 {
@@ -70,6 +71,7 @@ internal sealed class UploadMatchVideoHandler(
 
         videos.Add(video);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        processing.Wake();
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
         return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDownload: true, canDelete: true);
@@ -89,6 +91,7 @@ internal sealed class DeleteVideoHandler(
     IClubStore clubs,
     IMatchVideoStore videos,
     IVideoStorage storage,
+    IVideoProcessingSignal processing,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<DeleteVideoCommand, bool>
 {
@@ -102,6 +105,8 @@ internal sealed class DeleteVideoHandler(
 
         video.Delete(clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        // Si se estaba comprimiendo, el compresor para y descarta lo suyo; el archivo que se servía se borra aquí.
+        processing.Cancel(video.Id);
         await storage.DeleteAsync(video.StorageKey, cancellationToken);
 
         return true;

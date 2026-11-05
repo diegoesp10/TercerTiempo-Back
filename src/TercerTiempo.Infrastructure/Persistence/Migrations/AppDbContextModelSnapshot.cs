@@ -530,6 +530,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "common.concurrent_change",
+                            Language = "es",
+                            Message = "Alguien ha cambiado esto mientras tanto: vuelve a cargarlo e inténtalo de nuevo."
+                        },
+                        new
+                        {
                             Code = "throttle.too_many_requests",
                             Language = "es",
                             Message = "Has superado el límite de {0} llamadas en {1} segundos: esta dirección queda bloqueada {2} minutos."
@@ -1793,6 +1799,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "video.storage_full",
                             Language = "es",
                             Message = "No queda espacio para guardar un vídeo de {0}: avisa al administrador."
+                        },
+                        new
+                        {
+                            Code = "video.not_pending",
+                            Language = "es",
+                            Message = "Este vídeo no está en cola para comprimir."
+                        },
+                        new
+                        {
+                            Code = "video.not_processing",
+                            Language = "es",
+                            Message = "Este vídeo no se está comprimiendo."
                         },
                         new
                         {
@@ -6214,18 +6232,47 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int?>("DurationSeconds")
+                        .HasColumnType("int");
+
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
+                    b.Property<int?>("Height")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("MatchId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("OriginalSizeBytes")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Part")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset?>("ProcessedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("ProcessingAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<string>("ProcessingError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ProcessingProgress")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTimeOffset?>("ProcessingStartedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("SeasonId")
                         .HasColumnType("uniqueidentifier");
@@ -6235,6 +6282,13 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("SquadId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Uploaded");
 
                     b.Property<string>("StorageKey")
                         .IsRequired()
@@ -6258,6 +6312,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("UploadedByCoachId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.HasKey("Id");
 
                     b.HasIndex("MatchId");
@@ -6265,6 +6324,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("SeasonId");
 
                     b.HasIndex("SquadId");
+
+                    b.HasIndex("Status");
 
                     b.HasIndex("TeamId");
 

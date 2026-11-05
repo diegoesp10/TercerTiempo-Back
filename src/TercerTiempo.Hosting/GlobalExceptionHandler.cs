@@ -2,14 +2,17 @@ using System.Text.Json;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using TercerTiempo.Application.Abstractions.Errors;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 
-namespace TercerTiempo.Api.Infrastructure;
+namespace TercerTiempo.Hosting;
 
 internal sealed class GlobalExceptionHandler(
     IProblemDetailsService problemDetailsService,
@@ -51,7 +54,7 @@ internal sealed class GlobalExceptionHandler(
                 var (status, titleCode) = ex switch
                 {
                     NotFoundException => (StatusCodes.Status404NotFound, ErrorCode.TitleNotFound),
-                    ConflictException => (StatusCodes.Status409Conflict, ErrorCode.TitleConflict),
+                    ConflictException or ConcurrentChangeException => (StatusCodes.Status409Conflict, ErrorCode.TitleConflict),
                     ForbiddenException => (StatusCodes.Status403Forbidden, ErrorCode.TitleForbidden),
                     UnauthenticatedException => (StatusCodes.Status401Unauthorized, ErrorCode.TitleUnauthenticated),
                     InvalidCredentialsException => (StatusCodes.Status401Unauthorized, ErrorCode.TitleInvalidCredentials),

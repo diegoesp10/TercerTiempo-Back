@@ -9,3 +9,8 @@ services:
     container_name: tercer-tiempo-api-pilot
     environment:
       ASPNETCORE_ENVIRONMENT: Pilot
+
+  videos:
+    container_name: tercer-tiempo-videos-pilot
+    environment:
+      ASPNETCORE_ENVIRONMENT: Pilot

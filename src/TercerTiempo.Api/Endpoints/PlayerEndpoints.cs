@@ -1,4 +1,4 @@
-using TercerTiempo.Api.Infrastructure;
+﻿using TercerTiempo.Hosting;
 using TercerTiempo.Application.Squads.Suggestions;
 using TercerTiempo.Application.Players.JoinSquad;
 using TercerTiempo.Repository.Players;

@@ -22,6 +22,7 @@ public static class ErrorCatalog
         (ErrorCode.CommonOutOfRange, "'{0}' debe estar entre {1} y {2}."),
         (ErrorCode.CommonNegative, "'{0}' no puede ser negativo."),
         (ErrorCode.CommonUnexpected, "Se ha producido un error inesperado."),
+        (ErrorCode.CommonConcurrentChange, "Alguien ha cambiado esto mientras tanto: vuelve a cargarlo e inténtalo de nuevo."),
         (ErrorCode.ThrottleTooManyRequests, "Has superado el límite de {0} llamadas en {1} segundos: esta dirección queda bloqueada {2} minutos."),
         (ErrorCode.ThrottleBanned, "Esta dirección está bloqueada temporalmente por exceso de llamadas; vuelve a intentarlo en {0} minutos."),
 
@@ -242,6 +243,8 @@ public static class ErrorCatalog
         (ErrorCode.VideoNotAllowed, "Solo el club, el cuerpo técnico y los jugadores de la plantilla, y quien tenga un pase de este partido, pueden ver este vídeo."),
         (ErrorCode.VideoDownloadDenied, "Tu acceso a este vídeo no incluye la descarga del archivo."),
         (ErrorCode.VideoStorageFull, "No queda espacio para guardar un vídeo de {0}: avisa al administrador."),
+        (ErrorCode.VideoNotPending, "Este vídeo no está en cola para comprimir."),
+        (ErrorCode.VideoNotProcessing, "Este vídeo no se está comprimiendo."),
         (ErrorCode.PassNotFound, "Ese código de pase no existe: revisa que esté bien escrito."),
         (ErrorCode.PassEmpty, "El pase tiene que incluir el acta interna, el vídeo o los dos."),
         (ErrorCode.PassDownloadNeedsVideo, "La descarga solo se puede dar junto con el vídeo."),

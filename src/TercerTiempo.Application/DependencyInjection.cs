@@ -41,6 +41,7 @@ public static class DependencyInjection
         services.AddScoped<Stats.Predictions.ForecastSources>();
         services.AddSingleton<Stats.Predictions.LeagueForecastCache>();
         services.AddScoped<OfficialSheetLocator>();
+        services.AddScoped<Videos.Processing.VideoProcessor>();
         services.AddSingleton<OfficialSheets.OfficialSheetSyncMemory>();
         services.AddScoped<IPublicSheetSource, FederationSheetSource>();
 

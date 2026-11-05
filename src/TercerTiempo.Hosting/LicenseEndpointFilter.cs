@@ -1,9 +1,12 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Licensing;
 
-namespace TercerTiempo.Api.Infrastructure;
+namespace TercerTiempo.Hosting;
 
-internal enum LicenseScope
+public enum LicenseScope
 {
     Squad,
     Video,
@@ -13,9 +16,9 @@ internal enum LicenseScope
     Team,
 }
 
-// Puerta de licencias en la API: antes de ejecutar la operación comprueba que el equipo al que pertenece el recurso
-// (plantilla, vídeo, panel del jugador) tiene licencia vigente, y que quien mira datos de otro equipo pertenece a
-// uno con licencia. Los permisos de cada acción los siguen decidiendo los handlers.
+// Puerta de licencias: antes de ejecutar la operación comprueba que el equipo al que pertenece el recurso (plantilla,
+// vídeo, panel del jugador) tiene licencia vigente, y que quien mira datos de otro equipo pertenece a uno con
+// licencia. Los permisos de cada acción los siguen decidiendo los handlers.
 internal sealed class LicenseEndpointFilter(LicenseScope scope) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
@@ -51,7 +54,7 @@ internal sealed class LicenseEndpointFilter(LicenseScope scope) : IEndpointFilte
         path is not null && (path.EndsWith("/stream", StringComparison.Ordinal) || path.EndsWith("/download", StringComparison.Ordinal));
 }
 
-internal static class LicenseFilterExtensions
+public static class LicenseFilterExtensions
 {
     public static TBuilder RequireLicense<TBuilder>(this TBuilder builder, LicenseScope scope) where TBuilder : IEndpointConventionBuilder =>
         builder.AddEndpointFilter(new LicenseEndpointFilter(scope));

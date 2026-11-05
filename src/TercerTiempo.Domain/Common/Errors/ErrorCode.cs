@@ -20,6 +20,7 @@ public static class ErrorCode
     public const string CommonOutOfRange = "common.out_of_range";
     public const string CommonNegative = "common.negative";
     public const string CommonUnexpected = "common.unexpected";
+    public const string CommonConcurrentChange = "common.concurrent_change";
 
     // Límite de llamadas (por IP y por endpoint) y bloqueos
     public const string ThrottleTooManyRequests = "throttle.too_many_requests";
@@ -253,6 +254,8 @@ public static class ErrorCode
     public const string VideoNotAllowed = "video.not_allowed";
     public const string VideoDownloadDenied = "video.download_denied";
     public const string VideoStorageFull = "video.storage_full";
+    public const string VideoNotPending = "video.not_pending";
+    public const string VideoNotProcessing = "video.not_processing";
     public const string PassNotFound = "pass.not_found";
     public const string PassEmpty = "pass.empty";
     public const string PassDownloadNeedsVideo = "pass.download_needs_video";

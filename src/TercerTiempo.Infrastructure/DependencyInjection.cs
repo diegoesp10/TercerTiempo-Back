@@ -45,7 +45,19 @@ namespace TercerTiempo.Infrastructure;
 
 public static class DependencyInjection
 {
+    // La API: todo, con los trabajos en segundo plano (descargas, copias, renovaciones, avisos...).
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddInfrastructureCore(configuration);
+        AddBackgroundWork(services);
+
+        return services;
+    }
+
+    // Lo que necesita cualquier proceso de la solución (la API y el servicio de vídeo): base de datos, identidad,
+    // proveedores, almacenamiento y los servicios que usan los handlers; sin los trabajos en segundo plano, que
+    // solo lanza la API (el servicio de vídeo tiene el suyo).
+    public static IServiceCollection AddInfrastructureCore(this IServiceCollection services, IConfiguration configuration)
     {
         services.TryAddSingleton(TimeProvider.System);
 
@@ -56,6 +68,27 @@ public static class DependencyInjection
         AddVideos(services, configuration);
 
         return services;
+    }
+
+    private static void AddBackgroundWork(IServiceCollection services)
+    {
+        // Datos reales: un solo entorno descarga a la vez (RealDataLease) y todos copian la base compartida a la suya.
+        services.AddHostedService(sp => sp.GetRequiredService<RealDataLease>());
+        services.AddHostedService<RealDataCopyWorker>();
+
+        services.AddHostedService<FootballDataSyncWorker>();
+
+        // Actas oficiales: el proceso que las descarga y guarda, y el que encola las del fin de semana.
+        services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetSyncWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.WeeklySheetQueueWorker>();
+
+        services.AddHostedService<LicenseRenewalWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Alerts.LicenseAlertsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Referees.MatchOfficialsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.FootballData.LeagueZonesWorker>();
+
+        // Cola de avisos de la pasarela (webhooks de Stripe o eventos de la simulada) y el proceso que los aplica.
+        services.AddHostedService<PaymentEventWorker>();
     }
 
     private static void AddPersistence(IServiceCollection services, IConfiguration configuration)
@@ -82,13 +115,12 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
         services.AddDbContext<RealDataDbContext>(options => options.UseSqlServer(realDataConnection, sql => sql.CommandTimeout(120)));
 
-        // Datos reales: un solo entorno descarga a la vez (RealDataLease) y todos copian la base compartida a la suya.
+        // El bloqueo de las descargas de datos reales lo pide la API al arrancar (AddBackgroundWork); aquí solo se sabe
+        // si este proceso lo tiene.
         services.AddOptions<RealDataOptions>().Bind(configuration.GetSection(RealDataOptions.SectionName));
         services.AddSingleton<RealDataLease>();
         services.AddSingleton<IRealDataLease>(sp => sp.GetRequiredService<RealDataLease>());
-        services.AddHostedService(sp => sp.GetRequiredService<RealDataLease>());
         services.AddSingleton<RealDataCopier>();
-        services.AddHostedService<RealDataCopyWorker>();
         services.AddScoped<TercerTiempo.Application.Abstractions.RealData.IRealData, RealDataGateway>();
         services.AddScoped<TercerTiempo.Application.Abstractions.RealData.IEnvironmentData, EnvironmentDataGateway>();
 
@@ -191,15 +223,12 @@ public static class DependencyInjection
         services.AddSingleton<JobScheduler>();
         services.AddScoped<IJobsMonitor, JobsMonitor>();
         services.AddScoped<TercerTiempo.Application.Search.ISearchCorpusSource, Search.SearchCorpusSource>();
-        services.AddHostedService<FootballDataSyncWorker>();
 
-        // Actas oficiales: cola en memoria y proceso en segundo plano que las descarga y guarda.
+        // Actas oficiales: cola en memoria (el proceso que la consume va en AddBackgroundWork).
         services.AddSingleton<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>();
         services.AddSingleton<TercerTiempo.Application.OfficialSheets.IOfficialSheetQueue>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
         services.AddSingleton<TercerTiempo.Application.OfficialSheets.ISheetDownloadSignal>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
         services.AddScoped<TercerTiempo.Application.OfficialSheets.ISheetDownloadStore, TercerTiempo.Infrastructure.OfficialSheets.SheetDownloadStore>();
-        services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetSyncWorker>();
-        services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.WeeklySheetQueueWorker>();
     }
 
     private static void AddOfficialSheets(IServiceCollection services, IConfiguration configuration)
@@ -246,7 +275,7 @@ public static class DependencyInjection
         services.AddSingleton<IPlayerPhotoStorage, FileSystemPlayerPhotoStorage>();
         services.AddScoped<IErrorMessageStore, ErrorMessageStore>();
 
-        // Límite de llamadas por IP y por endpoint con bloqueos crecientes (el middleware vive en la API).
+        // Límite de llamadas por IP y por endpoint con bloqueos crecientes (el middleware vive en Hosting).
         services.AddOptions<ThrottlingOptions>().Bind(configuration.GetSection(ThrottlingOptions.SectionName));
         services.AddSingleton<ClientThrottle>();
         services.AddHttpClient<ICrestDownloader, HttpCrestDownloader>(client =>
@@ -261,6 +290,8 @@ public static class DependencyInjection
     {
         services.AddOptions<VideoOptions>()
             .Bind(configuration.GetSection(VideoOptions.SectionName));
+        services.AddOptions<VideoProcessingOptions>()
+            .Bind(configuration.GetSection(VideoProcessingOptions.SectionName));
         services.AddOptions<TercerTiempo.Application.Passes.PassOptions>()
             .Bind(configuration.GetSection(TercerTiempo.Application.Passes.PassOptions.SectionName));
 
@@ -283,20 +314,20 @@ public static class DependencyInjection
             services.AddScoped<ILicensePaymentGateway>(sp => sp.GetRequiredService<MockPaymentGateway>());
             services.AddScoped<IPaymentSimulator>(sp => sp.GetRequiredService<MockPaymentGateway>());
         }
-        services.AddHostedService<LicenseRenewalWorker>();
-        services.AddHostedService<TercerTiempo.Infrastructure.Alerts.LicenseAlertsWorker>();
-        services.AddHostedService<TercerTiempo.Infrastructure.Referees.MatchOfficialsWorker>();
-        services.AddHostedService<TercerTiempo.Infrastructure.FootballData.LeagueZonesWorker>();
 
-        // Cola de avisos de la pasarela (webhooks de Stripe o eventos de la simulada) y el proceso que los aplica.
+        // Cola de avisos de la pasarela; el proceso que los aplica va en AddBackgroundWork.
         services.AddScoped<IPaymentEventInbox, PaymentEventInbox>();
         services.AddSingleton<PaymentEventSignal>();
         services.AddSingleton<IPaymentEventSignal>(sp => sp.GetRequiredService<PaymentEventSignal>());
-        services.AddHostedService<PaymentEventWorker>();
 
         services.AddMemoryCache();
-        services.AddSingleton<IVideoStorage, FileSystemVideoStorage>();
+        // Los vídeos en disco (el servicio de vídeo los sube, sirve y comprime; la API solo lista sus filas).
+        services.AddSingleton<FileSystemVideoStorage>();
+        services.AddSingleton<IVideoStorage>(sp => sp.GetRequiredService<FileSystemVideoStorage>());
         services.AddSingleton<IVideoTickets, MemoryVideoTickets>();
+        services.AddSingleton<IVideoTranscoder, FfmpegTranscoder>();
+        services.AddSingleton<IVideoProcessingSignal, VideoProcessingSignal>();
+        services.AddSingleton<IVideoJobLog, VideoJobLog>();
         services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
     }
 

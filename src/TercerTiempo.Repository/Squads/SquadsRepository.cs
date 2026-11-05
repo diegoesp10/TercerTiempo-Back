@@ -12,8 +12,6 @@ using TercerTiempo.Application.Squads.Settings;
 using TercerTiempo.Application.Squads.Stats;
 using TercerTiempo.Application.Squads.Suggestions;
 using TercerTiempo.Application.Squads.TeamStats;
-using TercerTiempo.Application.Videos;
-using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Repository.Squads;
 
@@ -30,12 +28,6 @@ internal sealed class SquadsRepository(
     IQueryHandler<GetMatchSheetQuery, MatchSheetDto> getMatchSheet,
     ICommandHandler<RecordMatchSheetCommand, MatchSheetDto> recordMatchSheet,
     ICommandHandler<CompareMatchSheetCommand, SheetComparisonDto> compareMatchSheet,
-    ICommandHandler<UploadMatchVideoCommand, MatchVideoDto> uploadVideo,
-    ICommandHandler<BeginVideoUploadCommand, VideoUploadDto> beginVideoUpload,
-    IQueryHandler<GetVideoUploadQuery, VideoUploadDto> getVideoUpload,
-    ICommandHandler<AppendVideoChunkCommand, VideoUploadDto> appendVideoChunk,
-    ICommandHandler<CompleteVideoUploadCommand, MatchVideoDto> completeVideoUpload,
-    ICommandHandler<CancelVideoUploadCommand, bool> cancelVideoUpload,
     IQueryHandler<ListSquadSuggestionsQuery, IReadOnlyList<SuggestionDto>> listSuggestions,
     ICommandHandler<ResolveSuggestionCommand, IReadOnlyList<SuggestionDto>> resolveSuggestion,
     IQueryHandler<GetSquadStatsQuery, SquadStatsDto> getStats,
@@ -87,24 +79,6 @@ internal sealed class SquadsRepository(
 
     public Task<SheetComparisonDto> CompareMatchSheetAsync(Guid squadId, Guid matchId, bool refresh, CancellationToken cancellationToken = default) =>
         compareMatchSheet.Handle(new CompareMatchSheetCommand(squadId, matchId, refresh), cancellationToken);
-
-    public Task<MatchVideoDto> UploadVideoAsync(Guid squadId, Guid matchId, VideoPart part, string? title, VideoUpload file, CancellationToken cancellationToken = default) =>
-        uploadVideo.Handle(new UploadMatchVideoCommand(squadId, matchId, part, title, file), cancellationToken);
-
-    public Task<VideoUploadDto> BeginVideoUploadAsync(Guid squadId, Guid matchId, BeginVideoUploadRequest request, CancellationToken cancellationToken = default) =>
-        beginVideoUpload.Handle(request.ToCommand(squadId, matchId), cancellationToken);
-
-    public Task<VideoUploadDto> GetVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default) =>
-        getVideoUpload.Handle(new GetVideoUploadQuery(squadId, uploadId), cancellationToken);
-
-    public Task<VideoUploadDto> AppendVideoChunkAsync(Guid squadId, Guid uploadId, int chunkIndex, long length, Stream content, CancellationToken cancellationToken = default) =>
-        appendVideoChunk.Handle(new AppendVideoChunkCommand(squadId, uploadId, chunkIndex, length, content), cancellationToken);
-
-    public Task<MatchVideoDto> CompleteVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default) =>
-        completeVideoUpload.Handle(new CompleteVideoUploadCommand(squadId, uploadId), cancellationToken);
-
-    public Task<bool> CancelVideoUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default) =>
-        cancelVideoUpload.Handle(new CancelVideoUploadCommand(squadId, uploadId), cancellationToken);
 
     public Task<IReadOnlyList<SuggestionDto>> ListSuggestionsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         listSuggestions.Handle(new ListSquadSuggestionsQuery(squadId), cancellationToken);

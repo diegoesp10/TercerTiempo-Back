@@ -20,6 +20,13 @@ services:
         condition: service_healthy
         required: false
 
+  videos:
+    container_name: tercer-tiempo-videos-development
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.development}"
+      ConnectionStrings__RealData: "${TT_REAL_DB_CONNECTION:?Falta TT_REAL_DB_CONNECTION: arranca con Start-Docker.ps1}"
+
   db:
     profiles:
       - container-db

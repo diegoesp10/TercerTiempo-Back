@@ -17,6 +17,16 @@ services:
       Licensing__Stripe__SecretKey: "${TT_STRIPE_SECRET_KEY:-}"
       Licensing__Stripe__WebhookSecret: "${TT_STRIPE_WEBHOOK_SECRET:-}"
 
+  # El servicio de vídeo valida el mismo JWT que emite la API: misma clave.
+  videos:
+    container_name: tercer-tiempo-videos-production
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION en .env.production}"
+      ConnectionStrings__RealData: "${TT_REAL_DB_CONNECTION:?Falta TT_REAL_DB_CONNECTION en .env.production}"
+      Jwt__Key: "${TT_JWT_KEY:?Falta TT_JWT_KEY en .env.production (al menos 32 caracteres)}"
+      Cors__AllowedOrigins__0: "${TT_PUBLIC_URL:?Falta TT_PUBLIC_URL en .env.production}"
+
   db:
     profiles:
       - database

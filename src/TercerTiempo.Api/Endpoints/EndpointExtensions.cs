@@ -1,4 +1,4 @@
-namespace TercerTiempo.Api.Endpoints;
+﻿namespace TercerTiempo.Api.Endpoints;
 
 public static class EndpointExtensions
 {
@@ -15,7 +15,6 @@ public static class EndpointExtensions
         app.MapMatchEndpoints();
         app.MapRefereeEndpoints();
         app.MapModerationEndpoints();
-        app.MapVideoEndpoints();
         app.MapPassEndpoints();
         app.MapStatsEndpoints();
         app.MapAdminEndpoints();

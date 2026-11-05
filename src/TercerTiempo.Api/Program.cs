@@ -1,7 +1,7 @@
 using TercerTiempo.Api.Endpoints;
 using TercerTiempo.Api.Extensions;
-using TercerTiempo.Api.Infrastructure;
 using TercerTiempo.Application;
+using TercerTiempo.Hosting;
 using TercerTiempo.Infrastructure;
 using TercerTiempo.Infrastructure.Identity;
 using TercerTiempo.Repository;
@@ -25,7 +25,8 @@ var behindProxy = app.Configuration.GetValue<bool>("ReverseProxy:Enabled");
 if (behindProxy)
     app.UseForwardedHeaders();
 
-// Aplica migraciones pendientes antes de aceptar tráfico (el worker de sincronización arranca después).
+// Aplica migraciones pendientes antes de aceptar tráfico (el worker de sincronización arranca después). El servicio
+// de vídeo no migra: espera a que la API lo haya hecho.
 await app.Services.MigrateDatabaseAsync();
 
 // Rol Admin y usuario administrador de la configuración (Admin:UserName / Admin:Password en user-secrets) para /jobs.

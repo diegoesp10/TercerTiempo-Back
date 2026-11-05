@@ -10,9 +10,20 @@ public enum VideoPart
     SecondHalf = 3,
 }
 
+// Tal cual se subió (en cola para comprimir), comprimiéndose, listo (comprimido o ya ligero) o con la compresión
+// fallida. En todos los estados el vídeo se ve y se descarga: hasta que está listo se sirve el original.
+public enum VideoStatus
+{
+    Uploaded = 1,
+    Processing = 2,
+    Ready = 3,
+    Failed = 4,
+}
+
 public sealed class MatchVideo : AggregateRoot
 {
     public const long MinSizeBytes = 1024;
+    public const int MaxErrorLength = 1000;
 
     public Guid SquadId { get; private set; }
     public Guid TeamId { get; private set; }
@@ -30,7 +41,21 @@ public sealed class MatchVideo : AggregateRoot
     public DateTimeOffset UploadedAt { get; private set; }
     public DateTimeOffset? DeletedAt { get; private set; }
 
+    public VideoStatus Status { get; private set; } = VideoStatus.Uploaded;
+    public int ProcessingProgress { get; private set; }
+    public int ProcessingAttempts { get; private set; }
+    public DateTimeOffset? ProcessingStartedAt { get; private set; }
+    public DateTimeOffset? ProcessedAt { get; private set; }
+    public string? ProcessingError { get; private set; }
+
+    // Lo que ocupaba el archivo subido cuando se ha sustituido por el comprimido.
+    public long? OriginalSizeBytes { get; private set; }
+    public int? DurationSeconds { get; private set; }
+    public int? Height { get; private set; }
+
     public bool IsDeleted => DeletedAt is not null;
+
+    public bool AwaitsProcessing(int maxAttempts) => !IsDeleted && Status == VideoStatus.Uploaded && ProcessingAttempts < maxAttempts;
 
     private MatchVideo() { }
 
@@ -72,6 +97,82 @@ public sealed class MatchVideo : AggregateRoot
             throw new DomainException(ErrorCode.VideoAlreadyDeleted);
 
         DeletedAt = now;
+    }
+
+    public void StartProcessing(DateTimeOffset now)
+    {
+        if (IsDeleted || Status != VideoStatus.Uploaded)
+            throw new DomainException(ErrorCode.VideoNotPending);
+
+        Status = VideoStatus.Processing;
+        ProcessingAttempts++;
+        ProcessingStartedAt = now;
+        ProcessingProgress = 0;
+        ProcessingError = null;
+    }
+
+    public void ReportProgress(int percent)
+    {
+        EnsureProcessing();
+        ProcessingProgress = Math.Clamp(percent, 0, 100);
+    }
+
+    // El archivo subido ya venía ligero: se queda tal cual.
+    public void KeepOriginal(int? durationSeconds, int? height, DateTimeOffset now)
+    {
+        EnsureProcessing();
+        DurationSeconds = durationSeconds;
+        Height = height;
+        Finish(now);
+    }
+
+    // El comprimido sustituye al original (que se borra después): desde ahora se sirve el nuevo archivo.
+    public void Compressed(string storageKey, long sizeBytes, string contentType, string fileName, int durationSeconds, int height, DateTimeOffset now)
+    {
+        EnsureProcessing();
+        if (sizeBytes < MinSizeBytes)
+            throw new DomainException(ErrorCode.VideoTooSmall);
+
+        OriginalSizeBytes = SizeBytes;
+        StorageKey = Guard.NotEmpty(storageKey, nameof(storageKey), 500);
+        SizeBytes = sizeBytes;
+        ContentType = Guard.NotEmpty(contentType, "tipo de contenido", 100);
+        FileName = Guard.NotEmpty(fileName, "archivo", 255);
+        DurationSeconds = durationSeconds;
+        Height = height;
+        Finish(now);
+    }
+
+    public void FailProcessing(string error, DateTimeOffset now)
+    {
+        EnsureProcessing();
+        Status = VideoStatus.Failed;
+        ProcessingError = string.IsNullOrWhiteSpace(error) ? "Error desconocido" : error.Length > MaxErrorLength ? error[..MaxErrorLength] : error;
+        ProcessedAt = now;
+    }
+
+    // El proceso que lo comprimía se paró a medias (apagado, reinicio): vuelve a la cola sin contar el intento.
+    public void Requeue()
+    {
+        if (Status != VideoStatus.Processing) return;
+        Status = VideoStatus.Uploaded;
+        ProcessingAttempts = Math.Max(0, ProcessingAttempts - 1);
+        ProcessingStartedAt = null;
+        ProcessingProgress = 0;
+    }
+
+    private void Finish(DateTimeOffset now)
+    {
+        Status = VideoStatus.Ready;
+        ProcessingProgress = 100;
+        ProcessedAt = now;
+        ProcessingError = null;
+    }
+
+    private void EnsureProcessing()
+    {
+        if (Status != VideoStatus.Processing)
+            throw new DomainException(ErrorCode.VideoNotProcessing);
     }
 
     // Un partido se sube entero o en dos partes, nunca mezclado; y cada parte una sola vez por plantilla.
@@ -181,6 +282,13 @@ public interface IMatchVideoStore
     Task<IReadOnlyList<MatchVideo>> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MatchVideo>> GetBySquadsAsync(IEnumerable<Guid> squadIds, CancellationToken cancellationToken = default);
     void Add(MatchVideo video);
+
+    // Cola de compresión: el subido hace más tiempo que siga esperando y no haya agotado los intentos.
+    Task<MatchVideo?> GetNextPendingAsync(int maxAttempts, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MatchVideo>> GetProcessingAsync(CancellationToken cancellationToken = default);
+
+    // Leído de la base en el momento, sin pasar por lo que ya esté cargado.
+    Task<bool> IsDeletedAsync(Guid id, CancellationToken cancellationToken = default);
 }
 
 public interface IVideoUploadStore

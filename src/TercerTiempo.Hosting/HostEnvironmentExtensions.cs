@@ -1,8 +1,10 @@
-namespace TercerTiempo.Api.Extensions;
+using Microsoft.Extensions.Hosting;
 
-// Entornos de la API (ASPNETCORE_ENVIRONMENT), cada uno con su appsettings.{Entorno}.json encima de appsettings.json:
-// Development, FakeDatos (desarrollo con la base de datos falsos), Pilot (publicación para los clubes del piloto) y
-// Production.
+namespace TercerTiempo.Hosting;
+
+// Entornos de los procesos web (ASPNETCORE_ENVIRONMENT), cada uno con su appsettings.{Entorno}.json encima de
+// appsettings.json: Development, FakeDatos (desarrollo con la base de datos falsos), Pilot (publicación para los
+// clubes del piloto) y Production.
 public static class HostEnvironmentExtensions
 {
     public const string FakeDatos = "FakeDatos";

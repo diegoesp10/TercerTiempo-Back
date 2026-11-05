@@ -17,9 +17,10 @@ namespace TercerTiempo.Infrastructure.Jobs;
 
 // RealData: descarga de las webs a la base de datos reales; solo la ejecuta el entorno que tiene el bloqueo
 // (RealDataLease) y su historial vive en esa base.
+// External: lo ejecuta otro proceso (el servicio de vídeo) cuando le llega trabajo; aquí solo se enseña su historial.
 internal sealed record JobDefinition(
     string Name, string Title, string Description, TimeSpan? Interval, TimeSpan FirstRunDelay, bool Enabled, WeeklySlot? Weekly = null,
-    bool RealData = false);
+    bool RealData = false, bool External = false);
 
 // Un día y una hora fijos de cada semana, en la hora de la federación.
 internal sealed record WeeklySlot(DayOfWeek Day, TimeOnly At, TimeZoneInfo Zone)
@@ -149,6 +150,13 @@ internal sealed class JobScheduler
                 TimeSpan.FromMinutes(Math.Max(1, realData.Value.CopyMinutes)),
                 TimeSpan.FromSeconds(5),
                 true),
+            new(JobNames.VideoTranscode,
+                "Compresión de vídeos",
+                "El servicio de vídeo recomprime cada vídeo subido a H.264 sin bajar de 1080p (calidad constante CRF 22) para que ocupe la mitad o menos; mientras tanto se sirve el original. Una ejecución por vídeo, al subirlo.",
+                null,
+                TimeSpan.Zero,
+                true,
+                External: true),
         ];
         _slots = definitions.ToDictionary(d => d.Name, d => new Slot(d));
     }
@@ -166,7 +174,7 @@ internal sealed class JobScheduler
     public JobLaunchResult Launch(string job, object? parameters = null)
     {
         if (!_slots.TryGetValue(job, out var slot)) return JobLaunchResult.NotFound;
-        if (!slot.Definition.Enabled) return JobLaunchResult.Disabled;
+        if (!slot.Definition.Enabled || slot.Definition.External) return JobLaunchResult.Disabled;
         if (slot.Definition.RealData && !_lease.IsHeld) return JobLaunchResult.Elsewhere;
 
         lock (_lock)
