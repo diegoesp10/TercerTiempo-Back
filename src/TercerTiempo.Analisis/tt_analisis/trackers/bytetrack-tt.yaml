@@ -1,0 +1,9 @@
+# ByteTrack de Ultralytics ajustado a 5 fotogramas por segundo con cámara fija: un tracklet aguanta 10 s sin verse
+# (track_buffer = 50 muestras) y solo nace de detecciones claras, para que no se multipliquen los identificadores.
+tracker_type: bytetrack
+track_high_thresh: 0.4
+track_low_thresh: 0.1
+new_track_thresh: 0.5
+track_buffer: 50
+match_thresh: 0.85
+fuse_score: True

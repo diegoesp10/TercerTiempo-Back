@@ -1,0 +1,53 @@
+[project]
+name = "tt-analisis"
+version = "0.1.0"
+description = "Tercer Tiempo: análisis del vídeo de un partido (detección, seguimiento, posesión, eventos) para proponer el acta interna."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch>=2.7",
+    "torchvision>=0.22",
+    "ultralytics>=8.3",
+    "lap>=0.5",
+    "supervision>=0.25",
+    "sports",
+    "umap-learn>=0.5",
+    "scikit-learn>=1.5",
+    "transformers>=4.45",
+    "opencv-python>=4.10",
+    "numpy>=1.26",
+    "tqdm>=4.66",
+    "pydantic>=2.8",
+    "httpx>=0.27",
+    "anthropic>=0.60",
+    "gdown>=5.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3"]
+
+[project.scripts]
+tt-analisis = "tt_analisis.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tt_analisis"]
+include = ["tt_analisis/trackers/*.yaml"]
+
+# PyTorch con CUDA 12.8 (la RTX 5070 Ti es Blackwell: hace falta torch >= 2.7 con cu128). En Windows el índice por
+# defecto de PyPI trae torch sin CUDA, por eso se fija el índice de PyTorch solo para estos dos paquetes.
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+sports = { git = "https://github.com/roboflow/sports.git" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

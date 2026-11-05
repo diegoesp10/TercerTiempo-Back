@@ -80,6 +80,7 @@ OpenApi__Enabled=true OpenApi__BasicAuth__Username=docs OpenApi__BasicAuth__Pass
 | `TercerTiempo.Hosting` | Lo común de los dos procesos web: autenticación JWT y políticas, usuario de la petición (`ICurrentUser`), errores como `ProblemDetails`, límite de llamadas, puerta de licencias (`RequireLicense`), salud y documento OpenAPI nativo + referencia Scalar (cada proceso pone su título y su flujo). | Application, Infrastructure |
 | `TercerTiempo.Api` | Minimal APIs agrupadas por recurso y composición de dependencias; aplica las migraciones y lanza los trabajos en segundo plano. | Repository, Hosting |
 | `TercerTiempo.Videos` | **Servicio de vídeo**: Minimal APIs bajo `/media` (subida por trozos, tickets, reproducción y descarga por rangos, borrado) y el worker que comprime con ffmpeg. Mismas capas, misma base y mismos permisos que la API; otro proceso para que el vídeo no la cargue. | Repository, Hosting |
+| `TercerTiempo.Analisis` | **Analizador de vídeo** (Python, GPU; rama `lectorVideos`): detecta y sigue jugadores y balón, separa equipos, calibra el campo y saca posesión, mapas, eventos candidatos y un acta propuesta (`acta-propuesta.json`) a partir del vídeo del partido; opcionalmente un modelo de lenguaje (Claude u Ollama) confirma eventos y redacta. Programa aparte, sin enganche con la API todavía: ver su [README](src/TercerTiempo.Analisis/README.md) y [docs/lector-videos.md](docs/lector-videos.md). | — |
 
 Flujo de una petición:
 
