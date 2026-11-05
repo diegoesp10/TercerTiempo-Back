@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<Referees.IRefereesRepository, Referees.RefereesRepository>();
         services.AddScoped<Moderation.IModerationRepository, Moderation.ModerationRepository>();
         services.AddScoped<Presence.IPresenceRepository, Presence.PresenceRepository>();
+        services.AddScoped<Trainings.ITrainingsRepository, Trainings.TrainingsRepository>();
 
         return services;
     }

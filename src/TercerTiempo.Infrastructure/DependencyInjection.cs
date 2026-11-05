@@ -141,6 +141,9 @@ public static class DependencyInjection
         services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
         services.AddScoped<IMatchVideoStore, MatchVideoStore>();
         services.AddScoped<IVideoUploadStore, VideoUploadStore>();
+        services.AddScoped<TercerTiempo.Domain.Trainings.IExerciseStore, ExerciseStore>();
+        services.AddScoped<TercerTiempo.Domain.Trainings.ITrainingStore, TrainingStore>();
+        services.AddScoped<TercerTiempo.Domain.Trainings.ICallUpStore, CallUpStore>();
         services.AddScoped<TercerTiempo.Domain.Passes.IMatchPassStore, MatchPassStore>();
         services.AddScoped<TercerTiempo.Domain.Passes.IMatchPassRequestStore, MatchPassRequestStore>();
         services.AddScoped<TercerTiempo.Domain.Passes.IMatchPassPriceStore, MatchPassPriceStore>();

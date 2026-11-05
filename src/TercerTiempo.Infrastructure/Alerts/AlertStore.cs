@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TercerTiempo.Domain.Alerts;
 using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
+using TercerTiempo.Domain.Players;
 using TercerTiempo.Infrastructure.Persistence;
 using TercerTiempo.Infrastructure.Persistence.Configurations;
 
@@ -14,6 +16,15 @@ internal sealed class AlertStore(AppDbContext db) : IAlertStore
 
     public async Task<IReadOnlyList<Alert>> GetByClubAsync(Guid clubId, CancellationToken cancellationToken = default) =>
         await db.Set<Alert>().Where(a => a.ClubId == clubId).OrderByDescending(a => a.CreatedAt).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Alert>> GetForAsync(Guid? clubId, Guid? playerId, Guid? coachId, CancellationToken cancellationToken = default)
+    {
+        if (clubId is null && playerId is null && coachId is null) return [];
+        return await db.Set<Alert>()
+            .Where(a => (clubId != null && a.ClubId == clubId) || (playerId != null && a.PlayerId == playerId) || (coachId != null && a.CoachId == coachId))
+            .OrderByDescending(a => a.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
 
     public async Task<IReadOnlyList<Alert>> GetByKindAsync(AlertKind kind, CancellationToken cancellationToken = default) =>
         await db.Set<Alert>().Where(a => a.Kind == kind).ToListAsync(cancellationToken);
@@ -36,10 +47,14 @@ internal sealed class AlertConfiguration : IEntityTypeConfiguration<Alert>
         builder.Property(a => a.Message).HasMaxLength(500).IsRequired();
         builder.Property(a => a.Link).HasMaxLength(200);
 
-        // Solo para clubes: al borrar el club se van sus avisos.
+        // Un destinatario por aviso: al borrar la cuenta se van sus avisos.
         builder.HasOne<Club>().WithMany().HasForeignKey(a => a.ClubId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Player>().WithMany().HasForeignKey(a => a.PlayerId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Coach>().WithMany().HasForeignKey(a => a.CoachId).OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(a => new { a.ClubId, a.Key }).IsUnique();
+        builder.HasIndex(a => new { a.ClubId, a.PlayerId, a.CoachId, a.Key }).IsUnique();
         builder.HasIndex(a => new { a.ClubId, a.CreatedAt });
+        builder.HasIndex(a => new { a.PlayerId, a.CreatedAt });
+        builder.HasIndex(a => new { a.CoachId, a.CreatedAt });
     }
 }

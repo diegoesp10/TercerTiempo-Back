@@ -18,17 +18,17 @@ public sealed record AlertDto(
     string Message,
     [property: Description("Ruta del frontal a la que lleva el aviso.")]
     string? Link,
-    [property: Description("Día al que se refiere: el último con acceso, en los avisos de caducidad.")]
+    [property: Description("Día al que se refiere: el último con acceso en los de caducidad; el del partido o del entrenamiento en los suyos.")]
     DateOnly? DueOn,
     DateTimeOffset CreatedAt,
     bool Read,
-    [property: Description("true si ya no aplica (por ejemplo, el club reactivó la renovación).")]
+    [property: Description("true si ya no aplica (por ejemplo, el club reactivó la renovación o el jugador cambió su respuesta).")]
     bool Resolved);
 
 public sealed record ClubAlertsDto(
     [property: Description("Avisos sin leer que siguen vigentes: el número de la campanita.")]
     int Unread,
-    [property: Description("Los últimos avisos del club, del más reciente al más antiguo.")]
+    [property: Description("Los últimos avisos de la cuenta, del más reciente al más antiguo.")]
     IReadOnlyList<AlertDto> Alerts);
 
 public sealed record GetClubAlertsQuery : IQuery<ClubAlertsDto>;
@@ -54,40 +54,42 @@ internal static class ClubAlerts
                 .Select(a => new AlertDto(a.Id, a.Kind, a.Title, a.Message, a.Link, a.DueOn, a.CreatedAt, a.IsRead, a.IsResolved))
                 .ToList());
     }
-}
 
-internal sealed class GetClubAlertsHandler(ICurrentUser currentUser, IClubStore clubs, IAlertStore alerts) : IQueryHandler<GetClubAlertsQuery, ClubAlertsDto>
-{
-    public async Task<ClubAlertsDto> Handle(GetClubAlertsQuery query, CancellationToken cancellationToken)
+    // Los avisos de la cuenta que mira: el club, el jugador o el técnico que lleva en el token. El administrador no tiene.
+    public static Task<IReadOnlyList<Alert>> MineAsync(ICurrentUser user, IAlertStore alerts, CancellationToken cancellationToken)
     {
-        var club = await Resolvers.CurrentClubAsync(currentUser, clubs, cancellationToken);
-        return ClubAlerts.ToDto(await alerts.GetByClubAsync(club.Id, cancellationToken));
+        if (!user.IsAuthenticated) throw new UnauthenticatedException();
+        return alerts.GetForAsync(user.ClubId, user.PlayerId, user.CoachId, cancellationToken);
     }
 }
 
-internal sealed class MarkAlertReadHandler(ICurrentUser currentUser, IClubStore clubs, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class GetClubAlertsHandler(ICurrentUser currentUser, IAlertStore alerts) : IQueryHandler<GetClubAlertsQuery, ClubAlertsDto>
+{
+    public async Task<ClubAlertsDto> Handle(GetClubAlertsQuery query, CancellationToken cancellationToken) =>
+        ClubAlerts.ToDto(await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken));
+}
+
+internal sealed class MarkAlertReadHandler(ICurrentUser currentUser, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<MarkAlertReadCommand, ClubAlertsDto>
 {
     public async Task<ClubAlertsDto> Handle(MarkAlertReadCommand command, CancellationToken cancellationToken)
     {
-        var club = await Resolvers.CurrentClubAsync(currentUser, clubs, cancellationToken);
-        var alert = await alerts.GetByIdAsync(command.AlertId, cancellationToken);
-        if (alert is null || alert.ClubId != club.Id)
-            throw new NotFoundException(ErrorCode.AlertNotFound, command.AlertId);
+        var mine = await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken);
+        var alert = mine.FirstOrDefault(a => a.Id == command.AlertId)
+            ?? throw new NotFoundException(ErrorCode.AlertNotFound, command.AlertId);
 
         alert.MarkRead(clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return ClubAlerts.ToDto(await alerts.GetByClubAsync(club.Id, cancellationToken));
+        return ClubAlerts.ToDto(mine);
     }
 }
 
-internal sealed class MarkAllAlertsReadHandler(ICurrentUser currentUser, IClubStore clubs, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class MarkAllAlertsReadHandler(ICurrentUser currentUser, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<MarkAllAlertsReadCommand, ClubAlertsDto>
 {
     public async Task<ClubAlertsDto> Handle(MarkAllAlertsReadCommand command, CancellationToken cancellationToken)
     {
-        var club = await Resolvers.CurrentClubAsync(currentUser, clubs, cancellationToken);
-        var list = await alerts.GetByClubAsync(club.Id, cancellationToken);
+        var list = await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken);
         var now = clock.GetUtcNow();
         foreach (var alert in list)
             alert.MarkRead(now);
@@ -134,11 +136,11 @@ internal sealed class LicenseAlertSync(IAlertStore alerts, ILicensingCatalog cat
         var when = daysLeft switch { 0 => "hoy", 1 => "mañana", _ => $"en {daysLeft} días" };
         var end = license.ValidUntil.ToString("dd/MM/yyyy");
         return license.IsContracted
-            ? Alert.Raise(club.Id, AlertKind.LicenseExpiring, key,
+            ? Alert.ForClub(club.Id, AlertKind.LicenseExpiring, key,
                 $"Tu licencia acaba {when}",
                 $"La licencia de {club.Name} no se renueva y su último día es el {end}. Reactiva la renovación para que tu cuerpo técnico y tus jugadores sigan viendo sus datos.",
                 "/licencias", license.ValidUntil, now)
-            : Alert.Raise(club.Id, AlertKind.LicenseExpiring, key,
+            : Alert.ForClub(club.Id, AlertKind.LicenseExpiring, key,
                 $"Tu prueba acaba {when}",
                 $"La prueba de {club.Name} termina el {end}. Contrata la licencia de club para no perder el acceso a los datos privados de tus equipos; no se cobra nada hasta que acabe.",
                 "/licencias", license.ValidUntil, now);

@@ -158,7 +158,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("ClubId")
+                    b.Property<Guid?>("ClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CoachId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -186,6 +189,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<Guid?>("PlayerId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset?>("ReadAt")
                         .HasColumnType("datetimeoffset");
 
@@ -201,8 +207,13 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ClubId", "CreatedAt");
 
-                    b.HasIndex("ClubId", "Key")
-                        .IsUnique();
+                    b.HasIndex("CoachId", "CreatedAt");
+
+                    b.HasIndex("PlayerId", "CreatedAt");
+
+                    b.HasIndex("ClubId", "PlayerId", "CoachId", "Key")
+                        .IsUnique()
+                        .HasFilter("[ClubId] IS NOT NULL AND [PlayerId] IS NOT NULL AND [CoachId] IS NOT NULL");
 
                     b.ToTable("Alerts", (string)null);
                 });
@@ -1307,6 +1318,120 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "injury.invalid_type",
                             Language = "es",
                             Message = "Tipo de lesión no válido."
+                        },
+                        new
+                        {
+                            Code = "training.not_found",
+                            Language = "es",
+                            Message = "El entrenamiento '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "training.invalid_kind",
+                            Language = "es",
+                            Message = "Tipo de entrenamiento no válido."
+                        },
+                        new
+                        {
+                            Code = "training.duration_range",
+                            Language = "es",
+                            Message = "La duración del entrenamiento tiene que estar entre {0} y {1} minutos."
+                        },
+                        new
+                        {
+                            Code = "training.repeat_weekdays",
+                            Language = "es",
+                            Message = "Elige al menos un día de la semana para repetir el entrenamiento."
+                        },
+                        new
+                        {
+                            Code = "training.repeat_range",
+                            Language = "es",
+                            Message = "La repetición semanal admite como mucho {0} sesiones: acorta el periodo."
+                        },
+                        new
+                        {
+                            Code = "training.items_too_many",
+                            Language = "es",
+                            Message = "Un entrenamiento admite hasta {0} ejercicios."
+                        },
+                        new
+                        {
+                            Code = "training.attendance_invalid",
+                            Language = "es",
+                            Message = "Estado de asistencia no válido."
+                        },
+                        new
+                        {
+                            Code = "training.absence_past",
+                            Language = "es",
+                            Message = "El entrenamiento ya ha empezado: avisa directamente a tu cuerpo técnico."
+                        },
+                        new
+                        {
+                            Code = "exercise.not_found",
+                            Language = "es",
+                            Message = "El ejercicio '{0}' no existe en la biblioteca de la plantilla."
+                        },
+                        new
+                        {
+                            Code = "exercise.invalid_type",
+                            Language = "es",
+                            Message = "Tipo de ejercicio no válido."
+                        },
+                        new
+                        {
+                            Code = "exercise.duration_range",
+                            Language = "es",
+                            Message = "La duración del ejercicio tiene que estar entre 1 y {0} minutos."
+                        },
+                        new
+                        {
+                            Code = "callup.not_found",
+                            Language = "es",
+                            Message = "La convocatoria '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "callup.match_played",
+                            Language = "es",
+                            Message = "El partido ya se ha jugado o ya ha empezado: no se puede preparar su convocatoria."
+                        },
+                        new
+                        {
+                            Code = "callup.match_started",
+                            Language = "es",
+                            Message = "El partido ya ha empezado: la convocatoria está cerrada."
+                        },
+                        new
+                        {
+                            Code = "callup.not_published",
+                            Language = "es",
+                            Message = "La convocatoria todavía no está publicada."
+                        },
+                        new
+                        {
+                            Code = "callup.no_players",
+                            Language = "es",
+                            Message = "Convoca al menos a un jugador antes de publicar."
+                        },
+                        new
+                        {
+                            Code = "callup.not_called",
+                            Language = "es",
+                            Message = "No vas convocado a este partido: solo puedes darte por enterado."
+                        },
+                        new
+                        {
+                            Code = "callup.invalid_response",
+                            Language = "es",
+                            Message = "Respuesta no válida: el convocado confirma o avisa de que no puede; el que no va se da por enterado."
+                        },
+                        new
+                        {
+                            Code = "callup.match_not_of_squad",
+                            Language = "es",
+                            Message = "Ese partido no es de este equipo en esta temporada."
                         },
                         new
                         {
@@ -6219,6 +6344,286 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("Teams", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.CallUpEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CallUpId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Called")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("NotifiedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("RespondedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Response")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ResponseNote")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid>("SquadPlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SquadPlayerId");
+
+                    b.HasIndex("CallUpId", "SquadPlayerId")
+                        .IsUnique();
+
+                    b.ToTable("CallUpEntries", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.Exercise", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Material")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByClubId");
+
+                    b.HasIndex("CreatedByCoachId");
+
+                    b.HasIndex("SquadId");
+
+                    b.ToTable("Exercises", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.MatchCallUp", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("MeetAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("MeetPlace")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByClubId");
+
+                    b.HasIndex("CreatedByCoachId");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("SquadId", "MatchId")
+                        .IsUnique();
+
+                    b.ToTable("MatchCallUps", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrainingAttendance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SquadPlayerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SquadPlayerId");
+
+                    b.HasIndex("SessionId", "SquadPlayerId")
+                        .IsUnique();
+
+                    b.ToTable("TrainingAttendances", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrainingItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("ExerciseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExerciseId");
+
+                    b.HasIndex("SessionId", "Order");
+
+                    b.ToTable("TrainingItems", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrainingSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid?>("SeriesId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByClubId");
+
+                    b.HasIndex("CreatedByCoachId");
+
+                    b.HasIndex("SeriesId");
+
+                    b.HasIndex("SquadId", "StartsAt");
+
+                    b.ToTable("TrainingSessions", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Videos.MatchVideo", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6962,8 +7367,17 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
                         .WithMany()
                         .HasForeignKey("ClubId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("CoachId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("TercerTiempo.Domain.Players.Player", null)
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Clubs.ClubInvitation", b =>
@@ -7798,6 +8212,113 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.CallUpEntry", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Trainings.MatchCallUp", null)
+                        .WithMany("Entries")
+                        .HasForeignKey("CallUpId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.SquadPlayer", null)
+                        .WithMany()
+                        .HasForeignKey("SquadPlayerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.Exercise", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.MatchCallUp", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrainingAttendance", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Trainings.TrainingSession", null)
+                        .WithMany("Attendance")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.SquadPlayer", null)
+                        .WithMany()
+                        .HasForeignKey("SquadPlayerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrainingItem", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Trainings.Exercise", null)
+                        .WithMany()
+                        .HasForeignKey("ExerciseId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Trainings.TrainingSession", null)
+                        .WithMany("Items")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrainingSession", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Videos.MatchVideo", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Matches.Match", null)
@@ -7896,6 +8417,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Navigation("Players");
 
                     b.Navigation("Staff");
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.MatchCallUp", b =>
+                {
+                    b.Navigation("Entries");
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Trainings.TrainingSession", b =>
+                {
+                    b.Navigation("Attendance");
+
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

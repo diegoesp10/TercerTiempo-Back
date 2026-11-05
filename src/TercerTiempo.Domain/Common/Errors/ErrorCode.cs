@@ -165,6 +165,26 @@ public static class ErrorCode
     public const string InjuryReturnInvalid = "injury.return_invalid";
     public const string InjuryInvalidType = "injury.invalid_type";
 
+    public const string TrainingNotFound = "training.not_found";
+    public const string TrainingInvalidKind = "training.invalid_kind";
+    public const string TrainingDurationRange = "training.duration_range";
+    public const string TrainingRepeatWeekdays = "training.repeat_weekdays";
+    public const string TrainingRepeatRange = "training.repeat_range";
+    public const string TrainingItemsTooMany = "training.items_too_many";
+    public const string TrainingAttendanceInvalid = "training.attendance_invalid";
+    public const string TrainingAbsencePast = "training.absence_past";
+    public const string ExerciseNotFound = "exercise.not_found";
+    public const string ExerciseInvalidType = "exercise.invalid_type";
+    public const string ExerciseDurationRange = "exercise.duration_range";
+    public const string CallUpNotFound = "callup.not_found";
+    public const string CallUpMatchPlayed = "callup.match_played";
+    public const string CallUpMatchStarted = "callup.match_started";
+    public const string CallUpNotPublished = "callup.not_published";
+    public const string CallUpNoPlayers = "callup.no_players";
+    public const string CallUpNotCalled = "callup.not_called";
+    public const string CallUpInvalidResponse = "callup.invalid_response";
+    public const string CallUpMatchNotOfSquad = "callup.match_not_of_squad";
+
     // Jugadores
     public const string PlayerInvalidPosition = "player.invalid_position";
     public const string PlayerMinAge = "player.min_age";

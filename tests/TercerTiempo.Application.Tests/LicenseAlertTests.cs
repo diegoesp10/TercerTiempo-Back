@@ -101,6 +101,8 @@ public class LicenseAlertTests
             Task.FromResult<IReadOnlyList<Alert>>(alerts.Where(a => a.ClubId == clubId).ToList());
         public Task<IReadOnlyList<Alert>> GetByKindAsync(AlertKind kind, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Alert>>(alerts.Where(a => a.Kind == kind).ToList());
+        public Task<IReadOnlyList<Alert>> GetForAsync(Guid? clubId, Guid? playerId, Guid? coachId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Alert>>(alerts.Where(a => a.IsFor(clubId, playerId, coachId)).ToList());
         public void Add(Alert alert) => alerts.Add(alert);
     }
 

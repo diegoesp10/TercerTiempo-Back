@@ -63,6 +63,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Domain.Passes.MatchPassPrice> MatchPassPrices => Set<Domain.Passes.MatchPassPrice>();
     public DbSet<Domain.Passes.PassSale> PassSales => Set<Domain.Passes.PassSale>();
     public DbSet<ErrorMessage> ErrorMessages => Set<ErrorMessage>();
+    public DbSet<Domain.Trainings.Exercise> Exercises => Set<Domain.Trainings.Exercise>();
+    public DbSet<Domain.Trainings.TrainingSession> TrainingSessions => Set<Domain.Trainings.TrainingSession>();
+    public DbSet<Domain.Trainings.MatchCallUp> MatchCallUps => Set<Domain.Trainings.MatchCallUp>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
