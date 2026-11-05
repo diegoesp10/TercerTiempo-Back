@@ -125,6 +125,23 @@ subirla (8-12 GB) o correr el analizador fuera de Docker, como en las pruebas.
 `sports`, `supervision` y WASB son MIT/Apache; **Ultralytics (YOLO) es AGPL-3.0**: para un servicio cerrado hace falta
 su licencia comercial o cambiar los detectores a RF-DETR / RT-DETR (Apache 2.0). Hay que decidirlo antes de publicar.
 
+## Estado de las pruebas (05-11-2026)
+
+Cinco minutos reales del vídeo del Vallobín (1080p a 50 fps, de noche, **cámara con operador**: paneo y zoom), en la
+RTX 5070 Ti, 5 fotogramas/s: **≈ 5 min de cálculo por cada 5 min de vídeo**, 9 GB de VRAM.
+
+| Qué | Resultado | Lectura |
+|---|---|---|
+| Jugadores y árbitro | Se detectan y se siguen; la gente de la grada y del banquillo queda fuera | Bien. Los tracklets se cortan a menudo (23 de más de 30 s en 5 min): falta reidentificación entre cortes |
+| Campo calibrado | 46 % de los fotogramas (el resto se descarta a propósito cuando los puntos no cuadran) | El detector de líneas es de televisión; de noche y con zoom ve pocos puntos |
+| Balón | A la vista en el 28 % de los fotogramas | **El cuello de botella**: el detector público falla con los focos. Hay que afinarlo con partidos propios |
+| Posesión | 59/41 en una pasada y 33/67 en otra sobre el mismo tramo | Con tan poco balón, todavía no es fiable: la mejora viene del balón, no de la posesión |
+| Eventos | 6-8 en 5 min (saques de puerta, de banda, un córner), ningún falso gol | Plausibles; con el balón bien seguido saldrán tiros y goles |
+| Velocidades | Puntas de 20-28 km/h, distancias de 100-180 m por tracklet en 1-1,5 min | Plausibles |
+
+Con una cámara fija y alta (`--camara fija`) todo lo que depende de la calibración mejora de golpe: una sola
+homografía para todo el partido.
+
 ## Siguientes pasos
 
 - Afinar los detectores con 1-2 partidos asturianos anotados (cajas de jugadores y balón): los modelos públicos están
