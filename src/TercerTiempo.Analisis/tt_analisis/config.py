@@ -21,6 +21,19 @@ class Segmento:
         return Segmento(a_segundos(inicio), a_segundos(fin) if fin else None)
 
 
+def a_medidas(texto: str | None) -> tuple[float, float] | None:
+    """'100x62' o '100,62' (metros) → (largo, ancho)."""
+    if not texto:
+        return None
+    partes = texto.lower().replace(",", "x").replace("×", "x").split("x")
+    if len(partes) != 2:
+        raise ValueError(f"Medidas del campo no válidas: {texto} (p. ej. 100x62)")
+    largo, ancho = (float(p) for p in partes)
+    if not (60 <= largo <= 130 and 35 <= ancho <= 90):
+        raise ValueError(f"Medidas del campo fuera de rango: {texto}")
+    return largo, ancho
+
+
 def a_segundos(texto: str) -> float:
     """'1:23:45', '23:45' o '345' → segundos."""
     partes = [float(p) for p in texto.strip().split(":")]
@@ -35,6 +48,11 @@ class Configuracion:
     video: Path
     salida: Path
     modelos: Path = Path("modelos")
+    # Usar los pesos afinados con partidos propios (modelos/afinados/*.pt) si existen.
+    afinados: bool = True
+    # Medidas del campo en metros (largo, ancho); si no se dan, las reglamentarias de televisión (105 × 68). Se miden
+    # desde el vídeo con `tt-analisis medir-campo`.
+    campo: tuple[float, float] | None = None
     device: str = "cuda"
     # Fotogramas analizados por segundo de vídeo: 5 es el equilibrio entre coste y seguir el balón.
     fps_muestreo: float = 5.0

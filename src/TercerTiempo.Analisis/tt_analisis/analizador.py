@@ -12,7 +12,7 @@ import supervision as sv
 from tqdm import tqdm
 
 from . import __version__
-from .campo import Calibrador
+from .campo import Calibrador, configurar_campo
 from .config import CLASE_ARBITRO, MARGEN_CAMPO_CM, Configuracion
 from .geometria import Campo
 from .deteccion import Detector
@@ -49,7 +49,12 @@ def analizar(config: Configuracion, informar=print) -> dict:
     informar(f"Vídeo: {info.ancho}×{info.alto} a {info.fps:.0f} fps, {formato_minuto(info.duracion_s)}. Tramo {formato_minuto(config.segmento.inicio)} – {formato_minuto(fin_s)}.")
     informar(f"GPU: {describir_gpu()}")
 
-    modelos = cargar_modelos(config.modelos, config.device)
+    if config.campo:
+        configurar_campo(config.campo[0] * 100, config.campo[1] * 100)
+        informar(f"Campo de {config.campo[0]:g} × {config.campo[1]:g} m.")
+    modelos = cargar_modelos(config.modelos, config.device, afinados=config.afinados)
+    afinados = [nombre for nombre, ruta in modelos.rutas.items() if ruta.startswith("afinados/")]
+    informar(f"Detectores: {', '.join(f'{n} ({r})' for n, r in modelos.rutas.items())}" + (f" · afinados: {', '.join(afinados)}" if afinados else " · públicos"))
     paso = max(1, round(info.fps / config.fps_muestreo))
     fps_real = info.fps / paso
     dt = 1 / fps_real
@@ -209,7 +214,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
     analisis = {
         "version": __version__,
         "video": {"ruta": str(config.video), "ancho": info.ancho, "alto": info.alto, "fps": info.fps, "duracion_s": round(info.duracion_s, 1), "tramo_inicio_s": config.segmento.inicio, "tramo_fin_s": round(fin_s, 1)},
-        "parametros": {"fps_muestreo": round(fps_real, 2), "imgsz": config.imgsz, "device": modelos.device, "camara": config.camara, "tracker": Path(config.tracker_yaml()).name, "balon_fino": config.balon_fino, "llm": llm.nombre if llm else None},
+        "parametros": {"fps_muestreo": round(fps_real, 2), "imgsz": config.imgsz, "device": modelos.device, "camara": config.camara, "tracker": Path(config.tracker_yaml()).name, "balon_fino": config.balon_fino, "llm": llm.nombre if llm else None, "modelos": modelos.rutas, "campo_m": [campo.largo / 100, campo.ancho / 100]},
         "llm": llm.nombre if llm else None,
         "equipos": [{"id": e, "nombre": config.nombres_equipos[e], "color": colores[e]} for e in (0, 1)],
         "direcciones_ataque": {f"equipo{e}_mitad{m}": d for (e, m), d in sorted(direcciones.items())},

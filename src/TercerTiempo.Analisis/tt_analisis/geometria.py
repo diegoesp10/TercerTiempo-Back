@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .tipos import Punto
 
@@ -14,12 +14,14 @@ ANCHO_PORTERIA_CM = 732.0
 AREA_GRANDE_LARGO_CM = 2015.0
 AREA_GRANDE_ANCHO_CM = 4100.0
 MARGEN_FUERA_CM = 80.0
+# Medidas del campo en uso (las cambia `campo.configurar_campo`: no todos los campos miden 105 × 68).
+DIMENSIONES = {"largo": LARGO_CM, "ancho": ANCHO_CM}
 
 
 @dataclass(frozen=True)
 class Campo:
-    largo: float = LARGO_CM
-    ancho: float = ANCHO_CM
+    largo: float = field(default_factory=lambda: DIMENSIONES["largo"])
+    ancho: float = field(default_factory=lambda: DIMENSIONES["ancho"])
 
     @property
     def centro(self) -> Punto:

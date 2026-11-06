@@ -81,6 +81,21 @@ def fotogramas(config: Configuracion, info: InfoVideo, paso: int | None = None, 
         cap.release()
 
 
+def fotogramas_en(ruta: Path, tiempos: list[float]) -> Iterator[tuple[float, np.ndarray]]:
+    """Fotogramas sueltos en esos segundos, saltando (para pocos fotogramas repartidos por todo el vídeo)."""
+    cap = cv2.VideoCapture(str(ruta))
+    if not cap.isOpened():
+        raise FileNotFoundError(f"No se puede abrir el vídeo {ruta}")
+    try:
+        for t in tiempos:
+            cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, t) * 1000)
+            ok, imagen = cap.read()
+            if ok:
+                yield t, imagen
+    finally:
+        cap.release()
+
+
 def fotograma_en(ruta: Path, t: float) -> np.ndarray | None:
     cap = cv2.VideoCapture(str(ruta))
     try:

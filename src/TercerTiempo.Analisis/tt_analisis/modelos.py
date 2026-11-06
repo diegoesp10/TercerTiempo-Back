@@ -5,7 +5,7 @@ afinarlos con partidos asturianos. Ultralytics es AGPL-3.0: antes de publicar ha
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 PESOS = {
@@ -13,6 +13,8 @@ PESOS = {
     "balon": ("football-ball-detection.pt", "1isw4wx-MK9h9LMr36VvIWlJD6ppUvw7V"),
     "campo": ("football-pitch-detection.pt", "1Ma5Kt86tgpdjCTKfum79YMgNnSjcoOyf"),
 }
+# Pesos afinados con partidos propios (`tt-analisis entrenar`): si existen, se usan en vez de los públicos.
+CARPETA_AFINADOS = "afinados"
 
 VIDEOS_MUESTRA = {
     "0bfacc_0.mp4": "12TqauVZ9tLAv8kWxTTBFWtgt2hNQ4_ZF",
@@ -48,21 +50,32 @@ class Modelos:
     device: str
     # Media precisión (FP16) en GPU: casi el doble de rápido sin perder detecciones apreciables.
     half: bool = False
+    # Qué archivo de pesos se ha cargado para cada detector (relativo a la carpeta de modelos).
+    rutas: dict[str, str] = field(default_factory=dict)
 
 
-def cargar_modelos(carpeta: Path, device: str) -> Modelos:
+def ruta_pesos(carpeta: Path, nombre: str, afinados: bool = True) -> Path:
+    afinado = carpeta / CARPETA_AFINADOS / f"{nombre}.pt"
+    if afinados and afinado.exists():
+        return afinado
+    return carpeta / PESOS[nombre][0]
+
+
+def cargar_modelos(carpeta: Path, device: str, afinados: bool = True) -> Modelos:
     from ultralytics import YOLO
 
-    faltan = [archivo for archivo, _ in PESOS.values() if not (carpeta / archivo).exists()]
+    rutas = {nombre: ruta_pesos(carpeta, nombre, afinados) for nombre in PESOS}
+    faltan = [ruta.name for ruta in rutas.values() if not ruta.exists()]
     if faltan:
         raise FileNotFoundError(f"Faltan pesos en {carpeta}: {', '.join(faltan)}. Ejecuta `tt-analisis descargar-modelos`.")
     device = resolver_device(device)
     modelos = Modelos(
-        YOLO(str(carpeta / PESOS["jugadores"][0])),
-        YOLO(str(carpeta / PESOS["balon"][0])),
-        YOLO(str(carpeta / PESOS["campo"][0])),
+        YOLO(str(rutas["jugadores"])),
+        YOLO(str(rutas["balon"])),
+        YOLO(str(rutas["campo"])),
         device,
         half=device.startswith("cuda"),
+        rutas={nombre: ruta.relative_to(carpeta).as_posix() for nombre, ruta in rutas.items()},
     )
     for m in (modelos.jugadores, modelos.balon, modelos.campo):
         m.to(device)

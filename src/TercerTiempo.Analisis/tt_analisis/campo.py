@@ -15,6 +15,7 @@ import numpy as np
 import supervision as sv
 from sports.configs.soccer import SoccerPitchConfiguration
 
+from . import geometria
 from .tipos import Punto
 
 CONFIG_CAMPO = SoccerPitchConfiguration()
@@ -24,6 +25,67 @@ CONFIANZA_PUNTO = 0.5
 ERROR_MAX_PX = 40.0
 ERROR_COHERENCIA_PX = 60.0
 SALTO_MAX_CM = 4000.0
+
+
+def vertices_para(largo_cm: float, ancho_cm: float) -> np.ndarray:
+    """Los 32 vértices de un campo de esas medidas (áreas, círculo y puntos de penalti son siempre reglamentarios)."""
+    return np.array(SoccerPitchConfiguration(width=int(round(ancho_cm)), length=int(round(largo_cm))).vertices, dtype=np.float32)
+
+
+def configurar_campo(largo_cm: float, ancho_cm: float) -> None:
+    """Cambia las medidas del campo en todo el paquete: los vértices que ve el detector, la geometría y los mapas.
+    Se modifica en sitio para que valga para quien ya importó `VERTICES` o `CONFIG_CAMPO`."""
+    CONFIG_CAMPO.length = int(round(largo_cm))
+    CONFIG_CAMPO.width = int(round(ancho_cm))
+    VERTICES[:] = np.array(CONFIG_CAMPO.vertices, dtype=np.float32)
+    geometria.DIMENSIONES["largo"] = float(CONFIG_CAMPO.length)
+    geometria.DIMENSIONES["ancho"] = float(CONFIG_CAMPO.width)
+
+
+def medir_dimensiones(observaciones: list[tuple[np.ndarray, np.ndarray]], largos_cm=range(9000, 12001, 300), anchos_cm=range(4500, 7501, 300), confianza: float = CONFIANZA_PUNTO, fotogramas_grueso: int = 120) -> tuple[float, float, float, int]:
+    """Largo y ancho (cm) que hacen más coherentes entre sí los puntos detectados en muchos fotogramas.
+
+    Las áreas, el círculo central y los puntos de penalti miden lo mismo en todos los campos; lo que cambia es dónde
+    quedan las esquinas y la línea de medio campo respecto a ellos. Para cada medida candidata se ajusta la homografía
+    de cada fotograma y se suma el error de reproyección (acotado, para que un punto perdido no mande); gana la medida
+    de menor error. Devuelve (largo, ancho, error medio en px, fotogramas usados)."""
+    utiles = []
+    for xy, conf in observaciones:
+        mascara = (conf >= confianza) & (xy[:, 0] > 1) & (xy[:, 1] > 1)
+        if mascara.sum() >= 6:
+            utiles.append((np.flatnonzero(mascara), xy[mascara].astype(np.float32)))
+    if not utiles:
+        raise ValueError("No hay fotogramas con seis o más puntos del campo")
+
+    def error_total(largo: float, ancho: float, muestras) -> float:
+        vertices = vertices_para(largo, ancho)
+        total = 0.0
+        for indices, origen in muestras:
+            destino = vertices[indices].reshape(-1, 1, 2)
+            # Pocas iteraciones: con medidas malas casi todo es atípico y RANSAC agotaría sus 2000 vueltas.
+            m, _ = cv2.findHomography(origen.reshape(-1, 1, 2), destino, cv2.RANSAC, 12.0, maxIters=150, confidence=0.99)
+            if m is None:
+                total += 40.0
+                continue
+            try:
+                reproyectados = cv2.perspectiveTransform(destino, np.linalg.inv(m)).reshape(-1, 2)
+            except np.linalg.LinAlgError:
+                total += 40.0
+                continue
+            errores = np.linalg.norm(reproyectados - origen, axis=1)
+            total += float(np.mean(np.minimum(np.nan_to_num(errores, nan=40.0), 40.0)))
+        return total / len(muestras)
+
+    # Pasada gruesa con una parte de los fotogramas; pasada fina alrededor del mejor con todos.
+    salto = max(1, len(utiles) // fotogramas_grueso)
+    gruesos = utiles[::salto]
+    mejor = min(((error_total(l, a, gruesos), l, a) for l in largos_cm for a in anchos_cm), key=lambda t: t[0])
+    paso = max(1, (largos_cm[1] - largos_cm[0]) if len(largos_cm) > 1 else 300)
+    fino = max(25, paso // 6)
+    candidatos_l = range(int(mejor[1] - paso), int(mejor[1] + paso) + 1, fino)
+    candidatos_a = range(int(mejor[2] - paso), int(mejor[2] + paso) + 1, fino)
+    mejor = min(((error_total(l, a, utiles), l, a) for l in candidatos_l for a in candidatos_a), key=lambda t: t[0])
+    return float(mejor[1]), float(mejor[2]), float(mejor[0]), len(utiles)
 
 
 class Homografia:
