@@ -27,12 +27,15 @@ class Tarea:
     pesos: str
     imgsz: int
     epocas: int
+    # Lote que cabe en 16 GB de GPU con YOLOv8x y AMP (el lote automático de Ultralytics prueba hasta 16 imágenes a
+    # 1280 px y revienta la memoria antes de decidir).
+    batch: int
 
 
 TAREAS = {
-    "balon": Tarea("balon", "balon", "football-ball-detection.pt", 1280, 20),
-    "jugadores": Tarea("jugadores", "personas", "football-player-detection.pt", 1280, 20),
-    "campo": Tarea("campo", "campo", "football-pitch-detection.pt", 640, 40),
+    "balon": Tarea("balon", "balon", "football-ball-detection.pt", 1280, 20, 4),
+    "jugadores": Tarea("jugadores", "personas", "football-player-detection.pt", 1280, 20, 4),
+    "campo": Tarea("campo", "campo", "football-pitch-detection.pt", 640, 40, 12),
 }
 
 
@@ -50,7 +53,7 @@ def _yaml_con_mezcla(data: Path, mezclar: list[Path]) -> Path:
     return destino
 
 
-def entrenar(que: str, dataset: Path, modelos: Path, salida: Path, epocas: int | None = None, batch: int = -1, imgsz: int | None = None, device: str = "cuda", congelar: int = 10, paciencia: int = 10, mezclar: list[Path] | None = None, informar=print) -> Path:
+def entrenar(que: str, dataset: Path, modelos: Path, salida: Path, epocas: int | None = None, batch: int | None = None, imgsz: int | None = None, device: str = "cuda", congelar: int = 10, paciencia: int = 10, mezclar: list[Path] | None = None, informar=print) -> Path:
     from ultralytics import YOLO
 
     from .modelos import resolver_device
@@ -66,6 +69,7 @@ def entrenar(que: str, dataset: Path, modelos: Path, salida: Path, epocas: int |
         raise FileNotFoundError(f"Faltan los pesos base {base}: ejecuta `tt-analisis descargar-modelos`.")
     epocas = epocas or tarea.epocas
     imgsz = imgsz or tarea.imgsz
+    batch = tarea.batch if batch is None else batch
     device = resolver_device(device)
     informar(f"Afinando {que} desde {base.name}: {epocas} épocas a {imgsz} px, tronco congelado ({congelar} capas), lote {'automático' if batch == -1 else batch}.")
     modelo = YOLO(str(base))
@@ -73,7 +77,8 @@ def entrenar(que: str, dataset: Path, modelos: Path, salida: Path, epocas: int |
         data=str(data), epochs=epocas, imgsz=imgsz, batch=batch, device=device, project=str(salida), name=que, exist_ok=True,
         freeze=congelar if congelar > 0 else None, optimizer="AdamW", lr0=0.001, lrf=0.1, cos_lr=True, warmup_epochs=1, weight_decay=0.0005,
         mosaic=0.0, close_mosaic=0, scale=0.3, translate=0.1, fliplr=0.5, flipud=0.0, degrees=0.0, hsv_h=0.01, hsv_s=0.5, hsv_v=0.5, erasing=0.0,
-        patience=paciencia, amp=True, cache=False, workers=4, plots=True, seed=0, deterministic=False, verbose=True,
+        # Pocos procesos de carga (cada uno importa torch y se lleva ~1 GB de RAM; la GPU es el cuello de botella).
+        patience=paciencia, amp=True, cache=False, workers=2, plots=True, seed=0, deterministic=False, verbose=True,
     )
     mejor = Path(resultados.save_dir) / "weights" / "best.pt"
     destino = ruta_afinado(modelos, que)

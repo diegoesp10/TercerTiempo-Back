@@ -63,7 +63,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
     # campo de esos mismos fotogramas para una sola homografía).
     t0 = time.time()
     clasificador = ClasificadorEquipos(modelos, config)
-    calibrador = Calibrador(modelos.campo, modelos.device, modo=config.camara, cada_s=config.calibrar_cada_s, imgsz=config.imgsz)
+    calibrador = Calibrador(modelos.campo, modelos.device, modo=config.camara, cada_s=config.calibrar_cada_s, imgsz=config.imgsz_campo)
     with tqdm(total=config.muestras_equipos, desc="Equipos (recortes)", unit="recorte") as barra:
         muestras = clasificador.ajustar(info, avance=lambda n: barra.update(n - barra.n), por_fotograma=calibrador.acumular if config.camara == "fija" else None)
     if config.camara == "fija":
@@ -214,7 +214,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
     analisis = {
         "version": __version__,
         "video": {"ruta": str(config.video), "ancho": info.ancho, "alto": info.alto, "fps": info.fps, "duracion_s": round(info.duracion_s, 1), "tramo_inicio_s": config.segmento.inicio, "tramo_fin_s": round(fin_s, 1)},
-        "parametros": {"fps_muestreo": round(fps_real, 2), "imgsz": config.imgsz, "device": modelos.device, "camara": config.camara, "tracker": Path(config.tracker_yaml()).name, "balon_fino": config.balon_fino, "llm": llm.nombre if llm else None, "modelos": modelos.rutas, "campo_m": [campo.largo / 100, campo.ancho / 100]},
+        "parametros": {"fps_muestreo": round(fps_real, 2), "imgsz": config.imgsz, "imgsz_campo": config.imgsz_campo, "device": modelos.device, "camara": config.camara, "tracker": Path(config.tracker_yaml()).name, "balon_fino": config.balon_fino, "llm": llm.nombre if llm else None, "modelos": modelos.rutas, "campo_m": [campo.largo / 100, campo.ancho / 100]},
         "llm": llm.nombre if llm else None,
         "equipos": [{"id": e, "nombre": config.nombres_equipos[e], "color": colores[e]} for e in (0, 1)],
         "direcciones_ataque": {f"equipo{e}_mitad{m}": d for (e, m), d in sorted(direcciones.items())},

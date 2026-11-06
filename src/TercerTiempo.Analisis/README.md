@@ -59,7 +59,52 @@ uv run tt-analisis analizar partido.mp4 --fps 3 --sin-balon-fino --sin-clips    
 Opciones: `--camara movil|fija` (ver abajo), `--fps` (fotogramas analizados por segundo, 5 por defecto),
 `--segmento inicio-fin`, `--descanso minuto` (si no, se detecta por el parón más largo del medio), `--imgsz` (1280),
 `--confianza` (0.3), `--tracker` (un yaml de Ultralytics; por defecto el del paquete según la cámara),
-`--muestras-equipos` (600), `--max-fotogramas N` (para probar), `--device cpu`.
+`--campo 100x62` (medidas reales del campo en metros; por defecto las de televisión, 105 × 68), `--sin-afinados`
+(usar los pesos públicos aunque haya pesos afinados), `--muestras-equipos` (600), `--max-fotogramas N` (para probar),
+`--device cpu`.
+
+### Afinar los detectores con partidos propios
+
+Los tres detectores públicos están entrenados con televisión. Para que aprendan nuestros campos (focos, césped, el
+encuadre de la cámara) se afinan con imágenes de partidos propios, **etiquetadas automáticamente**:
+
+```powershell
+uv run tt-analisis medir-campo partido.mp4                       # intenta medir el largo y el ancho del campo
+uv run tt-analisis etiquetar partido.mp4 --salida datasets\partido [--campo 100x62]
+uv run tt-analisis entrenar balon --dataset datasets\partido      # también campo, jugadores o todos
+uv run tt-analisis etiquetar partido.mp4 --salida datasets\partido-r2 --afinados   # segunda ronda: el balón afinado etiqueta
+uv run tt-analisis entrenar balon --dataset datasets\partido-r2
+uv run tt-analisis evaluar todos --dataset datasets\partido       # públicos contra afinados, sobre la validación
+```
+
+`etiquetar` toma un fotograma cada 2 s (`--cada`) y escribe un dataset YOLO con tres conjuntos (`balon/`,
+`personas/`, `campo/`, cada uno con su `data.yaml`), partido en entrenamiento y validación **por bloques de tiempo**
+(un bloque de 2 min de cada cinco), más `revision/` con vistas previas y `muestras.jsonl` con el porqué de cada
+decisión. Cómo se confirma cada cosa:
+
+- **Balón**: el detector busca por teselas y a fotograma entero en el fotograma y en cuatro vecinos (±0,2 y ±0,4 s).
+  Lo que separa un balón de una marca de la línea, un reflejo o un foco es que **se mueve respecto al césped**: se
+  estima el movimiento de la cámara hacia cada vecino (flujo óptico sobre el fondo) y se mira si el candidato sigue en
+  el mismo sitio del campo (quieto: marca, salvo que el detector lo vea con mucha confianza, que es un balón parado) o
+  se ha desplazado con una velocidad coherente entre vecinos (balón en juego). Lo que cae sobre una persona (medias,
+  botas) solo vale si el detector de jugadores, entrenado con otros datos, también ve ahí el balón. Los fotogramas con
+  dos balones igual de buenos se descartan, y las marcas rechazadas entran como negativos difíciles.
+- **Personas**: las del detector de jugadores con confianza ≥ 0,45; el fotograma entra solo si el balón está resuelto
+  (para no enseñar que «ahí no hay balón» cuando sí lo hay).
+- **Campo**: con seis o más puntos coherentes se ajusta la homografía; si se conocen las medidas reales del campo
+  (`--campo`) se reproyectan los 32 vértices y quedan etiquetados también los que el detector no vio; si no, solo los
+  puntos vistos (el resto queda sin etiqueta, que el entrenamiento ignora).
+
+`--juez claude` manda además un recorte ampliado de cada candidato a balón a la API de Claude (hace falta
+`ANTHROPIC_API_KEY`) y se queda con lo que confirma; `--juez ollama` hace lo mismo con un modelo local, pero
+`gemma4:12b` tarda 12-19 s por recorte y da por balón casi todo, así que no se usa por defecto. Las pseudoetiquetas
+se pueden corregir a mano con cualquier herramienta que lea YOLO (CVAT, Label Studio) antes de entrenar.
+
+`entrenar` sigue entrenando desde los pesos públicos con el tronco congelado (`--congelar 10`), tasa de aprendizaje
+baja y las mismas aumentaciones que el entrenamiento original; deja los pesos en `modelos/afinados/<que>.pt`, que
+`analizar` usa automáticamente si existen. `evaluar` compara públicos y afinados sobre la partición de validación
+con el mAP de Ultralytics y con lo que importa al analizador: balones encontrados a fotograma entero con el umbral del
+análisis, precisión y exhaustividad por clase de persona, fotogramas calibrables y error de la homografía.
 
 ### La cámara
 
@@ -142,10 +187,65 @@ RTX 5070 Ti, 5 fotogramas/s: **≈ 5 min de cálculo por cada 5 min de vídeo**,
 Con una cámara fija y alta (`--camara fija`) todo lo que depende de la calibración mejora de golpe: una sola
 homografía para todo el partido.
 
+## Afinado con el vídeo del Vallobín (06-11-2026)
+
+Lo que se vio al etiquetar automáticamente el partido entero (96 min, una muestra cada 2 s):
+
+- **El campo no mide 105 × 68** y el detector público de puntos del campo, de noche y con este encuadre, solo acierta
+  unos 5 puntos por fotograma (los del círculo central y la línea de medio campo); el resto los sitúa a 20-40 px de
+  donde van. Con eso la medida automática del campo no converge (`medir-campo` lo dice: error medio > 12 px), así que
+  el conjunto `campo/` lleva solo los puntos vistos y coherentes. Con las medidas reales del campo (`--campo`) saldrían
+  etiquetas completas por reproyección.
+- **El balón**: el detector público a baja confianza marca sobre todo marcas de las líneas, medias y botas; la regla
+  de movimiento las deja fuera (en las pruebas sobre tramos, 5-7 de cada 6-10 balones aprobados eran balones de
+  verdad, y lo rechazado eran marcas, focos y medias). A cambio solo se confirma el 5-10 % de las muestras: por eso
+  hay dos rondas, y en la segunda etiqueta el balón ya afinado.
+
+Etiquetado del partido entero (2.891 muestras, 28 min): 684 balones confirmados y 288 negativos difíciles, 1.838
+fotogramas de personas y 1.260 de campo; de validación quedan 179, 336 y 248. Entrenamientos en la RTX 5070 Ti con el
+tronco congelado: balón 10 épocas en 8 min (lote 4 a 1280 px, 5 GB de GPU), campo 40 épocas en 10 min, jugadores 12
+épocas en 15 min. Resultados sobre la validación (fotogramas que ningún entrenamiento ha visto):
+
+| Detector | Públicos | Afinados | Decisión |
+|---|---|---|---|
+| **Balón** (134 balones; a fotograma entero, umbral 0,25) | 97 encontrados (72 %), 45 falsos; mAP50 0,755 | **103 encontrados (77 %), 19 falsos; mAP50 0,825** | **Se usa el afinado** (`modelos/afinados/balon.pt`) |
+| Jugadores (5.033 jugadores, 75 porteros, 675 árbitros) | jugador 0,99 / 0,94 (exhaustividad / precisión) | jugador 0,96 / 0,90; mAP50 0,81 → 0,86 | Se queda el público: las etiquetas salen de él (evaluación circular) y de noche ya acierta casi todo |
+| Campo (248 fotogramas) | a 640 px: 78 % calibrables, 5,4 puntos correctos y 8,8 falsos por fotograma, error de homografía 13 px | a 640 px: 44 % calibrables, 1,2 correctos y 2,0 falsos, error 32 px | Se queda el público: con solo los puntos vistos aprende a callarse los demás |
+
+Dos cosas más que salieron de la evaluación:
+
+- Una segunda ronda de autoentrenamiento (el balón afinado vuelve a etiquetar, 603 balones) **empeora** (90 encontrados):
+  el maestro afinado propone menos candidatos pequeños y dudosos, y el conjunto pierde justo los difíciles. Se queda la
+  primera ronda.
+- **El detector público del campo se entrenó a 640 px y a 1280 se inventa puntos**: a 1280 calibra el 46 % de los
+  fotogramas con un error mediano de 351 px (basura); a 640, el 78 % con 13 px. El analizador lo usaba a 1280: desde
+  este día la calibración va a 640 (`--imgsz-campo`), que es la mejora grande y gratis de esta tanda.
+
+Los pesos afinados descartados (campo y jugadores) quedan en `entrenamientos/descartados/` por si se quieren comparar.
+
+El mismo tramo de 5 min (20:00-25:00) analizado de nuevo, 5 fotogramas/s, cámara móvil:
+
+| Qué | 05-11 (públicos, campo a 1280) | Públicos, campo a 640 | Balón afinado, campo a 640 |
+|---|---|---|---|
+| Fotogramas calibrados | 46 % | **67 %** (9 puntos en el mejor, 128 invalidaciones frente a 207) | 67 % |
+| Fotogramas con balón | 28 % | 34 % | 19 % |
+| Balones descartados por tamaño o salto | 71 | 71 | **14** |
+| Toques / eventos | 51 / 6 | 37 / 12 (2 «goles» y 2 tiros que no se han verificado) | 27 / 4 |
+| Posesión | 33 / 67 | 75 / 25 | 20 / 80 |
+| Tiempo | 4,7 min | 4,6 min | 4,4 min |
+
+Lectura honesta: la calibración mejora de golpe con el detector del campo a su escala. El balón afinado quita falsos
+balones (en la validación, de 45 a 19) y por eso el analizador «ve» el balón en menos fotogramas (19 %): parte de lo
+que antes contaba como balón eran marcas y medias. Pero sigue sin verlo en cuatro de cada cinco fotogramas, y con eso
+la posesión todavía baila de una pasada a otra: **el balón sigue siendo el cuello de botella** y el siguiente salto
+pide etiquetas de más partidos (o corregidas a mano) y, sobre todo, una cámara fija y más cerca del juego.
+
 ## Siguientes pasos
 
-- Afinar los detectores con 1-2 partidos asturianos anotados (cajas de jugadores y balón): los modelos públicos están
-  entrenados con televisión.
+- Medidas reales del campo del Vallobín (o de cada campo) para etiquetar los 32 puntos por reproyección y afinar de
+  verdad el detector del campo; a medio plazo, calibrar por las líneas (segmentación) y no por puntos.
+- Revisar y corregir a mano una parte de las pseudoetiquetas (CVAT o Label Studio) y volver a entrenar; con la clave
+  de la API, `--juez claude` sobre los candidatos a balón.
 - Enganche con la API: cola tras la compresión de `TercerTiempo.Videos`, entidad `MatchVideoAnalysis`, endpoint de
   análisis y pestaña «Del vídeo» en el acta interna con la asignación de tracklets a fichas.
 - Unir tracklets de la misma persona (re-identificación) y leer dorsales con un modelo específico.

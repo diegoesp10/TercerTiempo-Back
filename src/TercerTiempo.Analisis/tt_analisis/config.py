@@ -61,6 +61,9 @@ class Configuracion:
     descanso: float | None = None
     # Tamaño de inferencia de los detectores (los jugadores lejanos son pequeños: 1280 mejor que 640).
     imgsz: int = 1280
+    # El detector de puntos del campo se entrenó a 640 px y a 1280 se inventa puntos (medido con el vídeo del
+    # Vallobín: 78 % de fotogramas calibrables y 13 px de error a 640, frente a 46 % y 351 px a 1280).
+    imgsz_campo: int = 640
     confianza: float = 0.3
     # "movil" (alguien graba con paneo y zoom: se calibra en cada fotograma y se sigue con BoT-SORT) o "fija" (trípode o
     # cámara tipo Veo: una sola homografía para todo el partido y ByteTrack).

@@ -24,6 +24,7 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--segmento", default=None, help="Tramo a analizar, p. ej. 10:00-15:00 o 0:45:00-1:35:00.")
     a.add_argument("--descanso", default=None, help="Minuto del vídeo en que empieza la segunda parte (p. ej. 52:30); si no, se detecta.")
     a.add_argument("--imgsz", type=int, default=1280)
+    a.add_argument("--imgsz-campo", type=int, default=640, help="Tamaño de inferencia del detector de puntos del campo (640, el de su entrenamiento).")
     a.add_argument("--confianza", type=float, default=0.3)
     a.add_argument("--camara", choices=["movil", "fija"], default="movil", help="movil: alguien graba con paneo y zoom (por defecto); fija: trípode o cámara tipo Veo (una sola calibración).")
     a.add_argument("--tracker", default=None, help="Seguidor de Ultralytics: bytetrack.yaml, botsort.yaml o un yaml propio (por defecto el del paquete según la cámara).")
@@ -73,7 +74,7 @@ def construir_parser() -> argparse.ArgumentParser:
     t.add_argument("--salida", type=Path, default=Path("entrenamientos"), help="Carpeta de los entrenamientos de Ultralytics.")
     t.add_argument("--device", default="cuda")
     t.add_argument("--epocas", type=int, default=None, help="Por defecto 20 (balón y jugadores) o 40 (campo).")
-    t.add_argument("--batch", type=int, default=-1, help="Tamaño del lote (-1 = el que quepa en la GPU).")
+    t.add_argument("--batch", type=int, default=None, help="Tamaño del lote (por defecto 4 a 1280 px y 12 a 640 px, lo que cabe en 16 GB; -1 = que lo calcule Ultralytics).")
     t.add_argument("--imgsz", type=int, default=None)
     t.add_argument("--congelar", type=int, default=10, help="Capas congeladas desde el principio (10 = el tronco de YOLOv8; 0 = ninguna).")
     t.add_argument("--paciencia", type=int, default=10)
@@ -151,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         segmento=Segmento.parse(args.segmento),
         descanso=a_segundos(args.descanso) if args.descanso else None,
         imgsz=args.imgsz,
+        imgsz_campo=args.imgsz_campo,
         confianza=args.confianza,
         balon_fino=not args.sin_balon_fino,
         camara=args.camara,

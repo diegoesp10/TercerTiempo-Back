@@ -74,6 +74,7 @@ BLOQUE_S = 120.0
 BLOQUES_POR_CICLO = 5
 TESELA = 640
 SOLAPE = 64
+IMGSZ_CAMPO = 640
 RECORTE_JUEZ_PX = 160
 # Negativos difíciles (candidatos que el juez rechaza) como mucho esta fracción de los positivos.
 FRACCION_NEGATIVOS = 0.5
@@ -539,17 +540,14 @@ class Maestro:
         return salida
 
     def puntos_campo(self, imagen: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Por cada vértice, la mejor de las dos escalas (la nativa de 640 y la del análisis)."""
+        """Los 32 vértices con su confianza, a la escala nativa del detector (a 1280 se inventa puntos)."""
         xy = np.zeros((len(VERTICES), 2), dtype=np.float32)
         conf = np.zeros(len(VERTICES), dtype=np.float32)
-        for imgsz in sorted({640, self.imgsz}):
-            resultado = self.modelos.campo(imagen, imgsz=imgsz, device=self.modelos.device, half=self.modelos.half, verbose=False)[0]
-            puntos = sv.KeyPoints.from_ultralytics(resultado)
-            if len(puntos) == 0 or puntos.confidence is None:
-                continue
-            mejor = puntos.confidence[0] > conf
-            xy[mejor] = puntos.xy[0][mejor]
-            conf[mejor] = puntos.confidence[0][mejor]
+        resultado = self.modelos.campo(imagen, imgsz=IMGSZ_CAMPO, device=self.modelos.device, half=self.modelos.half, verbose=False)[0]
+        puntos = sv.KeyPoints.from_ultralytics(resultado)
+        if len(puntos) and puntos.confidence is not None:
+            xy[:] = puntos.xy[0]
+            conf[:] = puntos.confidence[0]
         return xy, conf
 
 
@@ -687,7 +685,7 @@ def etiquetar(config: ConfiguracionEtiquetado, informar=print) -> dict:
         reproyectar = medida["error_px"] <= ERROR_MEDIDA_FIABLE_PX
         if not reproyectar:
             informar(f"La medida del campo no es fiable (error {medida['error_px']:.1f} px > {ERROR_MEDIDA_FIABLE_PX:g}): se mantienen 105 × 68 y se etiquetan solo los puntos vistos. Con las medidas reales (--campo) salen etiquetas completas.")
-            medida = dict(medida, largo_m=120.0, ancho_m=70.0, fiable=False)
+            medida = dict(medida, largo_m=105.0, ancho_m=68.0, fiable=False)
     medida["reproyectar"] = reproyectar
     configurar_campo(medida["largo_m"] * 100, medida["ancho_m"] * 100)
     (config.salida / "campo-medida.json").write_text(json.dumps(medida, ensure_ascii=False, indent=2), encoding="utf-8")
