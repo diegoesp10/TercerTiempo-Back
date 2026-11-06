@@ -18,6 +18,8 @@ services:
       # Pagos: tras pagar en Stripe se vuelve a la web pública.
       Licensing__Stripe__SuccessUrl: "${TT_PUBLIC_URL:-http://127.0.0.1:8180}/pago/{CHECKOUT_SESSION_ID}"
       Licensing__Stripe__CancelUrl: "${TT_PUBLIC_URL:-http://127.0.0.1:8180}/licencias"
+      # El análisis de vídeo no corre en Docker (ver el servicio videos): la API no deja pedirlo.
+      Analysis__Enabled: "false"
     # Solo en el loopback del equipo: los visitantes entran por el frontal (Nginx), que reenvía /api.
     ports:
       - "127.0.0.1:${TT_API_PORT:-8181}:8080"
@@ -49,6 +51,11 @@ services:
     environment:
       ASPNETCORE_HTTP_PORTS: "8080"
       ReverseProxy__Enabled: "true"
+      # El analizador de vídeo (TercerTiempo.Analisis: Python + GPU) no va en esta imagen, que solo lleva .NET y ffmpeg,
+      # así que aquí los vídeos se comprimen pero no se analizan. Para analizarlos hace falta un contenedor con GPU
+      # (src/TercerTiempo.Analisis/Dockerfile, con --gpus all) o una máquina aparte con GPU que ejecute este mismo
+      # servicio fuera de Docker con Analysis:Enabled = true contra la misma base y los mismos ficheros.
+      Analysis__Enabled: "false"
     ports:
       - "127.0.0.1:${TT_VIDEOS_PORT:-8182}:8080"
     volumes:

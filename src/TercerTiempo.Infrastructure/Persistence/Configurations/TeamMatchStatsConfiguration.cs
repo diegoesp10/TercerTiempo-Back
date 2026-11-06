@@ -16,6 +16,9 @@ internal sealed class TeamMatchStatsConfiguration : IEntityTypeConfiguration<Tea
         builder.ConfigureAggregate();
 
         builder.Property(s => s.Notes).HasMaxLength(TeamMatchStatsData.MaxNotesLength);
+        // Con valor por defecto en SQL: una API anterior a estas columnas puede seguir guardando datos de equipo.
+        builder.Property(s => s.GoalKicksFor).HasDefaultValue(0);
+        builder.Property(s => s.GoalKicksAgainst).HasDefaultValue(0);
 
         builder.HasOne<Squad>().WithMany().HasForeignKey(s => s.SquadId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Match>().WithMany().HasForeignKey(s => s.MatchId).OnDelete(DeleteBehavior.NoAction);

@@ -19,6 +19,7 @@ public interface IClubsRepository
     Task<ClubDto> RemoveTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
     Task<ClubSquadDto> OpenSquadAsync(Guid teamId, OpenClubSquadRequest request, CancellationToken cancellationToken = default);
     Task<TeamCrestImportDto> UploadTeamCrestAsync(Guid teamId, CrestUpload file, CancellationToken cancellationToken = default);
+    Task<TeamProfileDto> SetTeamPitchAsync(Guid teamId, TeamPitchRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RosterEntryDto>> AddRosterEntryAsync(Guid teamId, RosterEntryRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RosterEntryDto>> UpdateRosterEntryAsync(Guid teamId, Guid entryId, RosterEntryRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RosterEntryDto>> RemoveRosterEntryAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default);
@@ -40,6 +41,12 @@ public sealed record RosterEntryRequest(
 public sealed record OpenClubSquadRequest(
     [property: Description("Partido desde el que se abre: la plantilla es la de la temporada de ese partido. Vacío = la temporada que se está viendo.")]
     Guid? MatchId);
+
+public sealed record TeamPitchRequest(
+    [property: Description("Largo del terreno de juego en metros (60-130); null junto con el ancho para quitar las medidas.")]
+    decimal? LengthM,
+    [property: Description("Ancho en metros (35-90).")]
+    decimal? WidthM);
 
 public sealed record ClubTeamRequest(
     [property: Description("Id del equipo (GET /api/teams?competitionId=...).")]

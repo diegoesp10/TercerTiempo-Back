@@ -12,7 +12,8 @@ var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsEnvironment(HostEnvironmentExtensions.FakeDatos))
     builder.Configuration.AddUserSecrets<Program>(optional: true);
 
-// Sin los trabajos en segundo plano de la API (descargas, copias, renovaciones): este proceso solo tiene el compresor.
+// Sin los trabajos en segundo plano de la API (descargas, copias, renovaciones): este proceso solo tiene el compresor
+// y el que lanza el analizador de vídeo.
 builder.Services
     .AddApplication()
     .AddRepositoryLayer()
@@ -20,6 +21,7 @@ builder.Services
     .AddWebHost(builder.Configuration)
     .AddOpenApiDocs(builder.Configuration, MediaDocs.Info);
 builder.Services.AddHostedService<VideoProcessingWorker>();
+builder.Services.AddHostedService<VideoAnalysisWorker>();
 
 var app = builder.Build();
 

@@ -16,8 +16,8 @@ internal sealed record RealDataTableChanges(string Table, int Inserted, int Upda
 
 // Copia la base de datos reales a la base de este entorno, con los mismos Id, en una sola transacción y sobre una foto
 // fija de la base real (aislamiento SNAPSHOT). Lo de cada entorno no se toca:
-//   - el escudo que sube un club (Teams.CrestFromClub) y las fichas que gestiona el club (RosterEntries.ManagedByClub),
-//     con su foto y si están ocultas;
+//   - el escudo que sube un club (Teams.CrestFromClub), las medidas del campo que apunta y las fichas que gestiona
+//     (RosterEntries.ManagedByClub), con su foto y si están ocultas;
 //   - lo que ya no está en la base real solo se borra si nada del entorno lo usa (un partido con acta interna, un árbitro
 //     con notas…), y las ligas, temporadas y equipos nunca.
 // SeedAsync hace lo contrario una sola vez: llena una base real vacía con los datos reales de la base de este entorno.
@@ -31,7 +31,7 @@ internal sealed class RealDataCopier(
 
     private static readonly Dictionary<string, TableRule> Rules = new()
     {
-        ["Teams"] = new(LocalColumns: ["CrestFromClub"],
+        ["Teams"] = new(LocalColumns: ["CrestFromClub", "Profile_PitchLengthM", "Profile_PitchWidthM"],
             Expressions: new() { ["CrestKey"] = "CASE WHEN t.[CrestFromClub] = 1 THEN t.[CrestKey] ELSE s.[CrestKey] END" }),
         ["RosterEntries"] = new(LocalColumns: ["Hidden", "PhotoKey", "ManagedByClub"], LocalRows: "t.[ManagedByClub] = 1"),
     };
@@ -193,6 +193,7 @@ internal sealed class RealDataCopier(
         ("RosterEntries", "PhotoKey") => "CAST(NULL AS nvarchar(100))",
         ("Teams", "CrestKey") => "CASE WHEN [CrestFromClub] = 1 THEN NULL ELSE [CrestKey] END",
         ("Teams", "CrestFromClub") => "CAST(0 AS bit)",
+        ("Teams", "Profile_PitchLengthM" or "Profile_PitchWidthM") => "CAST(NULL AS decimal(5,1))",
         _ => null,
     };
 

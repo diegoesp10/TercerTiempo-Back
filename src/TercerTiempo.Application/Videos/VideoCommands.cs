@@ -90,8 +90,11 @@ internal sealed class DeleteVideoHandler(
     ISquadStore squads,
     IClubStore clubs,
     IMatchVideoStore videos,
+    IMatchVideoAnalysisStore analyses,
     IVideoStorage storage,
     IVideoProcessingSignal processing,
+    IVideoAnalysisSignal analysis,
+    IVideoAnalyzer analyzer,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<DeleteVideoCommand, bool>
 {
@@ -104,10 +107,15 @@ internal sealed class DeleteVideoHandler(
         await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, video.SquadId, clock, cancellationToken);
 
         video.Delete(clock.GetUtcNow());
+        // Con el vídeo se va su análisis: la propuesta, los recortes de los jugadores y la carpeta del analizador.
+        if (await analyses.GetByVideoAsync(video.Id, cancellationToken) is { } analyzed)
+            analyses.Remove(analyzed);
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        // Si se estaba comprimiendo, el compresor para y descarta lo suyo; el archivo que se servía se borra aquí.
+        // Si se estaba comprimiendo o analizando, el proceso para y descarta lo suyo; el archivo que se servía se borra aquí.
         processing.Cancel(video.Id);
+        analysis.Cancel(video.Id);
         await storage.DeleteAsync(video.StorageKey, cancellationToken);
+        await analyzer.DeleteOutputAsync(video.Id, cancellationToken);
 
         return true;
     }

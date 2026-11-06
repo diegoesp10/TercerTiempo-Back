@@ -76,6 +76,7 @@ internal sealed class JobScheduler
         IOptions<OfficialSheetOptions> sheets,
         IOptions<LicensingOptions> licensing,
         IOptions<RealDataOptions> realData,
+        IOptions<TercerTiempo.Application.Abstractions.Videos.VideoAnalysisOptions> analysis,
         IRealDataLease lease,
         IHostEnvironment environment,
         IServiceScopeFactory scopes,
@@ -156,6 +157,13 @@ internal sealed class JobScheduler
                 null,
                 TimeSpan.Zero,
                 true,
+                External: true),
+            new(JobNames.VideoAnalysis,
+                "Análisis de vídeos",
+                "El servicio de vídeo pasa cada vídeo ya comprimido por el analizador (TercerTiempo.Analisis, con GPU): sigue a los jugadores y al balón y deja una propuesta de acta interna (posesión, tiros, córners, saques y acciones por jugador) que el cuerpo técnico revisa y vuelca. Una ejecución por vídeo, al terminar de comprimirse o al pedirlo desde el acta.",
+                null,
+                TimeSpan.Zero,
+                analysis.Value.Enabled,
                 External: true),
         ];
         _slots = definitions.ToDictionary(d => d.Name, d => new Slot(d));

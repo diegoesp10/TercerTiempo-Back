@@ -39,7 +39,9 @@ public sealed record TeamMatchStatsDto(
     int PenaltyGoalsFor,
     int PenaltyGoalsAgainst,
     int ThrowInsFor,
-    int ThrowInsAgainst);
+    int ThrowInsAgainst,
+    int GoalKicksFor = 0,
+    int GoalKicksAgainst = 0);
 
 // Lo que envía el cuerpo técnico; «For» es su equipo y «Against» el rival.
 public sealed record TeamMatchStatsInput(
@@ -62,12 +64,23 @@ public sealed record TeamMatchStatsInput(
     int PenaltyGoalsFor = 0,
     int PenaltyGoalsAgainst = 0,
     int ThrowInsFor = 0,
-    int ThrowInsAgainst = 0)
+    int ThrowInsAgainst = 0,
+    int GoalKicksFor = 0,
+    int GoalKicksAgainst = 0)
 {
     public TeamMatchStatsData ToData() => new(
         PossessionPct, CornersFor, CornersAgainst, ShotsFor, ShotsAgainst, ShotsOnTargetFor, ShotsOnTargetAgainst,
         OffsidesFor, OffsidesAgainst, FoulsCommitted, FoulsReceived, SetPieceGoalsFor, SetPieceGoalsAgainst, Notes,
-        PenaltiesFor, PenaltiesAgainst, PenaltyGoalsFor, PenaltyGoalsAgainst, ThrowInsFor, ThrowInsAgainst);
+        PenaltiesFor, PenaltiesAgainst, PenaltyGoalsFor, PenaltyGoalsAgainst, ThrowInsFor, ThrowInsAgainst,
+        GoalKicksFor, GoalKicksAgainst);
+
+    public static TeamMatchStatsInput From(TeamMatchStats? s) => s is null
+        ? new TeamMatchStatsInput(null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null)
+        : new TeamMatchStatsInput(
+            s.PossessionPct, s.CornersFor, s.CornersAgainst, s.ShotsFor, s.ShotsAgainst, s.ShotsOnTargetFor, s.ShotsOnTargetAgainst,
+            s.OffsidesFor, s.OffsidesAgainst, s.FoulsCommitted, s.FoulsReceived, s.SetPieceGoalsFor, s.SetPieceGoalsAgainst, s.Notes,
+            s.PenaltiesFor, s.PenaltiesAgainst, s.PenaltyGoalsFor, s.PenaltyGoalsAgainst, s.ThrowInsFor, s.ThrowInsAgainst,
+            s.GoalKicksFor, s.GoalKicksAgainst);
 }
 
 public sealed record TeamMatchStatsRowDto(MatchDto Match, TeamMatchStatsDto Stats);
@@ -92,7 +105,9 @@ public sealed record TeamStatsAveragesDto(
     int PenaltyGoalsFor,
     int PenaltyGoalsAgainst,
     double ThrowInsFor,
-    double ThrowInsAgainst);
+    double ThrowInsAgainst,
+    double GoalKicksFor = 0,
+    double GoalKicksAgainst = 0);
 
 public sealed record SquadTeamStatsDto(int MatchesRecorded, TeamStatsAveragesDto? Averages, IReadOnlyList<TeamMatchStatsRowDto> Matches);
 
@@ -101,7 +116,8 @@ internal static class TeamMatchStatsMapper
     public static TeamMatchStatsDto ToDto(TeamMatchStats s) => new(
         s.PossessionPct, s.CornersFor, s.CornersAgainst, s.ShotsFor, s.ShotsAgainst, s.ShotsOnTargetFor, s.ShotsOnTargetAgainst,
         s.OffsidesFor, s.OffsidesAgainst, s.FoulsCommitted, s.FoulsReceived, s.SetPieceGoalsFor, s.SetPieceGoalsAgainst,
-        s.Notes, s.UpdatedAt, s.PenaltiesFor, s.PenaltiesAgainst, s.PenaltyGoalsFor, s.PenaltyGoalsAgainst, s.ThrowInsFor, s.ThrowInsAgainst);
+        s.Notes, s.UpdatedAt, s.PenaltiesFor, s.PenaltiesAgainst, s.PenaltyGoalsFor, s.PenaltyGoalsAgainst, s.ThrowInsFor, s.ThrowInsAgainst,
+        s.GoalKicksFor, s.GoalKicksAgainst);
 
     public static TeamStatsAveragesDto? Averages(IReadOnlyCollection<TeamMatchStats> all)
     {
@@ -120,7 +136,8 @@ internal static class TeamMatchStatsMapper
             all.Sum(s => s.SetPieceGoalsFor), all.Sum(s => s.SetPieceGoalsAgainst),
             all.Sum(s => s.PenaltiesFor), all.Sum(s => s.PenaltiesAgainst),
             all.Sum(s => s.PenaltyGoalsFor), all.Sum(s => s.PenaltyGoalsAgainst),
-            Avg(s => s.ThrowInsFor), Avg(s => s.ThrowInsAgainst));
+            Avg(s => s.ThrowInsFor), Avg(s => s.ThrowInsAgainst),
+            Avg(s => s.GoalKicksFor), Avg(s => s.GoalKicksAgainst));
     }
 }
 
@@ -156,6 +173,8 @@ internal sealed class RecordTeamMatchStatsValidator : AbstractValidator<RecordTe
             RuleFor(x => x.Stats.PenaltyGoalsAgainst).InclusiveBetween(0, 20);
             RuleFor(x => x.Stats.ThrowInsFor).InclusiveBetween(0, 150);
             RuleFor(x => x.Stats.ThrowInsAgainst).InclusiveBetween(0, 150);
+            RuleFor(x => x.Stats.GoalKicksFor).InclusiveBetween(0, 100);
+            RuleFor(x => x.Stats.GoalKicksAgainst).InclusiveBetween(0, 100);
             RuleFor(x => x.Stats.Notes).MaximumLength(TeamMatchStatsData.MaxNotesLength);
         });
     }
@@ -167,7 +186,7 @@ internal sealed class RecordTeamMatchStatsHandler(
     IClubStore clubs,
     ISquadStore squads,
     IMatchStore matches,
-    ITeamMatchStatsStore teamStats,
+    MatchSheet.MatchSheetWriter writer,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<RecordTeamMatchStatsCommand, TeamMatchStatsDto>
 {
@@ -179,18 +198,7 @@ internal sealed class RecordTeamMatchStatsHandler(
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
 
-        var now = clock.GetUtcNow();
-        var current = await teamStats.GetAsync(squad.Id, match.Id, cancellationToken);
-        if (current is null)
-        {
-            current = TeamMatchStats.Record(squad, match, editor, command.Stats.ToData(), now);
-            teamStats.Add(current);
-        }
-        else
-        {
-            current.Update(squad, match, editor, command.Stats.ToData(), now);
-        }
-
+        var current = await writer.WriteTeamStatsAsync(squad, match, editor, command.Stats.ToData(), clock.GetUtcNow(), cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return TeamMatchStatsMapper.ToDto(current);
     }

@@ -8,6 +8,9 @@ from pathlib import Path
 
 from .config import Configuracion, Segmento, a_medidas, a_segundos
 
+# Código de salida cuando se pidió --exigir-gpu y no hay GPU (lo distingue quien lanza el analizador).
+CODIGO_SIN_GPU = 3
+
 
 def construir_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tt-analisis", description="Tercer Tiempo: análisis del vídeo de un partido para proponer el acta interna.")
@@ -18,7 +21,7 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--salida", type=Path, default=None, help="Carpeta de salida (por defecto salidas/<nombre del vídeo>).")
     a.add_argument("--modelos", type=Path, default=Path("modelos"))
     a.add_argument("--sin-afinados", action="store_true", help="Usar los pesos públicos aunque haya pesos afinados en modelos/afinados.")
-    a.add_argument("--campo", default=None, help="Medidas del campo en metros, p. ej. 100x62 (ver `medir-campo`); por defecto 105x68.")
+    a.add_argument("--campo", default=None, help="Medidas del campo en metros, p. ej. 100x62 (ver `medir-campo`); por defecto 120x70, las del modelo del campo.")
     a.add_argument("--device", default="cuda", help="cuda (por defecto), cuda:0 o cpu.")
     a.add_argument("--fps", type=float, default=5.0, help="Fotogramas por segundo que se analizan (5 por defecto).")
     a.add_argument("--segmento", default=None, help="Tramo a analizar, p. ej. 10:00-15:00 o 0:45:00-1:35:00.")
@@ -36,6 +39,8 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--max-fotogramas", type=int, default=None, help="Para probar: solo los primeros N fotogramas muestreados.")
     a.add_argument("--equipos", default=None, help="Nombres de los equipos separados por coma, en el orden que salgan (p. ej. 'Vallobín,Pumarín').")
     a.add_argument("--muestras-equipos", type=int, default=600)
+    a.add_argument("--progreso", action="store_true", help="Escribe el avance como líneas «##progreso N» (0-100) en la salida estándar, sin barras: para quien lo lanza como proceso.")
+    a.add_argument("--exigir-gpu", action="store_true", help="Sin GPU CUDA, termina con el código de salida 3 en vez de analizar en CPU.")
 
     d = sub.add_parser("descargar-modelos", help="Descarga los tres detectores (y, si se pide, dos vídeos de muestra).")
     d.add_argument("--modelos", type=Path, default=Path("modelos"))
@@ -164,10 +169,17 @@ def main(argv: list[str] | None = None) -> int:
         max_fotogramas=args.max_fotogramas,
         nombres_equipos=nombres,  # type: ignore[arg-type]
         muestras_equipos=args.muestras_equipos,
+        progreso=args.progreso,
+        exigir_gpu=args.exigir_gpu,
     )
     from .analizador import analizar
+    from .modelos import SinGpu
 
-    analizar(config)
+    try:
+        analizar(config)
+    except SinGpu as sin_gpu:
+        print(sin_gpu, file=sys.stderr)
+        return CODIGO_SIN_GPU
     return 0
 
 

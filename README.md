@@ -102,7 +102,9 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
   administración (nunca desde asturfutbol.es). Un equipo sin escudo muestra sus iniciales en el frontal.
 - **Ficha del equipo** (`Team.Profile`): nombre oficial, sede, web, equipación y campo. Se conservan las que se
   descargaron de asturfutbol.es hasta el 22-10-2026; ya no se piden a la federación, de la que solo se leen actas.
-  `ITeamProfileProvider` solo da el enlace a la ficha del equipo en la federación.
+  `ITeamProfileProvider` solo da el enlace a la ficha del equipo en la federación. Las **medidas del terreno de
+  juego** (`PitchLengthM` × `PitchWidthM`, en metros) no vienen de ninguna web: las apunta el club del equipo
+  (`PUT /api/clubs/me/teams/{teamId}/pitch`) y las usa el analizador de vídeo en los partidos que se juegan en ese campo.
 - **Club**: solo puede haber una cuenta por club (`NormalizedName` único). Al darse de alta elige su nombre del
   **catálogo de clubes** (`GET /api/clubs/catalog`, `ClubCatalog`: los equipos del proveedor agrupados por las palabras
   significativas del nombre, primer equipo + filiales) y quedan vinculados todos sus equipos (`ClubTeam`; un equipo solo
@@ -188,6 +190,7 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET | `/api/clubs/me` | El club: equipos vinculados y nombramientos (el código solo mientras está pendiente) |
 | POST / DELETE | `/api/clubs/me/teams[/{teamId}]` | Vincular otro equipo del proveedor (nombre acorde al club) / desvincular |
 | PUT | `/api/clubs/me/teams/{teamId}/crest` | El club cambia el escudo de uno de sus equipos (multipart `file`, hasta 2 MB) |
+| PUT | `/api/clubs/me/teams/{teamId}/pitch` | El club apunta las medidas del terreno de juego de su equipo (`lengthM` 60-130, `widthM` 35-90; los dos a `null` para quitarlas): con ellas el analizador de vídeo calibra el campo |
 | POST / PUT / DELETE | `/api/clubs/me/teams/{teamId}/roster[/{entryId}]` | El club añade, corrige o retira fichas de la plantilla publicada (lo que toca el club no lo sobrescribe el proveedor; las del proveedor retiradas se ocultan) |
 | GET | `/api/matches/{id}/preview` | Previa para el cuerpo técnico: probabilidades (Poisson sobre goles a favor/en contra, fuerza de cada equipo y ventaja local) con razones, forma, balance local/visitante, jugadores en forma y disciplina del rival según las actas oficiales |
 | POST | `/api/clubs/me/appointments` | Nombrar a un técnico para un equipo y la temporada en curso → código de acceso |
@@ -201,6 +204,9 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST | `/api/squads/{id}/players/{squadPlayerId}/invite-code` | Club propietario o técnico vigente: generar o renovar el código personal de esa ficha |
 | GET | `/api/squads/{id}/matches` | Partidos del equipo con el número de líneas registradas en cada acta |
 | GET / PUT | `/api/squads/{id}/matches/{matchId}/sheet` | Consultar / registrar el acta interna de un partido (idempotente; `played = false` borra la línea) |
+| GET / POST | `/api/squads/{id}/matches/{matchId}/video-analysis` | **Del vídeo**: estado del análisis de cada vídeo de la plantilla en el partido, su calidad y la propuesta (los dos equipos detectados y los jugadores seguidos) / analizar o volver a analizar. Club, cuerpo técnico y, solo lectura, el administrador |
+| POST | `/api/squads/{id}/matches/{matchId}/video-analysis/apply` | Volcar al acta interna lo aceptado de la propuesta (datos de equipo marcados y jugadores seguidos asignados a fichas); 409 `video_analysis.overwrite` si pisa datos sin `overwrite = true` |
+| GET | `/api/squads/{id}/matches/{matchId}/video-analysis/crops/{tracklet}` | Recorte (JPEG) de un jugador seguido, para reconocerlo |
 | GET | `/api/squads/{id}/matches/{matchId}/sheet/comparison` | **Comparador**: acta interna frente a la oficial guardada en SQL, jugador a jugador, con las discrepancias. `refresh` no fuerza descargas |
 | GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
 | GET | `/api/squads/{id}/players/{squadPlayerId}/profile` | Ficha para gráficos: serie partido a partido con el desglose de la nota, perfil por 90' y media/máximo de la plantilla |
@@ -340,8 +346,9 @@ la temporada nueva y la hace actual; el administrador puede cambiarla con `PUT /
 ## Trabajos en segundo plano y página /jobs
 
 Los dos scrapeos periódicos son trabajos (`Infrastructure/Jobs/JobScheduler.cs`): `football-data` (datos de las ligas)
-y `official-sheets` (pasada de actas públicas); `video-transcode` es un trabajo **externo**: lo ejecuta el servicio de
-vídeo, una ejecución por vídeo subido, y aquí solo se enseña su historial (sin horario ni lanzamiento a mano). Cada ejecución queda en la tabla `JobRuns` (automática o a mano, estado,
+y `official-sheets` (pasada de actas públicas); `video-transcode` y `video-analysis` son trabajos **externos**: los
+ejecuta el servicio de vídeo, una ejecución por vídeo comprimido y otra por vídeo analizado, y aquí solo se enseña su
+historial (sin horario ni lanzamiento a mano). Cada ejecución queda en la tabla `JobRuns` (automática o a mano, estado,
 resumen, errores y llamadas hechas) y cada llamada real a una web externa en `ScrapeRequests` (proveedor, URL, código,
 duración y ejecución). Al arrancar se lee la última ejecución de cada trabajo y se espera a que pase su intervalo; las
 que quedaron a medias se marcan como interrumpidas. Se guardan 30 días de llamadas y 180 de ejecuciones.
@@ -480,6 +487,53 @@ queda en `JobRuns` como una ejecución del trabajo `video-transcode` («Compresi
 tarda alrededor de una hora y media con los dos núcleos del contenedor (`TT_VIDEOS_CPUS`). Sin ffmpeg instalado
 (`VideoProcessing:FfmpegPath`), el worker avisa y los vídeos se quedan en cola.
 
+### Análisis del vídeo: la propuesta de acta interna
+
+Cuando un vídeo queda `Ready`, el compresor lo pone en la cola de análisis (`VideoAnalysisQueue`) y un segundo worker
+del servicio de vídeo (`VideoAnalysisWorker` → `VideoAnalysisProcessor` → `UvVideoAnalyzer`) lanza, de uno en uno, el
+analizador [`TercerTiempo.Analisis`](src/TercerTiempo.Analisis/README.md) (Python + GPU) como proceso externo, desde su
+carpeta:
+
+```
+uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<vídeo> --equipos "<nuestro>,<rival>"
+       [--campo LxA] --sin-clips --progreso --camara movil --exigir-gpu [--segmento 20:00-25:00]
+```
+
+- **`MatchVideoAnalysis`** (tabla `MatchVideoAnalyses`, uno por vídeo): `Pending` → `Running` (con `Progress`, leído de
+  las líneas `##progreso N` del analizador y guardado cada pocos segundos) → `Ready`, o `Failed` con el motivo. Guarda la
+  carpeta de salida, la versión del analizador, los pesos usados, `acta-propuesta.json` tal cual (compacto) y la
+  **calidad**: fotogramas analizados, % con balón y % con el campo calibrado (por debajo de 35 % y 50 % la propuesta va
+  con aviso). El mejor recorte de cada jugador seguido va a `MatchVideoAnalysisCrops` (JPEG de un par de KB), así la API
+  los sirve sin depender del disco del servicio de vídeo.
+- **Campo**: las medidas son las del equipo **local** (`Team.Profile.PitchLengthM/WidthM`), que apunta su club en la
+  ficha del equipo; sin ellas el analizador calibra con su campo genérico de 120 × 70 m y la propuesta lo dice.
+- **Nunca frena la compresión**: es otro worker y otra cola. Si no hay `uv`, no existe la carpeta del analizador o no
+  hay GPU (`--exigir-gpu`, código de salida 3), el análisis queda `Failed` con un mensaje claro y se puede volver a
+  pedir. No se reintenta solo (`Analysis:MaxAttempts` = 1). Al arrancar, lo que quedó `Running` vuelve a la cola; al
+  eliminar el vídeo se para el analizador y se borran el análisis, los recortes y su carpeta.
+- Cada análisis queda en `JobRuns` como una ejecución de `video-analysis` («Análisis de vídeos» en `/jobs`: «CD Vallobín -
+  Real Titánico (partido completo): 27 jugadores seguidos, balón a la vista en el 19,3 % de los fotogramas y campo
+  calibrado en el 66,9 %, en 5 min»).
+- **La API** (`Application/Videos/Analysis`) enseña la propuesta y la vuelca. El analizador separa dos equipaciones
+  pero no sabe cuál es la del club: lo dice el cuerpo técnico (`ourTeam`), que además asigna cada jugador seguido
+  («tracklet»; un jugador tiene varios, porque se corta al perderlo de vista) a una ficha. `POST …/apply` escribe con
+  `MatchSheetWriter`, el mismo camino que `PUT …/sheet` y `PUT …/team-stats`, en nombre de quien lo vuelca:
+  posesión, tiros, tiros a puerta, córners, saques de banda y saques de puerta (cada uno, el valor del equipo y el del
+  rival) y, por ficha, tiros, tiros a puerta, paradas, recuperaciones, pérdidas y pases, sumando sus tramos y las dos
+  partes del partido (la posesión, ponderada por lo analizado). Reglas (`VideoSheetMerge`): un cero de la propuesta
+  nunca borra lo apuntado; lo que cambiaría un valor del acta exige `overwrite = true` (si no, 409 con la lista «tiros
+  de Pelayo (6 → 4)»); los goles solo se apuntan a quien no tenga ninguno; una línea nueva se crea con los minutos que
+  se ha visto al jugador. Volver a analizar olvida la propuesta y las asignaciones, nunca el acta.
+- **Configuración** (`Analysis:*`, en la API y en el servicio de vídeo): `Enabled` (false por defecto y en Docker;
+  true en Development y FakeDatos), `UvPath` (admite variables de entorno: `%APPDATA%\Python\Python314\Scripts\uv.exe`),
+  `Directory` (carpeta del analizador, `../TercerTiempo.Analisis` desde el servicio), `OutputDirectory`, `Segment`
+  (solo un tramo, para probar: `Analysis__Segment=20:00-25:00`), `Camera`, `RequireGpu`, `PollSeconds` (lo que se pide
+  desde la API lo recoge el servicio al mirar la cola) y `TimeoutMinutes`. **En Docker el analizador no corre**: la
+  imagen del servicio de vídeo solo lleva .NET y ffmpeg, así que `compose.yaml` fija `Analysis__Enabled=false` (los
+  vídeos se comprimen pero no se analizan, y la app lo dice). Para analizar hace falta una máquina con GPU: este mismo
+  servicio fuera de Docker con `Analysis:Enabled = true` contra la misma base y los mismos ficheros, o un contenedor con
+  GPU (`src/TercerTiempo.Analisis/Dockerfile`, `--gpus all`).
+
 **Acceso** (`VideoAccess`): un vídeo nunca es público. Lo ven la plantilla que lo subió (club, cuerpo técnico vigente y
 jugadores vinculados: `Owner`), el administrador (`Admin`) y quien tenga un pase del partido que lo incluya (`Pass`);
 de una plantilla pública se puede pedir el acceso al club (`Locked`). Descargan el archivo el club, el cuerpo técnico y
@@ -616,7 +670,8 @@ reales con los mismos Id.
 - **La copia.** Cada entorno tiene el trabajo «Datos reales» (`RealDataCopier`), cada `RealData:CopyMinutes` (5), al
   arrancar (a los 5 segundos) y en cuanto termina una descarga en ese proceso: trae lo nuevo en una sola transacción
   sobre una foto fija de la base real, sin peticiones a ninguna web. Un entorno parado no copia nada, claro: lo que se
-  descargó mientras tanto le llega en cuanto arranca. Respeta lo de cada entorno: el escudo que sube un club, las fichas que
+  descargó mientras tanto le llega en cuanto arranca. Respeta lo de cada entorno: el escudo que sube un club, las medidas del
+  campo que apunta (`Teams.Profile_Pitch*`; la base real tiene las columnas, siempre vacías), las fichas que
   gestiona el club (con su foto y si están ocultas) y lo que ya no está en la base real pero el entorno usa (un partido
   con acta interna, un árbitro con notas). Los escudos descargados se escriben en los ficheros de cada entorno.
 - **Lo que pide un usuario.** Un acta que falta se pide a la cola compartida (`SheetDownloads`) y la descarga el entorno
@@ -650,7 +705,8 @@ dotnet user-secrets set "Jwt:Key" "una-clave-larga-y-aleatoria" --project src/Te
 - `Cors:AllowedOrigins` incluye el frontend de Vite (`http://localhost:5173`).
 - `OfficialSheets:*` (asturfutbol.es: URL base, ritmo, códigos de sección, minutos reglamentarios), `Videos:*`
   (carpeta, tamaño máximo, trozo, formatos, vida de los tickets) y, en el servicio de vídeo, `VideoProcessing:*` (CRF,
-  preset, alto máximo, audio, umbral para dejar tal cual, intentos, rutas de ffmpeg y ffprobe): ver cada `appsettings.json`.
+  preset, alto máximo, audio, umbral para dejar tal cual, intentos, rutas de ffmpeg y ffprobe) y `Analysis:*` (el
+  analizador de vídeo: activado, ruta de `uv`, carpeta del analizador, tramo de prueba): ver cada `appsettings.json`.
 
 ## Migraciones y tests
 

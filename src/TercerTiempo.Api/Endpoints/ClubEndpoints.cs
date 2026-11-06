@@ -63,6 +63,16 @@ internal static class ClubEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        group.MapPut("/teams/{teamId:guid}/pitch", (Guid teamId, TeamPitchRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.SetTeamPitchAsync(teamId, request, ct))
+            .RequireLicense(LicenseScope.Team)
+            .WithName("SetClubTeamPitch")
+            .WithSummary("Apuntar las medidas del campo de un equipo del club")
+            .WithDescription("Solo cuentas de club y solo para sus equipos vinculados. Largo (60-130 m) y ancho (35-90 m) del terreno de juego, con un decimal; los dos a null para quitarlas. La federación no las publica: con ellas el analizador de vídeo calibra el campo de los partidos que se juegan en él (sin ellas usa un campo genérico de 120 × 70). Devuelve la ficha del equipo.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
         group.MapPost("/teams/{teamId:guid}/roster", (Guid teamId, RosterEntryRequest request, IClubsRepository clubs, CancellationToken ct) => clubs.AddRosterEntryAsync(teamId, request, ct))
             .RequireLicense(LicenseScope.Team)
             .WithName("AddClubRosterEntry")

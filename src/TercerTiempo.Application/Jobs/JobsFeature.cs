@@ -18,6 +18,9 @@ public static class JobNames
 
     // Lo ejecuta el servicio de vídeo (otro proceso), una ejecución por vídeo subido.
     public const string VideoTranscode = "video-transcode";
+
+    // También del servicio de vídeo: una ejecución por vídeo analizado con TercerTiempo.Analisis.
+    public const string VideoAnalysis = "video-analysis";
 }
 
 public static class JobRunStatus

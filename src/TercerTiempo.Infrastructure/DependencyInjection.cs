@@ -140,6 +140,7 @@ public static class DependencyInjection
         services.AddScoped<ICoachAppointmentStore, CoachAppointmentStore>();
         services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
         services.AddScoped<IMatchVideoStore, MatchVideoStore>();
+        services.AddScoped<IMatchVideoAnalysisStore, MatchVideoAnalysisStore>();
         services.AddScoped<IVideoUploadStore, VideoUploadStore>();
         services.AddScoped<TercerTiempo.Domain.Trainings.IExerciseStore, ExerciseStore>();
         services.AddScoped<TercerTiempo.Domain.Trainings.ITrainingStore, TrainingStore>();
@@ -296,6 +297,8 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(VideoOptions.SectionName));
         services.AddOptions<VideoProcessingOptions>()
             .Bind(configuration.GetSection(VideoProcessingOptions.SectionName));
+        services.AddOptions<VideoAnalysisOptions>()
+            .Bind(configuration.GetSection(VideoAnalysisOptions.SectionName));
         services.AddOptions<TercerTiempo.Application.Passes.PassOptions>()
             .Bind(configuration.GetSection(TercerTiempo.Application.Passes.PassOptions.SectionName));
 
@@ -331,6 +334,9 @@ public static class DependencyInjection
         services.AddSingleton<IVideoTickets, MemoryVideoTickets>();
         services.AddSingleton<IVideoTranscoder, FfmpegTranscoder>();
         services.AddSingleton<IVideoProcessingSignal, VideoProcessingSignal>();
+        // El analizador de vídeo (TercerTiempo.Analisis) lo lanza el servicio de vídeo; la API solo lee su resultado.
+        services.AddSingleton<IVideoAnalyzer, UvVideoAnalyzer>();
+        services.AddSingleton<IVideoAnalysisSignal, VideoAnalysisSignal>();
         services.AddSingleton<IVideoJobLog, VideoJobLog>();
         services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
     }

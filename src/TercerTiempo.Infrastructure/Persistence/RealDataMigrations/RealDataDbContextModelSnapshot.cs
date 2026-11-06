@@ -1314,6 +1314,16 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                                 .HasColumnType("nvarchar(160)")
                                 .HasColumnName("Profile_OfficialName");
 
+                            b1.Property<decimal?>("PitchLengthM")
+                                .HasPrecision(5, 1)
+                                .HasColumnType("decimal(5,1)")
+                                .HasColumnName("Profile_PitchLengthM");
+
+                            b1.Property<decimal?>("PitchWidthM")
+                                .HasPrecision(5, 1)
+                                .HasColumnType("decimal(5,1)")
+                                .HasColumnName("Profile_PitchWidthM");
+
                             b1.Property<string>("PostalCode")
                                 .HasMaxLength(12)
                                 .HasColumnType("nvarchar(12)")

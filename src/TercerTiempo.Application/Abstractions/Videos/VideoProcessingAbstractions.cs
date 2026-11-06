@@ -78,10 +78,11 @@ public interface IVideoProcessingSignal
     IDisposable Track(Guid videoId, out CancellationToken cancellation);
 }
 
-// Historial de compresiones en /jobs (una ejecución por vídeo).
+// Historial de compresiones y de análisis en /jobs (una ejecución por vídeo), como trabajos video-transcode y
+// video-analysis.
 public interface IVideoJobLog
 {
-    Task<Guid?> StartedAsync(string label, CancellationToken cancellationToken);
+    Task<Guid?> StartedAsync(string job, string label, CancellationToken cancellationToken);
 
     Task FinishedAsync(Guid? runId, bool succeeded, string summary, string? error, CancellationToken cancellationToken);
 }

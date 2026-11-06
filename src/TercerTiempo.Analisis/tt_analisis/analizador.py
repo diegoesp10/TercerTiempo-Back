@@ -12,6 +12,7 @@ import supervision as sv
 from tqdm import tqdm
 
 from . import __version__
+from .avance import Avance
 from .campo import Calibrador, configurar_campo
 from .config import CLASE_ARBITRO, MARGEN_CAMPO_CM, Configuracion
 from .geometria import Campo
@@ -22,7 +23,7 @@ from .eventos import detectar_descanso, detectar_eventos
 from .informes import acta_propuesta, escribir_json, escribir_mapas, escribir_posiciones, escribir_recortes, extraer_clips, resumen_markdown
 from .llm import crear_modelo
 from .llm.revision import confirmar_eventos, leer_dorsales, redactar_resumen
-from .modelos import cargar_modelos, describir_gpu
+from .modelos import cargar_modelos, describir_gpu, exigir_gpu
 from .posesion import MaquinaPosesion, acciones_por_jugador, resumir_posesion, secuencias
 from .seguimiento import Seguidor
 from .tipos import Instante, Persona, formato_minuto
@@ -44,7 +45,11 @@ def analizar(config: Configuracion, informar=print) -> dict:
     inicio_total = time.time()
     tiempos: dict[str, float] = {}
     info = info_video(config.video)
+    if config.exigir_gpu:
+        exigir_gpu(config.device)
     config.salida.mkdir(parents=True, exist_ok=True)
+    progreso = Avance(config.progreso)
+    progreso.fase("equipos", 0, 1)
     fin_s = min(config.segmento.fin, info.duracion_s) if config.segmento.fin is not None else info.duracion_s
     informar(f"Vídeo: {info.ancho}×{info.alto} a {info.fps:.0f} fps, {formato_minuto(info.duracion_s)}. Tramo {formato_minuto(config.segmento.inicio)} – {formato_minuto(fin_s)}.")
     informar(f"GPU: {describir_gpu()}")
@@ -64,8 +69,12 @@ def analizar(config: Configuracion, informar=print) -> dict:
     t0 = time.time()
     clasificador = ClasificadorEquipos(modelos, config)
     calibrador = Calibrador(modelos.campo, modelos.device, modo=config.camara, cada_s=config.calibrar_cada_s, imgsz=config.imgsz_campo)
-    with tqdm(total=config.muestras_equipos, desc="Equipos (recortes)", unit="recorte") as barra:
-        muestras = clasificador.ajustar(info, avance=lambda n: barra.update(n - barra.n), por_fotograma=calibrador.acumular if config.camara == "fija" else None)
+    def avance_equipos(n: int) -> None:
+        barra.update(n - barra.n)
+        progreso.fase("equipos", n, config.muestras_equipos)
+
+    with tqdm(total=config.muestras_equipos, desc="Equipos (recortes)", unit="recorte", disable=config.progreso) as barra:
+        muestras = clasificador.ajustar(info, avance=avance_equipos, por_fotograma=calibrador.acumular if config.camara == "fija" else None)
     if config.camara == "fija":
         fija = calibrador.fijar()
         if fija.valida:
@@ -94,8 +103,10 @@ def analizar(config: Configuracion, informar=print) -> dict:
     if config.max_fotogramas:
         total = min(total, config.max_fotogramas)
     n = 0
-    for fotograma in tqdm(fotogramas(config, info, paso=paso), total=total, desc="Analizando", unit="fot"):
+    progreso.fase("pasada", 0, total)
+    for fotograma in tqdm(fotogramas(config, info, paso=paso), total=total, desc="Analizando", unit="fot", disable=config.progreso):
         n += 1
+        progreso.fase("pasada", n, total)
         imagen = fotograma.imagen
         det = detector.detectar(imagen, fotograma.t)
         seguidas = seguidor.registrar(det.personas)
@@ -165,6 +176,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
         raise RuntimeError("No se ha leído ningún fotograma del tramo indicado.")
 
     # 3. Lo que sale de las posiciones.
+    progreso.fase("salidas", 0, 3)
     t0 = time.time()
     toques = maquina.toques
     resumenes = resumir_tracklets(instantes, dt)
@@ -189,25 +201,27 @@ def analizar(config: Configuracion, informar=print) -> dict:
     if llm is not None:
         t0 = time.time()
         leer = lambda t: fotograma_en(config.video, t)  # noqa: E731
-        with tqdm(desc=f"Revisando eventos con {llm.nombre}", unit="evento") as barra:
+        with tqdm(desc=f"Revisando eventos con {llm.nombre}", unit="evento", disable=config.progreso) as barra:
             confirmar_eventos(resultado.eventos, leer, llm, avance=lambda k: barra.update(k - barra.n))
         recortes_por_tracklet = {tid: [r.imagen for r in m.recortes] for tid, m in seguidor.memorias.items() if m.recortes and m.clase != CLASE_ARBITRO}
-        with tqdm(desc="Leyendo dorsales", unit="jugador") as barra:
+        with tqdm(desc="Leyendo dorsales", unit="jugador", disable=config.progreso) as barra:
             dorsales = leer_dorsales(recortes_por_tracklet, llm, avance=lambda k: barra.update(k - barra.n))
         tiempos["llm_s"] = time.time() - t0
 
     # 5. Salidas.
+    progreso.fase("salidas", 1, 3)
     t0 = time.time()
     recortes = escribir_recortes(seguidor.memorias, config.salida)
     mapas = escribir_mapas(resumenes, config.salida, config.nombres_equipos)
     posiciones = escribir_posiciones(instantes, config.salida)
     clips = 0
     if config.clips:
-        with tqdm(desc="Clips de eventos", unit="clip") as barra:
+        with tqdm(desc="Clips de eventos", unit="clip", disable=config.progreso) as barra:
             clips = extraer_clips(resultado.eventos, config.video, config.salida, config.clip_margen_s, ruta_ffmpeg(), avance=lambda k: barra.update(k - barra.n))
     tiempos["salidas_s"] = time.time() - t0
     tiempos["total_s"] = time.time() - inicio_total
 
+    progreso.fase("salidas", 2, 3)
     colores = [color_hex(c) for c in clasificador.colores]
     con_balon = sum(1 for i in instantes if i.balon_imagen is not None)
     calibrados = sum(1 for i in instantes if i.calibrado)
@@ -238,4 +252,5 @@ def analizar(config: Configuracion, informar=print) -> dict:
     escribir_json(acta, config.salida / "acta-propuesta.json")
     (config.salida / "resumen.md").write_text(resumen_markdown(analisis, acta, resumen_llm), encoding="utf-8")
     informar(f"Listo en {tiempos['total_s'] / 60:.1f} min: {config.salida / 'resumen.md'}")
+    progreso.fin()
     return analisis

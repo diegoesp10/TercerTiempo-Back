@@ -10,7 +10,8 @@ con visión (la API de Claude o un modelo local vía Ollama) confirma los evento
 los recortes y redacta el resumen.
 
 Es un programa aparte de la API y del servicio de vídeo (Python, GPU); la evaluación previa y el plan están en
-[`docs/lector-videos.md`](../../docs/lector-videos.md).
+[`docs/lector-videos.md`](../../docs/lector-videos.md). Desde el 06-11-2026 la app lo lanza sola: ver «Integración con
+la app».
 
 ## Qué sale y con qué fiabilidad
 
@@ -59,9 +60,10 @@ uv run tt-analisis analizar partido.mp4 --fps 3 --sin-balon-fino --sin-clips    
 Opciones: `--camara movil|fija` (ver abajo), `--fps` (fotogramas analizados por segundo, 5 por defecto),
 `--segmento inicio-fin`, `--descanso minuto` (si no, se detecta por el parón más largo del medio), `--imgsz` (1280),
 `--confianza` (0.3), `--tracker` (un yaml de Ultralytics; por defecto el del paquete según la cámara),
-`--campo 100x62` (medidas reales del campo en metros; por defecto las de televisión, 105 × 68), `--sin-afinados`
+`--campo 100x62` (medidas reales del campo en metros; por defecto las del modelo del campo de Roboflow, 120 × 70), `--sin-afinados`
 (usar los pesos públicos aunque haya pesos afinados), `--muestras-equipos` (600), `--max-fotogramas N` (para probar),
-`--device cpu`.
+`--device cpu`, `--progreso` (el avance como líneas `##progreso N` en la salida estándar, sin barras: para quien lo
+lanza como proceso) y `--exigir-gpu` (sin GPU CUDA termina con el código de salida 3 en vez de analizar en CPU).
 
 ### Afinar los detectores con partidos propios
 
@@ -155,6 +157,32 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
 
 La lógica de posesión, eventos, estadísticas y geometría es pura y se prueba sin GPU: `uv run pytest`.
 
+## Integración con la app
+
+El servicio de vídeo (`TercerTiempo.Videos`) lanza este programa cuando un vídeo termina de comprimirse (o cuando el
+cuerpo técnico pide analizarlo desde el acta interna), de uno en uno, desde esta carpeta:
+
+```
+uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<vídeo> --equipos "<nuestro>,<rival>"
+       [--campo LxA] --sin-clips --progreso --camara movil --exigir-gpu [--segmento 20:00-25:00]
+```
+
+- Lee el avance de las líneas `##progreso N` (0-8 separar equipos, 8-95 la pasada, 95-100 el post-proceso) y, al
+  terminar, carga `acta-propuesta.json` (la propuesta), `analisis.json` (versión, pesos, fotogramas, % con balón y %
+  calibrados, tramo y medidas del campo) y el recorte de cada jugador de la propuesta. Todo eso queda en la base
+  (`MatchVideoAnalysis`); la carpeta de salida se conserva hasta que se elimina el vídeo.
+- `--campo` lleva las medidas que el club del equipo **local** apunta en la ficha de su equipo; sin ellas se calibra
+  con 120 × 70 y la app lo avisa. Los nombres de `--equipos` son solo para los informes: el analizador no sabe cuál de
+  las dos equipaciones es la del club, lo dice el cuerpo técnico en la app.
+- Con `--exigir-gpu`, sin CUDA sale con el código 3 y la app deja el análisis como fallido con el motivo.
+- Configuración en `Analysis:*` del servicio de vídeo (`UvPath`, `Directory` = esta carpeta, `Segment` para probar con
+  un tramo, `Camera`): ver el [README del backend](../../README.md#análisis-del-vídeo-la-propuesta-de-acta-interna).
+  En Docker no corre (la imagen del servicio de vídeo no lleva Python ni GPU): `Analysis:Enabled` es false allí.
+
+Probado el 06-11-2026 en FakeDatos con el vídeo del Vallobín: el tramo 20:00-25:00 pedido desde el acta interna (5 min
+de cálculo, 27 jugadores seguidos, balón en el 19,3 % de los fotogramas y campo calibrado en el 66,9 %) y un clip de
+100 s subido por trozos, que se comprimió y se analizó solo con el campo de 100 × 62 apuntado por el club (2 min).
+
 ## Docker (GPU)
 
 ```powershell
@@ -246,7 +274,7 @@ pide etiquetas de más partidos (o corregidas a mano) y, sobre todo, una cámara
   verdad el detector del campo; a medio plazo, calibrar por las líneas (segmentación) y no por puntos.
 - Revisar y corregir a mano una parte de las pseudoetiquetas (CVAT o Label Studio) y volver a entrenar; con la clave
   de la API, `--juez claude` sobre los candidatos a balón.
-- Enganche con la API: cola tras la compresión de `TercerTiempo.Videos`, entidad `MatchVideoAnalysis`, endpoint de
-  análisis y pestaña «Del vídeo» en el acta interna con la asignación de tracklets a fichas.
+- En la sección «Del vídeo» de la app: los eventos uno a uno con su clip (hoy se lanza con `--sin-clips`), el minimapa
+  y la posesión por tramos; y separar mejor los dos equipos de noche (en las pruebas quedaron 6 y 21 jugadores seguidos).
 - Unir tracklets de la misma persona (re-identificación) y leer dorsales con un modelo específico.
 - Condiciones de grabación en el manual y aviso en la subida cuando el encuadre no sirve.

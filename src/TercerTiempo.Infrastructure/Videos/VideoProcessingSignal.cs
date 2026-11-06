@@ -2,8 +2,9 @@ using TercerTiempo.Application.Abstractions.Videos;
 
 namespace TercerTiempo.Infrastructure.Videos;
 
-// En memoria: quien sube o borra vídeos y el proceso que los comprime viven en el mismo servicio.
-internal sealed class VideoProcessingSignal : IVideoProcessingSignal
+// En memoria: quien sube o borra vídeos y los procesos que los comprimen y los analizan viven en el mismo servicio.
+// Cada proceso tiene su señal (la cola de compresión y la de análisis no se despiertan la una a la otra).
+internal abstract class VideoWorkSignal
 {
     private readonly Lock _lock = new();
     private readonly Dictionary<Guid, CancellationTokenSource> _tracked = [];
@@ -55,7 +56,7 @@ internal sealed class VideoProcessingSignal : IVideoProcessingSignal
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private sealed class Tracking(VideoProcessingSignal owner, Guid videoId, CancellationTokenSource source) : IDisposable
+    private sealed class Tracking(VideoWorkSignal owner, Guid videoId, CancellationTokenSource source) : IDisposable
     {
         public void Dispose()
         {
@@ -64,3 +65,7 @@ internal sealed class VideoProcessingSignal : IVideoProcessingSignal
         }
     }
 }
+
+internal sealed class VideoProcessingSignal : VideoWorkSignal, IVideoProcessingSignal;
+
+internal sealed class VideoAnalysisSignal : VideoWorkSignal, IVideoAnalysisSignal;

@@ -48,6 +48,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<OfficialSheetLine> OfficialSheetLines => Set<OfficialSheetLine>();
     public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();
     public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
+    public DbSet<MatchVideoAnalysis> MatchVideoAnalyses => Set<MatchVideoAnalysis>();
+    public DbSet<VideoAnalysisCrop> VideoAnalysisCrops => Set<VideoAnalysisCrop>();
     public DbSet<ClubLicense> ClubLicenses => Set<ClubLicense>();
     public DbSet<LicensingSettings> LicensingSettings => Set<LicensingSettings>();
     public DbSet<TercerTiempo.Domain.Privacy.CookieDefinition> CookieDefinitions => Set<TercerTiempo.Domain.Privacy.CookieDefinition>();
@@ -100,9 +102,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             throw new ConflictException(ErrorCode.PassAlreadyRedeemed);
         }
-        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is MatchVideo && e.State == EntityState.Modified))
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is MatchVideo or MatchVideoAnalysis && e.State == EntityState.Modified))
         {
-            // El compresor y una petición (borrar el vídeo) tocaron la misma fila: quien llega tarde se entera y decide.
+            // El compresor o el analizador y una petición (borrar el vídeo, volver a analizarlo) tocaron la misma fila:
+            // quien llega tarde se entera y decide.
             throw new ConcurrentChangeException();
         }
         catch (DbUpdateConcurrencyException ex) when (ex.Entries.All(e => e.State == EntityState.Deleted))

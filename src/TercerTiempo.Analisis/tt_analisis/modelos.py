@@ -91,6 +91,17 @@ def resolver_device(device: str) -> str:
     return device
 
 
+class SinGpu(RuntimeError):
+    """Se pidió GPU (--exigir-gpu) y torch no ve ninguna."""
+
+
+def exigir_gpu(device: str) -> None:
+    import torch
+
+    if device.startswith("cuda") and not torch.cuda.is_available():
+        raise SinGpu("No hay GPU CUDA disponible (torch no la ve): no se analiza en CPU porque se pidió --exigir-gpu.")
+
+
 def describir_gpu() -> str:
     import torch
 

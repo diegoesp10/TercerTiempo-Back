@@ -1,6 +1,7 @@
 ﻿using TercerTiempo.Hosting;
 using TercerTiempo.Application.Squads.TeamStats;
 using TercerTiempo.Repository.Squads;
+using TercerTiempo.Repository.Videos;
 
 namespace TercerTiempo.Api.Endpoints;
 
@@ -102,6 +103,46 @@ internal static class SquadEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapGet("/{squadId:guid}/matches/{matchId:guid}/video-analysis", (Guid squadId, Guid matchId, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.GetAsync(squadId, matchId, ct))
+            .WithName("GetMatchVideoAnalysis")
+            .WithSummary("Propuesta de acta interna que sale del vídeo")
+            .WithDescription("Club propietario, cuerpo técnico vigente y el administrador (solo lectura). Un elemento por vídeo de la plantilla en el partido con el estado de su análisis (NotRequested, WaitingForVideo, Pending, Running con su %, Ready o Failed con el motivo), la calidad (fotogramas con balón y con el campo calibrado), los datos de los dos equipos que ha separado el analizador (él no sabe cuál es el del club) y los jugadores seguidos con la URL de su recorte y lo que propone para su línea. El análisis lo hace el servicio de vídeo al terminar la compresión.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis", (Guid squadId, Guid matchId, RequestVideoAnalysisRequest? request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.RequestAsync(squadId, matchId, request, ct))
+            .WithName("RequestMatchVideoAnalysis")
+            .WithSummary("Analizar (o volver a analizar) el vídeo del partido")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Pone en la cola de análisis el vídeo indicado (o todos los de la plantilla en el partido) y olvida la propuesta anterior. 409 si el análisis está desactivado en el servidor (Analysis:Enabled), si el vídeo todavía se está comprimiendo o si ya está en cola o analizándose. El cuerpo es opcional.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis/apply", (Guid squadId, Guid matchId, ApplyVideoAnalysisRequest request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.ApplyAsync(squadId, matchId, request, ct))
+            .WithName("ApplyMatchVideoAnalysis")
+            .WithSummary("Volcar al acta interna lo aceptado de la propuesta del vídeo")
+            .WithDescription("Club propietario o cuerpo técnico vigente, y solo en partidos disputados. Escribe por el mismo camino que PUT …/sheet y PUT …/team-stats, en nombre de quien lo vuelca: los datos de equipo marcados en teamFields (el valor del equipo y el del rival) y, por cada jugador seguido asignado a una ficha, sus tiros, tiros a puerta, paradas, recuperaciones, pérdidas y pases (sumando los tramos de un mismo jugador y las dos partes del partido). Un cero de la propuesta nunca borra lo apuntado y los goles solo se apuntan a quien no tenga ninguno. Si cambiaría un valor que ya está en el acta responde 409 (video_analysis.overwrite) con la lista de cambios, y hay que repetir la llamada con overwrite = true. Una línea nueva se crea con los minutos que se ha visto al jugador en el vídeo. Devuelve el acta y la propuesta ya actualizadas.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapGet("/{squadId:guid}/matches/{matchId:guid}/video-analysis/crops/{tracklet:int}", async (Guid squadId, Guid matchId, int tracklet, Guid? videoId, HttpContext http, IVideoAnalysisRepository analysis, CancellationToken ct) =>
+            {
+                var crop = await analysis.GetCropAsync(squadId, matchId, tracklet, videoId, ct);
+                http.Response.Headers.CacheControl = "private, max-age=86400";
+                return Results.File(crop.Content, crop.ContentType);
+            })
+            .WithName("GetMatchVideoAnalysisCrop")
+            .WithSummary("Recorte de un jugador seguido en el vídeo")
+            .WithDescription("Club propietario, cuerpo técnico vigente y el administrador. JPEG con el mejor recorte del jugador seguido, para reconocerlo y asignarlo a una ficha. videoId indica el vídeo cuando el partido tiene dos partes.")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapGet("/{squadId:guid}/matches/{matchId:guid}/sheet/comparison", (Guid squadId, Guid matchId, bool? refresh, ISquadsRepository squads, CancellationToken ct) => squads.CompareMatchSheetAsync(squadId, matchId, refresh ?? false, ct))
             .AllowAnonymous()

@@ -50,7 +50,7 @@ class Configuracion:
     modelos: Path = Path("modelos")
     # Usar los pesos afinados con partidos propios (modelos/afinados/*.pt) si existen.
     afinados: bool = True
-    # Medidas del campo en metros (largo, ancho); si no se dan, las reglamentarias de televisión (105 × 68). Se miden
+    # Medidas del campo en metros (largo, ancho); si no se dan, las del modelo del campo de Roboflow (120 × 70). Se miden
     # desde el vídeo con `tt-analisis medir-campo`.
     campo: tuple[float, float] | None = None
     device: str = "cuda"
@@ -96,6 +96,10 @@ class Configuracion:
     max_fotogramas: int | None = None
     # Cómo se llama cada equipo en los informes (si no, "Equipo A" y "Equipo B").
     nombres_equipos: tuple[str, str] = ("Equipo A", "Equipo B")
+    # Para quien lo lanza como proceso (el servicio de vídeo): líneas «##progreso N» en la salida estándar en vez de
+    # las barras de tqdm, y fallar (código de salida 3) si no hay GPU en vez de analizar en CPU durante horas.
+    progreso: bool = False
+    exigir_gpu: bool = False
 
 
 # Clases del detector de jugadores de Roboflow (football-player-detection).

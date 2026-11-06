@@ -50,11 +50,12 @@ public class RealDataCopierTests(RealDataSqlFixture fixture) : IClassFixture<Rea
         Assert.True(fixture.CrestFiles().Exists("titanico.png"));
         Assert.True((await fixture.Copier().CopyAsync(default)).Quiet);
 
-        // Lo que hacen los clubes en este entorno: su escudo, una ficha corregida, otra oculta, una nueva y una nota al
-        // árbitro.
+        // Lo que hacen los clubes en este entorno: su escudo, las medidas de su campo, una ficha corregida, otra oculta,
+        // una nueva y una nota al árbitro.
         await using (var db = fixture.Environment())
         {
             (await db.Set<Team>().SingleAsync(t => t.Id == home.Id)).SetCrest("vallobin-club.png", fromClub: true);
+            (await db.Set<Team>().SingleAsync(t => t.Id == home.Id)).SetPitch(98.5m, 62m);
             (await db.Set<RosterEntry>().SingleAsync(r => r.Id == edited.Id)).UpdateByClub("José Pérez", null, 10, Now);
             (await db.Set<RosterEntry>().SingleAsync(r => r.Id == hidden.Id)).Hide();
             db.Add(RosterEntry.CreateByClub(home.Id, season.Id, "Fichado por el club", null, 22, Now));
@@ -86,6 +87,7 @@ public class RealDataCopierTests(RealDataSqlFixture fixture) : IClassFixture<Rea
         Assert.Equal("CD Vallobín Oviedo", copiedTeam.Name);
         Assert.Equal("vallobin-club.png", copiedTeam.CrestKey);
         Assert.True(copiedTeam.CrestFromClub);
+        Assert.Equal((98.5m, 62m), (copiedTeam.Profile.PitchLengthM, copiedTeam.Profile.PitchWidthM));
 
         var entries = await after.Set<RosterEntry>().ToListAsync();
         Assert.Equal("José Pérez", entries.Single(r => r.Id == edited.Id).FullName);

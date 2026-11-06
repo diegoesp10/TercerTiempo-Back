@@ -45,6 +45,45 @@ internal sealed class MatchVideoConfiguration : IEntityTypeConfiguration<MatchVi
     }
 }
 
+internal sealed class MatchVideoAnalysisConfiguration : IEntityTypeConfiguration<MatchVideoAnalysis>
+{
+    public void Configure(EntityTypeBuilder<MatchVideoAnalysis> builder)
+    {
+        builder.ToTable("MatchVideoAnalyses");
+        builder.ConfigureAggregate();
+
+        builder.Property(a => a.Status).HasConversion<string>().HasMaxLength(20);
+        builder.Property(a => a.Error).HasMaxLength(MatchVideoAnalysis.MaxErrorLength);
+        builder.Property(a => a.OutputPath).HasMaxLength(500);
+        builder.Property(a => a.AnalyzerVersion).HasMaxLength(40);
+        builder.Property(a => a.Weights).HasMaxLength(500);
+        builder.Property(a => a.BallFramesPct).HasPrecision(5, 1);
+        builder.Property(a => a.CalibratedFramesPct).HasPrecision(5, 1);
+        builder.Property(a => a.PitchLengthM).HasPrecision(5, 1);
+        builder.Property(a => a.PitchWidthM).HasPrecision(5, 1);
+        // El analizador (servicio de vídeo) y las peticiones de la API (volver a analizar, volcar) pueden tocar la misma
+        // fila: quien llega tarde se entera.
+        builder.Property<byte[]>("Version").IsRowVersion();
+
+        // Un análisis por vídeo; se va con él. La plantilla y el partido van sin clave ajena (ya los ata el vídeo).
+        builder.HasOne<MatchVideo>().WithMany().HasForeignKey(a => a.VideoId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasIndex(a => a.VideoId).IsUnique();
+        builder.HasIndex(a => a.Status);
+    }
+}
+
+internal sealed class VideoAnalysisCropConfiguration : IEntityTypeConfiguration<VideoAnalysisCrop>
+{
+    public void Configure(EntityTypeBuilder<VideoAnalysisCrop> builder)
+    {
+        builder.ToTable("MatchVideoAnalysisCrops");
+        builder.HasKey(c => new { c.AnalysisId, c.Tracklet });
+        builder.Property(c => c.Content).IsRequired();
+
+        builder.HasOne<MatchVideoAnalysis>().WithMany().HasForeignKey(c => c.AnalysisId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 internal sealed class VideoUploadSessionConfiguration : IEntityTypeConfiguration<VideoUploadSession>
 {
     public void Configure(EntityTypeBuilder<VideoUploadSession> builder)

@@ -199,6 +199,13 @@ subida → TercerTiempo.Videos (ffmpeg, 1080p) → cola de análisis → TercerT
   a mano los números no valen y la app lo avisa (el analizador detecta el encuadre y marca el vídeo como «no
   analizable»).
 
+**Hecho el 06-11-2026** (rama `lectorVideos`): la cola tras la compresión, `MatchVideoAnalysis` con la propuesta y su
+calidad, los endpoints `GET/POST …/video-analysis`, `POST …/video-analysis/apply` y los recortes, y la sección «Del
+vídeo» del acta interna con la elección del equipo, la asignación de jugadores seguidos a fichas y el volcado. La
+asignación viaja con el volcado (no hay `PUT …/tracklets` aparte) y no hay `ProposedMatchSheet`: la propuesta es el
+`acta-propuesta.json` guardado tal cual. Queda fuera, de momento, la campanita al terminar, el minimapa y los eventos
+con su clip. Cómo funciona: README del backend, «Análisis del vídeo: la propuesta de acta interna».
+
 ## 7. Riesgos y límites, sin maquillar
 
 - **La cámara manda.** Sin encuadre fijo lateral, la posesión es basura. Hay que probar con un vídeo real del
