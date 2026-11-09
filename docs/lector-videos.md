@@ -129,8 +129,10 @@ Es lo que hay detrás de Veo y de los retos SoccerNet, y hoy se monta con piezas
    asturianos anotados (los jugadores lejanos son muy pequeños en una cámara fija: inferencia por teselas, SAHI).
 3. **Seguimiento**: BoT-SORT o ByteTrack (integrados en Ultralytics; BoT-SORT con compensación de cámara y
    re-identificación) → cada jugador tiene un identificador estable («tracklet»).
-4. **Equipo de cada jugador**: recorte → embedding (SigLIP) → UMAP → KMeans en dos grupos (el método del ejemplo de
-   fútbol de `roboflow/sports`; con la equipación del Vallobín y del rival, trivial).
+4. **Equipo de cada jugador**: solo por el color de la camiseta (torso del recorte sin césped → resumen en Lab con la
+   claridad medida respecto al césped del propio recorte → KMeans + discriminante de Fisher en dos grupos, voto por
+   tracklet ponderado y corte del tracklet si cambia de equipo). Hasta el 09-11-2026 se usaba el método del ejemplo
+   de `roboflow/sports` (embedding SigLIP → UMAP → KMeans), que de noche separaba por la luz y no por la camiseta.
 5. **Calibración del campo**: detección de puntos clave de las líneas → homografía → posición de cada jugador y del
    balón en metros. De aquí salen posesión por zonas, mapas de calor y distancias.
 6. **Balón**: el punto débil; detector específico de objetos pequeños (**WASB**, F1 ≈ 88 en fútbol de TV) y

@@ -20,7 +20,7 @@ public enum VideoAnalysisState
 }
 
 public sealed record MatchVideoAnalysisDto(
-    [property: Description("El análisis de vídeo está activado en este servidor (Analysis:Enabled); si no, no se puede pedir.")]
+    [property: Description("Se pueden pedir análisis en este servidor (Analysis:Enabled en la API). Los atiende el analizador que esté en marcha: el del servicio de vídeo o uno aparte con GPU (Start-Analyzer.ps1); si no hay ninguno, la petición espera en cola.")]
     bool Enabled,
     [property: Description("Club propietario o cuerpo técnico vigente: puede relanzar el análisis y volcarlo al acta. El administrador solo lo ve.")]
     bool CanManage,
@@ -34,6 +34,8 @@ public sealed record VideoAnalysisPartDto(
     VideoStatus VideoStatus,
     [property: Description("Avance de la compresión del vídeo en %, mientras está en Processing.")]
     int VideoProgress,
+    [property: Description("Duración del vídeo en segundos, cuando se conoce: el análisis tarda más o menos lo mismo.")]
+    int? DurationSeconds,
     [property: Description("NotRequested, WaitingForVideo (se está comprimiendo), Pending (en cola), Running, Ready o Failed.")]
     VideoAnalysisState State,
     [property: Description("Avance del análisis en %, mientras está en Running.")]
@@ -159,7 +161,7 @@ internal static class VideoAnalysisMapper
             : null;
 
         return new VideoAnalysisPartDto(
-            video.Id, video.Part, video.Title, video.Status, video.ProcessingProgress, state,
+            video.Id, video.Part, video.Title, video.Status, video.ProcessingProgress, video.DurationSeconds, state,
             analysis?.Progress ?? 0, analysis?.Error, analysis?.RequestedAt, analysis?.StartedAt, analysis?.FinishedAt,
             analysis?.AnalyzerVersion, analysis?.Weights, quality, teams, analysis?.OurTeam, analysis?.AppliedAt, players);
     }

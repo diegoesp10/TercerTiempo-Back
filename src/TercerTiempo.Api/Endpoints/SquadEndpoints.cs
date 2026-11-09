@@ -115,7 +115,7 @@ internal static class SquadEndpoints
         group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis", (Guid squadId, Guid matchId, RequestVideoAnalysisRequest? request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.RequestAsync(squadId, matchId, request, ct))
             .WithName("RequestMatchVideoAnalysis")
             .WithSummary("Analizar (o volver a analizar) el vídeo del partido")
-            .WithDescription("Club propietario o cuerpo técnico vigente. Pone en la cola de análisis el vídeo indicado (o todos los de la plantilla en el partido) y olvida la propuesta anterior. 409 si el análisis está desactivado en el servidor (Analysis:Enabled), si el vídeo todavía se está comprimiendo o si ya está en cola o analizándose. El cuerpo es opcional.")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Pone en la cola de análisis el vídeo indicado (o todos los de la plantilla en el partido) y olvida la propuesta anterior. La cola la atiende el analizador que esté en marcha (el del servicio de vídeo, o uno aparte con GPU con Start-Analyzer.ps1): tarda más o menos lo que dura el vídeo. 409 si no se admiten análisis en este servidor (Analysis:Enabled), si el vídeo todavía se está comprimiendo o si ya está en cola o analizándose. El cuerpo es opcional.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)

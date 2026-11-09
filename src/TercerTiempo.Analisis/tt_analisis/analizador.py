@@ -83,7 +83,10 @@ def analizar(config: Configuracion, informar=print) -> dict:
             informar("Cámara fija: no se vieron puntos suficientes del campo; se calibra fotograma a fotograma.")
             calibrador.modo = "movil"
     tiempos["equipos_s"] = time.time() - t0
-    informar(f"Equipos separados con {muestras} recortes: {color_hex(clasificador.colores[0])} y {color_hex(clasificador.colores[1])}.")
+    reparto = clasificador.reparto
+    informar(f"Equipos separados por el color de la camiseta con {muestras} recortes: {color_hex(clasificador.colores[0])} ({reparto[0]}) y {color_hex(clasificador.colores[1])} ({reparto[1]}).")
+    if clasificador.desequilibrado:
+        informar("Aviso: un equipo se queda con muy pocos recortes; puede que las dos camisetas se parezcan o que el césped se cuele en el torso.")
 
     # 2. Pasada principal.
     t0 = time.time()
@@ -126,10 +129,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
                 fuera_de_campo += int((~en_campo).sum())
                 seguidas, xy_imagen, xy_campo = seguidas[en_campo], xy_imagen[en_campo], xy_campo[en_campo]
 
-        equipos = clasificador.clasificar(imagen, seguidas)
-        for i in range(len(seguidas)):
-            if equipos[i] >= 0:
-                seguidor.votar_equipo(int(seguidas.tracker_id[i]), int(equipos[i]))
+        equipos, pesos = clasificador.clasificar(imagen, seguidas)
+        seguidas = seguidor.votar_equipos(seguidas, equipos, pesos)
 
         personas = []
         for i in range(len(seguidas)):
@@ -149,7 +150,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
                 )
             )
             if n % 10 == 0 and clase != CLASE_ARBITRO:
-                memoria.guardar_recorte(fotograma.t, caja, personas[-1].confianza, imagen)
+                memoria.guardar_recorte(fotograma.t, caja, personas[-1].confianza, imagen, int(equipos[i]))
 
         balon_imagen = None
         balon_campo = None
@@ -180,6 +181,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
     t0 = time.time()
     toques = maquina.toques
     resumenes = resumir_tracklets(instantes, dt)
+    if seguidor.cortes:
+        informar(f"Tracklets partidos porque el seguidor juntó a jugadores de los dos equipos: {seguidor.cortes}.")
     porteros_por_equipo = {e: {tid for tid, r in resumenes.items() if r.portero and r.equipo == e} for e in (0, 1)}
     porteros_de = lambda equipo: porteros_por_equipo.get(equipo, set())  # noqa: E731
 
@@ -236,7 +239,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
         "calibracion": calibrador.resumen(),
         "recuento": {
             "fotogramas": len(instantes), "con_balon": con_balon, "pct_con_balon": round(100 * con_balon / len(instantes), 1), "pct_calibrados": round(100 * calibrados / len(instantes), 1),
-            "muestras_equipos": muestras, "tracklets": len(resumenes), "toques": len(toques), "secuencias": len(secs), "busquedas_finas_balon": detector.busquedas_finas,
+            "muestras_equipos": muestras, "reparto_equipos": list(reparto), "tracklets": len(resumenes), "tracklets_partidos": seguidor.cortes, "toques": len(toques), "secuencias": len(secs), "busquedas_finas_balon": detector.busquedas_finas,
             "balones_descartados": detector.descartados, "personas_fuera_del_campo": fuera_de_campo, "clips": clips,
         },
         "posesion": posesion.a_dict(),

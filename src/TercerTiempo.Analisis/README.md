@@ -25,6 +25,7 @@ la app».
 | Paradas | Tiro a puerta seguido del portero con el balón | Media |
 | Pases, pérdidas, recuperaciones por tracklet | Cadenas de toques del mismo equipo / cambios de equipo sin balón fuera | Media |
 | Quién es quién | Recortes + dorsal leído por el modelo de lenguaje | Baja: el cuerpo técnico asigna cada tracklet a una ficha |
+| De qué equipo es cada uno | Color de la camiseta (resumen Lab del torso, sin el césped, con la claridad medida respecto al césped del recorte; dos grupos por KMeans) | Alta si las dos equipaciones se distinguen, también de noche |
 
 Faltas, fueras de juego y tarjetas no se deducen del vídeo: vienen del acta oficial.
 
@@ -143,8 +144,25 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
 
 ## Cómo funciona
 
-1. **Equipos**: una pasada rápida por el tramo recoge recortes de jugadores y ajusta el clasificador de `sports`
-   (SigLIP → UMAP → KMeans, dos grupos). Los porteros van con el equipo cuyo grueso tienen más cerca.
+1. **Equipos**: una pasada rápida por el tramo recoge recortes de jugadores y separa dos grupos **por el color de la
+   camiseta** (`colores.py`). De cada torso (el centro del recorte, sin el césped que asoma) se resume el color en Lab:
+   claridad media y su dispersión, tono medio (a, b), saturación y qué parte de los píxeles es oscura o clara. La
+   claridad se mide **respecto al césped del propio recorte**, que dice cuánta luz hay donde está el jugador: así el
+   mismo jugador bajo un foco y en la sombra cae en el mismo grupo. Los rasgos se normalizan, KMeans da un primer
+   reparto y con él se calcula la dirección que mejor separa los dos grupos (discriminante de Fisher, afinado un par de
+   veces): de día manda el tono (azul frente a amarillo), de noche, con los focos apagando los colores, la claridad
+   (marino frente a rayas rojiblancas). Cada recorte recibe una puntuación (±1 en el centro de cada grupo, cerca de 0
+   si no está claro) y el equipo de cada tracklet se vota fotograma a fotograma con esa puntuación como peso, así que
+   los recortes borrosos o a medio tapar no deciden. Y como el seguidor a veces junta a dos jugadores en un mismo
+   número (se cruzan y sale el otro), cuando la camiseta de un tracklet cambia de equipo y se queda así dos segundos
+   (`seguimiento.py`: diez muestras seguidas y claras del otro equipo; una tapada dura menos) el tracklet **se parte**
+   y lo que viene después es otro (numerados desde 100000; `recuento.tracklets_partidos` dice cuántos). El recorte que
+   se enseña de cada tracklet es siempre de su equipo, no del jugador contrario con el que se confundió un momento.
+   Hasta el 09-11-2026 se usaba
+   el clasificador de apariencia de `sports` (SigLIP → UMAP → KMeans), que con el vídeo nocturno del Vallobín repartía
+   6 y 21 jugadores.
+   Los porteros van con el equipo cuyo grueso tienen más cerca; el reparto sale en `recuento.reparto_equipos` y el
+   analizador avisa si un grupo se queda con menos de la quinta parte de los recortes.
 2. **Pasada principal** (5 fotogramas/s): detección y seguimiento de personas con Ultralytics en modo `track`
    (BoT-SORT o ByteTrack según la cámara), detección del balón (fotograma entero y, si se pierde, por teselas; con
    filtros de tamaño y de salto), calibración del campo (`campo.py`: puntos clave de las líneas → homografía con

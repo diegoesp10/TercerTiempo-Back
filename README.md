@@ -524,15 +524,21 @@ uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<víde
   nunca borra lo apuntado; lo que cambiaría un valor del acta exige `overwrite = true` (si no, 409 con la lista «tiros
   de Pelayo (6 → 4)»); los goles solo se apuntan a quien no tenga ninguno; una línea nueva se crea con los minutos que
   se ha visto al jugador. Volver a analizar olvida la propuesta y las asignaciones, nunca el acta.
-- **Configuración** (`Analysis:*`, en la API y en el servicio de vídeo): `Enabled` (false por defecto y en Docker;
-  true en Development y FakeDatos), `UvPath` (admite variables de entorno: `%APPDATA%\Python\Python314\Scripts\uv.exe`),
-  `Directory` (carpeta del analizador, `../TercerTiempo.Analisis` desde el servicio), `OutputDirectory`, `Segment`
-  (solo un tramo, para probar: `Analysis__Segment=20:00-25:00`), `Camera`, `RequireGpu`, `PollSeconds` (lo que se pide
-  desde la API lo recoge el servicio al mirar la cola) y `TimeoutMinutes`. **En Docker el analizador no corre**: la
-  imagen del servicio de vídeo solo lleva .NET y ffmpeg, así que `compose.yaml` fija `Analysis__Enabled=false` (los
-  vídeos se comprimen pero no se analizan, y la app lo dice). Para analizar hace falta una máquina con GPU: este mismo
-  servicio fuera de Docker con `Analysis:Enabled = true` contra la misma base y los mismos ficheros, o un contenedor con
-  GPU (`src/TercerTiempo.Analisis/Dockerfile`, `--gpus all`).
+- **Configuración** (`Analysis:*`): en la API, `Enabled` dice si se admiten peticiones de análisis (true en Development
+  y FakeDatos, false en Pilot y Production); en el servicio de vídeo, `Enabled` dice si este proceso las atiende, y
+  además `UvPath` (admite variables de entorno: `%APPDATA%\Python\Python314\Scripts\uv.exe`), `Directory` (carpeta
+  del analizador, `../TercerTiempo.Analisis` desde el servicio), `OutputDirectory`, `Segment` (solo un tramo, para
+  probar: `Analysis__Segment=20:00-25:00`), `Camera`, `RequireGpu`, `PollSeconds` (lo que se pide desde la API lo
+  recoge el servicio al mirar la cola) y `TimeoutMinutes`. Una petición sin nadie que la atienda espera en cola, y la
+  app lo dice.
+- **En Docker el analizador no corre**: la imagen del servicio de vídeo solo lleva .NET y ffmpeg, así que
+  `compose.yaml` le fija `Analysis__Enabled=false` (comprime, no analiza). Quien analiza es **`Start-Analyzer.ps1`**:
+  arranca este mismo servicio fuera de Docker solo como analizador (`VideoProcessing:Enabled=false`,
+  `Analysis:Enabled=true`, puerto 5083), contra la misma base y leyendo los vídeos del volumen de Docker Desktop a través
+  de `\\wsl.localhost\docker-desktop\mnt\docker-desktop-disk\data\docker\volumes\<TT_DATA_VOLUME>\_data\videos`
+  (`-Environment FakeDatos|Development`, `-Segment 20:00-25:00` para probar, `-VideosDirectory` si los vídeos están en
+  otra carpeta). Deja la propuesta en la base y la carpeta de salida junto al vídeo, así que el contenedor la borra con
+  él. Alternativa: un contenedor con GPU (`src/TercerTiempo.Analisis/Dockerfile`, `--gpus all`).
 
 **Acceso** (`VideoAccess`): un vídeo nunca es público. Lo ven la plantilla que lo subió (club, cuerpo técnico vigente y
 jugadores vinculados: `Owner`), el administrador (`Admin`) y quien tenga un pase del partido que lo incluya (`Pass`);
