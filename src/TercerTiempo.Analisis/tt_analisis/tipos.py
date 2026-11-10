@@ -42,6 +42,13 @@ class Instante:
     balon_imagen: Punto | None = None
     balon_campo: Punto | None = None
     calibrado: bool = False
+    # De dónde sale el balón de este instante: "visto" (el detector), "interpolado" (`balon.rellenar_huecos`) o None.
+    balon_origen: str | None = None
+    balon_confianza: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.balon_imagen is not None and self.balon_origen is None:
+            self.balon_origen = "visto"
 
     def jugadores(self) -> list[Persona]:
         return [p for p in self.personas if p.es_jugador and p.equipo is not None]

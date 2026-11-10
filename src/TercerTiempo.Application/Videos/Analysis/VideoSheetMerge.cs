@@ -41,8 +41,9 @@ internal static class VideoSheetMerge
     public static VideoTeamTotals Totals(IReadOnlyList<VideoPartSelection> parts)
     {
         int? possession = null;
+        // La posesión de confianza baja (el balón se vio poco) no se vuelca: queda fuera de la media.
         var weighted = parts
-            .Select(p => (Possession: p.Proposal.Team(p.OurTeam)?.PossessionPct, Weight: Math.Max(1, p.AnalyzedSeconds)))
+            .Select(p => (Possession: p.Proposal.Team(p.OurTeam)?.UsablePossessionPct, Weight: Math.Max(1, p.AnalyzedSeconds)))
             .Where(p => p.Possession is not null)
             .ToList();
         if (weighted.Count > 0)

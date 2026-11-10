@@ -19,7 +19,7 @@ def _datos():
         Evento("parada", 700.0, equipo=1, tracklet=9, confianza=0.5),
         Evento("paron", 1500.0, t_fin=1600.0, confianza=0.6),
     ]
-    posesion = ResumenPosesion(segundos={0: 600.0, 1: 400.0})
+    posesion = ResumenPosesion(segundos={0: 600.0, 1: 400.0}, segundos_tramo=1500.0, segundos_con_balon=1100.0, segundos_vistos=900.0, segundos_activos=1300.0)
     posesion.por_mitad = {1: {0: 600.0, 1: 400.0}}
     posesion.por_tercio[0]["rival"] = 300.0
     posesion.por_tercio[0]["medio"] = 300.0
@@ -39,6 +39,9 @@ def test_acta_propuesta_desde_los_dos_lados():
     acta = acta_propuesta(eventos, posesion, resumenes, acciones, {3: {"dorsal": 7}}, {3: "recortes/tracklet-3.jpg"}, ("Vallobín", "Rival"), ["#0000ff", "#ff0000"])
     a, b = acta["equipos"]
     assert a["teamStats"]["possessionPct"] == 60 and b["teamStats"]["possessionPct"] == 40
+    # Balón en 1100 de 1500 s (73 %) y 1000 s repartidos (67 %): confianza alta, y la app sabe sobre cuánto se midió.
+    assert a["teamStats"]["possessionConfidence"] == "alta" and a["teamStats"]["possessionBallPct"] == 73.3
+    assert acta["calidad"] == {"posesionConfianza": "alta", "balonPct": 73.3, "segundosConBalon": 1100.0, "segundosAtribuidos": 1000.0}
     assert (a["teamStats"]["shotsFor"], a["teamStats"]["shotsOnTargetFor"], a["teamStats"]["shotsAgainst"]) == (2, 1, 0)
     assert a["teamStats"]["goalsFor"] == 1 and b["teamStats"]["goalsFor"] == 0 and b["teamStats"]["goalsCandidatesFor"] == 1
     assert a["teamStats"]["cornersAgainst"] == 1 and b["teamStats"]["cornersFor"] == 1
@@ -64,12 +67,14 @@ def test_resumen_markdown_y_json(tmp_path):
         "eventos": [e.a_dict() for e in eventos],
         "tracklets": [r.a_dict() for r in resumenes.values()],
         "calibracion": {"intentos": 10, "aciertos": 9},
-        "recuento": {"fotogramas": 10000, "con_balon": 8000, "pct_con_balon": 80.0, "pct_calibrados": 99.0, "muestras_equipos": 600},
+        "recuento": {"fotogramas": 10000, "con_balon": 8000, "pct_con_balon": 80.0, "con_balon_interpolado": 500, "pct_con_balon_total": 85.0, "balon_relleno": {"huecos_largos": 3, "aislados_descartados": 2}, "pct_calibrados": 99.0, "muestras_equipos": 600},
     }
     md = resumen_markdown(analisis, acta, "Buen partido.")
     assert "| Vallobín | 60.0 % |" in md and "| Posesión % | 60 | 40 |" in md
+    assert "Confianza de la posesión: **alta**" in md and "1000 s de los 1500 s del tramo (66.7 %; balón en el 73.3 %, visto en el 60.0 %)" in md
     assert "| 01:41 | gol | Vallobín | 3 | 0.85 |" in md
     assert "Parones largos: 1" in md and "Buen partido." in md
+    assert "con balón visto: 8000 (80.0 %); con los huecos cortos rellenados por la trayectoria: 85.0 % (500 interpolados, 3 huecos largos sin rellenar, 2 avistamientos sueltos descartados)" in md
     escribir_json(analisis, tmp_path / "analisis.json")
     assert json.loads((tmp_path / "analisis.json").read_text(encoding="utf-8"))["recuento"]["fotogramas"] == 10000
     mapa = np.zeros((8, 12), dtype=np.int64)

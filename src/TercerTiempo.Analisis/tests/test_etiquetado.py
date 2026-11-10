@@ -70,7 +70,13 @@ def test_dos_balones_igual_de_buenos_es_ambiguo_y_el_tamano_imposible_se_descart
 
 
 def test_un_candidato_quieto_respecto_al_cesped_es_una_marca_y_uno_que_se_mueve_un_balon():
+    from functools import partial
+
     from tt_analisis.etiquetado import clasificar_movimiento, puntuar_candidatos
+
+    # Las pruebas se escribieron con los cuatro vecinos de ±0,2 y ±0,4 s.
+    clasificar_movimiento = partial(clasificar_movimiento, desfases=(-20, -10, 10, 20))
+    puntuar_candidatos = partial(puntuar_candidatos, desfases=(-20, -10, 10, 20))
 
     # La cámara se desplaza 30 px (a media resolución) hacia la derecha en cada vecino.
     afines = [np.array([[1.0, 0.0, 30.0], [0.0, 1.0, 0.0]]) for _ in range(4)]
@@ -227,7 +233,7 @@ def test_linea_yolo_normaliza_y_marca_los_puntos_no_visibles():
     assert con_puntos.startswith("0 0.500000 0.250000 1.000000 0.500000")
 
 
-def test_las_muestras_llevan_sus_cuatro_vecinos(tmp_path):
+def test_las_muestras_llevan_sus_seis_vecinos(tmp_path):
     from tt_analisis.config import Segmento
     from tt_analisis.etiquetado import ConfiguracionEtiquetado, _muestras
     from tt_analisis.video import InfoVideo
@@ -241,10 +247,10 @@ def test_las_muestras_llevan_sus_cuatro_vecinos(tmp_path):
     config = ConfiguracionEtiquetado(video=ruta, salida=tmp_path, cada_s=1.0, segmento=Segmento(), max_muestras=3)
     muestras = list(_muestras(info, config))
     assert len(muestras) == 3
-    # A 25 fps los vecinos de ±0,2 y ±0,4 s están a ±5 y ±10 fotogramas.
-    assert muestras[0].indice == 10 and len(muestras[0].vecinos) == 4
+    # A 25 fps los vecinos de ±0,1, ±0,2 y ±0,4 s están a ±2, ±5 y ±10 fotogramas.
+    assert muestras[0].indice == 10 and len(muestras[0].vecinos) == 6
     assert muestras[1].indice == 35
-    # El códec altera el valor plano de cada fotograma, pero el orden temporal (−10, −5, +5, +10) se conserva.
+    # El códec altera el valor plano de cada fotograma, pero el orden temporal (−10, −5, −2, +2, +5, +10) se conserva.
     valores = [int(v[0, 0, 0]) for v in muestras[0].vecinos]
     assert valores == sorted(valores) and valores[0] < int(muestras[0].imagen[0, 0, 0]) < valores[-1]
 

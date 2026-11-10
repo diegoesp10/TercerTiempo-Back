@@ -41,7 +41,7 @@ class ClasificadorEquipos:
         for fotograma in fotogramas(self.config, info, paso=paso):
             if por_fotograma:
                 por_fotograma(fotograma.imagen)
-            resultado = self.modelos.jugadores(fotograma.imagen, imgsz=self.config.imgsz, conf=0.4, device=self.modelos.device, half=self.modelos.half, verbose=False)[0]
+            resultado = self.modelos.jugadores(fotograma.imagen, imgsz=self.config.imgsz, conf=0.4, device=self.modelos.device, **self.modelos.precision, verbose=False)[0]
             detecciones = sv.Detections.from_ultralytics(resultado)
             for caja in detecciones[detecciones.class_id == CLASE_JUGADOR].xyxy:
                 recorte = recortar(fotograma.imagen, caja)

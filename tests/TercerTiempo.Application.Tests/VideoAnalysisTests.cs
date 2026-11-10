@@ -24,6 +24,7 @@ public class VideoProposalTests
         var grey = proposal.Team(0)!;
         Assert.Equal("#5a5a57", grey.Color);
         Assert.Equal((38, 4, 2, 3, 11, 6), (grey.PossessionPct, grey.Shots, grey.ShotsOnTarget, grey.Corners, grey.ThrowIns, grey.GoalKicks));
+        Assert.Equal((VideoPossessionConfidence.Medium, 48.2m, 38), (grey.PossessionConfidence, grey.PossessionBallPct, grey.UsablePossessionPct));
         Assert.Equal(62, proposal.Team(1)!.PossessionPct);
 
         Assert.Equal([696, 781, 12], proposal.Players.Select(p => p.Tracklet));
@@ -47,6 +48,9 @@ public class VideoProposalTests
         var team = Assert.Single(proposal.Teams);
         Assert.Null(team.Color);
         Assert.Equal((100, 2, 2, 0), (team.PossessionPct, team.Shots, team.ShotsOnTarget, team.Corners));
+        // Sin confianza (un análisis anterior) no se sabe: la posesión se usa como siempre.
+        Assert.Null(team.PossessionConfidence);
+        Assert.Equal(100, team.UsablePossessionPct);
         var player = Assert.Single(proposal.Players);
         Assert.Equal((1, 1, 0), (player.Actions.Shots, player.Actions.ShotsOnTarget, player.Actions.PassesAttempted));
         Assert.Empty(VideoProposal.Parse("{}").Players);
@@ -81,6 +85,21 @@ public class VideoSheetMergeTests
 
         Assert.Equal(44, totals.PossessionPct);
         Assert.Equal((8, 18, 6, 2), (totals.ShotsFor, totals.ShotsAgainst, totals.CornersFor, totals.CornersAgainst));
+    }
+
+    [Fact]
+    public void Low_confidence_possession_is_shown_but_never_taken_to_the_sheet()
+    {
+        var low = VideoProposal.Parse(VideoAnalysisSamples.Proposal.Replace("\"possessionConfidence\": \"media\"", "\"possessionConfidence\": \"baja\""));
+        var fine = VideoProposal.Parse(VideoAnalysisSamples.Proposal.Replace("\"possessionPct\": 38", "\"possessionPct\": 60"));
+
+        Assert.Equal((38, VideoPossessionConfidence.Low), (low.Team(0)!.PossessionPct, low.Team(0)!.PossessionConfidence));
+        Assert.Null(low.Team(0)!.UsablePossessionPct);
+        Assert.Null(VideoSheetMerge.Totals([new VideoPartSelection(low, 0, 2700)]).PossessionPct);
+        // Con otra parte fiable, la media sale solo de esa.
+        Assert.Equal(60, VideoSheetMerge.Totals([new VideoPartSelection(low, 0, 2700), new VideoPartSelection(fine, 0, 900)]).PossessionPct);
+        // Lo demás de la parte floja sí se suma.
+        Assert.Equal(8, VideoSheetMerge.Totals([new VideoPartSelection(low, 0, 2700), new VideoPartSelection(fine, 0, 900)]).ShotsFor);
     }
 
     [Fact]
@@ -425,11 +444,11 @@ internal static class VideoAnalysisSamples
           "version": 1,
           "equipos": [
             { "id": 0, "nombre": "CD Vallobín", "color": "#5A5A57",
-              "teamStats": { "possessionPct": 38, "cornersFor": 3, "cornersAgainst": 1, "shotsFor": 4, "shotsAgainst": 9, "shotsOnTargetFor": 2,
+              "teamStats": { "possessionPct": 38, "possessionConfidence": "media", "possessionBallPct": 48.2, "cornersFor": 3, "cornersAgainst": 1, "shotsFor": 4, "shotsAgainst": 9, "shotsOnTargetFor": 2,
                              "shotsOnTargetAgainst": 5, "throwInsFor": 11, "throwInsAgainst": 14, "goalKicksFor": 6, "goalsFor": 1, "goalsAgainst": 2,
                              "goalsCandidatesFor": 2, "offsidesFor": null, "foulsCommitted": null, "notes": "Propuesta automática del vídeo" } },
             { "id": 1, "nombre": "Rival", "color": "#9c8e8d",
-              "teamStats": { "possessionPct": 62, "cornersFor": 1, "cornersAgainst": 3, "shotsFor": 9, "shotsAgainst": 4, "shotsOnTargetFor": 5,
+              "teamStats": { "possessionPct": 62, "possessionConfidence": "media", "possessionBallPct": 48.2, "cornersFor": 1, "cornersAgainst": 3, "shotsFor": 9, "shotsAgainst": 4, "shotsOnTargetFor": 5,
                              "shotsOnTargetAgainst": 2, "throwInsFor": 14, "throwInsAgainst": 11, "goalKicksFor": 4, "goalsFor": 2, "goalsAgainst": 1,
                              "goalsCandidatesFor": 2, "offsidesFor": null, "foulsCommitted": null, "notes": "Propuesta automática del vídeo" } }
           ],

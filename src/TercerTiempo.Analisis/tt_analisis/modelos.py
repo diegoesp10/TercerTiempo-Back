@@ -53,6 +53,16 @@ class Modelos:
     # Qué archivo de pesos se ha cargado para cada detector (relativo a la carpeta de modelos).
     rutas: dict[str, str] = field(default_factory=dict)
 
+    @property
+    def precision(self) -> dict:
+        return precision(self.device if self.half else "cpu")
+
+
+def precision(device: str) -> dict:
+    """Argumentos de precisión para Ultralytics: FP16 (`quantize=16`) en GPU, nada en CPU. (`half=` quedó obsoleto en
+    Ultralytics 8.4 y escribía un aviso por cada llamada: unos 20.000 por pasada de cinco minutos.)"""
+    return {"quantize": 16} if device.startswith("cuda") else {}
+
 
 def ruta_pesos(carpeta: Path, nombre: str, afinados: bool = True) -> Path:
     afinado = carpeta / CARPETA_AFINADOS / f"{nombre}.pt"

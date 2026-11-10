@@ -15,11 +15,13 @@ from .tipos import Instante, Persona, Punto, Toque
 @dataclass
 class MaquinaPosesion:
     """Decide fotograma a fotograma quién tiene el balón. Un cambio de poseedor se confirma tras `confirmacion`
-    muestras seguidas del mismo candidato; sin balón a la vista, el poseedor se mantiene `memoria_s` segundos."""
+    muestras seguidas del mismo candidato que abarquen al menos `confirmacion_s` segundos (así a 10 fotogramas/s hace
+    falta lo mismo que a 5); sin balón a la vista, el poseedor se mantiene `memoria_s` segundos."""
 
     umbral_cm: float = DISTANCIA_POSESION_CM
     lejos_cm: float = DISTANCIA_LEJOS_CM
     confirmacion: int = 2
+    confirmacion_s: float = 0.2
     memoria_s: float = 2.0
     poseedor: Persona | None = None
     toque_actual: Toque | None = None
@@ -63,7 +65,8 @@ class MaquinaPosesion:
             self._candidato, self._candidato_veces = candidato.tracklet, 1
             self._candidato_desde, self._candidato_xy = inst.t, inst.balon_campo
 
-        if self._candidato_veces >= self.confirmacion or self.poseedor is None:
+        confirmado = self._candidato_veces >= self.confirmacion and inst.t - self._candidato_desde >= self.confirmacion_s - 1e-9
+        if confirmado or self.poseedor is None:
             terminado = self._cerrar()
             self.poseedor = candidato
             self.toque_actual = Toque(candidato.tracklet, candidato.equipo, self._candidato_desde, inst.t, self._candidato_xy, inst.balon_campo)
@@ -175,21 +178,72 @@ def _se_desplazo(anterior: Toque, siguiente: Toque, minimo_cm: float) -> bool:
     return distancia(anterior.xy_fin, siguiente.xy_inicio) >= minimo_cm
 
 
+# Cobertura del balón (parte del tramo con balón visto o interpolado) y parte del tramo atribuida a algún equipo a
+# partir de las cuales la posesión se da por fiable («alta»), orientativa («media») o se retiene («baja»). El 35 % es
+# el mismo umbral con el que la app avisa de «calidad baja».
+COBERTURA_ALTA_PCT = 60.0
+ATRIBUIDO_ALTA_PCT = 50.0
+COBERTURA_MEDIA_PCT = 35.0
+ATRIBUIDO_MEDIA_PCT = 25.0
+# Sin balón a la vista, quien lo tenía lo sigue teniendo este tiempo (un pase, un despeje corto); más, ya no se sabe.
+MEMORIA_BALON_S = 2.0
+
+
+def confianza_posesion(cobertura_pct: float, atribuido_pct: float) -> str:
+    if cobertura_pct >= COBERTURA_ALTA_PCT and atribuido_pct >= ATRIBUIDO_ALTA_PCT:
+        return "alta"
+    if cobertura_pct >= COBERTURA_MEDIA_PCT and atribuido_pct >= ATRIBUIDO_MEDIA_PCT:
+        return "media"
+    return "baja"
+
+
 @dataclass
 class ResumenPosesion:
     segundos: dict[int, float] = field(default_factory=lambda: {0: 0.0, 1: 0.0})
     por_mitad: dict[int, dict[int, float]] = field(default_factory=dict)
     por_tercio: dict[int, dict[str, float]] = field(default_factory=lambda: {0: defaultdict(float), 1: defaultdict(float)})
     por_minuto: dict[int, dict[int, float]] = field(default_factory=dict)
+    # Del tramo que cuenta (sin el descanso): cuánto hay, cuánto tiene balón visto o interpolado y cuánto se ha
+    # repartido entre los equipos. La posesión se calcula solo sobre el tiempo con balón.
+    segundos_tramo: float = 0.0
+    segundos_con_balon: float = 0.0
+    segundos_vistos: float = 0.0
+    segundos_activos: float = 0.0
 
     def porcentaje(self, equipo: int) -> float | None:
         total = self.segundos[0] + self.segundos[1]
         return None if total == 0 else round(100 * self.segundos[equipo] / total, 1)
 
+    @property
+    def segundos_atribuidos(self) -> float:
+        return self.segundos[0] + self.segundos[1]
+
+    @property
+    def cobertura_pct(self) -> float:
+        return round(100 * self.segundos_con_balon / self.segundos_tramo, 1) if self.segundos_tramo else 0.0
+
+    @property
+    def atribuido_pct(self) -> float:
+        return round(100 * self.segundos_atribuidos / self.segundos_tramo, 1) if self.segundos_tramo else 0.0
+
+    @property
+    def confianza(self) -> str:
+        return confianza_posesion(self.cobertura_pct, self.atribuido_pct)
+
     def a_dict(self) -> dict:
-        total = self.segundos[0] + self.segundos[1]
         return {
-            "segundos_con_posesion": round(total, 1),
+            "confianza": self.confianza,
+            "fiable": self.confianza != "baja",
+            "cobertura": {
+                "segundos_tramo": round(self.segundos_tramo, 1),
+                "segundos_activos": round(self.segundos_activos, 1),
+                "segundos_con_balon": round(self.segundos_con_balon, 1),
+                "segundos_vistos": round(self.segundos_vistos, 1),
+                "segundos_atribuidos": round(self.segundos_atribuidos, 1),
+                "pct_con_balon": self.cobertura_pct,
+                "pct_atribuido": self.atribuido_pct,
+            },
+            "segundos_con_posesion": round(self.segundos_atribuidos, 1),
             "equipos": [
                 {
                     "equipo": e,
@@ -212,19 +266,43 @@ def resumir_posesion(
     direccion_de,
     dt: float,
     campo: Campo | None = None,
+    excluidos: list[bool] | None = None,
+    memoria_s: float = MEMORIA_BALON_S,
 ) -> ResumenPosesion:
-    """Reparte el tiempo de juego activo entre los equipos según quién tenía el balón (o lo tuvo por última vez: el
-    balón en vuelo sigue siendo de quien lo lanzó). `direccion_de(equipo, mitad)` dice hacia dónde ataca cada uno."""
+    """Reparte entre los equipos el tiempo de juego activo **con balón a la vista (visto o interpolado)** según quién lo
+    tenía o lo tuvo por última vez: el balón en vuelo sigue siendo de quien lo lanzó. Tras más de `memoria_s` sin
+    balón ya no se sabe de quién es hasta el siguiente toque, y ese tiempo no se reparte. `excluidos` marca los
+    instantes que no cuentan ni para la cobertura (el descanso). `direccion_de(equipo, mitad)` dice hacia dónde ataca
+    cada uno."""
     campo = campo or Campo()
     resumen = ResumenPosesion()
     toques_ordenados = sorted(toques, key=lambda t: t.t_inicio)
+    excluidos = excluidos or [False] * len(instantes)
     i = 0
     ultimo_equipo: int | None = None
-    for inst, activo, mitad in zip(instantes, juego_activo, mitad_de):
+    ultimo_toque: Toque | None = None
+    ultimo_balon_t: float | None = None
+    for inst, activo, mitad, excluido in zip(instantes, juego_activo, mitad_de, excluidos):
         while i < len(toques_ordenados) and toques_ordenados[i].t_inicio <= inst.t:
-            ultimo_equipo = toques_ordenados[i].equipo
+            ultimo_toque = toques_ordenados[i]
+            ultimo_equipo = ultimo_toque.equipo
             i += 1
-        if not activo or ultimo_equipo is None:
+        if excluido:
+            continue
+        resumen.segundos_tramo += dt
+        con_balon = inst.balon_imagen is not None
+        if con_balon:
+            if ultimo_balon_t is not None and inst.t - ultimo_balon_t > memoria_s and (ultimo_toque is None or ultimo_toque.t_inicio < inst.t - 1e-6):
+                # El balón vuelve tras un hueco largo y nadie lo ha tocado todavía: no se sabe de quién es.
+                ultimo_equipo = None
+            ultimo_balon_t = inst.t
+            resumen.segundos_con_balon += dt
+            if inst.balon_origen == "visto":
+                resumen.segundos_vistos += dt
+        if not activo:
+            continue
+        resumen.segundos_activos += dt
+        if not con_balon or ultimo_equipo is None:
             continue
         resumen.segundos[ultimo_equipo] += dt
         resumen.por_mitad.setdefault(mitad, defaultdict(float))[ultimo_equipo] += dt

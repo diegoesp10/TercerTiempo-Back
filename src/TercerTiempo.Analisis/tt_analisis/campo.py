@@ -16,6 +16,7 @@ import supervision as sv
 from sports.configs.soccer import SoccerPitchConfiguration
 
 from . import geometria
+from .modelos import precision
 from .tipos import Punto
 
 CONFIG_CAMPO = SoccerPitchConfiguration()
@@ -146,7 +147,7 @@ class Calibrador:
     _acumulado: dict[int, list[tuple[float, float]]] = field(default_factory=lambda: defaultdict(list))
 
     def _detectar(self, imagen: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
-        resultado = self.modelo(imagen, imgsz=self.imgsz, device=self.device, half=self.device.startswith("cuda"), verbose=False)[0]
+        resultado = self.modelo(imagen, imgsz=self.imgsz, device=self.device, **precision(self.device), verbose=False)[0]
         puntos = sv.KeyPoints.from_ultralytics(resultado)
         if len(puntos) == 0 or puntos.confidence is None:
             return None

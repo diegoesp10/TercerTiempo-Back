@@ -41,6 +41,23 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--muestras-equipos", type=int, default=600)
     a.add_argument("--progreso", action="store_true", help="Escribe el avance como líneas «##progreso N» (0-100) en la salida estándar, sin barras: para quien lo lanza como proceso.")
     a.add_argument("--exigir-gpu", action="store_true", help="Sin GPU CUDA, termina con el código de salida 3 en vez de analizar en CPU.")
+    a.add_argument("--semilla", type=int, default=None, help="Para medir la estabilidad: fija los generadores y muestrea otros fotogramas del mismo tramo.")
+
+    c = sub.add_parser("comparar", help="Compara varias pasadas (carpetas con analisis.json): balón, calibración, posesión y su estabilidad.")
+    c.add_argument("salidas", type=Path, nargs="+")
+
+    x = sub.add_parser("exportar-revision", help="Empaqueta imágenes y etiquetas de un dataset en un zip YOLO 1.1 para corregirlas a mano en CVAT (o Label Studio).")
+    x.add_argument("que", choices=["balon", "jugadores", "campo"])
+    x.add_argument("--dataset", type=Path, required=True, help="Carpeta que dejó `etiquetar`.")
+    x.add_argument("--salida", type=Path, default=None, help="Zip de salida (por defecto <dataset>/revision-<que>-<particion>.zip).")
+    x.add_argument("--particion", choices=["train", "val"], default="val")
+    x.add_argument("--max", type=int, default=None, help="Como mucho estas imágenes (las primeras en orden de tiempo).")
+    x.add_argument("--solo-con-etiqueta", action="store_true", help="Solo las imágenes que ya tienen alguna etiqueta.")
+
+    r = sub.add_parser("importar-revision", help="Vuelve a escribir en el dataset las etiquetas corregidas (zip YOLO 1.1 exportado de CVAT).")
+    r.add_argument("que", choices=["balon", "jugadores", "campo"])
+    r.add_argument("zip", type=Path)
+    r.add_argument("--dataset", type=Path, required=True)
 
     d = sub.add_parser("descargar-modelos", help="Descarga los tres detectores (y, si se pide, dos vídeos de muestra).")
     d.add_argument("--modelos", type=Path, default=Path("modelos"))
@@ -59,6 +76,7 @@ def construir_parser() -> argparse.ArgumentParser:
     e.add_argument("--imgsz", type=int, default=1280)
     e.add_argument("--campo", default=None, help="Medidas del campo en metros, p. ej. 100x62; si no, se miden desde el vídeo.")
     e.add_argument("--afinados", action="store_true", help="Etiquetar con los pesos ya afinados como maestro (segunda ronda de autoentrenamiento).")
+    e.add_argument("--maestro-balon", choices=["publico", "afinado", "ambos"], default="publico", help="Qué detector propone los candidatos a balón; «ambos» junta los del público y los del afinado.")
     e.add_argument("--juez", choices=["none", "claude", "ollama"], default="none", help="Quién confirma cada candidato a balón mirando un recorte: claude (API), ollama (local) o nadie.")
     e.add_argument("--modelo-juez", default=None, help="Modelo del juez (claude-opus-5-5, gemma4:12b…).")
     e.add_argument("--vista-previa-cada", type=int, default=10, help="Una imagen anotada en revision/ de cada N muestras (0 = ninguna).")
@@ -102,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
 
         etiquetar(ConfiguracionEtiquetado(
             video=args.video, salida=args.salida or Path("datasets") / args.video.stem, modelos=args.modelos, device=args.device, cada_s=args.cada,
-            segmento=Segmento.parse(args.segmento), imgsz=args.imgsz, campo=a_medidas(args.campo), afinados=args.afinados, juez=args.juez, modelo_juez=args.modelo_juez,
+            segmento=Segmento.parse(args.segmento), imgsz=args.imgsz, campo=a_medidas(args.campo), afinados=args.afinados, maestro_balon=args.maestro_balon, juez=args.juez, modelo_juez=args.modelo_juez,
             vista_previa_cada=args.vista_previa_cada, max_muestras=args.max_muestras,
         ))
         return 0
@@ -125,6 +143,27 @@ def main(argv: list[str] | None = None) -> int:
                 entrenar(que, args.dataset, args.modelos, args.salida, epocas=args.epocas, batch=args.batch, imgsz=args.imgsz, device=args.device, congelar=args.congelar, paciencia=args.paciencia, mezclar=args.mezclar)
             else:
                 evaluar(que, args.dataset, args.modelos, args.salida or args.dataset / "evaluacion", device=args.device, imgsz=args.imgsz)
+        return 0
+    if args.orden in ("exportar-revision", "importar-revision"):
+        from .entrenamiento import TAREAS
+        from .revision import exportar, importar
+
+        carpeta = args.dataset / TAREAS[args.que].carpeta
+        if args.orden == "exportar-revision":
+            destino = args.salida or args.dataset / f"revision-{args.que}-{args.particion}.zip"
+            n = exportar(carpeta, destino, args.particion, args.max, args.solo_con_etiqueta)
+            print(f"{n} imágenes con sus etiquetas en {destino}. En CVAT: crear la tarea con las imágenes del zip y, en «Upload annotations», el mismo zip con el formato YOLO 1.1; al terminar, exportar en YOLO 1.1 e `importar-revision`.")
+        else:
+            resultado = importar(args.zip, carpeta)
+            print(f"Etiquetas cambiadas: {resultado['cambiadas']}; iguales: {resultado['iguales']}" + (f"; imágenes que no están en el dataset: {', '.join(resultado['desconocidas'][:10])}" if resultado["desconocidas"] else "") + ".")
+        return 0
+    if args.orden == "comparar":
+        import json
+
+        from .comparacion import comparar
+
+        pasadas = [(ruta, json.loads((ruta / "analisis.json").read_text(encoding="utf-8"))) for ruta in args.salidas]
+        print(comparar(pasadas))
         return 0
     if args.orden == "descargar-modelos":
         from .modelos import descargar_modelos
@@ -171,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         muestras_equipos=args.muestras_equipos,
         progreso=args.progreso,
         exigir_gpu=args.exigir_gpu,
+        semilla=args.semilla,
     )
     from .analizador import analizar
     from .modelos import SinGpu

@@ -520,7 +520,10 @@ uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<víde
   `MatchSheetWriter`, el mismo camino que `PUT …/sheet` y `PUT …/team-stats`, en nombre de quien lo vuelca:
   posesión, tiros, tiros a puerta, córners, saques de banda y saques de puerta (cada uno, el valor del equipo y el del
   rival) y, por ficha, tiros, tiros a puerta, paradas, recuperaciones, pérdidas y pases, sumando sus tramos y las dos
-  partes del partido (la posesión, ponderada por lo analizado). Reglas (`VideoSheetMerge`): un cero de la propuesta
+  partes del partido (la posesión, ponderada por lo analizado). La posesión llega con su **confianza**
+  (`possessionConfidence`: alta, media o baja; el analizador la mide solo sobre el tiempo con balón visto o interpolado,
+  `possessionBallPct`): con confianza baja se enseña en la propuesta, pero no entra en la media ni se vuelca
+  (`VideoProposalTeam.UsablePossessionPct`). Reglas (`VideoSheetMerge`): un cero de la propuesta
   nunca borra lo apuntado; lo que cambiaría un valor del acta exige `overwrite = true` (si no, 409 con la lista «tiros
   de Pelayo (6 → 4)»); los goles solo se apuntan a quien no tenga ninguno; una línea nueva se crea con los minutos que
   se ha visto al jugador. Volver a analizar olvida la propuesta y las asignaciones, nunca el acta.

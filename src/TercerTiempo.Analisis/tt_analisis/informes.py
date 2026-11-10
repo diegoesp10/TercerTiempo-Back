@@ -120,6 +120,11 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                 "color": colores[e] if e < len(colores) else None,
                 "teamStats": {
                     "possessionPct": None if posesion.porcentaje(e) is None else int(round(posesion.porcentaje(e))),
+                    # La posesión solo se mide sobre el tiempo con balón visto o interpolado: `possessionBallPct` dice qué
+                    # parte del tramo es eso y `possessionConfidence` («alta», «media» o «baja») si se puede uno fiar.
+                    # Con «baja» la app la enseña pero no la vuelca al acta.
+                    "possessionConfidence": posesion.confianza,
+                    "possessionBallPct": posesion.cobertura_pct,
                     "cornersFor": contar_eventos(eventos, "corner", e),
                     "cornersAgainst": contar_eventos(eventos, "corner", rival),
                     "shotsFor": len(tiros),
@@ -169,7 +174,13 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                 },
             }
         )
-    return {"version": 1, "equipos": equipos, "jugadores": jugadores, "nuestroEquipo": None}
+    calidad = {
+        "posesionConfianza": posesion.confianza,
+        "balonPct": posesion.cobertura_pct,
+        "segundosConBalon": round(posesion.segundos_con_balon, 1),
+        "segundosAtribuidos": round(posesion.segundos_atribuidos, 1),
+    }
+    return {"version": 1, "equipos": equipos, "jugadores": jugadores, "nuestroEquipo": None, "calidad": calidad}
 
 
 def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str:
@@ -189,6 +200,8 @@ def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str
         "| Equipo | Total | 1.ª parte | 2.ª parte | Tercio propio | Medio | Tercio rival |",
         "|---|---|---|---|---|---|---|",
     ]
+    cobertura = analisis["posesion"].get("cobertura", {})
+    confianza = analisis["posesion"].get("confianza")
     for e in analisis["posesion"]["equipos"]:
         mitades = e["por_mitad"]
         tercios = e["por_tercio"]
@@ -197,6 +210,14 @@ def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str
             f"| {nombres[e['equipo']]} | {e['porcentaje'] if e['porcentaje'] is not None else '—'} % | {mitades.get(1, 0) / 60:.1f} min | {mitades.get(2, 0) / 60:.1f} min | "
             f"{100 * tercios.get('propio', 0) / total:.0f} % | {100 * tercios.get('medio', 0) / total:.0f} % | {100 * tercios.get('rival', 0) / total:.0f} % |"
         )
+    if confianza:
+        vistos_pct = 100 * cobertura.get("segundos_vistos", 0) / max(1.0, cobertura.get("segundos_tramo", 1))
+        lineas += [
+            "",
+            f"Confianza de la posesión: **{confianza}**. Se reparte solo el tiempo con balón visto o interpolado: {cobertura.get('segundos_atribuidos', 0):.0f} s "
+            f"de los {cobertura.get('segundos_tramo', 0):.0f} s del tramo ({cobertura.get('pct_atribuido', 0)} %; balón en el {cobertura.get('pct_con_balon', 0)} %, visto en el {vistos_pct:.1f} %)."
+            + (" **Con confianza baja la posesión no se vuelca al acta.**" if confianza == "baja" else ""),
+        ]
     lineas += ["", "## Datos de equipo propuestos para el acta", "", "| | " + " | ".join(nombres) + " |", "|---|---|---|"]
     claves = [("possessionPct", "Posesión %"), ("shotsFor", "Tiros"), ("shotsOnTargetFor", "Tiros a puerta"), ("goalsFor", "Goles (confirmados)"), ("goalsCandidatesFor", "Goles candidatos"), ("cornersFor", "Córners"), ("throwInsFor", "Saques de banda"), ("goalKicksFor", "Saques de puerta")]
     for clave, etiqueta in claves:
@@ -224,7 +245,14 @@ def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str
             f"| {j['tracklet']}{' (POR)' if j['portero'] else ''} | {nombres[j['equipo']]} | {j['minutosALaVista']} | {j['distanciaM']} m | {t.get('velocidad_max_kmh', 0):.0f} km/h | "
             f"{p['touches']} | {p['passes']} | {p['recoveries']} | {p['ballLosses']} | {p['shots']} | {j['dorsal_llm'] if j['dorsal_llm'] is not None else '—'} |"
         )
-    lineas += ["", "## Calidad del análisis", "", f"- Calibración del campo: {analisis['calibracion']}", f"- Fotogramas analizados: {analisis['recuento']['fotogramas']}; con balón: {analisis['recuento']['con_balon']} ({analisis['recuento']['pct_con_balon']} %); con campo calibrado: {analisis['recuento']['pct_calibrados']} %.",
+    recuento = analisis["recuento"]
+    relleno = recuento.get("balon_relleno", {})
+    balon = f"- Fotogramas analizados: {recuento['fotogramas']}; con balón visto: {recuento['con_balon']} ({recuento['pct_con_balon']} %)"
+    if "pct_con_balon_total" in recuento:
+        balon += (f"; con los huecos cortos rellenados por la trayectoria: {recuento['pct_con_balon_total']} % ({recuento.get('con_balon_interpolado', 0)} interpolados, "
+                  f"{relleno.get('huecos_largos', 0)} huecos largos sin rellenar, {relleno.get('aislados_descartados', 0)} avistamientos sueltos descartados)")
+    balon += f"; con campo calibrado: {recuento['pct_calibrados']} %."
+    lineas += ["", "## Calidad del análisis", "", f"- Calibración del campo: {analisis['calibracion']}", balon,
                f"- Muestras para separar los equipos: {analisis['recuento']['muestras_equipos']}.", "- Los eventos son candidatos: tiros, goles y córners hay que confirmarlos con el clip; faltas, fueras de juego y tarjetas no se deducen del vídeo."]
     if resumen_llm:
         lineas += ["", f"## Resumen ({analisis.get('llm') or 'modelo de lenguaje'})", "", resumen_llm.strip()]

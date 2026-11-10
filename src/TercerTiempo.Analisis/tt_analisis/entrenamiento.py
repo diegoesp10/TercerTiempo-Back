@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from .campo import CONFIANZA_PUNTO, Calibrador, VERTICES
+from .modelos import precision
 
 
 @dataclass(frozen=True)
@@ -158,7 +159,7 @@ def _metricas_balon(modelo, carpeta: Path, imgsz: int, device: str, conf: float 
         imagen = cv2.imread(str(ruta))
         alto, ancho = imagen.shape[:2]
         verdad = np.array([caja for _, caja, _ in leer_etiquetas(carpeta / "labels" / "val" / f"{ruta.stem}.txt", ancho, alto)]).reshape(-1, 4)
-        r = modelo(imagen, imgsz=imgsz, conf=conf, device=device, half=device.startswith("cuda"), verbose=False)[0]
+        r = modelo(imagen, imgsz=imgsz, conf=conf, device=device, **precision(device), verbose=False)[0]
         pred = r.boxes.xyxy.cpu().numpy().reshape(-1, 4)
         a, f, n = _emparejar(pred, verdad, 0.0, por_centro=True)
         tp, fp, fn = tp + a, fp + f, fn + n
@@ -175,7 +176,7 @@ def _metricas_personas(modelo, carpeta: Path, imgsz: int, device: str, conf: flo
         imagen = cv2.imread(str(ruta))
         alto, ancho = imagen.shape[:2]
         etiquetas = leer_etiquetas(carpeta / "labels" / "val" / f"{ruta.stem}.txt", ancho, alto)
-        r = modelo(imagen, imgsz=imgsz, conf=conf, device=device, half=device.startswith("cuda"), verbose=False)[0]
+        r = modelo(imagen, imgsz=imgsz, conf=conf, device=device, **precision(device), verbose=False)[0]
         cajas = r.boxes.xyxy.cpu().numpy().reshape(-1, 4)
         clases = r.boxes.cls.cpu().numpy().astype(int)
         for c in cuentas:
@@ -207,7 +208,7 @@ def _metricas_campo(modelo, carpeta: Path, imgsz: int, device: str) -> dict:
             continue
         fotogramas += 1
         verdad = etiquetas[0][2]
-        r = modelo(imagen, imgsz=imgsz, device=device, half=device.startswith("cuda"), verbose=False)[0]
+        r = modelo(imagen, imgsz=imgsz, device=device, **precision(device), verbose=False)[0]
         puntos = sv.KeyPoints.from_ultralytics(r)
         if len(puntos) == 0 or puntos.confidence is None:
             correctos.append(0)
@@ -251,7 +252,7 @@ def evaluar(que: str, dataset: Path, modelos: Path, salida: Path, device: str = 
             continue
         informar(f"Evaluando {que} ({etiqueta}: {pesos.name}) a {imgsz} px…")
         modelo = YOLO(str(pesos))
-        r = modelo.val(data=str(data), imgsz=imgsz, batch=8, device=device, split="val", plots=False, verbose=False, project=str(salida), name=f"val-{que}-{etiqueta}", exist_ok=True, half=device.startswith("cuda"))
+        r = modelo.val(data=str(data), imgsz=imgsz, batch=8, device=device, split="val", plots=False, verbose=False, project=str(salida), name=f"val-{que}-{etiqueta}", exist_ok=True, **precision(device))
         fila = {"pesos": pesos.name, "imgsz": imgsz, "precision": round(float(r.box.mp), 3), "recall": round(float(r.box.mr), 3), "mAP50": round(float(r.box.map50), 3), "mAP50_95": round(float(r.box.map), 3)}
         if que == "campo":
             fila["pose_mAP50"] = round(float(r.pose.map50), 3)

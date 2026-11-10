@@ -49,8 +49,16 @@ CONF_BALON_SOLO = 0.6
 CONF_BALON_CON_VECINO = 0.3
 CONF_BALON_DOS_VECINOS = 0.2
 RADIO_VECINO_PX = 150.0
-# Vecinos del fotograma central, en fotogramas del vídeo (a 50 fps: ±0,2 s y ±0,4 s).
-VECINOS = (-20, -10, 10, 20)
+# Vecinos del fotograma central, en fotogramas del vídeo (a 50 fps: ±0,1, ±0,2 y ±0,4 s). Los de ±0,1 s están para los
+# balones rápidos (un pase largo o un tiro recorre 100-300 px en 0,2 s y se salía del radio de búsqueda).
+VECINOS = (-20, -10, -5, 5, 10, 20)
+# Radio en el que se busca el balón en cada vecino: crece con el desfase (un balón a 750 px/s se mueve 75 px en 0,1 s
+# y 300 en 0,4 s), con un mínimo para el temblor de la detección.
+RADIO_VECINO_MIN_PX = 60.0
+
+
+def radio_vecino(desfase: int, base: float = RADIO_VECINO_PX) -> float:
+    return max(RADIO_VECINO_MIN_PX, base * abs(desfase) / 10)
 # Desplazamiento respecto al césped (compensada la cámara) por debajo del cual el candidato está quieto, y a partir del
 # cual se mueve; en píxeles a media resolución.
 QUIETO_PX = 4.0
@@ -113,6 +121,9 @@ class ConfiguracionEtiquetado:
     campo: tuple[float, float] | None = None
     # Usar como maestro los pesos afinados (modelos/afinados) si existen: segunda ronda de autoentrenamiento.
     afinados: bool = False
+    # Quién propone los candidatos a balón: "publico", "afinado" o "ambos" (la unión de los dos: más candidatos, que
+    # la regla de movimiento filtra igual; el afinado solo mejora la precisión, el público ve más balones pequeños).
+    maestro_balon: str = "publico"
     # Juez de los candidatos a balón: "claude", "ollama" o "none" (solo la regla rápida).
     juez: str = "none"
     modelo_juez: str | None = None
@@ -196,19 +207,21 @@ def movimiento_camara(centro_gris: np.ndarray, vecino_gris: np.ndarray) -> np.nd
     return m
 
 
-def clasificar_movimiento(caja: Caja, vecinos: list[list[Caja]], afines: list[np.ndarray | None], radio: float = RADIO_VECINO_PX, otros_centro: list[Caja] = (), personas_vecinos: list[np.ndarray] | None = None) -> tuple[str, float, int]:
+def clasificar_movimiento(caja: Caja, vecinos: list[list[Caja]], afines: list[np.ndarray | None], radio: float = RADIO_VECINO_PX, otros_centro: list[Caja] = (), personas_vecinos: list[np.ndarray] | None = None, desfases: tuple[int, ...] = VECINOS) -> tuple[str, float, int]:
     """Si el candidato está quieto o se mueve respecto al césped: se lleva su posición a cada vecino con el movimiento
     de la cámara y se mira dónde apareció allí el balón más cercano, sin contar lo que corresponde a otro candidato del
     fotograma central que no se ha movido (otra marca) ni lo que está sobre una persona del vecino (la media de un
-    jugador que pasa por ahí). Devuelve (movimiento, desplazamiento máximo en px a media resolución, vecinos en los que
-    se encontró)."""
+    jugador que pasa por ahí). `desfases` dice a cuántos fotogramas del central está cada vecino, y con ellos crece el
+    radio de búsqueda. Devuelve (movimiento, desplazamiento máximo en px a media resolución, vecinos en los que se
+    encontró)."""
     xy = _centro(caja) / 2
     lado = _lado(caja)
     # Por cada vecino donde se encuentra: (desplazamiento respecto al césped, velocidad en px por fotograma).
     hallazgos: list[tuple[float, np.ndarray]] = []
-    for k, (cajas_vecino, afin, desfase) in enumerate(zip(vecinos, afines, VECINOS)):
+    for k, (cajas_vecino, afin, desfase) in enumerate(zip(vecinos, afines, desfases)):
         if afin is None:
             continue
+        radio_k = radio_vecino(desfase, radio)
         esperado = afin[:, :2] @ xy + afin[:, 2]
         otros_esperados = [afin[:, :2] @ (_centro(o) / 2) + afin[:, 2] for o in otros_centro]
         personas = personas_vecinos[k] if personas_vecinos is not None and k < len(personas_vecinos) else None
@@ -222,7 +235,7 @@ def clasificar_movimiento(caja: Caja, vecinos: list[list[Caja]], afines: list[np
             if any(np.linalg.norm(p - e) <= QUIETO_PX for e in otros_esperados):
                 continue
             d = float(np.linalg.norm(p - esperado))
-            if d <= radio and (mejor is None or d < mejor[0]):
+            if d <= radio_k and (mejor is None or d < mejor[0]):
                 mejor = (d, (p - esperado) / desfase)
         if mejor is not None:
             hallazgos.append(mejor)
@@ -254,22 +267,23 @@ def _en_persona(centro: np.ndarray, personas: np.ndarray, margen: float = 6.0) -
     return False
 
 
-def puntuar_candidatos(centro: list[Caja], vecinos: list[list[Caja]], otros: list[Caja], personas: np.ndarray, afines: list[np.ndarray | None] | None = None, radio: float = RADIO_VECINO_PX, personas_vecinos: list[np.ndarray] | None = None) -> list[Candidato]:
+def puntuar_candidatos(centro: list[Caja], vecinos: list[list[Caja]], otros: list[Caja], personas: np.ndarray, afines: list[np.ndarray | None] | None = None, radio: float = RADIO_VECINO_PX, personas_vecinos: list[np.ndarray] | None = None, desfases: tuple[int, ...] = VECINOS) -> list[Candidato]:
     """Los candidatos a balón del fotograma central, de mejor a peor, con la regla rápida aplicada a cada uno.
     `centro` y `vecinos` son los candidatos del detector de balón (fotograma central y vecinos), `otros` los balones
     que ve el detector de jugadores en el central, `afines` el movimiento de la cámara hacia cada vecino (si se tiene)
     y `personas_vecinos` las personas de cada vecino (para no confundir una media que pasa con el balón que se mueve)."""
     salida = []
     plausibles = [c for c in centro if BALON_MIN_PX <= _lado(c) <= BALON_MAX_PX and not _en_cabeza(_centro(c), personas)]
+    radios = [radio_vecino(d, radio) for d in desfases]
     for c in plausibles:
         xy = _centro(c)
         conf = c[4]
-        n_vecinos = sum(1 for v in vecinos if any(np.linalg.norm(_centro(o) - xy) <= radio and 0.5 <= _lado(o) / max(_lado(c), 1) <= 2.0 for o in v))
+        n_vecinos = sum(1 for v, r in zip(vecinos, radios) if any(np.linalg.norm(_centro(o) - xy) <= r and 0.5 <= _lado(o) / max(_lado(c), 1) <= 2.0 for o in v))
         otro = any(np.linalg.norm(_centro(o) - xy) <= RADIO_OTRO_PX for o in otros)
         sobre_persona = _en_persona(xy, personas)
         if afines:
             movimiento, desplazamiento, encontrados = clasificar_movimiento(
-                c, vecinos, afines, radio, otros_centro=[o for o in plausibles if o is not c], personas_vecinos=None if sobre_persona else personas_vecinos
+                c, vecinos, afines, radio, otros_centro=[o for o in plausibles if o is not c], personas_vecinos=None if sobre_persona else personas_vecinos, desfases=desfases
             )
         else:
             movimiento, desplazamiento, encontrados = "indeterminado", 0.0, 0
@@ -306,9 +320,9 @@ def elegir(candidatos: list[Candidato], aprobados: list[Candidato], radio: float
     return ResultadoBalon(mejor.caja, len(candidatos))
 
 
-def confirmar_balon(centro: list[Caja], vecinos: list[list[Caja]], otros: list[Caja], personas: np.ndarray, radio: float = RADIO_VECINO_PX) -> ResultadoBalon:
+def confirmar_balon(centro: list[Caja], vecinos: list[list[Caja]], otros: list[Caja], personas: np.ndarray, radio: float = RADIO_VECINO_PX, desfases: tuple[int, ...] = VECINOS) -> ResultadoBalon:
     """Solo con la regla rápida (sin juez)."""
-    candidatos = puntuar_candidatos(centro, vecinos, otros, personas, None, radio)
+    candidatos = puntuar_candidatos(centro, vecinos, otros, personas, None, radio, desfases=desfases)
     return elegir(candidatos, [c for c in candidatos if c.heuristico], radio)
 
 
@@ -494,39 +508,47 @@ def _a_cajas(detecciones: sv.Detections) -> list[Caja]:
 
 
 class Maestro:
-    """Los tres detectores usados con calma: por teselas y en lote."""
+    """Los tres detectores usados con calma: por teselas y en lote. `detectores_balon` permite proponer candidatos
+    con más de un detector de balón (el público y el afinado): la unión de los dos, sin duplicados."""
 
-    def __init__(self, modelos: Modelos, imgsz: int) -> None:
+    def __init__(self, modelos: Modelos, imgsz: int, detectores_balon: list | None = None) -> None:
         self.modelos = modelos
         self.imgsz = imgsz
+        self.detectores_balon = detectores_balon or [modelos.balon]
 
     def _predecir(self, modelo, imagenes: list[np.ndarray], imgsz: int, conf: float) -> list[sv.Detections]:
-        resultados = modelo(imagenes, imgsz=imgsz, conf=conf, device=self.modelos.device, half=self.modelos.half, verbose=False)
+        resultados = modelo(imagenes, imgsz=imgsz, conf=conf, device=self.modelos.device, **self.modelos.precision, verbose=False)
         return [sv.Detections.from_ultralytics(r) for r in resultados]
 
     def candidatos_balon(self, imagenes: list[np.ndarray]) -> list[list[Caja]]:
-        """Por cada imagen, los candidatos a balón (teselas + fotograma entero, sin duplicados)."""
+        """Por cada imagen, los candidatos a balón (teselas + fotograma entero, de cada detector, sin duplicados)."""
         alto, ancho = imagenes[0].shape[:2]
         posiciones = teselas(ancho, alto)
         trozos = [img[y:y + TESELA, x:x + TESELA] for img in imagenes for (x, y) in posiciones]
-        por_tesela = []
-        for i in range(0, len(trozos), 16):
-            por_tesela += self._predecir(self.modelos.balon, trozos[i:i + 16], TESELA, CONF_CANDIDATO)
-        enteros = self._predecir(self.modelos.balon, imagenes, self.imgsz, CONF_CANDIDATO)
+        cajas_por_imagen: list[list[np.ndarray]] = [[] for _ in imagenes]
+        confianzas_por_imagen: list[list[np.ndarray]] = [[] for _ in imagenes]
+        for detector in self.detectores_balon:
+            por_tesela = []
+            for i in range(0, len(trozos), 16):
+                por_tesela += self._predecir(detector, trozos[i:i + 16], TESELA, CONF_CANDIDATO)
+            enteros = self._predecir(detector, imagenes, self.imgsz, CONF_CANDIDATO)
+            for i in range(len(imagenes)):
+                if len(enteros[i]):
+                    cajas_por_imagen[i].append(enteros[i].xyxy.reshape(-1, 4))
+                    confianzas_por_imagen[i].append(enteros[i].confidence)
+                for j, (x, y) in enumerate(posiciones):
+                    d = por_tesela[i * len(posiciones) + j]
+                    if len(d):
+                        cajas_por_imagen[i].append(d.xyxy + np.array([x, y, x, y], dtype=np.float32))
+                        confianzas_por_imagen[i].append(d.confidence)
         salida = []
-        for i in range(len(imagenes)):
-            cajas = [enteros[i].xyxy.reshape(-1, 4)]
-            confianzas = [enteros[i].confidence if enteros[i].confidence is not None else np.zeros(0)]
-            for j, (x, y) in enumerate(posiciones):
-                d = por_tesela[i * len(posiciones) + j]
-                if len(d):
-                    cajas.append(d.xyxy + np.array([x, y, x, y], dtype=np.float32))
-                    confianzas.append(d.confidence)
+        for cajas, confianzas in zip(cajas_por_imagen, confianzas_por_imagen):
+            if not cajas:
+                salida.append([])
+                continue
             xyxy = np.concatenate(cajas).astype(np.float32)
             todas = sv.Detections(xyxy=xyxy, confidence=np.concatenate(confianzas).astype(np.float32), class_id=np.zeros(len(xyxy), dtype=int))
-            if len(todas):
-                todas = todas.with_nms(threshold=0.3)
-            salida.append(_a_cajas(todas))
+            salida.append(_a_cajas(todas.with_nms(threshold=0.3)))
         return salida
 
     def personas(self, imagen: np.ndarray) -> sv.Detections:
@@ -543,7 +565,7 @@ class Maestro:
         """Los 32 vértices con su confianza, a la escala nativa del detector (a 1280 se inventa puntos)."""
         xy = np.zeros((len(VERTICES), 2), dtype=np.float32)
         conf = np.zeros(len(VERTICES), dtype=np.float32)
-        resultado = self.modelos.campo(imagen, imgsz=IMGSZ_CAMPO, device=self.modelos.device, half=self.modelos.half, verbose=False)[0]
+        resultado = self.modelos.campo(imagen, imgsz=IMGSZ_CAMPO, device=self.modelos.device, **self.modelos.precision, verbose=False)[0]
         puntos = sv.KeyPoints.from_ultralytics(resultado)
         if len(puntos) and puntos.confidence is not None:
             xy[:] = puntos.xy[0]
@@ -660,6 +682,27 @@ def juzgar(pendientes: list[Pendiente], juez, hilos: int, avance=None) -> int:
     return hechos
 
 
+def _detectores_balon(modelos: Modelos, config: ConfiguracionEtiquetado) -> list:
+    """El detector (o los dos) que proponen candidatos a balón según `maestro_balon`. Si no hay pesos afinados,
+    «afinado» y «ambos» se quedan con el público."""
+    from ultralytics import YOLO
+
+    from .modelos import ruta_pesos
+
+    cargado = ruta_pesos(config.modelos, "balon", afinados=config.afinados)
+    publico, afinado = ruta_pesos(config.modelos, "balon", afinados=False), ruta_pesos(config.modelos, "balon", afinados=True)
+    rutas = {"publico": [publico], "afinado": [afinado], "ambos": [publico, afinado]}[config.maestro_balon]
+    detectores = []
+    for ruta in dict.fromkeys(rutas):
+        if ruta == cargado:
+            detectores.append(modelos.balon)
+        else:
+            otro = YOLO(str(ruta))
+            otro.to(modelos.device)
+            detectores.append(otro)
+    return detectores
+
+
 def etiquetar(config: ConfiguracionEtiquetado, informar=print) -> dict:
     from tqdm import tqdm
 
@@ -669,10 +712,10 @@ def etiquetar(config: ConfiguracionEtiquetado, informar=print) -> dict:
     info = info_video(config.video)
     config.salida.mkdir(parents=True, exist_ok=True)
     modelos = cargar_modelos(config.modelos, config.device, afinados=config.afinados)
-    maestro = Maestro(modelos, config.imgsz)
+    maestro = Maestro(modelos, config.imgsz, _detectores_balon(modelos, config))
     juez = crear_modelo(config.juez, config.modelo_juez)
     fin_s = min(config.segmento.fin, info.duracion_s) if config.segmento.fin is not None else info.duracion_s
-    informar(f"Vídeo: {info.ancho}×{info.alto} a {info.fps:.0f} fps, {info.duracion_s / 60:.1f} min. Maestros: {', '.join(f'{n} ({r})' for n, r in modelos.rutas.items())}. Juez: {juez.nombre if juez else 'ninguno (regla de movimiento)'}.")
+    informar(f"Vídeo: {info.ancho}×{info.alto} a {info.fps:.0f} fps, {info.duracion_s / 60:.1f} min. Maestros: {', '.join(f'{n} ({r})' for n, r in modelos.rutas.items())} (balón: {config.maestro_balon}). Juez: {juez.nombre if juez else 'ninguno (regla de movimiento)'}.")
 
     # 0. Las medidas del campo. Si se conocen, los puntos del campo se etiquetan reproyectando los 32 vértices; si la
     # medida automática no es fiable (el detector público ve pocos puntos coherentes de noche), se etiquetan solo los

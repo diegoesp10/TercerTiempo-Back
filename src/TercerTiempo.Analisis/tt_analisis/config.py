@@ -100,6 +100,8 @@ class Configuracion:
     # las barras de tqdm, y fallar (código de salida 3) si no hay GPU en vez de analizar en CPU durante horas.
     progreso: bool = False
     exigir_gpu: bool = False
+    # Semilla para medir la estabilidad: fija los generadores y desplaza qué fotogramas se muestrean dentro del paso.
+    semilla: int | None = None
 
 
 # Clases del detector de jugadores de Roboflow (football-player-detection).

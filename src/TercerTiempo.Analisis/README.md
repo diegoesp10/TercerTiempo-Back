@@ -17,7 +17,7 @@ la app».
 
 | Dato | Cómo | Fiabilidad con cámara fija lateral a 1080p |
 |---|---|---|
-| Posesión por equipo, mitad, tercio y minuto | Jugador más cercano al balón con histéresis; el balón en vuelo es de quien lo lanzó | Alta |
+| Posesión por equipo, mitad, tercio y minuto | Jugador más cercano al balón con histéresis; el balón en vuelo es de quien lo lanzó. Solo se reparte el tiempo con balón visto o interpolado, y sale con su **confianza** (alta, media o baja) | Alta si el balón se ve; con confianza baja la app no la vuelca |
 | Mapas de calor, distancia, velocidad máxima | Posiciones proyectadas al campo (homografía por los puntos de las líneas) | Alta si la calibración es buena |
 | Saques de banda, córners, saques de puerta | Balón fuera + quién lo tocó + hacia dónde ataca cada equipo | Media-alta |
 | Tiros / a puerta | Balón rápido hacia la portería desde menos de 35 m; corte con la línea de gol | Media (candidatos: revisar el clip) |
@@ -56,6 +56,7 @@ uv run tt-analisis analizar partido.mp4 --segmento 20:00-25:00 --video-anotado  
 uv run tt-analisis analizar partido.mp4 --descanso 52:30 --llm claude                # confirma eventos y redacta con la API de Claude
 uv run tt-analisis analizar partido.mp4 --llm ollama --modelo-llm gemma4:12b         # lo mismo con un modelo local
 uv run tt-analisis analizar partido.mp4 --fps 3 --sin-balon-fino --sin-clips         # más rápido, menos fino
+uv run tt-analisis comparar salidas\a salidas\b salidas\c                              # varias pasadas del mismo tramo, lado a lado
 ```
 
 Opciones: `--camara movil|fija` (ver abajo), `--fps` (fotogramas analizados por segundo, 5 por defecto),
@@ -64,7 +65,11 @@ Opciones: `--camara movil|fija` (ver abajo), `--fps` (fotogramas analizados por 
 `--campo 100x62` (medidas reales del campo en metros; por defecto las del modelo del campo de Roboflow, 120 × 70), `--sin-afinados`
 (usar los pesos públicos aunque haya pesos afinados), `--muestras-equipos` (600), `--max-fotogramas N` (para probar),
 `--device cpu`, `--progreso` (el avance como líneas `##progreso N` en la salida estándar, sin barras: para quien lo
-lanza como proceso) y `--exigir-gpu` (sin GPU CUDA termina con el código de salida 3 en vez de analizar en CPU).
+lanza como proceso), `--exigir-gpu` (sin GPU CUDA termina con el código de salida 3 en vez de analizar en CPU) y
+`--semilla N` (para medir la estabilidad: fija los generadores y muestrea otros fotogramas del mismo tramo,
+desplazados dentro del paso). `comparar` pone varias pasadas lado a lado (balón, calibración, toques, posesión y su
+confianza, emparejando los equipos por el color de la camiseta) y dice cuántos puntos se mueve la posesión, total y
+por minuto, respecto a la primera.
 
 ### Afinar los detectores con partidos propios
 
@@ -85,7 +90,8 @@ uv run tt-analisis evaluar todos --dataset datasets\partido       # públicos co
 (un bloque de 2 min de cada cinco), más `revision/` con vistas previas y `muestras.jsonl` con el porqué de cada
 decisión. Cómo se confirma cada cosa:
 
-- **Balón**: el detector busca por teselas y a fotograma entero en el fotograma y en cuatro vecinos (±0,2 y ±0,4 s).
+- **Balón**: el detector busca por teselas y a fotograma entero en el fotograma y en seis vecinos (±0,1, ±0,2 y
+  ±0,4 s; el radio en el que se busca crece con el desfase, para que un balón rápido no se salga de él).
   Lo que separa un balón de una marca de la línea, un reflejo o un foco es que **se mueve respecto al césped**: se
   estima el movimiento de la cámara hacia cada vecino (flujo óptico sobre el fondo) y se mira si el candidato sigue en
   el mismo sitio del campo (quieto: marca, salvo que el detector lo vea con mucha confianza, que es un balón parado) o
@@ -100,8 +106,21 @@ decisión. Cómo se confirma cada cosa:
 
 `--juez claude` manda además un recorte ampliado de cada candidato a balón a la API de Claude (hace falta
 `ANTHROPIC_API_KEY`) y se queda con lo que confirma; `--juez ollama` hace lo mismo con un modelo local, pero
-`gemma4:12b` tarda 12-19 s por recorte y da por balón casi todo, así que no se usa por defecto. Las pseudoetiquetas
-se pueden corregir a mano con cualquier herramienta que lea YOLO (CVAT, Label Studio) antes de entrenar.
+`gemma4:12b` tarda 12-19 s por recorte y da por balón casi todo, así que no se usa por defecto. `--maestro-balon
+ambos` propone candidatos con el detector público y con el afinado a la vez (por teselas los dos encuentran casi
+los mismos: 111 y 112 de 134 en la validación, así que por defecto propone solo el público).
+
+Las pseudoetiquetas se pueden **corregir a mano** sin salir del formato YOLO:
+
+```powershell
+uv run tt-analisis exportar-revision balon --dataset datasets\partido --particion val --max 200   # zip YOLO 1.1
+uv run tt-analisis importar-revision balon datasets\partido\revision-balon-val-corregido.zip --dataset datasets\partido
+```
+
+El zip lleva las imágenes, sus etiquetas, `obj.names`, `obj.data` y `train.txt`, tal cual lo importa CVAT (crear la
+tarea con las imágenes del zip y subir el mismo zip en «Upload annotations» con el formato YOLO 1.1; Label Studio
+lo lee con su conversor). Al terminar se exporta en YOLO 1.1 e `importar-revision` vuelve a escribir solo las
+etiquetas de las imágenes del zip (una imagen sin etiqueta en el zip queda sin balón), y `entrenar` las usa.
 
 `entrenar` sigue entrenando desde los pesos públicos con el tronco congelado (`--congelar 10`), tasa de aprendizaje
 baja y las mismas aumentaciones que el entrenamiento original; deja los pesos en `modelos/afinados/<que>.pt`, que
@@ -134,8 +153,8 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
 | Archivo | Qué es |
 |---|---|
 | `resumen.md` | El informe para el cuerpo técnico: posesión, datos de equipo propuestos, eventos, jugadores seguidos, calidad del análisis y, si hay modelo de lenguaje, su resumen |
-| `analisis.json` | Todo: vídeo y parámetros, equipos y colores, dirección de ataque por mitad, descanso, calibración, recuentos, posesión, eventos (con confianza, clip y veredicto del modelo), tracklets (acciones, distancia, mapa de calor, recorte, dorsal) y tiempos |
-| `acta-propuesta.json` | Lo que pide la API del acta interna: `teamStats` desde los dos lados (posesión, tiros, córners, saques, goles) y una línea por tracklet con la propuesta por jugador; la app decide cuál es «nuestro» equipo y qué tracklet es cada ficha |
+| `analisis.json` | Todo: vídeo y parámetros, equipos y colores, dirección de ataque por mitad, descanso, calibración, recuentos (`pct_con_balon` es el balón visto, lo que guarda la app; `pct_con_balon_total` y `balon_relleno`, con los huecos rellenados), posesión (con `confianza` y `cobertura`), eventos (con confianza, clip y veredicto del modelo), tracklets (acciones, distancia, mapa de calor, recorte, dorsal) y tiempos |
+| `acta-propuesta.json` | Lo que pide la API del acta interna: `teamStats` desde los dos lados (posesión con `possessionConfidence` y `possessionBallPct`, tiros, córners, saques, goles), una línea por tracklet con la propuesta por jugador y `calidad`; la app decide cuál es «nuestro» equipo y qué tracklet es cada ficha |
 | `mapas/` | Mapas de calor PNG por equipo y por tracklet |
 | `recortes/` | El mejor recorte de cada tracklet, para asignarlo a una ficha |
 | `clips/` | Clip de 10 s de cada tiro, gol, córner y parada |
@@ -164,14 +183,28 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
    Los porteros van con el equipo cuyo grueso tienen más cerca; el reparto sale en `recuento.reparto_equipos` y el
    analizador avisa si un grupo se queda con menos de la quinta parte de los recortes.
 2. **Pasada principal** (5 fotogramas/s): detección y seguimiento de personas con Ultralytics en modo `track`
-   (BoT-SORT o ByteTrack según la cámara), detección del balón (fotograma entero y, si se pierde, por teselas; con
-   filtros de tamaño y de salto), calibración del campo (`campo.py`: puntos clave de las líneas → homografía con
-   RANSAC y error de reproyección; por fotograma o única), filtro de personas fuera del campo, proyección de
-   posiciones y la máquina de posesión (`posesion.py`).
-3. **Post-proceso** sobre las posiciones guardadas (`estadisticas.py`, `eventos.py`): parones y descanso, dirección de
-   ataque por mitad (por dónde están los porteros), eventos, posesión, secuencias y acciones por jugador.
-4. **Modelo de lenguaje** (opcional, `llm/`): confirma eventos, lee dorsales, redacta.
-5. **Informes** (`informes.py`).
+   (BoT-SORT o ByteTrack según la cámara), detección del balón (`deteccion.py`: fotograma entero con el detector de
+   balón y la clase balón del detector de jugadores y, en cada fotograma en que está perdido, por teselas de 640 px a
+   resolución nativa; filtros de tamaño y de salto; entre varios candidatos gana el más coherente con la trayectoria
+   reciente y con dónde están los jugadores, y un candidato flojo solo vale cerca de un jugador o de donde se
+   esperaba el balón), calibración del campo (`campo.py`: puntos clave de las líneas → homografía con RANSAC y error
+   de reproyección; por fotograma o única), filtro de personas fuera del campo y proyección de posiciones.
+3. **Trayectoria del balón** (`balon.py`): se quitan los avistamientos sueltos (flojos, lejos de todos los jugadores y
+   sin otro a menos de 1,5 s) y se rellenan por interpolación los huecos de hasta 2 s entre dos avistamientos con
+   una velocidad plausible (en el campo si los dos extremos están proyectados, y siempre en la imagen). El balón de
+   cada instante queda marcado como «visto» o «interpolado».
+4. **Posesión** (`posesion.py`): la máquina de «jugador más cercano al balón con histéresis» (un cambio de poseedor se
+   confirma tras 0,2 s seguidos del mismo candidato, medidos en tiempo y no en muestras, para que la cadencia no la
+   cambie) corre sobre esa
+   trayectoria, y el reparto cuenta **solo el tiempo de juego activo con balón visto o interpolado**; tras más de 2 s
+   sin balón ya no se sabe de quién es hasta el siguiente toque. Sale con su confianza: **alta** si hay balón en el
+   60 % del tramo y se reparte al menos la mitad, **media** a partir del 35 % y la cuarta parte, **baja** si no (el
+   35 % es el mismo umbral con el que la app avisa de calidad baja). Con confianza baja la posesión se enseña pero
+   la app no la vuelca al acta.
+5. **Post-proceso** sobre las posiciones guardadas (`estadisticas.py`, `eventos.py`): parones y descanso, dirección de
+   ataque por mitad (por dónde están los porteros), eventos, secuencias y acciones por jugador.
+6. **Modelo de lenguaje** (opcional, `llm/`): confirma eventos, lee dorsales, redacta.
+7. **Informes** (`informes.py`).
 
 La lógica de posesión, eventos, estadísticas y geometría es pura y se prueba sin GPU: `uv run pytest`.
 
@@ -186,8 +219,9 @@ uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<víde
 ```
 
 - Lee el avance de las líneas `##progreso N` (0-8 separar equipos, 8-95 la pasada, 95-100 el post-proceso) y, al
-  terminar, carga `acta-propuesta.json` (la propuesta), `analisis.json` (versión, pesos, fotogramas, % con balón y %
-  calibrados, tramo y medidas del campo) y el recorte de cada jugador de la propuesta. Todo eso queda en la base
+  terminar, carga `acta-propuesta.json` (la propuesta, con la confianza de la posesión: con «baja» la enseña pero no
+  la vuelca), `analisis.json` (versión, pesos, fotogramas, % con balón visto y % calibrados, tramo y medidas del
+  campo) y el recorte de cada jugador de la propuesta. Todo eso queda en la base
   (`MatchVideoAnalysis`); la carpeta de salida se conserva hasta que se elimina el vídeo.
 - `--campo` lleva las medidas que el club del equipo **local** apunta en la ficha de su equipo; sin ellas se calibra
   con 120 × 70 y la app lo avisa. Los nombres de `--equipos` son solo para los informes: el analizador no sabe cuál de
@@ -286,12 +320,58 @@ que antes contaba como balón eran marcas y medias. Pero sigue sin verlo en cuat
 la posesión todavía baila de una pasada a otra: **el balón sigue siendo el cuello de botella** y el siguiente salto
 pide etiquetas de más partidos (o corregidas a mano) y, sobre todo, una cámara fija y más cerca del juego.
 
+## Trayectoria del balón y posesión con confianza (10-11-2026)
+
+Lo que cambió en el analizador, medido sobre el mismo tramo de 5 min (20:00-25:00) del vídeo del Vallobín, con el balón
+afinado del 06-11 y el campo a 640 px:
+
+- **Más balón visto**: teselas en cada fotograma en que el balón está perdido (antes, las primeras ocho veces y luego una
+  de cada cinco), con el umbral de las teselas en 0,2 y el prior de los jugadores para que los candidatos flojos solo
+  valgan cerca de alguien o de donde se esperaba el balón. En la validación de la ronda 1 (134 balones), por teselas
+  el afinado encuentra 112 (84 %) frente a 103 (77 %) a fotograma entero, a cambio de 51 falsos en vez de 19: el prior y
+  la trayectoria son lo que deja fuera esos falsos en la pasada.
+- **Trayectoria** (`balon.py`): se quitan los avistamientos sueltos (4 en el tramo) y se rellenan los huecos de hasta
+  2 s con velocidad plausible (102 huecos, 351 instantes; 28 huecos más largos quedan sin rellenar).
+- **Posesión solo con balón**: se reparte el tiempo con balón visto o interpolado (133 s de 300), nunca el resto, y
+  tras 2 s sin balón nadie lo tiene hasta el siguiente toque. Sale con su **confianza**; la app no vuelca la de
+  confianza baja. La confirmación del poseedor se mide en segundos, no en muestras.
+
+| Qué | Balón afinado, campo a 640 (06-11) | Trayectoria (10-11) |
+|---|---|---|
+| Fotogramas con balón visto | 19,3 % | **27,3 %** |
+| Con los huecos rellenados | — | **50,7 %** |
+| Toques | 27 | 64 |
+| Tiempo repartido | 291 s (todo el tramo, por «último que tocó») | 133 s (solo con balón) |
+| Posesión | 20 / 80 | 48 / 52, confianza **media** |
+| Tiempo (GPU compartida con un etiquetado) | 4,4 min | 8,6 min |
+
+**Estabilidad**, lo que de verdad importaba: el mismo tramo con otra muestra de fotogramas (`--semilla 3`, los
+fotogramas desplazados 0,06 s) y al doble de cadencia (`--fps 10`), emparejando los equipos por el color de la
+camiseta (`tt-analisis comparar`):
+
+| Pasada | Balón visto | Visto o interpolado | Toques | Posesión | Diferencia con la primera |
+|---|---|---|---|---|---|
+| 5 fotogramas/s | 27,3 % | 50,7 % | 64 | 48 / 52 | — |
+| 5 fotogramas/s, `--semilla 3` | 26,7 % | 51,5 % | 64 | 52 / 48 | 4,2 puntos |
+| 10 fotogramas/s | 26,2 % | 57,3 % | 80 | 52 / 48 | 4,4 puntos |
+
+Antes, tres pasadas del 05 y el 06-11 sobre el mismo tramo daban 33/67, 75/25 y 20/80. Ahora las tres quedan a menos
+de cinco puntos. La posesión **por minuto** sigue bailando (18-24 puntos de diferencia media entre pasadas): cada
+minuto tiene 25-35 s repartidos y un cambio de poseedor en el borde mueve mucho; vale para ver tramos de dominio, no
+como cifra. Los eventos candidatos también cambian de una pasada a otra (4, 9 y 12), como corresponde a candidatos.
+Un partido entero reparte unas veinte veces más tiempo que este tramo, así que la posesión total será más estable que
+en cinco minutos.
+
+Lo que sigue igual de verdad: el detector ve el balón en uno de cada cuatro fotogramas (la cámara está lejos; en los
+fotogramas sin balón ni a confianza 0,05 aparece nada) y la mitad del tramo se queda sin balón ni interpolado. La
+confianza «media» dice justo eso.
+
 ## Siguientes pasos
 
 - Medidas reales del campo del Vallobín (o de cada campo) para etiquetar los 32 puntos por reproyección y afinar de
   verdad el detector del campo; a medio plazo, calibrar por las líneas (segmentación) y no por puntos.
-- Revisar y corregir a mano una parte de las pseudoetiquetas (CVAT o Label Studio) y volver a entrenar; con la clave
-  de la API, `--juez claude` sobre los candidatos a balón.
+- Revisar y corregir a mano una parte de las pseudoetiquetas (`exportar-revision` → CVAT → `importar-revision`) y
+  volver a entrenar; con la clave de la API, `--juez claude` sobre los candidatos a balón.
 - En la sección «Del vídeo» de la app: los eventos uno a uno con su clip (hoy se lanza con `--sin-clips`), el minimapa
   y la posesión por tramos; y separar mejor los dos equipos de noche (en las pruebas quedaron 6 y 21 jugadores seguidos).
 - Unir tracklets de la misma persona (re-identificación) y leer dorsales con un modelo específico.

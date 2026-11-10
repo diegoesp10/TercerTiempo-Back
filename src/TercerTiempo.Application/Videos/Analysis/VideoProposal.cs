@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace TercerTiempo.Application.Videos.Analysis;
@@ -27,6 +27,8 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
                     t.Id,
                     Color(t.Color),
                     s.PossessionPct is { } possession ? Math.Clamp(possession, 0, 100) : null,
+                    Confidence(s.PossessionConfidence),
+                    s.PossessionBallPct is { } ballPct ? Math.Clamp(Math.Round(ballPct, 1), 0, 100) : null,
                     shots,
                     Math.Min(Count(s.ShotsOnTargetFor), shots),
                     Count(s.CornersFor),
@@ -78,6 +80,15 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
     private static string? Color(string? value) =>
         value is { Length: 7 } && value[0] == '#' && value.Skip(1).All(Uri.IsHexDigit) ? value.ToLowerInvariant() : null;
 
+    // «alta», «media» o «baja» del analizador; sin el dato (análisis anteriores al 10-11-2026) no se sabe.
+    private static VideoPossessionConfidence? Confidence(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "alta" or "high" => VideoPossessionConfidence.High,
+        "media" or "medium" => VideoPossessionConfidence.Medium,
+        "baja" or "low" => VideoPossessionConfidence.Low,
+        _ => null,
+    };
+
     private sealed class FileDto
     {
         public List<TeamDto>? Equipos { get; set; }
@@ -94,6 +105,8 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
     private sealed class TeamStatsDto
     {
         public int? PossessionPct { get; set; }
+        public string? PossessionConfidence { get; set; }
+        public decimal? PossessionBallPct { get; set; }
         public int? CornersFor { get; set; }
         public int? ShotsFor { get; set; }
         public int? ShotsOnTargetFor { get; set; }
@@ -131,17 +144,32 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
     }
 }
 
+// Cuánto se puede fiar uno de la posesión: el analizador solo la mide sobre el tiempo con balón visto o interpolado y
+// la da por baja cuando ese tiempo es poco. Con baja se enseña, pero no se vuelca al acta.
+public enum VideoPossessionConfidence
+{
+    Low = 1,
+    Medium = 2,
+    High = 3,
+}
+
 // Los datos de un equipo, «a favor»: lo que es en contra para un equipo es lo que tiene a favor el otro.
 public sealed record VideoProposalTeam(
     int Index,
     string? Color,
     int? PossessionPct,
+    VideoPossessionConfidence? PossessionConfidence,
+    decimal? PossessionBallPct,
     int Shots,
     int ShotsOnTarget,
     int Corners,
     int ThrowIns,
     int GoalKicks,
-    int Goals);
+    int Goals)
+{
+    // La posesión que se puede llevar al acta: la hay y no es de confianza baja.
+    public int? UsablePossessionPct => PossessionConfidence == VideoPossessionConfidence.Low ? null : PossessionPct;
+}
 
 public sealed record VideoProposalPlayer(
     int Tracklet,

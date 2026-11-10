@@ -79,6 +79,10 @@ public sealed record VideoAnalysisTeamDto(
     string? Color,
     int Players,
     int? PossessionPct,
+    [property: Description("Confianza de la posesión (Low, Medium, High): el analizador la mide solo sobre el tiempo con balón. Con Low se enseña pero no se vuelca al acta; null en análisis anteriores.")]
+    VideoPossessionConfidence? PossessionConfidence,
+    [property: Description("% del tramo con balón visto o interpolado, sobre el que se midió la posesión.")]
+    decimal? PossessionBallPct,
     int Shots,
     int ShotsOnTarget,
     int Corners,
@@ -140,7 +144,7 @@ internal static class VideoAnalysisMapper
 
         var teams = proposal?.Teams
             .Select(t => new VideoAnalysisTeamDto(
-                t.Index, t.Color, proposal.Players.Count(p => p.Team == t.Index), t.PossessionPct, t.Shots, t.ShotsOnTarget,
+                t.Index, t.Color, proposal.Players.Count(p => p.Team == t.Index), t.PossessionPct, t.PossessionConfidence, t.PossessionBallPct, t.Shots, t.ShotsOnTarget,
                 t.Corners, t.ThrowIns, t.GoalKicks, t.Goals))
             .ToList() ?? [];
 

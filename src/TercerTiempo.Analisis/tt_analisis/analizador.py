@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 from . import __version__
 from .avance import Avance
+from .balon import cobertura, quitar_aislados, rellenar_huecos
 from .campo import Calibrador, configurar_campo
 from .config import CLASE_ARBITRO, MARGEN_CAMPO_CM, Configuracion
 from .geometria import Campo
@@ -41,6 +42,16 @@ def ruta_ffmpeg() -> str:
     return "ffmpeg"
 
 
+def fijar_semilla(semilla: int) -> None:
+    import random
+
+    import torch
+
+    random.seed(semilla)
+    np.random.seed(semilla)
+    torch.manual_seed(semilla)
+
+
 def analizar(config: Configuracion, informar=print) -> dict:
     inicio_total = time.time()
     tiempos: dict[str, float] = {}
@@ -63,6 +74,12 @@ def analizar(config: Configuracion, informar=print) -> dict:
     paso = max(1, round(info.fps / config.fps_muestreo))
     fps_real = info.fps / paso
     dt = 1 / fps_real
+    if config.semilla is not None:
+        fijar_semilla(config.semilla)
+        # Con otra semilla se muestrean otros fotogramas del vídeo (desplazados dentro del paso): sirve para medir
+        # cuánto cambia el resultado con una muestra distinta del mismo tramo.
+        desfase_s = (config.semilla % paso) / info.fps
+        config.segmento = type(config.segmento)(config.segmento.inicio + desfase_s, config.segmento.fin)
 
     # 1. Equipos: una pasada rápida por el tramo para aprender las dos equipaciones (y, con cámara fija, los puntos del
     # campo de esos mismos fotogramas para una sola homografía).
@@ -93,7 +110,6 @@ def analizar(config: Configuracion, informar=print) -> dict:
     campo = Campo()
     detector = Detector(modelos, config)
     seguidor = Seguidor()
-    maquina = MaquinaPosesion()
     fuera_de_campo = 0
     instantes: list[Instante] = []
     renderizador = None
@@ -154,31 +170,39 @@ def analizar(config: Configuracion, informar=print) -> dict:
 
         balon_imagen = None
         balon_campo = None
+        balon_confianza = None
         if len(det.balon):
             centro = det.balon.get_anchors_coordinates(sv.Position.CENTER)[0]
             balon_imagen = (float(centro[0]), float(centro[1]))
+            balon_confianza = float(det.balon.confidence[0]) if det.balon.confidence is not None else None
             if calibracion.valida:
                 balon_campo = calibrador.punto_a_campo(balon_imagen)
                 if balon_campo is not None and not campo.dentro(balon_campo, margen=MARGEN_CAMPO_CM):
                     # Un «balón» en la grada o en el banquillo no es el balón.
-                    balon_imagen, balon_campo = None, None
+                    balon_imagen, balon_campo, balon_confianza = None, None, None
 
-        inst = Instante(fotograma.indice, fotograma.t, personas, balon_imagen, balon_campo, calibracion.valida)
-        maquina.actualizar(inst)
+        inst = Instante(fotograma.indice, fotograma.t, personas, balon_imagen, balon_campo, calibracion.valida, balon_confianza=balon_confianza)
         instantes.append(inst)
         if renderizador:
             renderizador.dibujar(imagen, inst)
     if renderizador:
         renderizador.cerrar()
-    if instantes:
-        maquina.cerrar(instantes[-1].t)
     tiempos["pasada_s"] = time.time() - t0
     if not instantes:
         raise RuntimeError("No se ha leído ningún fotograma del tramo indicado.")
 
-    # 3. Lo que sale de las posiciones.
+    # 3. Lo que sale de las posiciones. Primero la trayectoria del balón (se quitan los avistamientos sueltos y se
+    # rellenan los huecos cortos) y, con ella, quién tiene el balón en cada instante.
     progreso.fase("salidas", 0, 3)
     t0 = time.time()
+    aislados = quitar_aislados(instantes)
+    relleno = rellenar_huecos(instantes)
+    relleno.aislados_descartados = aislados
+    balon_cobertura = cobertura(instantes)
+    maquina = MaquinaPosesion()
+    for inst in instantes:
+        maquina.actualizar(inst)
+    maquina.cerrar(instantes[-1].t)
     toques = maquina.toques
     resumenes = resumir_tracklets(instantes, dt)
     if seguidor.cortes:
@@ -192,7 +216,10 @@ def analizar(config: Configuracion, informar=print) -> dict:
     direcciones = direcciones_de_ataque(instantes, mitad_de, resumenes)
     direccion_de = lambda equipo, mitad: direcciones.get((equipo, mitad))  # noqa: E731
     resultado = detectar_eventos(instantes, toques, mitad_de, direccion_de, porteros_de)
-    posesion = resumir_posesion(toques, instantes, resultado.juego_activo, mitad_de, direccion_de, dt)
+    # El descanso no cuenta ni como tramo sin balón: se saca de la cobertura y de la posesión.
+    paron_descanso = next((e for e in resultado.eventos if e.tipo == "paron" and descanso is not None and e.t_fin == descanso), None)
+    en_descanso = [paron_descanso is not None and paron_descanso.t <= inst.t <= (paron_descanso.t_fin or inst.t) for inst in instantes]
+    posesion = resumir_posesion(toques, instantes, resultado.juego_activo, mitad_de, direccion_de, dt, excluidos=en_descanso)
     secs = secuencias(toques, resultado.cortes)
     acciones = acciones_por_jugador(secs)
     tiempos["estadisticas_s"] = time.time() - t0
@@ -226,7 +253,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
 
     progreso.fase("salidas", 2, 3)
     colores = [color_hex(c) for c in clasificador.colores]
-    con_balon = sum(1 for i in instantes if i.balon_imagen is not None)
+    con_balon = balon_cobertura["vistos"]
     calibrados = sum(1 for i in instantes if i.calibrado)
     analisis = {
         "version": __version__,
@@ -238,9 +265,13 @@ def analizar(config: Configuracion, informar=print) -> dict:
         "descanso_s": descanso,
         "calibracion": calibrador.resumen(),
         "recuento": {
-            "fotogramas": len(instantes), "con_balon": con_balon, "pct_con_balon": round(100 * con_balon / len(instantes), 1), "pct_calibrados": round(100 * calibrados / len(instantes), 1),
+            # `con_balon` y `pct_con_balon` son el balón **visto** por el detector (lo que guarda la app); con los huecos
+            # rellenados por la trayectoria, `con_balon_interpolado` y `pct_con_balon_total`.
+            "fotogramas": len(instantes), "con_balon": con_balon, "pct_con_balon": round(100 * con_balon / len(instantes), 1),
+            "con_balon_interpolado": balon_cobertura["interpolados"], "pct_con_balon_total": balon_cobertura["pct_con_balon"], "balon_relleno": relleno.a_dict(),
+            "pct_calibrados": round(100 * calibrados / len(instantes), 1),
             "muestras_equipos": muestras, "reparto_equipos": list(reparto), "tracklets": len(resumenes), "tracklets_partidos": seguidor.cortes, "toques": len(toques), "secuencias": len(secs), "busquedas_finas_balon": detector.busquedas_finas,
-            "balones_descartados": detector.descartados, "personas_fuera_del_campo": fuera_de_campo, "clips": clips,
+            "balones_descartados": detector.descartados, "balones_flojos_descartados": detector.flojos_descartados, "personas_fuera_del_campo": fuera_de_campo, "clips": clips,
         },
         "posesion": posesion.a_dict(),
         "eventos": [e.a_dict() for e in resultado.eventos],
@@ -254,6 +285,10 @@ def analizar(config: Configuracion, informar=print) -> dict:
     escribir_json(analisis, config.salida / "analisis.json")
     escribir_json(acta, config.salida / "acta-propuesta.json")
     (config.salida / "resumen.md").write_text(resumen_markdown(analisis, acta, resumen_llm), encoding="utf-8")
+    informar(
+        f"Balón visto en el {analisis['recuento']['pct_con_balon']} % de los fotogramas y, con los huecos rellenados, en el {balon_cobertura['pct_con_balon']} %; "
+        f"posesión {posesion.porcentaje(0)} / {posesion.porcentaje(1)} sobre {posesion.segundos_atribuidos:.0f} s con balón (confianza {posesion.confianza})."
+    )
     informar(f"Listo en {tiempos['total_s'] / 60:.1f} min: {config.salida / 'resumen.md'}")
     progreso.fin()
     return analisis
