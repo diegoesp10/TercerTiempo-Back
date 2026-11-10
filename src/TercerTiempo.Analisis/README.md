@@ -301,7 +301,8 @@ Dos cosas más que salieron de la evaluación:
   fotogramas con un error mediano de 351 px (basura); a 640, el 78 % con 13 px. El analizador lo usaba a 1280: desde
   este día la calibración va a 640 (`--imgsz-campo`), que es la mejora grande y gratis de esta tanda.
 
-Los pesos afinados descartados (campo y jugadores) quedan en `entrenamientos/descartados/` por si se quieren comparar.
+Los pesos afinados descartados (campo y jugadores, y el balón de la tanda 2 del 10-11) quedan en
+`entrenamientos/descartados/` por si se quieren comparar.
 
 El mismo tramo de 5 min (20:00-25:00) analizado de nuevo, 5 fotogramas/s, cámara móvil:
 
@@ -365,6 +366,29 @@ en cinco minutos.
 Lo que sigue igual de verdad: el detector ve el balón en uno de cada cuatro fotogramas (la cámara está lejos; en los
 fotogramas sin balón ni a confianza 0,05 aparece nada) y la mitad del tramo se queda sin balón ni interpolado. La
 confianza «media» dice justo eso.
+
+### Segunda tanda de etiquetado: más muestras no dieron mejor balón (10-11-2026)
+
+Para subir el detector se etiquetó el partido entero otra vez con **una muestra por segundo** (`--cada 1`) y los seis
+vecinos: 5.781 muestras en 1 h 20 min, 1.422 balones confirmados (25 %) y 637 negativos difíciles, 2,1 veces la
+ronda 1 (`datasets/vallobin-c1`: balón 1.676 de entrenamiento y 383 de validación; personas 2.992 y 696; campo 2.424 y
+615). Reentrenado desde los pesos públicos como la ronda 1 (20 épocas, lote 4 a 1280 px, 27 min), evaluado sobre las
+dos validaciones (la de la ronda 1 no la ha visto ningún entrenamiento; la nueva tampoco, pero sus etiquetas salen del
+mismo maestro público, así que un «falso» puede ser un balón que la regla no confirmó):
+
+| Detector | Ronda 1, 134 balones: entero 0,25 / teselas 0,2 | Tanda 2, 285 balones: entero 0,25 / teselas 0,2 | Tramo 20:00-25:00: balón visto / con relleno |
+|---|---|---|---|
+| Público | 97 (72 %), 45 falsos / 111 (83 %), 65 | 213 (75 %), 99 / — | 34 % (06-11) |
+| **Ronda 1** (684 balones, 06-11) | **103 (77 %), 19 / 114 (85 %), 63** | 228 (80 %), 45 / 247 (87 %), 135 | **27,3 % / 50,7 %** |
+| Tanda 2 (1.422 balones) | 98 (73 %), 11 / 109 (81 %), 48 | 223 (78 %), 29 / 240 (84 %), 96 | 21,3 % / 40,3 % |
+
+El de la tanda 2 es más preciso (un tercio menos de falsos) pero más callado: encuentra un 3-4 % menos de balones en
+las validaciones y, en el tramo, ve el balón en el 21 % de los fotogramas frente al 27 %, con menos tiempo repartido
+(105 s frente a 133) y la posesión en 57/43. Como los falsos ya los filtran el prior de los jugadores y la trayectoria,
+lo que cuenta para la posesión es ver más balón: **se queda la ronda 1** (`modelos/afinados/balon.pt`) y la tanda 2 va a
+`entrenamientos/descartados/balon-ronda2-c1.pt`. Es la misma lección que la segunda ronda del 06-11: más
+pseudoetiquetas del mismo partido y el mismo maestro no enseñan balones nuevos, solo hacen al detector más prudente.
+El siguiente salto del balón pasa por etiquetas corregidas a mano (`exportar-revision` → CVAT) o por otros partidos.
 
 ## Siguientes pasos
 
