@@ -49,6 +49,26 @@ public class EnvironmentSettingsTests
         Assert.All(JobsThatReadTheWeb, job => Assert.True(scheduler.Get(job).Enabled && scheduler.Get(job).Interval is not null, job));
     }
 
+    // El analizador de vídeo necesita GPU: solo va en los entornos del equipo de desarrollo, y la API y el servicio de
+    // vídeo tienen que estar de acuerdo (la API deja pedirlo, el servicio lo hace). El analizador vive junto al servicio.
+    [Theory]
+    [InlineData("Development", true)]
+    [InlineData("FakeDatos", true)]
+    [InlineData("Pilot", false)]
+    [InlineData("Production", false)]
+    public void The_video_analysis_only_runs_where_there_is_a_gpu(string environment, bool enabled)
+    {
+        var service = Load(environment, VideoService);
+
+        Assert.Equal(enabled, Load(environment).GetValue<bool>("Analysis:Enabled"));
+        Assert.Equal(enabled, service.GetValue<bool>("Analysis:Enabled"));
+        if (!enabled) return;
+
+        var analyzer = Path.GetFullPath(Path.Combine(ProjectFolder(VideoService), service["Analysis:Directory"]!));
+        Assert.True(File.Exists(Path.Combine(analyzer, "pyproject.toml")), analyzer);
+        Assert.EndsWith("uv.exe", service["Analysis:UvPath"]);
+    }
+
     [Fact]
     public void Fake_data_uses_its_own_database_and_the_shared_real_data()
     {

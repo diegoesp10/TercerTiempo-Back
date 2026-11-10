@@ -17,6 +17,7 @@ internal sealed class ClubsRepository(
     ICommandHandler<RemoveClubTeamCommand, ClubDto> removeTeam,
     ICommandHandler<OpenClubSquadCommand, ClubSquadDto> openSquad,
     ICommandHandler<UploadTeamCrestCommand, TeamCrestImportDto> uploadCrest,
+    ICommandHandler<SetTeamPitchCommand, TeamProfileDto> setPitch,
     ICommandHandler<AddClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>> addRosterEntry,
     ICommandHandler<UpdateClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>> updateRosterEntry,
     ICommandHandler<RemoveClubRosterEntryCommand, IReadOnlyList<RosterEntryDto>> removeRosterEntry,
@@ -43,6 +44,9 @@ internal sealed class ClubsRepository(
 
     public Task<TeamCrestImportDto> UploadTeamCrestAsync(Guid teamId, CrestUpload file, CancellationToken cancellationToken = default) =>
         uploadCrest.Handle(new UploadTeamCrestCommand(teamId, file), cancellationToken);
+
+    public Task<TeamProfileDto> SetTeamPitchAsync(Guid teamId, TeamPitchRequest request, CancellationToken cancellationToken = default) =>
+        setPitch.Handle(new SetTeamPitchCommand(teamId, request.LengthM, request.WidthM), cancellationToken);
 
     public Task<IReadOnlyList<RosterEntryDto>> AddRosterEntryAsync(Guid teamId, RosterEntryRequest request, CancellationToken cancellationToken = default) =>
         addRosterEntry.Handle(new AddClubRosterEntryCommand(teamId, request.FullName, request.Position, request.ShirtNumber), cancellationToken);

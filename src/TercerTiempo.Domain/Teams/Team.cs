@@ -21,11 +21,14 @@ public sealed class Team : AggregateRoot
 
     private Team() { }
 
+    // La ficha de la federación sustituye a la anterior, salvo las medidas del campo, que son del club.
     public void UpdateProfile(TeamProfile profile, DateTimeOffset now)
     {
-        Profile = profile;
+        Profile = profile.WithPitch(Profile.PitchLengthM, Profile.PitchWidthM);
         ProfileSyncedAt = now;
     }
+
+    public void SetPitch(decimal? lengthM, decimal? widthM) => Profile = Profile.WithPitch(lengthM, widthM);
 
     public void MarkProfileChecked(DateTimeOffset now) => ProfileSyncedAt = now;
 

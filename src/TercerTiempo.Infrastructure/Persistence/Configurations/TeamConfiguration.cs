@@ -37,6 +37,8 @@ internal sealed class TeamConfiguration : IEntityTypeConfiguration<Team>
             profile.Property(p => p.ShirtColor).HasColumnName("Profile_ShirtColor").HasMaxLength(60);
             profile.Property(p => p.ShortsColor).HasColumnName("Profile_ShortsColor").HasMaxLength(60);
             profile.Property(p => p.SocksColor).HasColumnName("Profile_SocksColor").HasMaxLength(60);
+            profile.Property(p => p.PitchLengthM).HasColumnName("Profile_PitchLengthM").HasPrecision(5, 1);
+            profile.Property(p => p.PitchWidthM).HasColumnName("Profile_PitchWidthM").HasPrecision(5, 1);
         });
         builder.Navigation(t => t.Profile).IsRequired();
     }

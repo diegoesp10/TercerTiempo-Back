@@ -1,4 +1,5 @@
 # Servicio de vídeo (TercerTiempo.Videos): subida, reproducción y compresión de los vídeos, con ffmpeg en la imagen.
+# El analizador de vídeo (TercerTiempo.Analisis, Python + GPU) no va aquí: en Docker Analysis:Enabled es false.
 # Contexto de build: la raíz de este repositorio.
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src

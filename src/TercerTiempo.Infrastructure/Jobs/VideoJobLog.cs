@@ -8,16 +8,16 @@ using TercerTiempo.Infrastructure.Persistence;
 
 namespace TercerTiempo.Infrastructure.Jobs;
 
-// Cada compresión queda en JobRuns, en la base del entorno, como una ejecución más del trabajo video-transcode: así
-// /jobs la enseña con las demás aunque la haga el servicio de vídeo y no la API.
+// Cada compresión y cada análisis quedan en JobRuns, en la base del entorno, como una ejecución más de los trabajos
+// video-transcode y video-analysis: así /jobs las enseña con las demás aunque las haga el servicio de vídeo y no la API.
 internal sealed class VideoJobLog(IServiceScopeFactory scopes, IHostEnvironment environment, TimeProvider clock, ILogger<VideoJobLog> logger) : IVideoJobLog
 {
-    public async Task<Guid?> StartedAsync(string label, CancellationToken cancellationToken)
+    public async Task<Guid?> StartedAsync(string job, string label, CancellationToken cancellationToken)
     {
         var run = new JobRun
         {
             Id = Guid.CreateVersion7(),
-            Job = JobNames.VideoTranscode,
+            Job = job,
             Manual = false,
             Status = JobRunStatus.Running,
             StartedAt = clock.GetUtcNow(),
@@ -36,7 +36,7 @@ internal sealed class VideoJobLog(IServiceScopeFactory scopes, IHostEnvironment 
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "No se pudo apuntar en /jobs el inicio de la compresión de {Label}", label);
+            logger.LogWarning(ex, "No se pudo apuntar en /jobs el inicio de {Job} de {Label}", job, label);
             return null;
         }
     }
@@ -60,7 +60,7 @@ internal sealed class VideoJobLog(IServiceScopeFactory scopes, IHostEnvironment 
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "No se pudo apuntar en /jobs el final de la compresión {Run}", runId);
+            logger.LogWarning(ex, "No se pudo apuntar en /jobs el final de la ejecución {Run}", runId);
         }
     }
 }

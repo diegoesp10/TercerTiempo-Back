@@ -28,7 +28,9 @@ public sealed record TeamMatchStatsData(
     int PenaltyGoalsFor = 0,
     int PenaltyGoalsAgainst = 0,
     int ThrowInsFor = 0,
-    int ThrowInsAgainst = 0)
+    int ThrowInsAgainst = 0,
+    int GoalKicksFor = 0,
+    int GoalKicksAgainst = 0)
 {
     public const int MaxNotesLength = 2000;
 
@@ -53,6 +55,8 @@ public sealed record TeamMatchStatsData(
         Guard.NotNegative(PenaltyGoalsAgainst, "goles de penalti en contra");
         Guard.NotNegative(ThrowInsFor, "saques de banda a favor");
         Guard.NotNegative(ThrowInsAgainst, "saques de banda en contra");
+        Guard.NotNegative(GoalKicksFor, "saques de puerta a favor");
+        Guard.NotNegative(GoalKicksAgainst, "saques de puerta en contra");
 
         if (ShotsOnTargetFor > ShotsFor || ShotsOnTargetAgainst > ShotsAgainst)
             throw new DomainException(ErrorCode.SheetShotsOnTarget);
@@ -92,6 +96,8 @@ public sealed class TeamMatchStats : AggregateRoot
     public int PenaltyGoalsAgainst { get; private set; }
     public int ThrowInsFor { get; private set; }
     public int ThrowInsAgainst { get; private set; }
+    public int GoalKicksFor { get; private set; }
+    public int GoalKicksAgainst { get; private set; }
     public string? Notes { get; private set; }
 
     public Guid? RecordedByCoachId { get; private set; }
@@ -134,6 +140,8 @@ public sealed class TeamMatchStats : AggregateRoot
         PenaltyGoalsAgainst = data.PenaltyGoalsAgainst;
         ThrowInsFor = data.ThrowInsFor;
         ThrowInsAgainst = data.ThrowInsAgainst;
+        GoalKicksFor = data.GoalKicksFor;
+        GoalKicksAgainst = data.GoalKicksAgainst;
         Notes = string.IsNullOrWhiteSpace(data.Notes) ? null : data.Notes.Trim();
         RecordedByCoachId = editor.CoachId;
         RecordedByClubId = editor.ClubId;

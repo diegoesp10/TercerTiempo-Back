@@ -32,6 +32,14 @@ public static class Guard
         return value;
     }
 
+    public static decimal InRange(decimal value, decimal min, decimal max, string name)
+    {
+        if (value < min || value > max)
+            throw new DomainException(ErrorCode.CommonOutOfRange, name, min, max);
+
+        return value;
+    }
+
     public static int NotNegative(int value, string name)
     {
         if (value < 0)

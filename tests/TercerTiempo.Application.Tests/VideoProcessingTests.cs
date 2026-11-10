@@ -242,6 +242,32 @@ public class VideoProcessorTests
     }
 
     [Fact]
+    public async Task A_video_that_ends_ready_enters_the_analysis_queue_and_a_failed_one_does_not()
+    {
+        var world = new World(analysis: true);
+        var video = world.Upload();
+        world.Transcoder.Probe = new VideoProbe(5760, 1920, 1080, 8_000_000, "h264", "aac", "mov,mp4");
+        world.Transcoder.Result = new TranscodeResult("new.mp4", 2_000_000_000, 5760.4, 1080);
+
+        await world.Processor.ClaimNextAsync(default);
+        await world.Processor.ProcessAsync(video, default);
+
+        var queued = Assert.Single(world.Analyses.Items);
+        Assert.Equal((video.Id, VideoAnalysisStatus.Pending), (queued.VideoId, queued.Status));
+        Assert.Equal(1, world.AnalysisSignal.Wakes);
+
+        var failing = new World(maxAttempts: 1, analysis: true);
+        var broken = failing.Upload();
+        failing.Transcoder.Probe = new VideoProbe(5400, 1920, 1080, 8_000_000, "h264", "aac", "mp4");
+        failing.Transcoder.Failure = new VideoTranscodeException("ffmpeg devolvió 1");
+
+        await failing.Processor.ClaimNextAsync(default);
+        await failing.Processor.ProcessAsync(broken, default);
+
+        Assert.Empty(failing.Analyses.Items);
+    }
+
+    [Fact]
     public async Task Interrupted_videos_are_requeued_when_the_service_starts()
     {
         var world = new World();
@@ -260,17 +286,22 @@ public class VideoProcessorTests
         public readonly FakeTranscoder Transcoder = new();
         public readonly FakeJobs Jobs = new();
         public readonly FakeUnitOfWork UnitOfWork = new();
+        public readonly FakeAnalysisStore Analyses = new();
+        public readonly FakeAnalysisSignal AnalysisSignal = new();
         public readonly VideoProcessor Processor;
         private readonly Match _match;
 
-        public World(int maxAttempts = 2)
+        // Con el análisis desactivado (como en Docker) la compresión no deja nada en la cola de análisis.
+        public World(int maxAttempts = 2, bool analysis = false)
         {
             var home = Team.Create("CD Vallobín", "VAL", null);
             var away = Team.Create("Real Titánico", "TIT", null);
             _match = Match.Schedule(Guid.NewGuid(), 1, home.Id, away.Id, Start.AddDays(-3), null, null);
             var matches = Stub<IMatchStore>((name, _) => name == nameof(IMatchStore.GetByIdAsync) ? Task.FromResult<Match?>(_match) : throw new NotSupportedException(name));
             var teams = Stub<ITeamStore>((name, _) => name == nameof(ITeamStore.GetByIdsAsync) ? Task.FromResult<IReadOnlyList<Team>>([home, away]) : throw new NotSupportedException(name));
-            Processor = new VideoProcessor(Videos, matches, teams, Storage, Transcoder, Jobs,
+            var analysisQueue = new Videos.Analysis.VideoAnalysisQueue(
+                Analyses, Microsoft.Extensions.Options.Options.Create(new VideoAnalysisOptions { Enabled = analysis }), AnalysisSignal, UnitOfWork, Clock);
+            Processor = new VideoProcessor(Videos, matches, teams, Storage, Transcoder, Jobs, analysisQueue,
                 Microsoft.Extensions.Options.Options.Create(new VideoProcessingOptions { MaxAttempts = maxAttempts }), UnitOfWork, Clock, NullLogger<VideoProcessor>.Instance);
         }
 
@@ -367,7 +398,7 @@ public class VideoProcessorTests
         public string? StartedLabel;
         public (bool Succeeded, string Summary, string? Error)? Finished;
 
-        public Task<Guid?> StartedAsync(string label, CancellationToken cancellationToken)
+        public Task<Guid?> StartedAsync(string job, string label, CancellationToken cancellationToken)
         {
             StartedLabel = label;
             return Task.FromResult<Guid?>(Guid.NewGuid());

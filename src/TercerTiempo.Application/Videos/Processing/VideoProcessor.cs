@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Jobs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Teams;
@@ -18,6 +19,7 @@ public sealed class VideoProcessor(
     IVideoStorage storage,
     IVideoTranscoder transcoder,
     IVideoJobLog jobs,
+    Analysis.VideoAnalysisQueue analysisQueue,
     IOptions<VideoProcessingOptions> options,
     IUnitOfWork unitOfWork,
     TimeProvider clock,
@@ -48,7 +50,7 @@ public sealed class VideoProcessor(
     public async Task ProcessAsync(MatchVideo video, CancellationToken cancellationToken)
     {
         var label = await LabelAsync(video, cancellationToken);
-        var runId = await jobs.StartedAsync(label, cancellationToken);
+        var runId = await jobs.StartedAsync(JobNames.VideoTranscode, label, cancellationToken);
         var started = clock.GetUtcNow();
         var originalKey = video.StorageKey;
         var originalSize = video.SizeBytes;
@@ -65,6 +67,7 @@ public sealed class VideoProcessor(
                 await unitOfWork.SaveChangesAsync(cancellationToken);
                 logger.LogInformation("Vídeo {Video} ({Label}): se deja tal cual, {Reason}", video.Id, label, keep.Reason);
                 await jobs.FinishedAsync(runId, true, $"{label}: se deja tal cual, {keep.Reason}.", null, CancellationToken.None);
+                await QueueAnalysisAsync(video);
                 return;
             }
 
@@ -94,6 +97,7 @@ public sealed class VideoProcessor(
             var summary = $"{label}: de {Gb(originalSize)} GB a {Gb(result.SizeBytes)} GB ({result.Height}p) en {minutes} min.";
             logger.LogInformation("Vídeo {Video}: {Summary}", video.Id, summary);
             await jobs.FinishedAsync(runId, true, summary, null, CancellationToken.None);
+            await QueueAnalysisAsync(video);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -122,6 +126,20 @@ public sealed class VideoProcessor(
             video.FailProcessing(ex.Message, clock.GetUtcNow());
             await TrySaveAsync();
             await jobs.FinishedAsync(runId, false, $"{label}: no se pudo comprimir; se sirve el original.", ex.Message, CancellationToken.None);
+        }
+    }
+
+    // El vídeo ya está listo: pasa a la cola de análisis. Si eso falla, la compresión no se da por mala.
+    private async Task QueueAnalysisAsync(MatchVideo video)
+    {
+        try
+        {
+            if (await analysisQueue.EnqueueAsync(video, CancellationToken.None))
+                logger.LogInformation("Vídeo {Video}: en cola para analizarse", video.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Vídeo {Video}: no se pudo poner en la cola de análisis", video.Id);
         }
     }
 

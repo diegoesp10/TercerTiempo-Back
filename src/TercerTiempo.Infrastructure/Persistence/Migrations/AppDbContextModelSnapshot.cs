@@ -1969,6 +1969,114 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "video_analysis.not_found",
+                            Language = "es",
+                            Message = "Este vídeo todavía no se ha analizado."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.no_video",
+                            Language = "es",
+                            Message = "Este partido no tiene ningún vídeo de tu plantilla que analizar."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.video_not_ready",
+                            Language = "es",
+                            Message = "El vídeo todavía se está comprimiendo: el análisis empieza solo cuando termine."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.already_queued",
+                            Language = "es",
+                            Message = "Este vídeo ya está en cola o analizándose."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.not_pending",
+                            Language = "es",
+                            Message = "Este análisis no está en cola."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.not_running",
+                            Language = "es",
+                            Message = "Este análisis no está en marcha."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.not_ready",
+                            Language = "es",
+                            Message = "El análisis del vídeo todavía no ha terminado."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.empty_proposal",
+                            Language = "es",
+                            Message = "El analizador no ha dejado ninguna propuesta."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.disabled",
+                            Language = "es",
+                            Message = "El análisis de vídeo no está activado en este servidor."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.team_invalid",
+                            Language = "es",
+                            Message = "Indica cuál de los dos equipos que ha visto el analizador es el tuyo."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.tracklet_unknown",
+                            Language = "es",
+                            Message = "El jugador seguido {0} no está en el análisis de este vídeo."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.tracklet_other_team",
+                            Language = "es",
+                            Message = "El jugador seguido {0} es del otro equipo: no se puede asignar a una ficha de tu plantilla."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.tracklet_repeated",
+                            Language = "es",
+                            Message = "El jugador seguido {0} está asignado más de una vez."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.nothing_selected",
+                            Language = "es",
+                            Message = "Marca algún dato de equipo o asigna algún jugador seguido antes de volcar al acta."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.overwrite",
+                            Language = "es",
+                            Message = "El acta ya tiene datos distintos en: {0}. Confirma que quieres sobrescribirlos."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.crop_not_found",
+                            Language = "es",
+                            Message = "No hay recorte del jugador seguido {0}."
+                        },
+                        new
+                        {
+                            Code = "team.pitch_own_teams_only",
+                            Language = "es",
+                            Message = "Solo puedes cambiar las medidas del campo de los equipos de tu club."
+                        },
+                        new
+                        {
+                            Code = "team.pitch_incomplete",
+                            Language = "es",
+                            Message = "Indica el largo y el ancho del campo, o deja los dos vacíos."
+                        },
+                        new
+                        {
                             Code = "pass.not_found",
                             Language = "es",
                             Message = "Ese código de pase no existe: revisa que esté bien escrito."
@@ -5490,6 +5598,16 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("FoulsReceived")
                         .HasColumnType("int");
 
+                    b.Property<int>("GoalKicksAgainst")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("GoalKicksFor")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<Guid>("MatchId")
                         .HasColumnType("uniqueidentifier");
 
@@ -6831,6 +6949,122 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("UploadedByCoachId");
 
                     b.ToTable("MatchVideos", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Videos.MatchVideoAnalysis", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("AnalyzedSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AnalyzerVersion")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset?>("AppliedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AssignmentsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("BallFramesPct")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("decimal(5,1)");
+
+                    b.Property<decimal?>("CalibratedFramesPct")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("decimal(5,1)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("Frames")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("OurTeam")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OutputPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal?>("PitchLengthM")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("decimal(5,1)");
+
+                    b.Property<decimal?>("PitchWidthM")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("decimal(5,1)");
+
+                    b.Property<int>("Progress")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProposalJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("VideoId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Weights")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("VideoId")
+                        .IsUnique();
+
+                    b.ToTable("MatchVideoAnalyses", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoAnalysisCrop", b =>
+                {
+                    b.Property<Guid>("AnalysisId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Tracklet")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.HasKey("AnalysisId", "Tracklet");
+
+                    b.ToTable("MatchVideoAnalysisCrops", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoUploadSession", b =>
@@ -8258,6 +8492,16 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                                 .HasColumnType("nvarchar(160)")
                                 .HasColumnName("Profile_OfficialName");
 
+                            b1.Property<decimal?>("PitchLengthM")
+                                .HasPrecision(5, 1)
+                                .HasColumnType("decimal(5,1)")
+                                .HasColumnName("Profile_PitchLengthM");
+
+                            b1.Property<decimal?>("PitchWidthM")
+                                .HasPrecision(5, 1)
+                                .HasColumnType("decimal(5,1)")
+                                .HasColumnName("Profile_PitchWidthM");
+
                             b1.Property<string>("PostalCode")
                                 .HasMaxLength(12)
                                 .HasColumnType("nvarchar(12)")
@@ -8474,6 +8718,24 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("UploadedByCoachId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Videos.MatchVideoAnalysis", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Videos.MatchVideo", null)
+                        .WithMany()
+                        .HasForeignKey("VideoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoAnalysisCrop", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Videos.MatchVideoAnalysis", null)
+                        .WithMany()
+                        .HasForeignKey("AnalysisId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoUploadSession", b =>

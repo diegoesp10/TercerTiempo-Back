@@ -44,14 +44,20 @@ public sealed record TeamProfileDto(
     string? GroundLocality,
     string? ShirtColor,
     string? ShortsColor,
-    string? SocksColor)
+    string? SocksColor,
+    [property: System.ComponentModel.Description("Largo del terreno de juego en metros; lo apunta el club del equipo (null si no lo ha hecho).")]
+    decimal? PitchLengthM = null,
+    [property: System.ComponentModel.Description("Ancho del terreno de juego en metros.")]
+    decimal? PitchWidthM = null)
 {
+    public static readonly TeamProfileDto Empty = new(null, null, null, null, null, null, null, null, null, null, null, null, null);
+
     public static TeamProfileDto? From(TeamProfile profile) => profile.IsEmpty
         ? null
         : new TeamProfileDto(
             profile.OfficialName, profile.Locality, profile.Province, profile.Address, profile.PostalCode, profile.Website,
             profile.Ground, profile.GroundSurface, profile.GroundAddress, profile.GroundLocality,
-            profile.ShirtColor, profile.ShortsColor, profile.SocksColor);
+            profile.ShirtColor, profile.ShortsColor, profile.SocksColor, profile.PitchLengthM, profile.PitchWidthM);
 }
 
 public sealed record RosterEntryDto(

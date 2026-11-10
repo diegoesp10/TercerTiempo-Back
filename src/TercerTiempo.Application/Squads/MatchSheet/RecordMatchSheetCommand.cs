@@ -54,6 +54,11 @@ public sealed record MatchSheetEntryInput(
         Started, MinutesPlayed, Goals, Assists, Shots, ShotsOnTarget, KeyPasses,
         Tackles, Interceptions, Saves, YellowCards, RedCard, Notes, Fouls,
         BallLosses, Recoveries, PassesCompleted, PassesAttempted);
+
+    public static MatchSheetEntryInput From(PlayerMatchPerformance p) => new(
+        p.SquadPlayerId, true, p.Started, p.MinutesPlayed, p.Goals, p.Assists, p.Shots, p.ShotsOnTarget, p.KeyPasses,
+        p.Tackles, p.Interceptions, p.Saves, p.YellowCards, p.RedCard, p.Notes, p.ShirtNumber, p.Fouls,
+        p.BallLosses, p.Recoveries, p.PassesCompleted, p.PassesAttempted);
 }
 
 public sealed record RecordMatchSheetCommand(Guid SquadId, Guid MatchId, IReadOnlyList<MatchSheetEntryInput> Entries) : ICommand<MatchSheetDto>;
@@ -105,6 +110,7 @@ internal sealed class RecordMatchSheetHandler(
     IPlayerStore players,
     IPerformanceStore performances,
     ITeamMatchStatsStore teamStats,
+    MatchSheetWriter writer,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<RecordMatchSheetCommand, MatchSheetDto>
 {
@@ -116,40 +122,7 @@ internal sealed class RecordMatchSheetHandler(
         var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
 
-        PerformancePolicy.EnsureCanRecord(squad, editor, match, SquadAccess.Today(clock));
-
-        var existing = (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken))
-            .ToDictionary(p => p.SquadPlayerId);
-
-        var now = clock.GetUtcNow();
-
-        foreach (var input in command.Entries)
-        {
-            var player = squad.GetPlayer(input.SquadPlayerId);
-            existing.TryGetValue(player.Id, out var current);
-
-            if (!input.Played)
-            {
-                if (current is not null)
-                    performances.Remove(current);
-                continue;
-            }
-
-            var stats = input.ToStats();
-
-            if (current is null)
-            {
-                current = PlayerMatchPerformance.Record(squad, player, match, editor, stats, now);
-                performances.Add(current);
-            }
-            else
-            {
-                current.Update(stats, player, match, editor, now);
-            }
-
-            current.SetShirtNumber(input.ShirtNumber);
-        }
-
+        await writer.WriteLinesAsync(squad, match, editor, command.Entries, clock.GetUtcNow(), cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, cancellationToken);

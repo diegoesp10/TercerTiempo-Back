@@ -232,7 +232,8 @@ public class ClubAsStaffTests
         }
 
         public RecordMatchSheetHandler Record(ICurrentUser user) =>
-            new(user, Coaches, Clubs, SquadStore, Matches, Teams, Competitions, Players, PerformanceStore, TeamStats, Unit, TimeProvider.System);
+            new(user, Coaches, Clubs, SquadStore, Matches, Teams, Competitions, Players, PerformanceStore, TeamStats,
+                new MatchSheetWriter(PerformanceStore, TeamStats), Unit, TimeProvider.System);
 
         public BeginVideoUploadHandler BeginUpload() =>
             new(ClubUser, Coaches, Clubs, SquadStore, Matches,
