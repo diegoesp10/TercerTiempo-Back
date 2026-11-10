@@ -3,10 +3,6 @@ using FluentValidation.Results;
 
 namespace TercerTiempo.Application.Abstractions.Messaging;
 
-/// <summary>
-/// Decorador que ejecuta todos los validadores registrados para el comando antes de delegar en el handler real.
-/// Se registra automáticamente en <see cref="DependencyInjection.AddApplication"/>.
-/// </summary>
 internal sealed class ValidatingCommandHandler<TCommand, TResult>(
     ICommandHandler<TCommand, TResult> inner,
     IEnumerable<IValidator<TCommand>> validators) : ICommandHandler<TCommand, TResult>

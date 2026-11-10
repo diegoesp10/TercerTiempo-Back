@@ -1,0 +1,21 @@
+# Datos falsos: la API en FakeDatos, con lo de appsettings.FakeDatos.json (desarrollo con su propia base,
+# tercertiempo_DatosFake, y los datos reales compartidos). Es una copia del piloto en la que todos los clubes tienen licencia y
+# un entrenador, y hay plantillas, actas internas, lesiones, cuentas de jugador y notas a los árbitros inventadas, para
+# ver la app como si la usaran todos los clubes. Aquí solo va lo propio de Docker: Start-Docker.ps1 arma la cadena de
+# conexión (TT_DB_CONNECTION, con el login de scripts/local-sql-login.sql) y combina los ficheros:
+#   .\Start-Docker.ps1 -Environment FakeDatos
+services:
+  api:
+    container_name: tercer-tiempo-api-fakedatos
+    environment:
+      ASPNETCORE_ENVIRONMENT: FakeDatos
+      ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION: arranca con Start-Docker.ps1}"
+      ConnectionStrings__RealData: "${TT_REAL_DB_CONNECTION:?Falta TT_REAL_DB_CONNECTION: arranca con Start-Docker.ps1}"
+      Admin__Password: "${TT_ADMIN_PASSWORD:-}"
+
+  videos:
+    container_name: tercer-tiempo-videos-fakedatos
+    environment:
+      ASPNETCORE_ENVIRONMENT: FakeDatos
+      ConnectionStrings__Default: "${TT_DB_CONNECTION:?Falta TT_DB_CONNECTION: arranca con Start-Docker.ps1}"
+      ConnectionStrings__RealData: "${TT_REAL_DB_CONNECTION:?Falta TT_REAL_DB_CONNECTION: arranca con Start-Docker.ps1}"

@@ -1,5 +1,6 @@
+using TercerTiempo.Application.Auth.ChangePassword;
 using TercerTiempo.Application.Auth.Login;
-using TercerTiempo.Application.Auth.RegisterPlayer;
+using TercerTiempo.Application.Auth.Register;
 using TercerTiempo.Repository.Auth;
 
 namespace TercerTiempo.Api.Endpoints;
@@ -10,15 +11,57 @@ internal static class AuthEndpoints
     {
         var group = app.MapGroup("/api/auth").WithTags("Auth");
 
-        group.MapPost("/register", (RegisterPlayerCommand command, IAuthRepository auth, CancellationToken ct) => auth.RegisterAsync(command, ct))
-            .WithSummary("Alta de un jugador en la plataforma")
+        group.MapGet("/invite/{inviteCode}", (string inviteCode, IAuthRepository auth, CancellationToken ct) => auth.GetInviteAsync(inviteCode, ct))
+            .WithName("GetInvite")
+            .WithSummary("Consultar un código personal antes del alta")
+            .WithDescription("Sin sesión. Devuelve la ficha (nombre, dorsal, posición) y la plantilla que hay detrás de un código personal vigente, para que el jugador confirme que es la suya antes de crear la cuenta. Nunca devuelve otras fichas.")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapGet("/registration-options", (IAuthRepository auth, CancellationToken ct) => auth.GetRegistrationOptionsAsync(ct))
+            .WithName("GetRegistrationOptions")
+            .WithSummary("Condiciones del alta")
+            .WithDescription("Sin sesión. clubInviteRequired = true durante la beta cerrada: el alta de un club exige en accessCode una invitación generada por el administrador.");
+
+        group.MapGet("/club-invitation/{code}", (string code, IAuthRepository auth, CancellationToken ct) => auth.GetClubInvitationAsync(code, ct))
+            .WithName("GetClubInvitation")
+            .WithSummary("Consultar una invitación de club antes del alta")
+            .WithDescription("Sin sesión. Si la invitación a la beta vale, devuelve para qué club es (clubName): en el alta ese club va fijado y no se puede cambiar. 404 si no existe, ha caducado, se ha usado o se ha anulado.")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/register", (RegisterCommand command, IAuthRepository auth, CancellationToken ct) => auth.RegisterAsync(command, ct))
+            .WithName("Register")
+            .WithSummary("Alta en la plataforma")
+            .WithDescription("Crea el usuario y su perfil según accountType y devuelve el JWT ya iniciado. Player: solo necesita el accessCode personal que le ha entregado su club o entrenador; el nombre es el de la ficha y la cuenta queda vinculada a ella al crearse (posición y fecha de nacimiento opcionales). Coach: necesita el accessCode que le ha entregado su club; al crear la cuenta se canjea y entra en el cuerpo técnico de la plantilla del equipo. Club: el nombre del club tal y como figura en GET /api/clubs/catalog; solo puede haber una cuenta por club y al crearla quedan vinculados sus equipos.")
+            .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapPost("/login", (LoginCommand command, IAuthRepository auth, CancellationToken ct) => auth.LoginAsync(command, ct))
-            .WithSummary("Inicio de sesión: devuelve un JWT y el perfil del jugador")
+            .WithName("Login")
+            .WithSummary("Inicio de sesión")
+            .WithDescription("Devuelve un JWT (caduca según Jwt:ExpirationMinutes) y la cuenta: perfil de jugador con su plantilla, o perfil de técnico con sus plantillas.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapGet("/me", (IAuthRepository auth, CancellationToken ct) => auth.GetMyAccountAsync(ct))
+            .RequireAuthorization()
+            .WithName("GetMyAccount")
+            .WithSummary("Cuenta autenticada")
+            .WithDescription("Tipo de cuenta y perfil: el jugador con la plantilla a la que está vinculado; el técnico con las plantillas que gestiona y sus nombramientos; el club con sus equipos y nombramientos.");
+
+        group.MapGet("/password", (IAuthRepository auth, CancellationToken ct) => auth.GetPasswordStatusAsync(ct))
+            .RequireAuthorization()
+            .WithName("GetPasswordStatus")
+            .WithSummary("Estado de la contraseña")
+            .WithDescription("Cuándo se cambió la contraseña por última vez y si ya se puede volver a cambiar: como mucho un cambio cada 24 horas.");
+
+        group.MapPut("/password", (ChangePasswordCommand command, IAuthRepository auth, CancellationToken ct) => auth.ChangePasswordAsync(command, ct))
+            .RequireAuthorization()
+            .WithName("ChangePassword")
+            .WithSummary("Cambiar la contraseña")
+            .WithDescription("Cualquier cuenta (club, cuerpo técnico o jugador), con su contraseña actual. La nueva: al menos 10 caracteres con mayúscula, minúscula, número y símbolo, 5 caracteres distintos, sin el email, sin palabras o series fáciles de adivinar y distinta de la actual. Como mucho un cambio cada 24 horas (409 si no). Cinco intentos fallidos bloquean la cuenta 15 minutos. Cierra las demás sesiones y devuelve un token nuevo para esta.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         return app;
     }

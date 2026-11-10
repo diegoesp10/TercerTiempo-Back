@@ -1,0 +1,142 @@
+using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Licensing;
+using TercerTiempo.Domain.Squads;
+
+namespace TercerTiempo.Application.Licensing;
+
+// Configuración del entorno: qué pasarela se usa y cómo se conecta con Stripe (secretos y URLs de vuelta). Los precios,
+// la prueba y el tope de técnicos están en la base de datos (LicensingSettings) y se editan en la administración.
+public sealed class LicensingOptions
+{
+    public const string SectionName = "Licensing";
+
+    // «mock» (pago simulado, sin cobro real) o «stripe».
+    public string Provider { get; set; } = "mock";
+
+    public StripeOptions Stripe { get; set; } = new();
+}
+
+public sealed class StripeOptions
+{
+    public string SecretKey { get; set; } = string.Empty;
+
+    // Secreto de firma del endpoint de webhooks (whsec_...).
+    public string WebhookSecret { get; set; } = string.Empty;
+
+    public string ApiBaseUrl { get; set; } = "https://api.stripe.com/";
+
+    // Versión fija de la API (vacío = la de la cuenta).
+    public string ApiVersion { get; set; } = string.Empty;
+
+    // Vuelta al frontal tras pagar; Stripe sustituye {CHECKOUT_SESSION_ID}.
+    public string SuccessUrl { get; set; } = "http://localhost:5173/pago/{CHECKOUT_SESSION_ID}";
+
+    public string CancelUrl { get; set; } = "http://localhost:5173/licencias";
+
+    // Segundos de tolerancia del sello de tiempo de la firma del webhook.
+    public int WebhookToleranceSeconds { get; set; } = 300;
+}
+
+public sealed record CheckoutRequest(
+    Guid ClubId,
+    Guid LicenseId,
+    string ClubName,
+    BillingInterval Interval,
+    int StaffSeats,
+    int ClubPriceCents,
+    int StaffSeatPriceCents,
+    string Currency,
+    // Último día ya cubierto (prueba o periodo pagado): el primer cobro es al día siguiente. null = se cobra ya.
+    DateOnly? DeferUntil,
+    string? CustomerRef)
+{
+    public int PeriodPriceCents => ClubPriceCents + StaffSeats * StaffSeatPriceCents;
+}
+
+// Técnicos de una suscripción en marcha. ChargeNowCents > 0: se añaden y se cobra ya su parte proporcional hasta
+// PeriodEnd; 0: el cambio sale en la próxima factura.
+public sealed record StaffSeatsChange(Guid LicenseId, string SubscriptionRef, int StaffSeats, int ChargeNowCents, DateOnly PeriodEnd);
+
+public sealed record CheckoutSession(string SessionId, string Url);
+
+// Estado de una sesión de pago en la pasarela. PeriodEnd: último día pagado si ya se ha cobrado algo.
+public sealed record CheckoutResult(bool Completed, string? SubscriptionRef, string? CustomerRef, DateOnly? PeriodEnd);
+
+// Avisos de la pasarela (webhooks) que cambian una licencia.
+public abstract record LicenseWebhookEvent;
+
+public sealed record CheckoutCompletedEvent(string SessionId) : LicenseWebhookEvent;
+
+// Factura cobrada de una suscripción: alta (BillingReason «subscription_create»), técnicos añadidos a mitad de periodo
+// («subscription_update») o renovación.
+public sealed record InvoicePaidEvent(
+    string InvoiceId,
+    string SubscriptionRef,
+    Guid? LicenseId,
+    string BillingReason,
+    int AmountCents,
+    string Currency,
+    DateOnly PeriodEnd) : LicenseWebhookEvent;
+
+// Cobro rechazado de una factura de la suscripción; la pasarela lo reintentará hasta NextAttemptAt (null = ya no).
+public sealed record InvoicePaymentFailedEvent(
+    string InvoiceId,
+    string SubscriptionRef,
+    Guid? LicenseId,
+    int AmountCents,
+    string Currency,
+    int AttemptCount,
+    DateTimeOffset? NextAttemptAt,
+    string Reason,
+    string BillingReason = "subscription_cycle") : LicenseWebhookEvent;
+
+public sealed record SubscriptionEndedEvent(string SubscriptionRef) : LicenseWebhookEvent;
+
+// Aviso recibido y con la firma comprobada: se guarda en la cola de eventos y se aplica después.
+public sealed record ReceivedWebhook(string ExternalId, string Type);
+
+// Pasarela de pago de las licencias: suscripciones mensuales o anuales con dos conceptos, la licencia de club y las
+// licencias de técnico (por cantidad). La simulada confirma todo con un clic y cobra las renovaciones con un trabajo en
+// segundo plano; la de Stripe usa Checkout en modo suscripción y sus webhooks.
+public interface ILicensePaymentGateway
+{
+    string Provider { get; }
+
+    // true si la pasarela cobra sola las renovaciones y avisa por webhook; false si las cobra el trabajo de renovaciones.
+    bool RenewsByWebhook { get; }
+
+    Task<CheckoutSession> BeginCheckoutAsync(CheckoutRequest request, CancellationToken cancellationToken);
+
+    Task<CheckoutResult> GetCheckoutAsync(string sessionId, CancellationToken cancellationToken);
+
+    Task CancelRenewalAsync(string subscriptionRef, CancellationToken cancellationToken);
+
+    Task ResumeRenewalAsync(string subscriptionRef, CancellationToken cancellationToken);
+
+    // Cambia la facturación y los técnicos de la suscripción a partir de la próxima renovación (sin prorratear).
+    Task ChangeRenewalAsync(string subscriptionRef, BillingInterval interval, int staffSeats, CancellationToken cancellationToken);
+
+    // Cambia los técnicos de la suscripción; si se añaden con un periodo ya pagado, cobra ya su parte proporcional.
+    Task ChangeStaffSeatsAsync(StaffSeatsChange change, CancellationToken cancellationToken);
+
+    // Comprueba la firma del aviso y lee su id y su tipo. Lanza si la firma no es válida (la simulada nunca recibe
+    // avisos de fuera: sus eventos los genera ella misma en la cola).
+    ReceivedWebhook ReadWebhook(string payload, string? signature);
+}
+
+// Puerta de licencias: decide si una plantilla, un vídeo o el panel de un jugador están accesibles según la licencia
+// del club del equipo (y la del espectador cuando mira datos de otro equipo). No sustituye a los permisos de cada acción.
+public interface ILicenseGate
+{
+    Task<ClubLicense> EnsureForClubAsync(Club club, CancellationToken cancellationToken);
+    Task<LicenseStatus> StatusForTeamAsync(Guid teamId, CancellationToken cancellationToken);
+    Task<bool> IsViewerLicensedAsync(ICurrentUser user, CancellationToken cancellationToken);
+    Task<bool> CanAccessSquadAsync(Squad squad, ICurrentUser user, CancellationToken cancellationToken);
+    Task EnsureSquadAccessAsync(Guid squadId, ICurrentUser user, CancellationToken cancellationToken);
+    Task EnsureVideoAccessAsync(Guid videoId, ICurrentUser user, CancellationToken cancellationToken);
+    Task EnsurePlayerAccessAsync(ICurrentUser user, CancellationToken cancellationToken);
+
+    // Sin licencia vigente nadie del club (club, cuerpo técnico ni jugadores) puede trabajar con los datos de ese equipo.
+    Task EnsureTeamLicensedAsync(Guid teamId, CancellationToken cancellationToken);
+}

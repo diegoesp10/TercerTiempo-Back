@@ -1,0 +1,1 @@
+<script>var grupos=new Array("0","-- Seleccione --","22932421","1");top.Select_Init(top.document.BuscaNFG_CMP.grupo,grupos,null);if(grupos.length==4){top.document.BuscaNFG_CMP.grupo.value=grupos[2];parent.BuscarJornadas(grupos[2],1)};</script>

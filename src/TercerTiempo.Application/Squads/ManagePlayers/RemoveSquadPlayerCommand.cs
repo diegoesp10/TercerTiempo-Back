@@ -1,0 +1,38 @@
+using FluentValidation;
+using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Squads;
+
+namespace TercerTiempo.Application.Squads.ManagePlayers;
+
+public sealed record RemoveSquadPlayerCommand(Guid SquadId, Guid SquadPlayerId) : ICommand<SquadPlayerDto>;
+
+internal sealed class RemoveSquadPlayerValidator : AbstractValidator<RemoveSquadPlayerCommand>
+{
+    public RemoveSquadPlayerValidator()
+    {
+        RuleFor(x => x.SquadId).NotEmpty();
+        RuleFor(x => x.SquadPlayerId).NotEmpty();
+    }
+}
+
+internal sealed class RemoveSquadPlayerHandler(
+    ICurrentUser currentUser,
+    ISquadStore squads,
+    IClubStore clubs,
+    IUnitOfWork unitOfWork,
+    TimeProvider clock) : ICommandHandler<RemoveSquadPlayerCommand, SquadPlayerDto>
+{
+    public async Task<SquadPlayerDto> Handle(RemoveSquadPlayerCommand command, CancellationToken cancellationToken)
+    {
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
+
+        squad.RemovePlayer(command.SquadPlayerId, clock.GetUtcNow());
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return SquadMapper.ToPlayerDto(squad.GetPlayer(command.SquadPlayerId), null);
+    }
+}

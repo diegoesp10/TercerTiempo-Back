@@ -1,0 +1,319 @@
+using System.Net;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Jobs;
+using TercerTiempo.Application.Licensing;
+using TercerTiempo.Infrastructure.FootballData;
+using TercerTiempo.Infrastructure.Jobs;
+using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
+using TercerTiempo.Infrastructure.Persistence;
+using TercerTiempo.Infrastructure.RealData;
+
+namespace TercerTiempo.Application.Tests;
+
+public class JobSchedulerTests(JobSqlFixture fixture) : IClassFixture<JobSqlFixture>
+{
+    [LocalSqlFact]
+    public async Task Restarting_waits_for_the_interval_since_the_last_saved_run()
+    {
+        using var realData = RealDataAmbient.Enter();
+        await fixture.Reset();
+        var lastStart = DateTimeOffset.UtcNow.AddMinutes(-10);
+        await fixture.AddRun(JobNames.FootballData, lastStart, JobRunStatus.Succeeded);
+
+        var due = await fixture.Scheduler().FirstDueAsync(JobNames.FootballData, default);
+
+        Assert.Equal(lastStart.AddMinutes(60), due!.Value, TimeSpan.FromSeconds(1));
+    }
+
+    [LocalSqlFact]
+    public async Task Without_history_the_first_run_comes_shortly_after_starting()
+    {
+        using var realData = RealDataAmbient.Enter();
+        await fixture.Reset();
+
+        var due = await fixture.Scheduler().FirstDueAsync(JobNames.FootballData, default);
+
+        Assert.InRange(due!.Value, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(15));
+    }
+
+    [Fact]
+    public void A_weekly_slot_is_the_next_monday_at_seven_in_federation_time()
+    {
+        var slot = new WeeklySlot(DayOfWeek.Monday, new(7, 0), TercerTiempo.Infrastructure.FootballData.FutbolAsturiano.SiteClock.Resolve("Europe/Madrid"));
+
+        // Invierno (UTC+1) y verano (UTC+2); si ya ha pasado la hora del lunes, el de la semana siguiente.
+        Assert.Equal(new DateTimeOffset(2026, 10, 26, 6, 0, 0, TimeSpan.Zero), slot.Next(new DateTimeOffset(2026, 10, 25, 20, 0, 0, TimeSpan.Zero)));
+        Assert.Equal(new DateTimeOffset(2026, 11, 2, 6, 0, 0, TimeSpan.Zero), slot.Next(new DateTimeOffset(2026, 10, 26, 6, 0, 0, TimeSpan.Zero)));
+        Assert.Equal(new DateTimeOffset(2027, 4, 5, 5, 0, 0, TimeSpan.Zero), slot.Next(new DateTimeOffset(2027, 3, 31, 12, 0, 0, TimeSpan.Zero)));
+        Assert.Equal("Los lunes a las 7:00", slot.Describe());
+    }
+
+    [Fact]
+    public void With_the_league_sync_off_nothing_reads_futbolasturiano_on_its_own_but_it_can_be_launched_by_hand()
+    {
+        var off = SchedulerWithSync(0);
+
+        foreach (var job in new[] { JobNames.FootballData, JobNames.MatchOfficials, JobNames.LeagueZones })
+        {
+            Assert.Null(off.Get(job).Interval);
+            Assert.True(off.Get(job).Enabled);
+        }
+        Assert.Equal(TimeSpan.FromDays(1), SchedulerWithSync(60).Get(JobNames.LeagueZones).Interval);
+    }
+
+    [Fact]
+    public void With_the_sheet_scans_off_the_weekly_queue_only_runs_by_hand()
+    {
+        var weekly = SchedulerWithSync(60, sheetMinutes: 0).Get(JobNames.WeeklySheets);
+
+        Assert.Null(weekly.Interval);
+        Assert.Null(weekly.Weekly);
+        Assert.True(weekly.Enabled);
+        Assert.NotNull(SchedulerWithSync(60).Get(JobNames.WeeklySheets).Weekly);
+    }
+
+    private static JobScheduler SchedulerWithSync(int minutes, int sheetMinutes = 60) => TestJobs.Scheduler(
+        new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+        new FootballDataOptions { SyncIntervalMinutes = minutes },
+        new OfficialSheetOptions { BackgroundScanMinutes = sheetMinutes });
+
+    [Fact]
+    public void While_another_environment_downloads_the_real_data_its_jobs_cannot_be_launched_here()
+    {
+        var scheduler = TestJobs.SchedulerWhileAnotherIngests(new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>());
+
+        Assert.Equal(JobLaunchResult.Elsewhere, scheduler.Launch(JobNames.FootballData));
+        Assert.Equal(JobLaunchResult.Accepted, scheduler.Launch(JobNames.RealDataCopy));
+    }
+
+    [LocalSqlFact]
+    public async Task A_weekly_job_runs_on_its_day_and_catches_up_a_missed_one_on_start()
+    {
+        using var realData = RealDataAmbient.Enter();
+        await fixture.Reset();
+        var scheduler = fixture.Scheduler();
+        var slot = scheduler.Get(JobNames.WeeklySheets).Weekly!;
+
+        var due = await scheduler.FirstDueAsync(JobNames.WeeklySheets, default);
+        Assert.Equal(slot.Next(DateTimeOffset.UtcNow), due!.Value, TimeSpan.FromSeconds(5));
+
+        await fixture.AddRun(JobNames.WeeklySheets, DateTimeOffset.UtcNow.AddDays(-8), JobRunStatus.Succeeded);
+        due = await scheduler.FirstDueAsync(JobNames.WeeklySheets, default);
+        Assert.InRange(due!.Value, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(35));
+    }
+
+    [LocalSqlFact]
+    public async Task Runs_left_running_by_a_stopped_api_are_marked_interrupted()
+    {
+        using var realData = RealDataAmbient.Enter();
+        await fixture.Reset();
+        await fixture.AddRun(JobNames.OfficialSheets, DateTimeOffset.UtcNow.AddMinutes(-5), JobRunStatus.Running);
+
+        await fixture.Scheduler().FirstDueAsync(JobNames.OfficialSheets, default);
+
+        await using var db = fixture.Db();
+        Assert.Equal(JobRunStatus.Interrupted, (await db.Set<JobRun>().SingleAsync()).Status);
+    }
+
+    [LocalSqlFact]
+    public async Task External_calls_are_logged_and_counted_for_the_run_that_made_them()
+    {
+        using var realData = RealDataAmbient.Enter();
+        await fixture.Reset();
+        var scheduler = fixture.Scheduler();
+        var http = fixture.LoggedClient("futbolasturiano");
+
+        await http.GetAsync("https://example.invalid/fuera-de-ejecucion");
+        await scheduler.RunAsync(JobNames.FootballData, manual: true, async ct =>
+        {
+            await http.GetAsync("https://example.invalid/liga-1", ct);
+            await http.GetAsync("https://example.invalid/liga-2", ct);
+            return new JobOutcome("2 ligas", []);
+        }, default);
+
+        await using var db = fixture.Db();
+        var run = await db.Set<JobRun>().SingleAsync();
+        Assert.True(run.Manual);
+        Assert.Equal(JobRunStatus.Succeeded, run.Status);
+        Assert.Equal("2 ligas", run.Summary);
+        Assert.Equal(2, run.Requests);
+        var requests = await db.Set<ScrapeRequest>().OrderBy(r => r.Id).ToListAsync();
+        Assert.Equal(3, requests.Count);
+        Assert.Null(requests[0].JobRunId);
+        Assert.All(requests.Skip(1), r => Assert.Equal(run.Id, r.JobRunId));
+        Assert.All(requests, r => Assert.Equal(200, r.StatusCode));
+    }
+
+    [LocalSqlFact]
+    public async Task A_failed_run_is_saved_with_its_error()
+    {
+        using var realData = RealDataAmbient.Enter();
+        await fixture.Reset();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Scheduler().RunAsync(
+            JobNames.FootballData, manual: false, _ => throw new InvalidOperationException("sin red"), default));
+
+        await using var db = fixture.Db();
+        var run = await db.Set<JobRun>().SingleAsync();
+        Assert.Equal(JobRunStatus.Failed, run.Status);
+        Assert.Equal("sin red", run.Errors);
+        Assert.NotNull(run.FinishedAt);
+    }
+
+    [LocalSqlFact]
+    public async Task Launching_by_hand_wakes_the_job_before_its_time_but_not_twice_while_running()
+    {
+        await fixture.Reset();
+        var scheduler = fixture.Scheduler();
+        var waiting = scheduler.WaitAsync(JobNames.FootballData, DateTimeOffset.UtcNow.AddHours(1), default);
+
+        Assert.Equal(JobLaunchResult.Accepted, scheduler.Launch(JobNames.FootballData));
+        Assert.True(await waiting.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        var release = new TaskCompletionSource();
+        var running = scheduler.RunAsync(JobNames.FootballData, true, async _ => { await release.Task; return new JobOutcome("ok", []); }, default);
+        Assert.Equal(JobLaunchResult.AlreadyRunning, scheduler.Launch(JobNames.FootballData));
+        release.SetResult();
+        await running;
+
+        Assert.Equal(JobLaunchResult.NotFound, scheduler.Launch("no-existe"));
+    }
+
+    [LocalSqlFact]
+    public async Task What_was_asked_by_hand_reaches_the_job_once_and_the_run_keeps_its_scope()
+    {
+        using var realData = RealDataAmbient.Enter();
+        await fixture.Reset();
+        var scheduler = fixture.Scheduler();
+
+        Assert.Equal(JobLaunchResult.Accepted, scheduler.Launch(JobNames.FootballData, "jornada"));
+        Assert.True(await scheduler.WaitAsync(JobNames.FootballData, DateTimeOffset.UtcNow.AddHours(1), default));
+        Assert.Equal("jornada", scheduler.TakeParameters(JobNames.FootballData));
+        Assert.Null(scheduler.TakeParameters(JobNames.FootballData));
+
+        await scheduler.RunAsync(JobNames.FootballData, true, _ => Task.FromResult(new JobOutcome("ok", [])), default,
+            new JobScope("CurrentRound", "Jornada en curso (21 oct – 28 oct)"));
+
+        await using var db = fixture.Db();
+        var run = await db.Set<JobRun>().SingleAsync();
+        Assert.Equal(("CurrentRound", "Jornada en curso (21 oct – 28 oct)"), (run.ScopeKind, run.ScopeLabel));
+    }
+}
+
+public class RunJobHandlerTests
+{
+    [Theory]
+    [InlineData(JobLaunchResult.NotFound, typeof(NotFoundException))]
+    [InlineData(JobLaunchResult.AlreadyRunning, typeof(ConflictException))]
+    [InlineData(JobLaunchResult.Disabled, typeof(ConflictException))]
+    public async Task Launch_problems_become_coded_errors(JobLaunchResult result, Type expected)
+    {
+        var handler = new RunJobHandler(new FakeMonitor(result));
+
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => handler.Handle(new RunJobCommand(JobNames.FootballData), default));
+
+        Assert.IsType(expected, error);
+    }
+
+    [Fact]
+    public async Task Accepted_launch_returns_the_job_state()
+    {
+        var handler = new RunJobHandler(new FakeMonitor(JobLaunchResult.Accepted));
+
+        var job = await handler.Handle(new RunJobCommand(JobNames.FootballData), default);
+
+        Assert.Equal(JobNames.FootballData, job.Name);
+    }
+
+    private sealed class FakeMonitor(JobLaunchResult result) : IJobsMonitor
+    {
+        public JobLaunchResult Launch(string job, object? parameters = null) => result;
+
+        public Task<DateTimeOffset?> LastFullFootballSyncAsync(CancellationToken cancellationToken) => Task.FromResult<DateTimeOffset?>(null);
+        public Task<ScrapeSourceDto?> SourceAsync(string provider, CancellationToken cancellationToken) => Task.FromResult<ScrapeSourceDto?>(null);
+
+        public Task<JobsOverviewDto> GetOverviewAsync(string? provider, int requests, CancellationToken cancellationToken) =>
+            Task.FromResult(new JobsOverviewDto(
+                [new JobDto(JobNames.FootballData, "Datos", "", 60, true, true, null, null, null)], [], [], [], DateTimeOffset.UtcNow));
+
+        public Task<IReadOnlyList<JobLiveDto>> LiveAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<JobLiveDto>>([]);
+    }
+}
+
+// Como en la API: una base del entorno y otra de datos reales, y el AppDbContext va a una u otra según RealDataAmbient.
+public sealed class JobSqlFixture : IAsyncLifetime
+{
+    private ServiceProvider _services = null!;
+    private DbContextOptions<AppDbContext> _environment = null!;
+    private DbContextOptions<AppDbContext> _realData = null!;
+    private string _realDataConnection = null!;
+
+    public async Task InitializeAsync()
+    {
+        if (Environment.GetEnvironmentVariable("TT_RUN_LOCAL_SQL_TESTS") != "1") return;
+        var suffix = Guid.NewGuid().ToString("N");
+        var environment = $"Server=localhost;Database=TercerTiempo_JobsVerification_{suffix};Integrated Security=True;TrustServerCertificate=True;Connect Timeout=10";
+        _realDataConnection = $"Server=localhost;Database=TercerTiempo_JobsVerificationReal_{suffix};Integrated Security=True;TrustServerCertificate=True;Connect Timeout=10";
+        var realData = _realDataConnection;
+        _environment = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(environment).Options;
+        _realData = new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(realData).Options;
+        _services = new ServiceCollection()
+            .AddScoped<DatabaseTarget>()
+            .AddDbContext<AppDbContext>((sp, o) => o.UseSqlServer(sp.GetRequiredService<DatabaseTarget>().RealData ? realData : environment))
+            .BuildServiceProvider();
+
+        await using (var db = new AppDbContext(_environment)) await db.Database.MigrateAsync();
+        await using (var real = RealDb()) await real.Database.MigrateAsync();
+    }
+
+    public AppDbContext Db() => new(RealDataAmbient.Active ? _realData : _environment);
+
+    internal RealDataDbContext RealDb() => new(new DbContextOptionsBuilder<RealDataDbContext>().UseSqlServer(_realDataConnection).Options);
+
+    internal JobScheduler Scheduler() => TestJobs.Scheduler(
+        _services.GetRequiredService<IServiceScopeFactory>(),
+        new FootballDataOptions { SyncIntervalMinutes = 60 },
+        new OfficialSheetOptions { BackgroundScanMinutes = 60, BackgroundStartDelaySeconds = 5 });
+
+    internal HttpClient LoggedClient(string provider) => new(new ScrapeLogHandler(
+        provider, _services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, NullLogger<ScrapeLogHandler>.Instance)
+    {
+        InnerHandler = new OkHandler(),
+    });
+
+    internal async Task AddRun(string job, DateTimeOffset startedAt, string status)
+    {
+        await using var db = Db();
+        db.Add(new JobRun { Id = Guid.CreateVersion7(), Job = job, Status = status, StartedAt = startedAt });
+        await db.SaveChangesAsync();
+    }
+
+    public async Task Reset()
+    {
+        await using (var real = new AppDbContext(_realData))
+        {
+            await real.Set<ScrapeRequest>().ExecuteDeleteAsync();
+            await real.Set<JobRun>().ExecuteDeleteAsync();
+        }
+        await using var db = new AppDbContext(_environment);
+        await db.Set<JobRun>().ExecuteDeleteAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (_environment is null) return;
+        await using (var db = new AppDbContext(_environment)) await db.Database.EnsureDeletedAsync();
+        await using (var real = new AppDbContext(_realData)) await real.Database.EnsureDeletedAsync();
+        await _services.DisposeAsync();
+    }
+
+    private sealed class OkHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") });
+    }
+}

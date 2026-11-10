@@ -1,0 +1,15 @@
+# BoT-SORT de Ultralytics para cámara en movimiento (paneo y zoom): compensa el movimiento de la cámara con flujo
+# óptico (gmc_method) y reasocia por apariencia (with_reid) a quien reaparece tras una ocultación. 5 muestras/s:
+# un tracklet aguanta 10 s sin verse.
+tracker_type: botsort
+track_high_thresh: 0.35
+track_low_thresh: 0.1
+new_track_thresh: 0.5
+track_buffer: 50
+match_thresh: 0.8
+fuse_score: True
+gmc_method: sparseOptFlow
+proximity_thresh: 0.5
+appearance_thresh: 0.25
+with_reid: True
+model: auto

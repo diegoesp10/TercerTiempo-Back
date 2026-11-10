@@ -1,6 +1,5 @@
 namespace TercerTiempo.Domain.Common;
 
-/// <summary>Raíz de agregado: único punto de entrada para modificar su grafo y origen de eventos de dominio.</summary>
 public abstract class AggregateRoot : Entity
 {
     private readonly List<IDomainEvent> _domainEvents = [];

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Servicio de vídeo: segundo proceso web de la solución, con todo lo pesado del vídeo (subida por trozos,
+       reproducción y descarga por rangos, y la compresión con ffmpeg en segundo plano) fuera de la API. Comparte con
+       ella Domain, Application, Infrastructure y Repository (mismas reglas y permisos) y lo común de los procesos web
+       (TercerTiempo.Hosting). Rutas bajo /media; en Docker lleva ffmpeg en su imagen. -->
+
+  <PropertyGroup>
+    <!-- Los mismos user-secrets que la API: si Jwt:Key está ahí, los dos procesos firman y validan con la misma clave. -->
+    <UserSecretsId>tercer-tiempo-api</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TercerTiempo.Repository\TercerTiempo.Repository.csproj" />
+    <ProjectReference Include="..\TercerTiempo.Hosting\TercerTiempo.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>

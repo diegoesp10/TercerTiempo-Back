@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Lo que comparten los procesos web de la solución (la API y el servicio de vídeo): autenticación JWT, usuario
+       actual, errores como problem+json, límite de llamadas, puerta de licencias, salud y documentación OpenAPI. -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TercerTiempo.Application\TercerTiempo.Application.csproj" />
+    <ProjectReference Include="..\TercerTiempo.Infrastructure\TercerTiempo.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.*" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.18.2" />
+  </ItemGroup>
+
+</Project>

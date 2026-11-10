@@ -1,6 +1,9 @@
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+
+using TercerTiempo.Application.Teams;
 
 namespace TercerTiempo.Application.Players;
 
@@ -9,49 +12,60 @@ public sealed record PlayerDto(
     string DisplayName,
     Position Position,
     DateOnly? BirthDate,
-    bool LinkedToProvider,
-    SquadMembershipDto? Membership);
+    PlayerSquadDto? Squad,
+    [property: System.ComponentModel.Description("Foto subida por el propio jugador (recortada, fondo transparente).")]
+    string? PhotoUrl = null,
+    [property: System.ComponentModel.Description("true si su perfil completo se puede ver desde fuera de su club (con sesión).")]
+    bool PublicProfile = false);
 
-public sealed record SquadMembershipDto(
+public sealed record PlayerSquadDto(
+    Guid SquadId,
+    Guid SquadPlayerId,
     Guid TeamId,
     string TeamName,
     string TeamShortName,
     string? TeamCrestUrl,
+    Guid CompetitionId,
+    string CompetitionName,
+    CompetitionLevel CompetitionLevel,
     Guid SeasonId,
     string SeasonLabel,
     int? ShirtNumber,
-    MembershipStatus Status,
-    bool VerifiedInRoster,
-    DateTimeOffset JoinedAt);
+    SquadVisibility Visibility,
+    [property: System.ComponentModel.Description("Su ficha en la plantilla publicada del equipo (para enlazar su ficha pública); null si no la tiene.")]
+    Guid? RosterEntryId = null);
 
 internal static class PlayerMapper
 {
-    public static PlayerDto ToDto(Player player, SquadMembership? membership, Team? team, Season? season)
+    public static PlayerDto ToDto(Player player, Squad? squad, Team? team, Competition? competition, Season? season)
     {
-        SquadMembershipDto? membershipDto = null;
+        PlayerSquadDto? squadDto = null;
 
-        if (membership is not null && team is not null && season is not null)
+        if (squad is not null && team is not null && competition is not null && season is not null
+            && squad.PlayerEntryOf(player.Id) is { } entry)
         {
-            membershipDto = new SquadMembershipDto(
-                team.Id, team.Name, team.ShortName, team.CrestUrl,
+            squadDto = new PlayerSquadDto(
+                squad.Id, entry.Id,
+                team.Id, team.Name, team.ShortName, team.CrestLink(),
+                competition.Id, competition.Name, competition.Level,
                 season.Id, season.Label,
-                membership.ShirtNumber, membership.Status, membership.VerifiedInRoster, membership.JoinedAt);
+                entry.ShirtNumber, squad.Visibility, entry.RosterEntryId);
         }
 
-        return new PlayerDto(
-            player.Id, player.DisplayName, player.Position, player.BirthDate,
-            player.ExternalRef is not null, membershipDto);
+        return new PlayerDto(player.Id, player.DisplayName, player.Position, player.BirthDate, squadDto, Photos.PlayerPhotos.PhotoLink(player), player.PublicProfile);
     }
 
-    /// <summary>Resuelve la pertenencia del jugador en la temporada activa (si la hay) y construye el DTO.</summary>
     public static async Task<PlayerDto> ToDtoAsync(
-        Player player, ICompetitionStore competitions, ITeamStore teams, CancellationToken cancellationToken)
+        Player player, ISquadStore squads, ITeamStore teams, ICompetitionStore competitions, CancellationToken cancellationToken)
     {
-        var competition = await competitions.GetCurrentAsync(cancellationToken);
-        var season = competition?.CurrentSeason;
-        var membership = season is null ? null : player.MembershipFor(season.Id);
-        var team = membership is null ? null : await teams.GetByIdAsync(membership.TeamId, cancellationToken);
+        var squad = await squads.GetByPlayerAsync(player.Id, cancellationToken);
+        if (squad is null)
+            return ToDto(player, null, null, null, null);
 
-        return ToDto(player, membership, team, season);
+        var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
+        var competition = await competitions.GetBySeasonAsync(squad.SeasonId, cancellationToken);
+        var season = competition?.Seasons.FirstOrDefault(s => s.Id == squad.SeasonId);
+
+        return ToDto(player, squad, team, competition, season);
     }
 }

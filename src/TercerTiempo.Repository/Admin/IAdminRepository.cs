@@ -1,9 +1,36 @@
-using TercerTiempo.Application.Sync;
+using TercerTiempo.Application.Admin;
+using TercerTiempo.Application.Clubs.Invitations;
+using TercerTiempo.Application.Jobs;
+using TercerTiempo.Application.Teams.ImportCrest;
 
 namespace TercerTiempo.Repository.Admin;
 
-/// <summary>Operaciones de administración (sincronización con el proveedor de datos).</summary>
 public interface IAdminRepository
 {
-    Task<SyncResultDto> SyncSeasonAsync(CancellationToken cancellationToken = default);
+    Task<AdminAuthResponse> LoginAsync(AdminLoginCommand command, CancellationToken cancellationToken = default);
+    Task<AdminAuthResponse> VerifyMfaAsync(AdminVerifyMfaCommand command, CancellationToken cancellationToken = default);
+    Task<JobsOverviewDto> GetJobsAsync(string? provider, int? requests, CancellationToken cancellationToken = default);
+    Task<JobDto> RunJobAsync(string job, CancellationToken cancellationToken = default);
+    Task<LicensesOverviewDto> GetLicensesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> GetPaymentEventsAsync(Guid? licenseId, int? max, CancellationToken cancellationToken = default);
+    Task<bool> RetryPaymentEventAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<string> SimulateLicenseEventAsync(Guid licenseId, TercerTiempo.Application.Licensing.SimulatedLicenseEvent kind, CancellationToken cancellationToken = default);
+    Task<LicensingSettingsDto> GetLicensingSettingsAsync(CancellationToken cancellationToken = default);
+    Task<TercerTiempo.Application.Privacy.AnalyticsReportDto> GetAnalyticsAsync(TercerTiempo.Application.Privacy.GetAnalyticsReportQuery query, CancellationToken cancellationToken = default);
+    Task<TercerTiempo.Application.Privacy.CookiePolicyDto> UpsertCookieAsync(TercerTiempo.Application.Privacy.UpsertCookieCommand command, CancellationToken cancellationToken = default);
+    Task<TercerTiempo.Application.Privacy.CookiePolicyDto> DeleteCookieAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<TercerTiempo.Application.Privacy.CookiePolicyDto> PublishCookiePolicyAsync(TercerTiempo.Application.Privacy.PublishCookiePolicyCommand command, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> SetCurrentSeasonAsync(Guid seasonYearId, CancellationToken cancellationToken = default);
+    Task<FootballSyncSettingsDto> GetFootballSyncSettingsAsync(CancellationToken cancellationToken = default);
+    Task<FootballSyncSettingsDto> UpdateFootballSyncSettingsAsync(UpdateFootballSyncSettingsCommand command, CancellationToken cancellationToken = default);
+    Task<JobDto> RunFootballSyncAsync(RunFootballSyncCommand command, CancellationToken cancellationToken = default);
+    Task<LiveDownloadsDto> GetLiveDownloadsAsync(CancellationToken cancellationToken = default);
+    Task<TercerTiempo.Application.Presence.PresenceOverviewDto> GetPresenceAsync(string? query, CancellationToken cancellationToken = default);
+    Task<int> CancelSheetDownloadsAsync(bool onlyFinished, CancellationToken cancellationToken = default);
+    Task<LicensingSettingsDto> UpdateLicensingSettingsAsync(UpdateLicensingSettingsCommand command, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ClubInvitationDto>> GetClubInvitationsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InvitationClubDto>> SearchInvitationClubsAsync(string? query, CancellationToken cancellationToken = default);
+    Task<ClubInvitationDto> CreateClubInvitationAsync(CreateClubInvitationCommand command, CancellationToken cancellationToken = default);
+    Task<ClubInvitationDto> RevokeClubInvitationAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<TeamCrestImportDto> ImportTeamCrestAsync(Guid teamId, string url, CancellationToken cancellationToken = default);
 }

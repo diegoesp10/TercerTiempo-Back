@@ -1,0 +1,93 @@
+name: tercer-tiempo-back
+
+# API y servicio de vídeo de Tercer Tiempo. El contenedor del frontal (repositorio TercerTiempo-Front) los alcanza como
+# "api" y "videos" en la red compartida tercer-tiempo-net. Este fichero es la base común; el entorno lo añade su
+# compose.{entorno}.yaml, que también pone el nombre de los contenedores con el entorno (tercer-tiempo-api-development,
+# -fakedatos, -pilot o -production, y lo mismo con tercer-tiempo-videos-*). Start-Docker.ps1 crea la red y los
+# volúmenes y combina los ficheros.
+services:
+  api:
+    image: tercer-tiempo-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ReverseProxy__Enabled: "true"
+      Admin__UserName: "${TT_ADMIN_USER:-diego}"
+      # Pagos: tras pagar en Stripe se vuelve a la web pública.
+      Licensing__Stripe__SuccessUrl: "${TT_PUBLIC_URL:-http://127.0.0.1:8180}/pago/{CHECKOUT_SESSION_ID}"
+      Licensing__Stripe__CancelUrl: "${TT_PUBLIC_URL:-http://127.0.0.1:8180}/licencias"
+      # Si la API admite pedir análisis lo dice su appsettings.{Entorno}.json (Analysis:Enabled: Development y FakeDatos
+      # sí, Pilot y Production no). En Docker no hay quien los haga (ver el servicio videos): los atiende un analizador
+      # fuera de Docker, Start-Analyzer.ps1, que lee los vídeos del volumen desde Windows.
+    # Solo en el loopback del equipo: los visitantes entran por el frontal (Nginx), que reenvía /api.
+    ports:
+      - "127.0.0.1:${TT_API_PORT:-8181}:8080"
+    volumes:
+      - api-data:/app/data
+    networks:
+      tercertiempo:
+        aliases:
+          - api
+    # Tope de memoria (la API en reposo usa unos 200 MB; el recolector de .NET se ajusta a este límite).
+    mem_limit: ${TT_API_MEMORY:-512m}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Servicio de vídeo (TercerTiempo.Videos): subida, reproducción y descarga de los vídeos y su compresión con ffmpeg,
+  # fuera de la API. Comparte con ella la base de datos y el volumen de ficheros; arranca cuando la API ya ha aplicado
+  # las migraciones.
+  videos:
+    image: tercer-tiempo-videos:local
+    build:
+      context: .
+      dockerfile: Dockerfile.videos
+    environment:
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ReverseProxy__Enabled: "true"
+      # El analizador de vídeo (TercerTiempo.Analisis: Python + GPU) no va en esta imagen, que solo lleva .NET y ffmpeg,
+      # así que aquí los vídeos se comprimen pero no se analizan. Los analiza este mismo servicio corriendo fuera de
+      # Docker como analizador (Start-Analyzer.ps1: sin compresor, con GPU, contra la misma base y el volumen de
+      # vídeos a través de \\wsl.localhost), o un contenedor con GPU (src/TercerTiempo.Analisis/Dockerfile).
+      Analysis__Enabled: "false"
+    ports:
+      - "127.0.0.1:${TT_VIDEOS_PORT:-8182}:8080"
+    volumes:
+      - api-data:/app/data
+    networks:
+      tercertiempo:
+        aliases:
+          - videos
+    # ffmpeg con x264 a 1080p ocupa todos los núcleos que le dejen: se le dan dos (TT_VIDEOS_CPUS) y memoria para el
+    # codificador más el propio servicio.
+    cpus: ${TT_VIDEOS_CPUS:-2}
+    mem_limit: ${TT_VIDEOS_MEMORY:-2g}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  tercertiempo:
+    name: tercer-tiempo-net
+    external: true
+
+volumes:
+  # Escudos, fotos y vídeos. Cada entorno tiene el suyo (TT_DATA_VOLUME en su .env).
+  api-data:
+    name: "${TT_DATA_VOLUME:?Falta TT_DATA_VOLUME: arranca con Start-Docker.ps1 o pasa --env-file}"
+    external: true

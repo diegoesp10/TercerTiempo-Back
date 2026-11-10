@@ -1,13 +1,23 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
+using TercerTiempo.Application.Common;
+using TercerTiempo.Domain.Common.Errors;
+using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Referees;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Videos;
+using TercerTiempo.Domain.Licensing;
 using TercerTiempo.Infrastructure.Identity;
 
 namespace TercerTiempo.Infrastructure.Persistence;
@@ -16,7 +26,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options), IUnitOfWork
 {
     public DbSet<Player> Players => Set<Player>();
-    public DbSet<SquadMembership> SquadMemberships => Set<SquadMembership>();
+    public DbSet<Coach> Coaches => Set<Coach>();
+    public DbSet<Club> Clubs => Set<Club>();
+    public DbSet<ClubTeam> ClubTeams => Set<ClubTeam>();
+    public DbSet<ClubInvitation> ClubInvitations => Set<ClubInvitation>();
+    public DbSet<CoachAppointment> CoachAppointments => Set<CoachAppointment>();
+    public DbSet<Squad> Squads => Set<Squad>();
+    public DbSet<SquadStaff> SquadStaff => Set<SquadStaff>();
+    public DbSet<SquadPlayer> SquadPlayers => Set<SquadPlayer>();
+    public DbSet<PlayerInjury> PlayerInjuries => Set<PlayerInjury>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<RosterEntry> RosterEntries => Set<RosterEntry>();
     public DbSet<Competition> Competitions => Set<Competition>();
@@ -24,11 +42,43 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Match> Matches => Set<Match>();
     public DbSet<Standing> Standings => Set<Standing>();
     public DbSet<PlayerMatchPerformance> Performances => Set<PlayerMatchPerformance>();
+    public DbSet<PerformanceSuggestion> PerformanceSuggestions => Set<PerformanceSuggestion>();
+    public DbSet<TeamMatchStats> TeamMatchStats => Set<TeamMatchStats>();
+    public DbSet<OfficialMatchSheet> OfficialSheets => Set<OfficialMatchSheet>();
+    public DbSet<OfficialSheetLine> OfficialSheetLines => Set<OfficialSheetLine>();
+    public DbSet<OfficialSheetEvent> OfficialSheetEvents => Set<OfficialSheetEvent>();
+    public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
+    public DbSet<MatchVideoAnalysis> MatchVideoAnalyses => Set<MatchVideoAnalysis>();
+    public DbSet<VideoAnalysisCrop> VideoAnalysisCrops => Set<VideoAnalysisCrop>();
+    public DbSet<ClubLicense> ClubLicenses => Set<ClubLicense>();
+    public DbSet<LicensingSettings> LicensingSettings => Set<LicensingSettings>();
+    public DbSet<TercerTiempo.Domain.Privacy.CookieDefinition> CookieDefinitions => Set<TercerTiempo.Domain.Privacy.CookieDefinition>();
+    public DbSet<TercerTiempo.Domain.Privacy.CookiePolicy> CookiePolicies => Set<TercerTiempo.Domain.Privacy.CookiePolicy>();
+    public DbSet<TercerTiempo.Domain.Privacy.CookieConsent> CookieConsents => Set<TercerTiempo.Domain.Privacy.CookieConsent>();
+    public DbSet<TercerTiempo.Domain.Privacy.AnalyticsEvent> AnalyticsEvents => Set<TercerTiempo.Domain.Privacy.AnalyticsEvent>();
+    public DbSet<TercerTiempo.Domain.Competitions.SeasonYear> SeasonYears => Set<TercerTiempo.Domain.Competitions.SeasonYear>();
+    public DbSet<TercerTiempo.Domain.Competitions.FootballSyncSettings> FootballSyncSettings => Set<TercerTiempo.Domain.Competitions.FootballSyncSettings>();
+    public DbSet<LicensePayment> LicensePayments => Set<LicensePayment>();
+    public DbSet<VideoUploadSession> VideoUploads => Set<VideoUploadSession>();
+    public DbSet<Domain.Passes.MatchPass> MatchPasses => Set<Domain.Passes.MatchPass>();
+    public DbSet<Domain.Passes.MatchPassRequest> MatchPassRequests => Set<Domain.Passes.MatchPassRequest>();
+    public DbSet<Domain.Passes.MatchPassPrice> MatchPassPrices => Set<Domain.Passes.MatchPassPrice>();
+    public DbSet<Domain.Passes.PassSale> PassSales => Set<Domain.Passes.PassSale>();
+    public DbSet<ErrorMessage> ErrorMessages => Set<ErrorMessage>();
+    public DbSet<Domain.Trainings.Exercise> Exercises => Set<Domain.Trainings.Exercise>();
+    public DbSet<Domain.Trainings.TrainingSession> TrainingSessions => Set<Domain.Trainings.TrainingSession>();
+    public DbSet<Domain.Trainings.MatchCallUp> MatchCallUps => Set<Domain.Trainings.MatchCallUp>();
+    public DbSet<Domain.Trainings.TrialPlayer> TrialPlayers => Set<Domain.Trainings.TrialPlayer>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
         builder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
+        // El estado de las descargas solo vive en la base de datos reales: el modelo lo tiene (las descargas usan este
+        // mismo contexto contra esa base), pero las migraciones del entorno no crean sus tablas.
+        foreach (var type in RealData.RealDataModel.SharedOnly)
+            builder.Entity(type).Metadata.SetIsTableExcludedFromMigrations(true);
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -39,7 +89,42 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             .Where(a => a.DomainEvents.Count > 0)
             .ToList();
 
-        var result = await base.SaveChangesAsync(cancellationToken);
+        int result;
+        try
+        {
+            result = await base.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is SquadPlayer))
+        {
+            throw new ConflictException(ErrorCode.PlayerInviteChanged);
+        }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is Domain.Passes.MatchPass))
+        {
+            throw new ConflictException(ErrorCode.PassAlreadyRedeemed);
+        }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is MatchVideo or MatchVideoAnalysis && e.State == EntityState.Modified))
+        {
+            // El compresor o el analizador y una petición (borrar el vídeo, volver a analizarlo) tocaron la misma fila:
+            // quien llega tarde se entera y decide.
+            throw new ConcurrentChangeException();
+        }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.All(e => e.State == EntityState.Deleted))
+        {
+            // Borrar lo que otra petición acaba de borrar (dos cancelaciones de la misma subida de vídeo, por ejemplo)
+            // no es un error: se da por hecho y se guarda el resto.
+            foreach (var entry in ex.Entries) entry.State = EntityState.Detached;
+            result = await base.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 }
+            && ex.Entries.Any(e => e.Entity is SquadPlayer { PlayerId: not null }))
+        {
+            throw new ConflictException(ErrorCode.PlayerAlreadyInSquad);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 }
+            && ex.Entries.Any(e => e.Entity is RefereeRating))
+        {
+            throw new ConflictException(ErrorCode.RefereeAlreadyRated, "ese árbitro");
+        }
 
         foreach (var aggregate in aggregates)
             aggregate.ClearDomainEvents();

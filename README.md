@@ -1,38 +1,86 @@
 # Tercer Tiempo · Backend
 
-API de **Tercer Tiempo**, plataforma de seguimiento de rendimiento para futbolistas amateur. Un jugador se da de
-alta, se une a la plantilla de su equipo (verificada contra la plantilla que publica un proveedor externo: BeSoccer,
-FutbolAsturiano, ...) y, partido a partido, registra sus datos reales. Con eso la plataforma le dice **cuánto
-aporta**: a nivel individual, a su equipo (resultados con él y sin él, cuota de goles, minutos) y en comparación con
-el resto de la liga (equipo frente a la media y percentil frente a otros jugadores registrados).
+API de **Tercer Tiempo**, plataforma de seguimiento del rendimiento de cada jugador, partido a partido. Cada **club** da de alta a los
+técnicos de sus equipos temporada a temporada mediante **nombramientos** con un código de acceso. El **cuerpo técnico**
+nombrado gestiona la plantilla de su equipo (fichas importadas de futbolasturiano.es o añadidas a mano) y, tras cada
+partido, registra el **acta interna**: minutos, goles, asistencias, tiros, tarjetas... de cada jugador; la **nota** no
+la pone nadie: se calcula con esos datos. Esa acta se **compara con el acta oficial** que publica la federación
+(asturfutbol.es) y, si el equipo graba el partido, el club o el cuerpo técnico puede **subir el vídeo** (lo atiende el
+**servicio de vídeo**, un segundo proceso que lo sirve y lo comprime sin bajar de 1080p), que su plantilla ve gratis y
+quien tenga un pase del partido. Cada **jugador** se da de alta con el código personal de su ficha y ve
+cuánto aporta: a nivel individual, a su equipo y frente al resto de la liga. Los datos de cada plantilla son
+**privados** salvo que su cuerpo técnico la haga pública.
 
 El frontend vive en su propio repositorio: [TercerTiempo-Front](https://github.com/diegoesp10/TercerTiempo-Front).
 
 ## Arranque rápido
 
-Requisitos: .NET 10 SDK.
+Requisitos: .NET 10 SDK y una instancia de **SQL Server** (2019 o posterior; vale Express, Developer o LocalDB).
 
 ```bash
 dotnet run --project src/TercerTiempo.Api --launch-profile http
 ```
 
-La API escucha en `http://localhost:5080` y la documentación interactiva (Scalar) en
-`http://localhost:5080/scalar`. Al arrancar aplica las migraciones (SQLite, fichero `tercertiempo.db` junto al
-proyecto Api) y sincroniza la liga con el proveedor configurado. Por defecto usa el proveedor **fake**: una Regional
-Preferente ficticia de 12 equipos con calendario completo, resultados hasta la fecha actual, clasificación y
-plantillas (determinista: los datos no cambian entre arranques y la liga "avanza" sola cada jornada).
+La API escucha en `http://localhost:5080`; la referencia OpenAPI en `http://localhost:5080/docs` y el documento en
+`http://localhost:5080/openapi/v1.json`. Los vídeos (subida, reproducción, descarga y compresión) los atiende el
+**servicio de vídeo**, otro proceso de la misma solución que se arranca aparte (en Visual Studio, los dos proyectos a la
+vez) y escucha en `http://localhost:5081` con su propia referencia en `/docs`; para comprimir necesita `ffmpeg` en el
+PATH (`winget install Gyan.FFmpeg`; sin él los vídeos se quedan en cola, tal cual se subieron):
+
+```bash
+dotnet run --project src/TercerTiempo.Videos --launch-profile http
+```
+Al arrancar crea la base de datos si no existe, aplica las migraciones pendientes y sincroniza las ligas con el
+proveedor configurado: una base de datos vacía queda lista para usar con los datos reales en unos minutos. La cadena
+de conexión de desarrollo (`appsettings.Development.json`) apunta a la instancia local por defecto con autenticación de
+Windows: `Server=localhost;Database=TercerTiempo;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=True`.
+Para otra instancia (`localhost\SQLEXPRESS`, `(localdb)\MSSQLLocalDB`) o con usuario y contraseña, cámbiala ahí o en
+`ConnectionStrings__Default` (ver *Configuración y secretos*). Por defecto usa **futbolasturiano.es** (datos reales de las ligas asturianas,
+ver más abajo); sin red se puede cambiar a `FootballData:Provider = "fake"`, que genera tres ligas ficticias.
 
 En `src/TercerTiempo.Api/TercerTiempo.Api.http` hay peticiones de ejemplo para todo el flujo.
+
+## Documentación OpenAPI
+
+La documentación la genera el soporte nativo de .NET (`Microsoft.AspNetCore.OpenApi`) a partir de los propios
+endpoints y sus metadatos, sin Swashbuckle. Al arrancar, la raíz (`/`) redirige a la referencia.
+
+| Ruta | Qué es |
+|---|---|
+| `/openapi/v1.json` | El documento **OpenAPI 3.1**: la fuente de verdad. Sirve para importarlo en Postman/Bruno/Insomnia o generar clientes tipados (`kiota`, `nswag`, `openapi-generator`). |
+| `/docs` | Referencia interactiva renderizada con Scalar a partir del documento: endpoints agrupados por recurso en el orden del flujo de uso, cuerpo y parámetros de cada operación, respuestas posibles, ejemplos de cliente (C#/HttpClient por defecto, curl, fetch...) y autenticación Bearer para probar los endpoints protegidos. |
+
+Cada operación lleva `operationId`, resumen, descripción con las reglas de negocio que aplica y los códigos de
+error documentados; solo los endpoints protegidos muestran candado. Los campos de los cuerpos (`RegisterCommand`,
+`CreateAppointmentRequest`, `RedeemAppointmentCommand`, `SquadPlayerRequest`, `MatchSheetRequest`, `JoinSquadAsPlayerCommand`...)
+están descritos uno a uno con `[Description]`. El documento se enriquece con transformadores (`Api/Infrastructure`):
+título y descripción con el flujo de uso, esquema Bearer y candado/401 solo en operaciones con `RequireAuthorization()`.
+
+Disponibilidad por entorno (sección `OpenApi` de la configuración):
+
+- **Development y FakeDatos**: siempre publicada y sin autenticación (salvo que configures `OpenApi:BasicAuth`, que entonces también aplica).
+- **Otros entornos**: desactivada por defecto. Para exponerla en producción hay que habilitarla **y** protegerla con
+  Basic Auth; sin credenciales no se publica (y se registra un aviso). Tanto `/docs` como `/openapi` piden usuario y
+  contraseña:
+
+```bash
+OpenApi__Enabled=true OpenApi__BasicAuth__Username=docs OpenApi__BasicAuth__Password='una-contraseña-larga' dotnet run --project src/TercerTiempo.Api
+```
+
+`OpenApi:RoutePrefix` cambia la ruta de la referencia (por defecto `docs`).
 
 ## Capas
 
 | Proyecto | Responsabilidad | Depende de |
 |---|---|---|
-| `TercerTiempo.Domain` | Entidades, value objects, reglas de negocio, eventos de dominio y contratos de persistencia (`IPlayerStore`, `IMatchStore`...). Sin frameworks. | — |
-| `TercerTiempo.Application` | Casos de uso (commands/queries con handlers), DTOs, validación (FluentValidation), cálculo de estadísticas y abstracciones que implementa la infraestructura (`IIdentityService`, `ITokenService`, `ICurrentUser`, `IFootballDataProvider`). | Domain |
-| `TercerTiempo.Repository` | Fachada entre la API y la aplicación: una interfaz por recurso (`IAuthRepository`, `IPlayersRepository`, `ITeamsRepository`, `IMatchesRepository`, `IPerformancesRepository`, `IStatsRepository`, `IAdminRepository`) que despacha el command/query correspondiente. Cada endpoint la llama en una línea. | Application |
-| `TercerTiempo.Infrastructure` | EF Core + SQLite (stores), ASP.NET Identity, emisión de JWT, proveedores de datos de fútbol y el worker de sincronización. | Application |
-| `TercerTiempo.Api` | Minimal APIs agrupadas por recurso, autenticación JWT, CORS, OpenAPI + Scalar, `ProblemDetails` global. | Repository, Infrastructure |
+| `TercerTiempo.Domain` | Entidades, value objects, reglas de negocio, eventos de dominio y contratos de persistencia (`ISquadStore`, `IClubStore`, `ICoachAppointmentStore`, `IOfficialSheetStore`, `IMatchVideoStore`...). Sin frameworks. | — |
+| `TercerTiempo.Application` | Casos de uso (commands/queries con handlers), DTOs, validación (FluentValidation), cálculo de estadísticas, reglas de acceso a cada plantilla, comparador de actas, el orquestador de la compresión de vídeos (`VideoProcessor`) y abstracciones que implementa la infraestructura (`IIdentityService`, `ITokenService`, `ICurrentUser`, `IFootballDataProvider`, `IOfficialSheetProvider`, `IVideoStorage`, `IVideoTranscoder`, `IPaymentGateway`, `IVideoTickets`). | Domain |
+| `TercerTiempo.Repository` | Fachada entre la API y la aplicación: una interfaz por recurso (`IAuthRepository`, `IClubsRepository`, `ICoachesRepository`, `ISquadsRepository`, `IPlayersRepository`, `ICompetitionsRepository`, `ITeamsRepository`, `IMatchesRepository`, `IVideosRepository`, `IStatsRepository`, `IAdminRepository`) que despacha el command/query correspondiente. Cada endpoint la llama en una línea. | Application |
+| `TercerTiempo.Infrastructure` | EF Core + SQL Server (stores), ASP.NET Identity, emisión de JWT, proveedores de datos de fútbol y los workers de sincronización, lector de actas de asturfutbol.es, almacenamiento de vídeos en disco, ffmpeg (`FfmpegTranscoder`), tickets de reproducción y pasarela de pago simulada. `AddInfrastructure` registra todo (la API); `AddInfrastructureCore`, lo mismo sin los trabajos en segundo plano (el servicio de vídeo). | Application |
+| `TercerTiempo.Hosting` | Lo común de los dos procesos web: autenticación JWT y políticas, usuario de la petición (`ICurrentUser`), errores como `ProblemDetails`, límite de llamadas, puerta de licencias (`RequireLicense`), salud y documento OpenAPI nativo + referencia Scalar (cada proceso pone su título y su flujo). | Application, Infrastructure |
+| `TercerTiempo.Api` | Minimal APIs agrupadas por recurso y composición de dependencias; aplica las migraciones y lanza los trabajos en segundo plano. | Repository, Hosting |
+| `TercerTiempo.Videos` | **Servicio de vídeo**: Minimal APIs bajo `/media` (subida por trozos, tickets, reproducción y descarga por rangos, borrado) y el worker que comprime con ffmpeg. Mismas capas, misma base y mismos permisos que la API; otro proceso para que el vídeo no la cargue. | Repository, Hosting |
+| `TercerTiempo.Analisis` | **Analizador de vídeo** (Python, GPU; rama `lectorVideos`): detecta y sigue jugadores y balón, separa equipos, calibra el campo y saca posesión, mapas, eventos candidatos y un acta propuesta (`acta-propuesta.json`) a partir del vídeo del partido; opcionalmente un modelo de lenguaje (Claude u Ollama) confirma eventos y redacta. Programa aparte, sin enganche con la API todavía: ver su [README](src/TercerTiempo.Analisis/README.md) y [docs/lector-videos.md](docs/lector-videos.md). | — |
 
 Flujo de una petición:
 
@@ -44,83 +92,694 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 
 ## Dominio
 
-- **Player**: jugador registrado (vinculado al usuario de Identity). Agrega sus `SquadMembership`
-  (pertenencia a un equipo en una temporada). Si al unirse coincide con una ficha de la plantilla del
-  proveedor nace **Active** (verificado); si no, **Pending** hasta que se valide.
-- **Team**, **RosterEntry** (plantilla scrapeada), **Competition** → **Season**, **Standing**.
+- **Cuentas**: una cuenta es de **jugador** (`Player`, con posición y fecha de nacimiento), de **cuerpo técnico**
+  (`Coach`) o de **club** (`Club`). Identity guarda las credenciales; el JWT lleva el tipo de cuenta y el id del perfil
+  (`account_type`, `player_id` / `coach_id` / `club_id`).
+- **Escudos siempre propios**: `Team` no guarda ninguna URL de terceros; solo `CrestKey`, el archivo
+  "{id}-{versión}.{ext}" de `Crests:Directory` que la API sirve en `GET /api/teams/{id}/crest?v=` (la versión cambia
+  con cada escudo nuevo e invalida la caché). La sincronización de datos descarga el escudo que publica el proveedor al
+  crear el equipo; el club puede sustituir el de sus equipos; y para el resto está la importación por URL de
+  administración (nunca desde asturfutbol.es). Un equipo sin escudo muestra sus iniciales en el frontal.
+- **Ficha del equipo** (`Team.Profile`): nombre oficial, sede, web, equipación y campo. Se conservan las que se
+  descargaron de asturfutbol.es hasta el 22-10-2026; ya no se piden a la federación, de la que solo se leen actas.
+  `ITeamProfileProvider` solo da el enlace a la ficha del equipo en la federación. Las **medidas del terreno de
+  juego** (`PitchLengthM` × `PitchWidthM`, en metros) no vienen de ninguna web: las apunta el club del equipo
+  (`PUT /api/clubs/me/teams/{teamId}/pitch`) y las usa el analizador de vídeo en los partidos que se juegan en ese campo.
+- **Club**: solo puede haber una cuenta por club (`NormalizedName` único). Al darse de alta elige su nombre del
+  **catálogo de clubes** (`GET /api/clubs/catalog`, `ClubCatalog`: los equipos del proveedor agrupados por las palabras
+  significativas del nombre, primer equipo + filiales) y quedan vinculados todos sus equipos (`ClubTeam`; un equipo solo
+  puede pertenecer a un club). Puede vincular a mano otro equipo si su nombre se corresponde con el del club. Emite
+  **CoachAppointment** (nombramientos): para un equipo y una temporada, con rol, nombre del técnico, un **código de
+  acceso** de un solo uso y un periodo de validez que nunca pasa del final de la temporada. Un técnico solo puede darse
+  de alta con un código (`RegisterCommand.AccessCode`) o canjearlo desde su cuenta; al hacerlo entra en el cuerpo
+  técnico de la plantilla del equipo (que se crea si no existe) hasta la fecha de validez. El club puede acortar,
+  prorrogar (dentro de la temporada) o revocar el nombramiento; al revocarlo el técnico sale del staff.
+- **Squad** (plantilla): el agregado central y el **límite de privacidad**. Es la plantilla de un equipo en una
+  temporada (una por equipo y temporada) y agrega:
+  - `SquadStaff`: miembros del cuerpo técnico con su rol (`HeadCoach`, `AssistantCoach`, `Delegate`, `Physio`,
+    `Analyst`, `Other`), el nombramiento que los trajo y su `ValidUntil`: todas las comprobaciones de "es staff"
+    (`Squad.IsStaff(coachId, today)`, `SquadAccess`) descartan a quien ha causado baja **o ha caducado**.
+  - `SquadPlayer`: fichas de los jugadores, importadas de la plantilla publicada por el proveedor (`RosterEntryId`)
+    o añadidas a mano; sin nombres repetidos; una baja conserva sus actas. Cada ficha puede estar **vinculada** a una
+    cuenta de jugador (`PlayerId`); un jugador solo está vinculado a una plantilla a la vez.
+  - `Visibility`: nace **Private** (solo el cuerpo técnico y los jugadores vinculados ven actas y estadísticas);
+    el cuerpo técnico puede hacerla **Public**.
+  - Cada `SquadPlayer` tiene un `InviteCode` personal de 12 caracteres, inicialmente vacío. Lo genera el club propietario
+    o un técnico vigente para esa ficha. El jugador se da de alta solo con ese código (no escribe su nombre: la cuenta se
+    llama como la ficha), se consume al vincular y se invalida al regenerarlo, dar de baja o cambiar el nombre de la ficha.
+    No hay código compartido de plantilla.
+- **Competition** (liga = categoría + grupo, con `Level`, `Tier`, `Group` y `SortOrder`) → **Season**;
+  **Team**, **RosterEntry** (plantilla scrapeada), **Standing**.
 - **Match**: partido sincronizado del proveedor, con resultado y estado. Sabe calcular resultado y
-  puntos desde el punto de vista de cada equipo.
-- **PlayerMatchPerformance**: una ficha por jugador y partido. `PerformancePolicy` decide quién puede
-  registrarla (plantilla activa, partido disputado) y `PerformanceStats.EnsureValid()` las reglas de los
-  datos (minutos, coherencia tiros/tiros a puerta, dos amarillas ⇒ roja...).
+  puntos desde el punto de vista de cada equipo. `OfficialRef` guarda su acta en la federación una vez localizada
+  (también `Season.OfficialRef` y `Team.OfficialRef` con los códigos de asturfutbol.es).
+- **OfficialMatchSheet**: copia del **acta oficial** de un partido (asturfutbol.es): árbitro, marcador, una línea por
+  convocado de cada equipo (dorsal, titular, minuto de entrada y salida, minutos jugados, goles, goles de penalti y en
+  propia puerta, amarillas, roja) y los sucesos en orden (goles, tarjetas, cambios). `Pending` mientras la federación
+  no publique las alineaciones; `Available` después.
+- **MatchVideo** y **VideoPurchase**: vídeo de un partido subido por el cuerpo técnico de una plantilla (archivo en el
+  almacenamiento, precio) y los accesos comprados por técnicos de otras plantillas.
+- **PlayerMatchPerformance**: una línea del acta por ficha y partido, registrada por un miembro del cuerpo técnico
+  (`RecordedByCoachId`). `PerformancePolicy` decide quién puede registrarla (staff de la plantilla, partido de su
+  temporada en el que juega su equipo, ya disputado) y `PerformanceStats.EnsureValid()` las reglas de los datos
+  (minutos 0-120, coherencia tiros/tiros a puerta, dos amarillas ⇒ roja, sin minutos no hay acciones).
+- **PerformanceRating**: la **nota** de cada línea se calcula solo con datos y se guarda al registrar el acta (también
+  se recalcula si cambia la posición del jugador). Parte de 6,0 y suma o resta por bloques, con pesos según la posición
+  (un gol vale más a un defensa que a un delantero; la portería a cero, sobre todo a porteros y defensas):
+
+  | Bloque | Qué cuenta |
+  |---|---|
+  | Ataque | goles y tiros a puerta |
+  | Creación | asistencias y pases clave |
+  | Defensa | entradas, intercepciones; para defensas y medios, portería a cero (60' o más) y goles encajados |
+  | Portería | paradas; para porteros, portería a cero y goles encajados |
+  | Disciplina | −0,3 por amarilla; −1,5 si hay roja |
+  | Resultado | victoria +0,4, empate +0,1, derrota −0,3, proporcional a los minutos |
+
+  Escala 3,0-10,0 con un decimal; sin minutos no hay nota. Las notas manuales de versiones anteriores se vacían en la
+  migración `ResetManualRatings` y la API las recalcula al arrancar (`RecalculateMissingRatingsCommand`).
+- **Exercise**, **TrainingSession** y **MatchCallUp** (`Domain/Trainings`): la rutina semanal del cuerpo técnico.
+  La **biblioteca de ejercicios** es de la plantilla (nombre, tipo, minutos, descripción, material); cada sesión guarda
+  su **copia** de los ejercicios (`TrainingItem`, en orden), así que cambiar o borrar uno de la biblioteca no toca lo
+  ya preparado. Una **sesión** tiene tipo (semana, pretemporada, recuperación, preparación del partido, otro), hora,
+  duración (15-300 min), lugar y notas; al crearla con repetición semanal se genera una sesión por día hasta la fecha
+  tope (como mucho 60), unidas por `SeriesId`. Toda la plantilla activa entra como «cuenta con venir»
+  (`TrainingAttendance`): el jugador con cuenta avisa de que falta antes de que empiece y el cuerpo técnico pasa lista
+  (vino, faltó, con motivo). Los **jugadores a prueba** (`TrialPlayer`) son gente sin ficha que viene a entrenar: el
+  cuerpo técnico los apunta por su nombre, los mete en las sesiones a las que vienen (una línea de asistencia con
+  `TrialPlayerId` en vez de `SquadPlayerId`) y, si les **hace ficha** (`Promote`), pasan a la plantilla como
+  `SquadPlayer` y sus líneas de prueba se quedan a nombre de la ficha. La **convocatoria** de un partido
+  (`MatchCallUp`, una por plantilla y partido, solo mientras el partido no ha empezado) lleva una línea por jugador
+  (`CallUpEntry`: convocado o no y su firma); en borrador solo la ve quien la prepara y al **publicarla** se avisa a
+  toda la plantilla por la campanita: el convocado la firma, el que no va se da por enterado. No hay «no puedo» para
+  los partidos: la convocatoria la emite el cuerpo técnico y lo que cambie se habla con él. Si después cambia, solo
+  se avisa a quien entra o sale, y su firma anterior se borra. Los avisos (`Alert`) son ya de cualquier cuenta (club,
+  técnico o jugador): un «falto al entrenamiento» llega al cuerpo técnico vigente y al club del equipo.
 
 ## Casos de uso (endpoints)
 
 | Método | Ruta | Caso de uso |
 |---|---|---|
-| POST | `/api/auth/register` | Alta de jugador (crea usuario + Player, devuelve JWT) |
+| GET | `/api/auth/invite/{code}` | Sin sesión: la ficha y la plantilla que hay detrás de un código personal vigente |
+| POST | `/api/auth/register` | Alta como jugador (solo con su código personal: queda vinculado a su ficha), cuerpo técnico (con el código de acceso del club: lo canjea y entra en su plantilla) o club. La contraseña va dos veces (`password` y `confirmPassword`) y tienen que coincidir |
 | POST | `/api/auth/login` | Login |
-| GET | `/api/players/me` | Perfil y pertenencia actual |
-| POST / DELETE | `/api/players/me/team` | Unirse a (reclamando ficha) / abandonar la plantilla |
-| GET | `/api/teams`, `/api/teams/{id}`, `/api/teams/{id}/matches` | Equipos, ficha con plantilla y jugadores registrados, calendario |
-| GET | `/api/matches/{id}` | Detalle con los rendimientos registrados |
-| PUT | `/api/matches/{id}/performance` | Registrar/actualizar mi rendimiento |
-| GET | `/api/performances/me` | Mi historial |
-| GET | `/api/stats/dashboard` | Panel: individual, impacto en el equipo, comparativa con la liga |
-| GET | `/api/league/table` | Clasificación |
-| POST | `/api/admin/sync` | Forzar sincronización con el proveedor |
+| PUT | `/api/auth/password` | Cambiar la contraseña (como mucho una vez al día): la actual, la nueva y la nueva otra vez (`confirmNewPassword`) |
+| GET | `/api/auth/me` | Cuenta autenticada: jugador con su plantilla; técnico con sus plantillas y nombramientos; club con sus equipos y nombramientos |
+| POST | `/api/admin/teams/{id}/crest` | Importar el escudo de un equipo desde una URL (`{ "url": ... }`) |
+| GET | `/api/clubs/catalog?search=` | Catálogo de clubes del proveedor (equipos agrupados, si ya tienen cuenta); de aquí sale el nombre del alta. Público |
+| GET | `/api/clubs/me` | El club: equipos vinculados y nombramientos (el código solo mientras está pendiente) |
+| POST / DELETE | `/api/clubs/me/teams[/{teamId}]` | Vincular otro equipo del proveedor (nombre acorde al club) / desvincular |
+| PUT | `/api/clubs/me/teams/{teamId}/crest` | El club cambia el escudo de uno de sus equipos (multipart `file`, hasta 2 MB) |
+| PUT | `/api/clubs/me/teams/{teamId}/pitch` | El club apunta las medidas del terreno de juego de su equipo (`lengthM` 60-130, `widthM` 35-90; los dos a `null` para quitarlas): con ellas el analizador de vídeo calibra el campo |
+| POST / PUT / DELETE | `/api/clubs/me/teams/{teamId}/roster[/{entryId}]` | El club añade, corrige o retira fichas de la plantilla publicada (lo que toca el club no lo sobrescribe el proveedor; las del proveedor retiradas se ocultan) |
+| GET | `/api/matches/{id}/preview` | Previa para el cuerpo técnico: probabilidades (Poisson sobre goles a favor/en contra, fuerza de cada equipo y ventaja local) con razones, forma, balance local/visitante, jugadores en forma y disciplina del rival según las actas oficiales |
+| POST | `/api/clubs/me/appointments` | Nombrar a un técnico para un equipo y la temporada en curso → código de acceso |
+| PUT / DELETE | `/api/clubs/me/appointments/{id}` | Acortar o prorrogar la validez / revocar (el técnico sale del staff) |
+| POST | `/api/coaches/me/appointments/redeem` | Técnico con cuenta: canjear otro código (nueva temporada, otro equipo) |
+| GET | `/api/squads/mine` | Plantillas con nombramiento vigente del técnico autenticado |
+| GET | `/api/squads/{id}` | Detalle: staff y fichas; `canInvitePlayers` y códigos personales solo para club propietario y técnicos vigentes |
+| POST / PUT / DELETE | `/api/squads/{id}/players[/{squadPlayerId}]` | Añadir, modificar y dar de baja fichas |
+| POST | `/api/squads/{id}/players/import` | Importar las fichas publicadas por el proveedor que falten |
+| PUT | `/api/squads/{id}/visibility` | Hacer la plantilla pública o privada |
+| POST | `/api/squads/{id}/players/{squadPlayerId}/invite-code` | Club propietario o técnico vigente: generar o renovar el código personal de esa ficha |
+| GET | `/api/squads/{id}/matches` | Partidos del equipo con el número de líneas registradas en cada acta |
+| GET / PUT | `/api/squads/{id}/matches/{matchId}/sheet` | Consultar / registrar el acta interna de un partido (idempotente; `played = false` borra la línea) |
+| GET / POST | `/api/squads/{id}/matches/{matchId}/video-analysis` | **Del vídeo**: estado del análisis de cada vídeo de la plantilla en el partido, su calidad y la propuesta (los dos equipos detectados y los jugadores seguidos) / analizar o volver a analizar. Club, cuerpo técnico y, solo lectura, el administrador |
+| POST | `/api/squads/{id}/matches/{matchId}/video-analysis/apply` | Volcar al acta interna lo aceptado de la propuesta (datos de equipo marcados y jugadores seguidos asignados a fichas); 409 `video_analysis.overwrite` si pisa datos sin `overwrite = true` |
+| GET | `/api/squads/{id}/matches/{matchId}/video-analysis/crops/{tracklet}` | Recorte (JPEG) de un jugador seguido, para reconocerlo |
+| GET | `/api/squads/{id}/matches/{matchId}/sheet/comparison` | **Comparador**: acta interna frente a la oficial guardada en SQL, jugador a jugador, con las discrepancias. `refresh` no fuerza descargas |
+| GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
+| GET | `/api/squads/{id}/players/{squadPlayerId}/profile` | Ficha para gráficos: serie partido a partido con el desglose de la nota, perfil por 90' y media/máximo de la plantilla |
+| GET | `/api/squads/{id}/timeline` | Evolución del equipo: resultado, puntos acumulados, nota media y mejor nota de cada partido |
+| GET | `/api/trainings/catalog` | Tipos de entrenamiento y de ejercicio con sus etiquetas y los límites (duración, ejercicios por sesión, sesiones por serie) |
+| GET / POST / PUT / DELETE | `/api/squads/{id}/exercises[/{exerciseId}]` | **Biblioteca de ejercicios** de la plantilla (nombre, tipo, minutos, descripción, material); borrar uno no toca las sesiones que ya lo tenían |
+| GET | `/api/squads/{id}/trainings?from=&to=` | **Entrenamientos** entre dos días: tipo, hora, duración, ejercicios, recuento de asistencia y la línea de quien mira |
+| POST | `/api/squads/{id}/trainings` | Preparar un entrenamiento con sus ejercicios; con `repeatWeekdays` y `repeatUntil` crea una sesión por cada día (serie semanal, `seriesId`) |
+| GET / PUT / DELETE | `/api/squads/{id}/trainings/{sessionId}[?series=true]` | Detalle, cambiar datos y borrar (con `series`, también las posteriores de la serie) |
+| PUT | `/api/squads/{id}/trainings/{sessionId}/items` | Los ejercicios de la sesión, en orden (copias de la biblioteca o sueltos) |
+| PUT | `/api/squads/{id}/trainings/{sessionId}/attendance` | Pasar lista: cuenta con venir, avisa de que falta, vino o faltó, con motivo; cada línea es de una ficha (`squadPlayerId`) o de un jugador a prueba (`trialPlayerId`) |
+| POST / DELETE | `/api/squads/{id}/trainings/{sessionId}/trial-players[/{trialPlayerId}]` | Apuntar a un **jugador a prueba** a la sesión (uno conocido por `trialPlayerId` o uno nuevo por `fullName`) / quitarlo de ella |
+| GET / POST / PUT / DELETE | `/api/squads/{id}/trial-players[/{trialPlayerId}]` | Los jugadores a prueba de la plantilla (nombre, notas, en cuántas sesiones están y a cuántas vinieron); el que ya tiene ficha no se borra |
+| POST | `/api/squads/{id}/trial-players/{trialPlayerId}/promote` | **Hacerle ficha**: alta en la plantilla con su nombre (posición y dorsal opcionales); sus asistencias de prueba pasan a la ficha |
+| GET | `/api/squads/{id}/callups` | **Convocatorias** de la plantilla con sus recuentos (los borradores solo para quien las prepara) |
+| GET / PUT | `/api/squads/{id}/matches/{matchId}/callup` | La convocatoria de un partido: quién va, cita y notas; `publish` la publica y avisa a toda la plantilla (al que va y al que no); después solo se avisa a quien le cambia |
+| GET | `/api/players/me/trainings` | Jugador: sus próximos entrenamientos con su estado de asistencia |
+| PUT | `/api/players/me/trainings/{sessionId}/absence` | Jugador: avisa de que no va (`willMiss`, motivo) o de que al final sí, antes de que empiece; el cuerpo técnico y el club reciben el aviso |
+| GET | `/api/players/me/callups` | Jugador: las convocatorias publicadas que le tocan (las de los partidos que quedan y la última semana) |
+| PUT | `/api/players/me/callups/{callUpId}/response` | Jugador: firma la convocatoria (`Confirmed` si va convocado; `Acknowledged` si no). Sin «no puedo» ni notas: eso se habla con el cuerpo técnico, que es quien la emite |
+| GET | `/api/alerts` | Avisos de la campanita de la cuenta (club, técnico o jugador); `PUT /api/alerts/{id}/read` y `/api/alerts/read-all` los marcan leídos |
+| GET | `/api/players/me/invite/{code}` | Cuenta de jugador sin plantilla: solo la ficha asociada al código personal; nunca la plantilla completa |
+| POST / DELETE | `/api/players/me/squad` | Cuenta ya existente: vincularse con `{ "inviteCode": "..." }` (un solo uso, sin elegir ficha; la cuenta toma el nombre de la ficha) / desvincularse |
+| GET | `/api/players/me/dashboard` | Panel del jugador: individual, impacto en el equipo, comparativa con la liga |
+| GET | `/api/players/me/performances` | Actas en las que aparece el jugador |
+| GET | `/api/competitions` | Ligas disponibles por nivel, categoría y grupo, con su temporada |
+| GET | `/api/competitions/{id}/matchdays/current`, `/api/competitions/{id}/matchdays/{n}` | Partidos de la jornada en curso (o la próxima) o de cualquier otra, con la lista de jornadas y sus fechas |
+| GET | `/api/teams?competitionId=`, `/api/teams/{id}`, `/api/teams/{id}/matches` | Equipos de una liga, ficha con plantilla publicada y estado de su plantilla en la plataforma, calendario |
+| GET | `/api/teams/{id}/crest` | Escudo guardado (descargado de la federación); `crestUrl` apunta aquí cuando existe. Público |
+| GET | `/api/matches/{id}` | Detalle con las actas de ambas plantillas (cada una solo si es visible para el usuario) |
+| GET | `/api/matches/{id}/official-sheet` | Acta oficial de la federación (o `NotPlayed` / `Pending` / `Unavailable`); público |
+| GET | `/api/matches/{id}/videos` | Vídeos del partido con el acceso del usuario a cada uno y su estado de compresión (`status`, `progress`, tamaño original) |
+| — | `/media/squads/{id}/matches/{matchId}/video/uploads`, `/media/squads/{id}/video-uploads/{uploadId}/…`, `/media/videos/{id}/ticket`, `/media/videos/{id}/stream?ticket=`, `/media/videos/{id}/download-ticket`, `/media/videos/{id}/download?ticket=`, `DELETE /media/videos/{id}` | **Servicio de vídeo** (otro proceso, mismo token): subida por trozos, tickets, reproducción y descarga por rangos (206) y borrado. Ver *Vídeos de partido* |
+| GET | `/api/league/table?competitionId=` | Clasificación de una liga (sin parámetro, la de la plantilla del usuario) |
+| POST | `/api/admin/login` | Sesión del administrador (rol `Admin`); su token abre todo `/api/admin/*`. En publicación devuelve el reto MFA en vez del token |
+| POST | `/api/admin/login/mfa` | Segundo paso del administrador en publicación: billete + código de Microsoft Authenticator → token |
+| GET | `/api/admin/jobs` | Trabajos en segundo plano, historial de ejecuciones, contadores de cada web y últimas llamadas |
+| POST | `/api/admin/jobs/{job}/run` | Lanzar ya un trabajo; con la federación en pausa, las actas quedan pedidas para cuando acabe (`pause` en la respuesta) |
+| GET | `/api/admin/live-downloads` | En directo: todos los trabajos con su avance y lo último que han tocado, la sincronización de las ligas y la cola de actas |
+| GET | `/api/admin/presence?q=` | Gente en sesión: las cuentas con la web abierta en los últimos 30 minutos (nombre, email, equipos, página, dispositivo, en línea o inactivo), con búsqueda |
+| POST/DELETE | `/api/presence` | Latido de la sesión (la web lo manda cada minuto con la página en la que está) y fin de la sesión al salir; vive en memoria, no se guarda |
+| GET/PUT | `/api/admin/football-sync` | Qué descarga la sincronización automática de las ligas (jornada en curso o temporada) |
+| POST | `/api/admin/football-sync/run` | Sincronizar ya la jornada en curso, unas fechas o la temporada, de todas o algunas ligas |
+
+Las lecturas de una plantilla (`GET /api/squads/{id}`, sus partidos, actas, comparador y estadísticas) son públicas
+si la plantilla es pública y, si es privada, solo para su cuerpo técnico vigente y sus jugadores vinculados (403 en
+otro caso). Las escrituras son siempre del cuerpo técnico vigente: un nombramiento caducado o revocado deja de poder
+editar y, si la plantilla es privada, de ver. La comparativa "frente a la liga" de un jugador solo usa actas que
+él puede ver: las de plantillas públicas de su liga y la suya.
 
 Los endpoints no conocen los handlers: reciben la fachada de la capa Repository por inyección y la
-llaman en una línea, p. ej. `(Guid teamId, ITeamsRepository teams, CancellationToken ct) => teams.GetAsync(teamId, ct)`.
+llaman en una línea, p. ej. `(Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetStatsAsync(squadId, ct)`.
 Los handlers se registran por reflexión (`AddApplication`), las fachadas en `AddRepositoryLayer()`, y
 los commands pasan por un decorador que ejecuta sus validadores. Las excepciones de dominio/aplicación se
-traducen a `ProblemDetails` (400 validación, 401, 403, 404, 409, 422 regla de negocio).
+traducen a `ProblemDetails` (400 validación o cuerpo malformado, 401, 403, 404, 409, 422 regla de negocio).
 
-## Proveedor de datos de fútbol
+## Ligas, grupos y proveedor de datos
 
-`IFootballDataProvider` devuelve instantáneas (competición/temporada, equipos, partidos, clasificación y
-plantillas); `SyncSeasonCommand` las vuelca al dominio de forma idempotente. Se elige en
-`appsettings.json` → `FootballData:Provider`:
+Cada **competición** es una liga concreta (categoría + grupo) con su nivel y su propia temporada activa:
 
-- `fake` (por defecto): liga ficticia generada en memoria.
-- `jsonfiles`: lee `competition.json`, `teams.json`, `matches.json`, `standings.json` y
-  `rosters/{teamId}.json` de la carpeta `FootballData:JsonFiles:Directory`. Ideal para enchufar un scraper
-  externo sin acoplarlo a la API.
-- `besoccer`: esqueleto con `HttpClient` tipado y parseo tolerante; **hay que ajustar los `req` y los
-  campos** a la documentación del plan contratado y configurar `ApiKey`, `CompetitionId` y `Season`.
+| Nivel | Competiciones (temporada 2026/27) |
+|---|---|
+| `National` | 1ª RFEF, 2ª RFEF, 3ª RFEF |
+| `Regional` | 1ª AsturFútbol, 2ª AsturFútbol · Grupos 1-2, 3ª AsturFútbol · Grupos 1-4 |
+| `Professional` | Primera y Segunda División (desactivadas por defecto) |
+| `Cup` / `Youth` | Copa AsturFútbol, División de Honor juvenil (desactivadas por defecto) |
 
-El worker `FootballDataSyncWorker` sincroniza al arrancar y cada `SyncIntervalHours` horas.
+El cuerpo técnico elige nivel → liga/grupo → equipo (`GET /api/competitions`, `GET /api/teams?competitionId=`) y
+crea su plantilla; la comparativa "frente a la liga" se hace siempre contra la competición del equipo.
+
+`IFootballDataProvider` devuelve instantáneas (ligas con su temporada, equipos, partidos, clasificación y
+plantillas); `SyncSeasonCommand` las vuelca al dominio de forma idempotente, liga a liga (un fallo en una
+no impide sincronizar las demás). Se elige en `appsettings.json` → `FootballData:Provider`:
+
+- **`futbolasturiano`** (por defecto): lee la API REST pública de [futbolasturiano.es](https://www.futbolasturiano.es)
+  (WordPress + SportsPress; su `robots.txt` permite el acceso y se respeta un ritmo de una petición cada 150 ms
+  identificándose con un User-Agent propio). Mapeo:
+  - ligas y grupos → taxonomía `sp_league` (clasificadas por nombre con `LeagueClassifier`); temporada → `sp_season`
+    (`FootballData:FutbolAsturiano:Season`, vacío = la más reciente);
+  - equipos → `sp_team` por liga/temporada, con escudo embebido, más los que aparezcan en el calendario sin etiquetar;
+  - partidos → `sp_event` (jornada `day`, goles en `results`; sin resultado = programado). La fecha real es `date`
+    (hora peninsular, `FootballData:FutbolAsturiano:TimeZone`); `date_gmt` se queda a menudo con la fecha provisional
+    del calendario (domingo a las 12:00) y no se usa;
+  - **partidos ocultos por la API**: WordPress marca como "programados" (`future`) los partidos cuya fecha de
+    publicación aún no ha llegado, y la API pública no los devuelve aunque la web los muestra. Afecta a la jornada en
+    curso (se publica el domingo a las 12:00) y, en algunas ligas como 3ª AsturFútbol, a casi todo el calendario
+    futuro. La cabecera `X-WP-Total` sí los cuenta, y cada liga ocupa un bloque de ids consecutivos, así que los
+    huecos del bloque son exactamente esos partidos: se leen de su página pública (`/?p={id}`, con AngleSharp) para
+    sacar jornada, fecha y hora, equipos, resultado y campo (`HiddenEventPlanner`, `EventPageParser`). Cada página
+    tarda segundos, así que los ya guardados se reutilizan, solo se releen los que se juegan en los próximos
+    `HiddenEventRefreshDays` días (hora definitiva, resultado) y las lecturas nuevas tienen un tope por liga
+    (`HiddenEventPagesPerLeague`); el resto llega en las siguientes sincronizaciones, empezando por las jornadas
+    más próximas. `RecoverHiddenEvents = false` lo desactiva;
+  - clasificación → `sportspress/v2/sp_table` (`data` por id de equipo);
+  - plantillas → catálogo completo de `sp_player` agrupado por `current_teams` (una descarga por sincronización).
+    La web publica plantillas en 1ª/2ª/3ª RFEF y 1ª AsturFútbol; en 2ª y 3ª AsturFútbol no, por lo que ahí la
+    plantilla nace vacía y el cuerpo técnico añade las fichas a mano.
+  - Qué se sincroniza: `IncludeNational`, `IncludeRegional`, `IncludeProfessional`, `IncludeCups`, `IncludeYouth`
+    y, para afinar, `IncludeLeagueIds` / `ExcludeLeagueIds` (ids de `sp_league`).
+  - Una sincronización completa (10 ligas) son ~110 peticiones a la API más las páginas de partidos ocultos: la
+    primera, con la base de datos vacía, tarda varios minutos; las siguientes, uno o dos.
+- `fake`: tres ligas ficticias generadas en memoria (sin red), con plantillas solo en dos de ellas.
+- `jsonfiles`: lee `competitions.json`, `competitions/{id}/{teams,matches,standings}.json` y
+  `rosters/{teamId}.json` de `FootballData:JsonFiles:Directory`. Ideal para enchufar un scraper externo.
+
+El worker `FootballDataSyncWorker` sincroniza cada `SyncIntervalMinutes` minutos (60 por defecto) contados desde la
+última ejecución guardada en `JobRuns`: arrancar la API **no** vuelve a sincronizar si no ha pasado ese tiempo.
+
+Qué descarga cada pasada está en la tabla `FootballSyncSettings` (editable en `/jobs`, `GET/PUT /api/admin/football-sync`):
+
+- **Jornada en curso** (por defecto): los partidos de hoy menos `DaysBack` a hoy más `DaysAhead` (3 y 4: de miércoles a
+  miércoles), pidiendo a `sp_event` solo esas fechas (`after`/`before`), más las clasificaciones. Los equipos solo se
+  piden si aparece uno nuevo y las plantillas solo si `RostersInRound`. De los partidos ocultos solo se releen los ya
+  guardados de esas fechas que han empezado o empiezan en 6 horas y aún no tienen resultado.
+- **Temporada completa**: lo de siempre (calendario entero, búsqueda de partidos ocultos nuevos, equipos y
+  plantillas). La pasada automática lo es cada `FullSyncEveryDays` días (7; 0 = solo a mano) o siempre, si así se fija.
+- A mano (`POST /api/admin/football-sync/run`): jornada en curso, unas fechas (hasta 366 días) o temporada completa,
+  de todas las ligas o de las elegidas, con o sin plantillas. Cada ejecución guarda su alcance en `JobRuns`.
+
+## Temporadas
+
+La temporada de la app (`SeasonYears`, p. ej. 2026/2027) es el dato padre: cada liga tiene su temporada (`Seasons.SeasonYearId`)
+y de ella cuelgan partidos, clasificaciones, plantillas y actas. La temporada elegida viaja en la cabecera `X-Season` (id o
+nombre, `2025-2026`); sin ella, la actual. Las pasadas solo se consultan (`season.closed` al editar). La sincronización crea
+la temporada nueva y la hace actual; el administrador puede cambiarla con `PUT /api/admin/seasons/{id}/current`.
+
+## Cookies y analítica propia
+
+- `CookieDefinitions`: lo que la web guarda en el navegador (necesarias y de preferencias, exentas; analítica, con
+  consentimiento), editable desde `/jobs` → Cookies. `CookiePolicies`: versión vigente; publicar otra vuelve a preguntar.
+- `CookieConsents`: cada elección (visitante anónimo, cuenta si la había, qué aceptó y con qué versión). Sin IP ni navegador.
+- `AnalyticsEvents`: páginas vistas, búsquedas y clics, solo de quien aceptó la analítica con la versión vigente (el
+  servidor lo comprueba con el id de consentimiento; el de analítica, `tt.aid`, es otro y se borra al retirarlo). Guardan
+  quién actúa (anónimo, jugador, técnico, club y su club) y de qué equipo, liga, partido o plantilla es la página. Se
+  borran a los 13 meses. Informe en `/jobs` → Uso de la web (`GET /api/admin/analytics`), por club como actor o como página.
+
+## Trabajos en segundo plano y página /jobs
+
+Los dos scrapeos periódicos son trabajos (`Infrastructure/Jobs/JobScheduler.cs`): `football-data` (datos de las ligas)
+y `official-sheets` (pasada de actas públicas); `video-transcode` y `video-analysis` son trabajos **externos**: los
+ejecuta el servicio de vídeo, una ejecución por vídeo comprimido y otra por vídeo analizado, y aquí solo se enseña su
+historial (sin horario ni lanzamiento a mano). Cada ejecución queda en la tabla `JobRuns` (automática o a mano, estado,
+resumen, errores y llamadas hechas) y cada llamada real a una web externa en `ScrapeRequests` (proveedor, URL, código,
+duración y ejecución). Al arrancar se lee la última ejecución de cada trabajo y se espera a que pase su intervalo; las
+que quedaron a medias se marcan como interrumpidas. Se guardan 30 días de llamadas y 180 de ejecuciones.
+
+La página oculta `/jobs` del frontal (sin enlace en el menú) muestra todo eso y permite lanzar cada trabajo a mano.
+Lanzar un trabajo abre «Descargas en directo» (`GET /api/admin/live-downloads`) en su apartado: ahí están todos los
+trabajos con su paso en curso y lo último que han tocado (`IJobProgress`, en memoria; el planificador abre y cierra cada
+ejecución y cada trabajo cuenta sus pasos). Si la federación está en pausa, las actas lanzadas a mano quedan pedidas
+para cuando acabe (no se la saltan) y la tarjeta enseña hasta cuándo y por qué. Las esperas largas de los trabajos van
+a trozos de un minuto mirando el reloj real (`WallClockDelay`): con el equipo suspendido el temporizador de .NET no
+avanza y una pausa de 30 minutos podía alargarse toda la noche.
+Solo entra el administrador: `POST /api/admin/login` con el usuario del rol `Admin`, que se crea al arrancar a partir
+de `Admin:UserName` (por defecto `diego`) y `Admin:Password`. La contraseña va en user-secrets, nunca en appsettings:
+
+```bash
+dotnet user-secrets set "Admin:Password" "<contraseña>" --project src/TercerTiempo.Api
+```
+
+Si se cambia el secreto, la contraseña guardada se sustituye en el siguiente arranque. Todo `/api/admin/*` exige ese
+token (claim `admin`).
+
+En publicación (`Admin:RequireMfa`, que `appsettings.Development.json` apaga) el login tiene un segundo paso con una
+app de autenticación TOTP (Microsoft Authenticator): tras la contraseña, `POST /api/admin/login` no da el token sino un
+billete de 5 minutos, y el token llega con `POST /api/admin/login/mfa` y el código de 6 cifras. La primera vez el
+login enseña además el QR (y la clave para escribirla a mano); el primer código bueno deja la app dada de alta y el QR
+ya no vuelve a salir. Los códigos falsos cuentan para el bloqueo (5 fallos, 5 minutos) y un código ya usado no vale.
+Si se pierde el móvil, `Admin__ResetMfa=true` (`TT_ADMIN_RESET_MFA` en `.env.production`) cambia la clave al arrancar
+y el siguiente login vuelve a enseñar el QR; después hay que volver a ponerlo en `false`.
+Con el segundo paso activo, `Admin:Password` puede no cumplir las reglas de contraseña de las cuentas: el
+administrador se crea igual (con un aviso en el log), porque sin el código de la app no basta con la contraseña.
+
+**Visor de solo lectura.** Con su token, el administrador ve todo lo que vería una cuenta y lo interno de cada plantilla
+(plantillas privadas aunque el equipo no tenga licencia, actas internas, estadísticas, lesiones, sugerencias, previa,
+fichas de jugador, vídeos y el buscador con todas las plantillas): `ICurrentUser.IsAdmin` cuenta en `SquadAccess.CanView`
+e `IsInsiderAsync`, en `LicenseGate` (sin crear licencias de prueba al mirar) y en `VideoAccess` (nivel `Admin`). Nunca
+es gestor (`IsManagerAsync` sigue en falso) y la política por defecto solo le deja GET/HEAD: cualquier escritura de las
+rutas de las cuentas le da 403, y las rutas de la cuenta propia (`/me`, `/api/squads/mine`) no tienen nada que darle.
+El frontal usa su sesión para leer cuando no hay una cuenta abierta y lo indica con una banda «Modo administrador».
+
+## Acta pública: asturfutbol.es
+
+Cada partido tiene un **acta pública** (alineaciones, cambios con minuto, goles y tarjetas), igual para todos, y
+además el **acta interna** que lleva el cuerpo técnico de cada club (privada). El acta pública sale solo de la
+federación (`OfficialSheets:Sources` = `asturfutbol`; `SyncOfficialSheetCommand`, fuentes en
+`Application/OfficialSheets/PublicSheetSources.cs`). El acta guarda de qué web salió (`Provider`, `SourceUrl`). Antes
+de acceder a la web se consulta SQL: las actas completas no se vuelven a descargar.
+
+Si alguna vez se guardaron actas de una web que ya no está en `OfficialSheets:Sources`, siguen en la base pero
+**ocultas**: el almacén solo devuelve las de las webs configuradas, y la descarga las sustituye por la de la federación
+en los partidos de equipos con plantilla.
+
+El proceso en segundo plano (`OfficialSheetSyncWorker`, cada `BackgroundScanMinutes` desde la última pasada guardada,
+lotes de `BackgroundBatch`) solo planifica los partidos de equipos con plantilla en la app y los que alguien abre. El
+frontal consulta nuestra API y su botón «Consultar datos guardados» no fuerza el scraper.
+
+### asturfutbol.es
+
+La web de la RFFPA ([asturfutbol.es](https://www.asturfutbol.es)) no tiene API: `AsturfutbolOfficialSheetProvider` lee
+sus páginas (`Infrastructure/OfficialSheets/Asturfutbol`, AngleSharp). **De esta web solo se descargan actas**: ni
+fichas de equipo, ni campos, ni escudos, porque bloquea la IP tras unas pocas peticiones. Particularidades:
+
+- Las páginas son públicas pero exigen una cookie de sesión: la primera petición redirige a `/pnfg/NLogin`, que la fija
+  y devuelve a la página pedida (`AsturfutbolClient` conserva las cookies y controla cada redirección). Sin cookie
+  responde una página vacía ("No se ha aceptado el cookie"). Las páginas no declaran charset (ISO-8859-1).
+- Todas las lecturas de la federación (calendario, jornadas y actas) pasan por el mismo control. `FederationHttpCache` guarda páginas y respuestas 404 durante 24 horas y los fallos durante 60 minutos;
+  también reserva la URL para impedir descargas simultáneas entre procesos. `FederationRequestStates` guarda los
+  contadores y la pausa global. Sobreviven a reinicios y se comparten entre instancias conectadas a la misma SQL.
+- Valores iniciales en `OfficialSheets:Asturfutbol`: `RequestDelayMs=30000`, `MaxRequestsPerHour=20`,
+  `MaxRequestsPerDay=60`, `CacheHours=24`, `FailureRetryMinutes=60`, `BlockedPauseHours=24`. Los contadores usan
+  horas y días UTC. Cada redirección cuenta como una petición. No hay reintentos HTTP inmediatos. Una respuesta
+  403/429 o una página vacía/de bloqueo pausa todo al menos 24 horas; un error 5xx pausa al menos 60 minutos.
+  Se respeta un `Retry-After` superior. Estos límites son configurables, no un umbral garantizado por la federación.
+  `OfficialSheets:Enabled=false` desactiva las descargas y permite seguir consultando los datos guardados.
+- Los marcadores llevan dígitos ofuscados (clases `fa-N` y `<span>` ocultos con cifras señuelo): no se usan; el
+  resultado del partido viene de futbolasturiano.es y los goles se cuentan por goleador.
+- Localización de un acta (`OfficialSheetLocator`): la competición se busca por nombre en los desplegables del
+  calendario (`NFG_CmpJornada`, con alias para "Tercera Federación" = 3ª RFEF) y se guarda en `Season.OfficialRef`
+  como `competición/grupo/temporada`; la jornada (`NFG_CmpJornada?...&CodJornada=`) lista los partidos con el botón
+  del acta (`CodActa`), que se emparejan con los nuestros por parecido de nombres de equipo (`TeamNameSimilarity`:
+  palabras significativas y letra del filial) y quedan guardados en `Match.OfficialRef` (y los códigos de equipo en
+  `Team.OfficialRef`) para no volver a buscarlos.
+- Lectura del acta (`AsturfutbolPages.ParseSheet`): titulares y suplentes por equipo con dorsal, sustituciones (fila
+  "entra" / fila "sale" con el minuto), tarjetas (por la imagen `tarj_amar` / `tarj_roja`) y goles (tipo por el título
+  del icono: normal, penalti, propia puerta; se atribuyen al equipo del goleador). Los minutos jugados se calculan:
+  titular desde el 0, suplente desde su entrada, hasta la sustitución, la expulsión o el final
+  (`OfficialSheets:Asturfutbol:MatchLength`). Los nombres vienen como "APELLIDOS, NOMBRE" y, en menores, a veces solo
+  el nombre de pila.
+- Cuándo se consulta (`SyncOfficialSheetCommand`): solo si faltan datos de un partido jugado; las actas pendientes
+  se comprueban como máximo una vez al día. Una vez completa, se conserva sin volver a buscar correcciones externas.
+  `refresh` y `force` se aceptan por compatibilidad, pero no saltan SQL ni los límites. El worker planifica leyendo
+  SQL cada 60 minutos, con lotes de hasta 60 partidos, y descarga progresivamente dentro del presupuesto de cada web.
+  `Unavailable` indica que no se localiza el partido (liga sin correspondencia, nombres muy distintos).
+- Comparador (`CompareMatchSheetCommand`, `SheetMatcher`): cada línea oficial del equipo de la plantilla se empareja
+  con una ficha por las palabras del nombre (sin orden ni tildes) y, en caso de duda, por el dorsal; se comparan
+  presencia, titularidad, minutos, goles y tarjetas (el acta oficial no recoge asistencias, tiros ni paradas) y se
+  listan las líneas oficiales sin ficha para que el cuerpo técnico las añada.
+
+## Vídeos de partido
+
+Todo lo del vídeo lo atiende el **servicio de vídeo** (`src/TercerTiempo.Videos`), un segundo proceso web de la
+solución con las mismas capas, la misma base de datos y las mismas reglas de acceso que la API, para que subir, servir y
+comprimir vídeos de varios GB no cargue a la API. Sus rutas van bajo `/media` y acepta el mismo JWT (misma `Jwt:Key`,
+emisor y audiencia; en local, los dos proyectos comparten los user-secrets). En Docker es el contenedor `videos`, con
+ffmpeg en la imagen; en Visual Studio se arranca junto a la API (puerto 5081). La API conserva la lista de vídeos de un
+partido (`GET /api/matches/{id}/videos`), que ahora lleva el estado de la compresión.
+
+**Subida.** El club o el cuerpo técnico sube el vídeo del partido entero o en dos partes (`VideoPart`: `Full`,
+`FirstHalf`, `SecondHalf`; nunca mezcladas y cada parte una sola vez por plantilla), solo de un partido ya jugado y solo
+mp4 o webm (los demás formatos no se reproducen en el navegador) hasta `Videos:MaxSizeMb` (20 GB). La subida va **por
+trozos y es reanudable**: `POST /media/squads/{id}/matches/{matchId}/video/uploads` abre una sesión
+(`VideoUploadSession`, tabla `VideoUploads`, caduca a las `Videos:UploadExpiryHours` sin recibir trozos), los trozos de
+`Videos:ChunkSizeMb` (16 MB, lo que admite el Nginx del frontal) se envían en orden a `PUT
+/media/squads/{id}/video-uploads/{uploadId}/chunks/{index}` (cuerpo binario; cada trozo se escribe desde el offset ya
+confirmado, así un reintento nunca corrompe el temporal) y `…/complete` publica el vídeo; `GET …/video-uploads/{uploadId}`
+dice por dónde va para reanudar. El `POST …/video` multipart de una sola vez sigue existiendo para archivos pequeños.
+Antes de empezar se comprueba que el archivo cabe en el disco con margen (`Videos:MinFreeSpaceMb`). Se guarda en disco
+(`Videos:Directory`, nombre aleatorio; temporales en `uploads/`, compresiones en curso en `processing/`) con
+`IVideoStorage` (`FileSystemVideoStorage`); en Docker es el volumen de datos que comparten la API y el servicio.
+
+**Compresión.** Un partido entero grabado con un móvil a 1080p pesa unos 6 GB (8 Mbps). Al publicarse, el vídeo queda
+`Uploaded` (en cola) y el worker del servicio (`VideoProcessingWorker` → `VideoProcessor` → `FfmpegTranscoder`) lo
+recomprime de uno en uno con ffmpeg a **H.264 sin bajar de 1080p** (solo se reduce lo que venga por encima de
+`VideoProcessing:MaxHeight`), calidad constante `VideoProcessing:Crf` (22, visualmente igual que el original), preset
+`medium`, audio AAC a 128 kbps y `faststart`: entre dos y tres veces menos. Un archivo que ya venga en H.264/MP4 a
+1080p o menos y por debajo de `VideoProcessing:SkipBelowKbps` se deja tal cual (`TranscodePlan`). Estados
+(`VideoStatus`): `Uploaded` → `Processing` (con `progress` en %, leído de `-progress` de ffmpeg y guardado cada pocos
+segundos) → `Ready`, o `Failed` con el motivo (como mucho `VideoProcessing:MaxAttempts` intentos). **En todos los estados
+el vídeo se ve y se descarga**: hasta `Ready` se sirve el original; al terminar, tras comprobar con ffprobe que el
+comprimido dura lo mismo, se cambia la clave de almacenamiento, se guarda el tamaño original (`OriginalSizeBytes`,
+duración y alto) y se borra el archivo subido. Si falla, se conserva el original. Borrar un vídeo que se está comprimiendo
+para ffmpeg (`IVideoProcessingSignal`) y descarta lo hecho; la fila lleva un `rowversion`, así que si el compresor y una
+petición tocan a la vez el mismo vídeo quien llega tarde se entera (`ConcurrentChangeException`) y no pisa nada. Al
+arrancar, lo que quedó `Processing` en la parada anterior vuelve a la cola y se limpia `processing/`. Cada compresión
+queda en `JobRuns` como una ejecución del trabajo `video-transcode` («Compresión de vídeos» en `/jobs`, con su resumen:
+«CD Vallobín - Real Titánico (partido completo): de 5,9 GB a 2,3 GB (1080p) en 95 min»). Un partido entero a 1080p
+tarda alrededor de una hora y media con los dos núcleos del contenedor (`TT_VIDEOS_CPUS`). Sin ffmpeg instalado
+(`VideoProcessing:FfmpegPath`), el worker avisa y los vídeos se quedan en cola.
+
+### Análisis del vídeo: la propuesta de acta interna
+
+Cuando un vídeo queda `Ready`, el compresor lo pone en la cola de análisis (`VideoAnalysisQueue`) y un segundo worker
+del servicio de vídeo (`VideoAnalysisWorker` → `VideoAnalysisProcessor` → `UvVideoAnalyzer`) lanza, de uno en uno, el
+analizador [`TercerTiempo.Analisis`](src/TercerTiempo.Analisis/README.md) (Python + GPU) como proceso externo, desde su
+carpeta:
+
+```
+uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<vídeo> --equipos "<nuestro>,<rival>"
+       [--campo LxA] --sin-clips --progreso --camara movil --exigir-gpu [--segmento 20:00-25:00]
+```
+
+- **`MatchVideoAnalysis`** (tabla `MatchVideoAnalyses`, uno por vídeo): `Pending` → `Running` (con `Progress`, leído de
+  las líneas `##progreso N` del analizador y guardado cada pocos segundos) → `Ready`, o `Failed` con el motivo. Guarda la
+  carpeta de salida, la versión del analizador, los pesos usados, `acta-propuesta.json` tal cual (compacto) y la
+  **calidad**: fotogramas analizados, % con balón y % con el campo calibrado (por debajo de 35 % y 50 % la propuesta va
+  con aviso). El mejor recorte de cada jugador seguido va a `MatchVideoAnalysisCrops` (JPEG de un par de KB), así la API
+  los sirve sin depender del disco del servicio de vídeo.
+- **Campo**: las medidas son las del equipo **local** (`Team.Profile.PitchLengthM/WidthM`), que apunta su club en la
+  ficha del equipo; sin ellas el analizador calibra con su campo genérico de 120 × 70 m y la propuesta lo dice.
+- **Nunca frena la compresión**: es otro worker y otra cola. Si no hay `uv`, no existe la carpeta del analizador o no
+  hay GPU (`--exigir-gpu`, código de salida 3), el análisis queda `Failed` con un mensaje claro y se puede volver a
+  pedir. No se reintenta solo (`Analysis:MaxAttempts` = 1). Al arrancar, lo que quedó `Running` vuelve a la cola; al
+  eliminar el vídeo se para el analizador y se borran el análisis, los recortes y su carpeta.
+- Cada análisis queda en `JobRuns` como una ejecución de `video-analysis` («Análisis de vídeos» en `/jobs`: «CD Vallobín -
+  Real Titánico (partido completo): 27 jugadores seguidos, balón a la vista en el 19,3 % de los fotogramas y campo
+  calibrado en el 66,9 %, en 5 min»).
+- **La API** (`Application/Videos/Analysis`) enseña la propuesta y la vuelca. El analizador separa dos equipaciones
+  pero no sabe cuál es la del club: lo dice el cuerpo técnico (`ourTeam`), que además asigna cada jugador seguido
+  («tracklet»; un jugador tiene varios, porque se corta al perderlo de vista) a una ficha. `POST …/apply` escribe con
+  `MatchSheetWriter`, el mismo camino que `PUT …/sheet` y `PUT …/team-stats`, en nombre de quien lo vuelca:
+  posesión, tiros, tiros a puerta, córners, saques de banda y saques de puerta (cada uno, el valor del equipo y el del
+  rival) y, por ficha, tiros, tiros a puerta, paradas, recuperaciones, pérdidas y pases, sumando sus tramos y las dos
+  partes del partido (la posesión, ponderada por lo analizado). Reglas (`VideoSheetMerge`): un cero de la propuesta
+  nunca borra lo apuntado; lo que cambiaría un valor del acta exige `overwrite = true` (si no, 409 con la lista «tiros
+  de Pelayo (6 → 4)»); los goles solo se apuntan a quien no tenga ninguno; una línea nueva se crea con los minutos que
+  se ha visto al jugador. Volver a analizar olvida la propuesta y las asignaciones, nunca el acta.
+- **Configuración** (`Analysis:*`): en la API, `Enabled` dice si se admiten peticiones de análisis (true en Development
+  y FakeDatos, false en Pilot y Production); en el servicio de vídeo, `Enabled` dice si este proceso las atiende, y
+  además `UvPath` (admite variables de entorno: `%APPDATA%\Python\Python314\Scripts\uv.exe`), `Directory` (carpeta
+  del analizador, `../TercerTiempo.Analisis` desde el servicio), `OutputDirectory`, `Segment` (solo un tramo, para
+  probar: `Analysis__Segment=20:00-25:00`), `Camera`, `RequireGpu`, `PollSeconds` (lo que se pide desde la API lo
+  recoge el servicio al mirar la cola) y `TimeoutMinutes`. Una petición sin nadie que la atienda espera en cola, y la
+  app lo dice.
+- **En Docker el analizador no corre**: la imagen del servicio de vídeo solo lleva .NET y ffmpeg, así que
+  `compose.yaml` le fija `Analysis__Enabled=false` (comprime, no analiza). Quien analiza es **`Start-Analyzer.ps1`**:
+  arranca este mismo servicio fuera de Docker solo como analizador (`VideoProcessing:Enabled=false`,
+  `Analysis:Enabled=true`, puerto 5083), contra la misma base y leyendo los vídeos del volumen de Docker Desktop a través
+  de `\\wsl.localhost\docker-desktop\mnt\docker-desktop-disk\data\docker\volumes\<TT_DATA_VOLUME>\_data\videos`
+  (`-Environment FakeDatos|Development`, `-Segment 20:00-25:00` para probar, `-VideosDirectory` si los vídeos están en
+  otra carpeta). Deja la propuesta en la base y la carpeta de salida junto al vídeo, así que el contenedor la borra con
+  él. Alternativa: un contenedor con GPU (`src/TercerTiempo.Analisis/Dockerfile`, `--gpus all`).
+
+**Acceso** (`VideoAccess`): un vídeo nunca es público. Lo ven la plantilla que lo subió (club, cuerpo técnico vigente y
+jugadores vinculados: `Owner`), el administrador (`Admin`) y quien tenga un pase del partido que lo incluya (`Pass`);
+de una plantilla pública se puede pedir el acceso al club (`Locked`). Descargan el archivo el club, el cuerpo técnico y
+los pases con descarga. Como el reproductor no puede enviar el JWT, `POST /media/videos/{id}/ticket` emite un ticket
+de vida deslizante (`Videos:TicketMinutes`, tope `Videos:TicketMaxHours`, en memoria del servicio) y
+`GET /media/videos/{id}/stream?ticket=` sirve el archivo con soporte de rangos (206); la descarga tiene su propio ticket
+(`…/download-ticket` y `…/download?ticket=`). Todas las rutas pasan por la puerta de licencias del equipo que subió el
+vídeo. La retransmisión en directo queda para más adelante.
+
+## Docker
+
+La API, el servicio de vídeo y el frontal se levantan en contenedores con sus imágenes, unidos por la red
+`tercer-tiempo-net`: el Nginx del frontal ([TercerTiempo-Front](https://github.com/diegoesp10/TercerTiempo-Front))
+reenvía `/api` al contenedor `api` y `/media` al contenedor `videos`, así que la web, la API y el servicio de vídeo
+comparten origen. Con Docker Desktop en modo Linux:
+
+```powershell
+.\Start-Docker.ps1                                   # desarrollo: API en Development (base según TT_DEV_DATABASE)
+.\Start-Docker.ps1 -Database Local                    # desarrollo con el SQL Server de Windows (la base de Visual Studio)
+.\Start-Docker.ps1 -Database Container                # desarrollo con un SQL Server propio en un contenedor
+.\Start-Docker.ps1 -Database Local -WithJobs          # desarrollo con la base de Visual Studio y los trabajos por horario
+.\Start-Docker.ps1 -Environment FakeDatos            # datos falsos: base tercertiempo_DatosFake (clubes inventados)
+.\Start-Docker.ps1 -Environment Production           # publicación: secretos de .env.production
+.\Start-Docker.ps1 -Environment Production -WithDatabase   # publicación con el SQL Server en este equipo
+.\Start-Docker.ps1 -Environment Pilot                # piloto con clubes: publicación con la base tercertiempo_Piloto
+.\Start-Docker.ps1 -SkipBuild                         # reutiliza las imágenes
+.\Start-Docker.ps1 -ReplaceData                       # vuelve a copiar escudos y fotos de src/TercerTiempo.Api/data
+```
+
+Desde el repositorio del frontal, su `Start-Docker.ps1` arranca también la API (mismo entorno) si no está en marcha.
+
+| | Desarrollo (`compose.development.yaml`) | Publicación (`compose.production.yaml`) |
+|---|---|---|
+| `ASPNETCORE_ENVIRONMENT` | `Development` (`appsettings.Development.json`): `/docs`, errores detallados, clave JWT de desarrollo | `Production` (`appsettings.Production.json`): sin `/docs` (salvo `OpenApi:Enabled` con Basic Auth) |
+| Base de datos | `-Database Local`: el SQL Server de Windows del equipo por `host.docker.internal,1433` con el login de `scripts/local-sql-login.sql` (misma base que Visual Studio, sin SQL en Docker). `-Database Container`: SQL Server 2022 Developer en `tercer-tiempo-db`, volumen `tercer-tiempo-dev-sql`, desde SSMS en `127.0.0.1,14333` (usuario `sa`) | Externa (`TT_DB_CONNECTION`) o, con `-WithDatabase`, SQL Server Express en `tercer-tiempo-db` sin puertos publicados (volumen `tercer-tiempo-sql`) |
+| Secretos | `.env.development`, que genera el script la primera vez (contraseña de `sa` aleatoria); la de `/jobs` sale de los user-secrets | `.env.production` (copia de `.env.example`): cadena de conexión, `TT_JWT_KEY`, `TT_ADMIN_PASSWORD`, `TT_PUBLIC_URL`, claves de Stripe |
+| Ficheros (escudos, fotos, vídeos) | Volumen `tercer-tiempo-dev-data` | Volumen `tercer-tiempo-data` |
+
+**Piloto** (`-Environment Pilot`, `compose.pilot.yaml` encima de `compose.production.yaml`): la API en `Pilot`
+(`appsettings.Pilot.json`), lo mismo que publicación (`/jobs` con Microsoft Authenticator, sin `/docs`, todos los
+trabajos por horario) para que unos clubes lo
+prueben desde este equipo abriendo la web con un túnel (`cloudflared tunnel --url http://127.0.0.1:8180`). Usa su
+propia base, `tercertiempo_Piloto`, en el SQL Server de Windows con el login `tercertiempo_app` (la contraseña se toma
+de `.env.development`), y su volumen `tercer-tiempo-pilot-data`. `.env.pilot` se genera la primera vez (clave JWT
+aleatoria; `TT_PUBLIC_URL` es la del túnel cuando sea fija) y la contraseña de `/jobs` sale de los user-secrets. Como
+todas las visitas llegan por el túnel y Nginx, el limitador de peticiones usa la IP que manda el túnel
+(`Throttling:TrustForwardedHeaders`). La base se creó como copia de la de desarrollo (`BACKUP ... WITH COPY_ONLY` y
+`RESTORE ... WITH MOVE`); sus contadores de peticiones a asturfutbol.es son aparte, así que mientras corre el piloto no
+conviene que la API de Visual Studio lance también los scrapeos de actas.
+
+- Para usar el SQL Server local, la API del contenedor (Linux) no puede entrar con la autenticación de Windows: en el
+  servidor hay que activar la autenticación mixta y TCP/IP (puerto 1433) y crear el login con
+  `scripts/local-sql-login.sql`; su contraseña va en `TT_LOCAL_SQL_PASSWORD` de `.env.development` y
+  `TT_DEV_DATABASE=Local` lo deja por defecto. Las dos API (Visual Studio y Docker) pueden compartir la base: el
+  historial de trabajos y los contadores de peticiones a las webs están en SQL. Aun así, con `-Database Local` la API
+  del contenedor no lanza scrapeos por horario (se lanzan a mano desde su `/jobs`), para no duplicar los de Visual
+  Studio: el script añade `compose.nojobs.yaml`, que pone a 0 la sincronización de las ligas (y con ella los árbitros
+  y las plazas) y los barridos de actas (y con ellos las del fin de semana). `-WithJobs` los activa.
+- Memoria acotada: API 512 MB, servicio de vídeo 2 GB y dos núcleos para ffmpeg (`TT_VIDEOS_MEMORY`,
+  `TT_VIDEOS_CPUS`), SQL Server del contenedor 1 GB de uso interno (1,5 GB de contenedor) y web 64 MB
+  (`TT_API_MEMORY`, `TT_SQL_MEMORY_MB`, `TT_SQL_CONTAINER_MEMORY`).
+- La API y el servicio de vídeo escuchan en el 8080 de su contenedor y solo se publican en el loopback
+  (`127.0.0.1:8181` y `127.0.0.1:8182`); los visitantes entran por la web (`127.0.0.1:8180`). `GET /api/health` y
+  `GET /media/health` comprueban cada proceso y su conexión con SQL Server (lo usa Docker). El contenedor `videos`
+  (`Dockerfile.videos`, Alpine con ffmpeg) arranca cuando la API ya está sana, porque las migraciones las aplica ella, y
+  comparte su volumen de datos.
+- En el contenedor `ReverseProxy:Enabled = true`: la API lee la IP y el esquema del visitante de `X-Forwarded-*` y no
+  redirige a HTTPS (el TLS lo pone quien publique la web, p. ej. un túnel de Cloudflare como en el portfolio).
+- La imagen es Alpine con ICU y `tzdata` (cultura `es-ES`, hora de `Europe/Madrid`), usuario sin privilegios y sistema
+  de ficheros de solo lectura salvo `/app/data` y `/tmp`. Las migraciones se aplican al arrancar.
+- La primera vez, el script copia al volumen los escudos y fotos de `src/TercerTiempo.Api/data` (nunca entran en la
+  imagen). La base de desarrollo empieza vacía: la sincronización con futbolasturiano.es la llena sola al arrancar.
+
+```powershell
+docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development ps
+docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development logs -f api videos
+docker compose -f compose.yaml -f compose.development.yaml --env-file .env.development down   # conserva los volúmenes
+docker build --target test .                                                                # tests dentro de la build
+docker build -f Dockerfile.videos --target test .                                           # la compresión real con ffmpeg
+```
 
 ## Configuración y secretos
 
-- `Jwt:Key` (mínimo 32 caracteres) solo está definida en `appsettings.Development.json` para desarrollo.
-  Para otros entornos usa user-secrets o variables de entorno:
+### Dónde está la configuración de cada entorno
+
+Cada entorno es un `ASPNETCORE_ENVIRONMENT` con su `src/TercerTiempo.Api/appsettings.{Entorno}.json` encima de
+`appsettings.json`, que tiene lo común y los valores de publicación (el servicio de vídeo tiene los suyos en
+`src/TercerTiempo.Videos`, con lo mismo que necesita: conexiones, JWT, límites de los vídeos y `VideoProcessing`; un
+test comprueba que coinciden con los de la API en cada entorno). Cada fichero de entorno lleva solo lo que cambia, y
+ninguno lleva secretos: esos van en los user-secrets (Visual Studio) o en los `.env.*` (Docker), que no se versionan.
+
+| Entorno | Se arranca con | Lo que lo distingue | Secretos y lo propio de Docker |
+|---|---|---|---|
+| `Development` | Visual Studio (perfiles `http`/`https`) o `.\Start-Docker.ps1` | `appsettings.Development.json`: base `TercerTiempo`, `/docs` abierto, sin MFA, sin bloqueo de cuenta por intentos fallidos, clave JWT de desarrollo y todos los trabajos por horario; puede descargar los datos reales | user-secrets; en Docker `compose.development.yaml` y `.env.development` (con `-Database Local` y sin `-WithJobs`, además `compose.nojobs.yaml`: trabajos solo a mano) |
+| `FakeDatos` | Visual Studio (perfil `FakeDatos`) o `.\Start-Docker.ps1 -Environment FakeDatos` | `appsettings.FakeDatos.json`: como desarrollo (sin MFA ni bloqueo de cuenta) con la base `tercertiempo_DatosFake` (clubes, plantillas y actas internas inventados); descarga los datos reales como los demás | user-secrets; en Docker `compose.fakedatos.yaml` y `.env.fakedatos` |
+| `Pilot` | `.\Start-Docker.ps1 -Environment Pilot` | `appsettings.Pilot.json`: como publicación (MFA, sin `/docs`, todos los trabajos; puede descargar los datos reales), pasarela de licencias simulada y el limitador con la IP que manda el túnel | `compose.production.yaml`, `compose.pilot.yaml` y `.env.pilot` |
+| `Production` | `.\Start-Docker.ps1 -Environment Production` | `appsettings.Production.json`: MFA del administrador, pasarela de licencias y puede descargar los datos reales | `compose.production.yaml` y `.env.production` (copia de `.env.example`) |
+
+Lo que se cambia desde la administración (qué abarca la pasada automática de las ligas, los ajustes de las licencias) se
+guarda en la base de datos de cada entorno. En el código, `IsLocalDevelopment()` (Development y FakeDatos) es lo que
+.NET solo hace en Development: leer los user-secrets, publicar `/docs` sin contraseña y no redirigir a HTTPS.
+
+**En qué entorno está la API que corre.** En Docker, el contenedor lleva el entorno en el nombre
+(`tercer-tiempo-api-development`, `-fakedatos`, `-pilot` o `-production`, y lo mismo `tercer-tiempo-videos-*`; lo pone
+cada `compose.{entorno}.yaml`), así que
+lo dicen `docker ps`, Docker Desktop y el final de `Start-Docker.ps1`. Solo hay uno a la vez: cambiar de entorno
+recrea el contenedor con el nombre nuevo, y el `Start-Docker.ps1` del frontal avisa si la API en marcha no es la del
+entorno pedido (no la cambia sola, por si es el piloto). En Visual Studio es el perfil elegido (`http`/`https` →
+Development, `FakeDatos` → FakeDatos). En los dos casos el log de arranque lo escribe: `Hosting environment: …`.
+
+```powershell
+docker ps --filter name=tercer-tiempo-api --format "{{.Names}}"
+```
+
+### Datos reales compartidos
+
+Lo público de las webs vive en una base propia, **`tercertiempo_DatosReales`**, que comparten todos los entornos:
+ligas, temporadas, equipos, partidos y resultados, clasificaciones y plazas, la plantilla publicada, los árbitros de
+cada partido y las actas oficiales, más el estado de sus descargas (registro y límites de peticiones, sesión de la
+federación, cola de actas, ajustes de la pasada de las ligas y escudos descargados). Tiene su modelo y sus migraciones
+(`RealDataDbContext`, `Persistence/RealDataMigrations`). La base de cada entorno se queda con lo de la app (usuarios,
+clubes, licencias, plantillas y actas internas, lesiones, vídeos, notas a los árbitros…) y una **copia** de los datos
+reales con los mismos Id.
+
+- **Quién descarga.** Solo un proceso a la vez: el que tiene el bloqueo de la base real (`sp_getapplock` de sesión en
+  `RealDataLease`). Todos los entornos pueden (`RealData:Ingest` en Development, FakeDatos, Pilot y Production), así
+  que descarga el que esté en marcha; si hay varios, el primero que arrancó, y si se para, el bloqueo se suelta y lo
+  coge otro en un minuto. Sus trabajos (datos de las ligas, actas, árbitros, plazas, actas del fin de semana) escriben
+  directamente en la base real (`RealDataAmbient`), con su historial y sus llamadas; los límites de peticiones a las
+  webs también están ahí, así que cambiar de entorno no los reinicia. Lo poco del entorno que una descarga necesita
+  (qué equipos tienen plantilla, para pedir sus actas a la federación) lo lee por `IEnvironmentData`, de la base del
+  entorno. `/jobs` dice qué entorno descarga; en los
+  demás, lanzarlos avisa de que se hace desde ese entorno.
+- **La copia.** Cada entorno tiene el trabajo «Datos reales» (`RealDataCopier`), cada `RealData:CopyMinutes` (5), al
+  arrancar (a los 5 segundos) y en cuanto termina una descarga en ese proceso: trae lo nuevo en una sola transacción
+  sobre una foto fija de la base real, sin peticiones a ninguna web. Un entorno parado no copia nada, claro: lo que se
+  descargó mientras tanto le llega en cuanto arranca. Respeta lo de cada entorno: el escudo que sube un club, las medidas del
+  campo que apunta (`Teams.Profile_Pitch*`; la base real tiene las columnas, siempre vacías), las fichas que
+  gestiona el club (con su foto y si están ocultas) y lo que ya no está en la base real pero el entorno usa (un partido
+  con acta interna, un árbitro con notas). Los escudos descargados se escriben en los ficheros de cada entorno.
+- **Lo que pide un usuario.** Un acta que falta se pide a la cola compartida (`SheetDownloads`) y la descarga el entorno
+  que tiene el bloqueo; llega con la siguiente copia.
+- **Lo que cambia la administración** de los datos reales (ajustes de la pasada, cola de actas, temporada en curso,
+  importar un escudo) se hace contra la base real (`IRealData`) y se copia enseguida.
+- **Conexión.** `ConnectionStrings:RealData`: en Visual Studio, la de `appsettings.Development.json` o
+  `appsettings.FakeDatos.json`; en Docker la arma `Start-Docker.ps1` en el mismo SQL Server que la base del entorno
+  (`TT_REAL_DB_CONNECTION`, también en `.env.production`). El login `tercertiempo_app` necesita `db_owner` en ella
+  (`scripts/local-sql-login.sql`).
+- **Crearla.** Se creó el 03-11-2026 desde la base de desarrollo, que era la más al día, arrancando una vez con
+  `--RealData:SeedFromThisEnvironment=true`: si la base real está vacía, se llena con los datos reales de la base del
+  entorno (sin lo de los clubes) y con el estado de sus descargas, antes de que la migración del entorno quite esas
+  tablas.
+
+### Claves
+
+- `Jwt:Key` (mínimo 32 caracteres) solo está definida en `appsettings.Development.json` y `appsettings.FakeDatos.json`
+  (de la API y del servicio de vídeo, que valida los mismos tokens). Para otros entornos usa user-secrets (los dos
+  proyectos comparten el mismo almacén, `tercer-tiempo-api`) o variables de entorno (`TT_JWT_KEY` llega a los dos
+  contenedores):
 
 ```bash
 dotnet user-secrets set "Jwt:Key" "una-clave-larga-y-aleatoria" --project src/TercerTiempo.Api
 ```
 
+- `ConnectionStrings:Default` (SQL Server) está vacía en `appsettings.json` a propósito: en desarrollo la dan
+  `appsettings.Development.json` y `appsettings.FakeDatos.json`; en otros entornos, user-secrets o la variable `ConnectionStrings__Default`
+  (p. ej. `Server=mi-servidor;Database=TercerTiempo;User Id=tercertiempo;Password=...;Encrypt=True`). La conexión
+  reintenta ante errores transitorios y usa consultas divididas para las colecciones.
 - `Cors:AllowedOrigins` incluye el frontend de Vite (`http://localhost:5173`).
+- `OfficialSheets:*` (asturfutbol.es: URL base, ritmo, códigos de sección, minutos reglamentarios), `Videos:*`
+  (carpeta, tamaño máximo, trozo, formatos, vida de los tickets) y, en el servicio de vídeo, `VideoProcessing:*` (CRF,
+  preset, alto máximo, audio, umbral para dejar tal cual, intentos, rutas de ffmpeg y ffprobe) y `Analysis:*` (el
+  analizador de vídeo: activado, ruta de `uv`, carpeta del analizador, tramo de prueba): ver cada `appsettings.json`.
 
 ## Migraciones y tests
 
 ```bash
-dotnet ef migrations add NombreDeLaMigracion --project src/TercerTiempo.Infrastructure --startup-project src/TercerTiempo.Api --output-dir Persistence/Migrations
+dotnet ef migrations add NombreDeLaMigracion --project src/TercerTiempo.Infrastructure --startup-project src/TercerTiempo.Api --context AppDbContext --output-dir Persistence/Migrations
 ```
 
 ```bash
 dotnet test
 ```
 
-(`dotnet-ef` está como herramienta local: `dotnet tool restore` si hace falta.)
+(`dotnet-ef` está como herramienta local: `dotnet tool restore` si hace falta.) Con la API en ejecución desde Visual
+Studio los DLL de `bin` quedan bloqueados: la configuración `Migrations` del proyecto compila a otra carpeta, por lo
+que se puede generar la migración sin parar el depurador (`--configuration Migrations`).
+
+Las migraciones son de SQL Server (`InitialCreate` recrea todo el esquema desde cero). Para empezar de cero basta con
+borrar la base de datos: al arrancar se vuelve a crear, migrar y sincronizar.
+
+## Errores: códigos y mensajes en base de datos
+
+Ningún mensaje de error va escrito en el código. Cada excepción lleva un **código** (`ErrorCode`, `Domain/Common/Errors`,
+convención `área.motivo`) y sus argumentos; `DomainException`, `NotFoundException`, `ConflictException`,
+`ForbiddenException`, `UnauthenticatedException` e `InvalidCredentialsException` derivan de `CodedException`. El
+texto sale de la tabla **`ErrorMessages`** (código, idioma, plantilla con `{0}`, `{1}`...), cuya semilla es el
+catálogo embebido `ErrorCatalog` (hoy solo español): la configuración de EF la vuelca con `HasData`, así que cada
+migración que cambie el catálogo lleva las filas y al crear la base de datos desde cero quedan insertadas.
+
+`GlobalExceptionHandler` resuelve el mensaje con `IErrorMessageResolver` (tabla cacheada 10 minutos) en el idioma de
+`Accept-Language` (`es-ES,es;q=0.9` → `es`); si no hay traducción usa el español y, si el código no estuviera en la
+tabla, la plantilla embebida. La respuesta ProblemDetails incluye el código en `code`:
+
+```json
+{ "status": 422, "title": "Regla de negocio incumplida", "detail": "CD Llanes no se corresponde con el nombre del club (CD Lealtad de Villaviciosa).", "code": "club.team_name_mismatch" }
+```
+
+Las reglas de FluentValidation usan `WithCatalogMessage(ErrorCode.X, args)` (código + argumentos + texto por defecto)
+y las de contraseña/email de Identity se mapean a `identity.*`; en los errores de validación cada campo lleva el
+mensaje ya traducido. Para añadir un idioma: filas nuevas en `ErrorCatalog` (o directamente en la tabla) con el mismo
+código y `Language` = "en", y la cultura en `UseRequestLocalization` (Program.cs). El test `ErrorCatalogTests`
+comprueba que todo `ErrorCode` tiene mensaje.
+
+## Límite de llamadas y bloqueos
+
+`ClientThrottlingMiddleware` (API) con `ClientThrottle` (Infrastructure/Security) cuenta en memoria las llamadas a
+`/api` por IP y por IP + endpoint (método + patrón de ruta) en ventanas de `Throttling:WindowSeconds`. Al superar
+`RequestsPerWindow` o `RequestsPerEndpointPerWindow` la IP queda bloqueada `BanMinutes[n]` minutos según su
+reincidencia reciente (5 min, 30 min, 1 día) y, pasado el último escalón, el doble cada vez hasta `MaxBanMinutes`;
+tras `StrikeMemoryHours` sin incidencias vuelve al primer escalón. Mientras dura el bloqueo responde **429** con
+`Retry-After` y ProblemDetails (`throttle.too_many_requests` / `throttle.banned`). Las rutas de `ExemptRoutes` (los
+escudos) no cuentan para el límite por endpoint; `TrustForwardedHeaders` solo detrás de un proxy de confianza.
+Es por proceso: con varias instancias haría falta compartir los contadores (Redis).
 
 ## Decisiones y siguientes pasos sugeridos
 
-- **Identidad separada del dominio**: Identity gestiona credenciales; `Player` es el agregado de negocio.
-- **Verificación de plantilla**: hoy el jugador reclama su ficha; falta un rol de capitán/administrador
-  que valide pertenencias *Pending* y resuelva conflictos (dos personas reclamando la misma ficha).
-- **Proveedor real**: implementar el contrato de BeSoccer o un scraper (p. ej. AngleSharp sobre
-  FutbolAsturiano) detrás de `IFootballDataProvider`; el resto no cambia.
-- **Estadísticas**: añadir evolución por jornada, vista colectiva de la plantilla y comparativa por posición.
-- **Infra**: refresh tokens, PostgreSQL en lugar de SQLite, despliegue en contenedores, eventos de dominio
+- **Identidad separada del dominio**: Identity gestiona credenciales; `Player`, `Coach` y `Club` son los agregados de negocio.
+- **El acceso del cuerpo técnico lo da el club**: solo con un nombramiento vigente se crea o edita el acta de una
+  plantilla, y nunca más allá de la temporada. Solo hay una cuenta por club, pero queda pendiente verificar que quien
+  se da de alta como club es el club (hoy el primero que elige ese nombre se lo queda): aprobación manual o alta por
+  invitación.
+- **La plantilla es el límite de privacidad**: actas y estadísticas pertenecen a la `Squad`; nada sale de ella
+  salvo que su cuerpo técnico la haga pública. El club propietario y los técnicos vigentes generan las invitaciones personales.
+- **Roles del staff**: hoy todos los miembros vigentes del cuerpo técnico pueden registrar actas y gestionar la plantilla;
+  queda por decidir si algunas acciones (visibilidad, precio de los vídeos) se reservan al primer entrenador.
+- **Pagos y vídeo**: pasarela real (Stripe), precio por vídeo o por temporada, reparto con el club que lo sube,
+  almacenamiento en blob/CDN y transcodificación; retransmisión en directo.
+- **Estadísticas**: comparativa por posición e importar las estadísticas oficiales por jugador que publica SportsPress
+  en los eventos jugados para precargar el acta. Los pesos de la nota están en `PerformanceRating` y se pueden afinar
+  con datos reales (por ejemplo, contrastándolos con las puntuaciones que publica la web en las convocatorias).
+- **Infra**: refresh tokens, despliegue en contenedores, eventos de dominio
   con outbox (ya hay punto de extensión en `AppDbContext.SaveChangesAsync`).

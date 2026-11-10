@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+modelos/
+salidas/
+datasets/
+entrenamientos/
+yolo11n.pt
+*.egg-info/

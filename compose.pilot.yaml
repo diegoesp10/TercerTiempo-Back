@@ -1,0 +1,16 @@
+# Piloto con clubes: la API en Pilot, con lo de appsettings.Pilot.json (como publicación, y el limitador de peticiones
+# con la IP que manda el túnel). Encima de compose.production.yaml, del que toma los secretos, con su propia base,
+# tercertiempo_Piloto, en el SQL Server de Windows del equipo, para abrir la web a los clubes que lo prueban con un
+# túnel (Cloudflare Tunnel o ngrok). Start-Docker.ps1 -Environment Pilot arma la cadena de conexión (TT_DB_CONNECTION)
+# y combina los ficheros:
+#   .\Start-Docker.ps1 -Environment Pilot
+services:
+  api:
+    container_name: tercer-tiempo-api-pilot
+    environment:
+      ASPNETCORE_ENVIRONMENT: Pilot
+
+  videos:
+    container_name: tercer-tiempo-videos-pilot
+    environment:
+      ASPNETCORE_ENVIRONMENT: Pilot

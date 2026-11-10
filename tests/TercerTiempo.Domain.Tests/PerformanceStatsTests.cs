@@ -24,6 +24,21 @@ public class PerformanceStatsTests
     }
 
     [Fact]
+    public void Completed_passes_cannot_exceed_attempted()
+    {
+        var stats = TestData.ValidStats() with { PassesCompleted = 30, PassesAttempted = 25 };
+
+        Assert.Throws<DomainException>(stats.EnsureValid);
+    }
+
+    [Fact]
+    public void Recoveries_losses_or_passes_need_minutes()
+    {
+        Assert.Throws<DomainException>(new PerformanceStats(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, null, Recoveries: 2).EnsureValid);
+        Assert.Throws<DomainException>(new PerformanceStats(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, null, PassesAttempted: 5).EnsureValid);
+    }
+
+    [Fact]
     public void Cannot_log_actions_without_minutes()
     {
         var stats = TestData.ValidStats(minutes: 0, goals: 1);
@@ -34,21 +49,11 @@ public class PerformanceStatsTests
     [Fact]
     public void Unused_substitute_with_zero_minutes_is_valid()
     {
-        var stats = new PerformanceStats(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, 5, "No jugué");
+        var stats = new PerformanceStats(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, "No jugué");
 
         var exception = Record.Exception(stats.EnsureValid);
 
         Assert.Null(exception);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(11)]
-    public void Self_rating_must_be_between_1_and_10(int rating)
-    {
-        var stats = TestData.ValidStats(rating: rating);
-
-        Assert.Throws<DomainException>(stats.EnsureValid);
     }
 
     [Fact]

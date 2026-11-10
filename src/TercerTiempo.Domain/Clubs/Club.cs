@@ -1,0 +1,89 @@
+using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
+
+namespace TercerTiempo.Domain.Clubs;
+
+public sealed class Club : AggregateRoot
+{
+    private readonly List<ClubTeam> _teams = [];
+
+    public Guid UserId { get; private set; }
+    public string Name { get; private set; } = string.Empty;
+    public string NormalizedName { get; private set; } = string.Empty;
+    public DateTimeOffset RegisteredAt { get; private set; }
+
+    // Precios generales de los pases de sus partidos (acta interna y vídeo); cada partido puede tener el suyo.
+    public int SheetPassPriceCents { get; private set; }
+    public int VideoPassPriceCents { get; private set; }
+
+    public IReadOnlyCollection<ClubTeam> Teams => _teams.AsReadOnly();
+
+    private Club() { }
+
+    public static Club Register(Guid userId, string name, DateTimeOffset now)
+    {
+        var trimmed = Guard.NotEmpty(name, "nombre", 120);
+
+        return new Club
+        {
+            Id = NewId(),
+            UserId = Guard.NotEmpty(userId, nameof(userId)),
+            Name = trimmed,
+            NormalizedName = NameNormalizer.Normalize(trimmed),
+            RegisteredAt = now,
+        };
+    }
+
+    public void UpdateProfile(string name)
+    {
+        var trimmed = Guard.NotEmpty(name, "nombre", 120);
+        Name = trimmed;
+        NormalizedName = NameNormalizer.Normalize(trimmed);
+    }
+
+    public void SetPassPrices(int sheetPriceCents, int videoPriceCents)
+    {
+        SheetPassPriceCents = Guard.InRange(sheetPriceCents, 0, Passes.MatchPass.MaxPriceCents, "precio del acta");
+        VideoPassPriceCents = Guard.InRange(videoPriceCents, 0, Passes.MatchPass.MaxPriceCents, "precio del vídeo");
+    }
+
+    public bool Manages(Guid teamId) => _teams.Any(t => t.TeamId == teamId);
+
+    public ClubTeam AddTeam(Guid teamId, DateTimeOffset now)
+    {
+        if (Manages(teamId))
+            throw new DomainException(ErrorCode.ClubTeamAlreadyInClub);
+
+        var team = ClubTeam.Create(Id, teamId, now);
+        _teams.Add(team);
+        return team;
+    }
+
+    public void RemoveTeam(Guid teamId)
+    {
+        var team = _teams.FirstOrDefault(t => t.TeamId == teamId)
+            ?? throw new DomainException(ErrorCode.ClubTeamNotInClub);
+        if (_teams.Count == 1)
+            throw new DomainException(ErrorCode.ClubLastTeam);
+
+        _teams.Remove(team);
+    }
+}
+
+public sealed class ClubTeam : Entity
+{
+    public Guid ClubId { get; private set; }
+    public Guid TeamId { get; private set; }
+    public DateTimeOffset AddedAt { get; private set; }
+
+    private ClubTeam() { }
+
+    internal static ClubTeam Create(Guid clubId, Guid teamId, DateTimeOffset now) =>
+        new()
+        {
+            Id = NewId(),
+            ClubId = Guard.NotEmpty(clubId, nameof(clubId)),
+            TeamId = Guard.NotEmpty(teamId, nameof(teamId)),
+            AddedAt = now,
+        };
+}

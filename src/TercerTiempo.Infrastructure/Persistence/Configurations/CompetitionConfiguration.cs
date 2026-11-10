@@ -12,7 +12,12 @@ internal sealed class CompetitionConfiguration : IEntityTypeConfiguration<Compet
         builder.ConfigureAggregate();
 
         builder.Property(c => c.Name).HasMaxLength(150).IsRequired();
+        builder.Property(c => c.Category).HasMaxLength(100).IsRequired();
+        builder.Property(c => c.Level).HasConversion<string>().HasMaxLength(20);
+        builder.Property(c => c.Group).HasMaxLength(20);
         builder.Property(c => c.Region).HasMaxLength(100).IsRequired();
+
+        builder.HasIndex(c => c.SortOrder);
 
         builder.OwnsExternalRef(c => c.ExternalRef);
 
@@ -40,6 +45,11 @@ internal sealed class SeasonConfiguration : IEntityTypeConfiguration<Season>
         builder.HasIndex(s => new { s.CompetitionId, s.Label }).IsUnique();
         builder.HasIndex(s => s.IsCurrent);
 
+        // Todo cuelga de la temporada de la app: una temporada por liga y año, y búsqueda directa por año.
+        builder.HasOne<SeasonYear>().WithMany().HasForeignKey(s => s.SeasonYearId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(s => new { s.SeasonYearId, s.CompetitionId }).IsUnique();
+
         builder.OwnsExternalRef(s => s.ExternalRef);
+        builder.OwnsExternalRef(s => s.OfficialRef, "Official");
     }
 }

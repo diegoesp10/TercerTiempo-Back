@@ -26,60 +26,29 @@ public class PlayerTests
     }
 
     [Fact]
-    public void Verified_join_creates_active_membership()
+    public void Register_rejects_unknown_position()
     {
-        var player = TestData.NewPlayer();
-
-        var membership = player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, 7, verifiedInRoster: true, TestData.Now);
-
-        Assert.Equal(MembershipStatus.Active, membership.Status);
-        Assert.True(player.IsActiveIn(TestData.HomeTeamId, TestData.SeasonId));
-    }
-
-    [Fact]
-    public void Unverified_join_creates_pending_membership()
-    {
-        var player = TestData.NewPlayer();
-
-        var membership = player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, verifiedInRoster: false, TestData.Now);
-
-        Assert.Equal(MembershipStatus.Pending, membership.Status);
-        Assert.False(player.IsActiveIn(TestData.HomeTeamId, TestData.SeasonId));
-        Assert.NotNull(player.MembershipFor(TestData.SeasonId));
-    }
-
-    [Fact]
-    public void Cannot_join_two_squads_in_same_season()
-    {
-        var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, true, TestData.Now);
-
         Assert.Throws<DomainException>(() =>
-            player.JoinSquad(TestData.AwayTeamId, TestData.SeasonId, null, true, TestData.Now));
+            Player.Register(Guid.NewGuid(), "Pelayo", (Position)99, null, TestData.Now));
     }
 
     [Fact]
-    public void Can_join_another_squad_after_leaving()
+    public void Register_requires_a_user_and_a_name()
     {
-        var player = TestData.NewPlayer();
-        player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, null, true, TestData.Now);
-
-        player.LeaveSquad(TestData.SeasonId, TestData.Now.AddDays(1));
-        var membership = player.JoinSquad(TestData.AwayTeamId, TestData.SeasonId, null, true, TestData.Now.AddDays(2));
-
-        Assert.Equal(TestData.AwayTeamId, membership.TeamId);
-        Assert.Equal(2, player.Memberships.Count);
-        Assert.False(player.IsActiveIn(TestData.HomeTeamId, TestData.SeasonId));
+        Assert.Throws<DomainException>(() => Player.Register(Guid.Empty, "Pelayo", Position.Forward, null, TestData.Now));
+        Assert.Throws<DomainException>(() => Player.Register(Guid.NewGuid(), "   ", Position.Forward, null, TestData.Now));
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(100)]
-    public void Shirt_number_must_be_between_1_and_99(int shirtNumber)
+    [Fact]
+    public void UpdateProfile_changes_name_position_and_birth_date()
     {
         var player = TestData.NewPlayer();
 
-        Assert.Throws<DomainException>(() =>
-            player.JoinSquad(TestData.HomeTeamId, TestData.SeasonId, shirtNumber, true, TestData.Now));
+        player.UpdateProfile(" Pelayo F. ", Position.Midfielder, new DateOnly(1999, 1, 1));
+
+        Assert.Equal("Pelayo F.", player.DisplayName);
+        Assert.Equal("pelayo f", player.NormalizedName);
+        Assert.Equal(Position.Midfielder, player.Position);
+        Assert.Equal(new DateOnly(1999, 1, 1), player.BirthDate);
     }
 }

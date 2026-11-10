@@ -1,0 +1,222 @@
+﻿# Construye y arranca la API y el servicio de vídeo de Tercer Tiempo en Docker. Lo que distingue a cada entorno está en
+# src/TercerTiempo.Api/appsettings.{Entorno}.json (y src/TercerTiempo.Videos/appsettings.{Entorno}.json); los compose y
+# los .env solo llevan lo de Docker y los secretos.
+# Todos los entornos comparten la base de datos reales, tercertiempo_DatosReales, en el mismo SQL Server que su base.
+#   -Environment Development  (por defecto) API en Development; genera .env.development la primera vez y, si no
+#                             está ahí, toma la contraseña de /jobs de los user-secrets del proyecto.
+#   -Database Local           solo en Development: el SQL Server de Windows del equipo (la base de Visual Studio) con
+#                             el login de scripts/local-sql-login.sql (TT_LOCAL_SQL_PASSWORD en .env.development).
+#   -Database Container       solo en Development: un SQL Server propio en el contenedor tercer-tiempo-db.
+#                             Sin -Database se usa TT_DEV_DATABASE de .env.development (Container si no está).
+#   -WithJobs                 con -Database Local, la API del contenedor también lanza los scrapeos por horario (por
+#                             defecto se añade compose.nojobs.yaml y van solo a mano desde /jobs, porque la API de
+#                             Visual Studio comparte la base).
+#   -Environment Production   API en Production con los secretos de .env.production (copia .env.example).
+#   -WithDatabase             solo en Production: arranca también el SQL Server del equipo (perfil "database").
+#   -Environment Pilot        piloto con clubes: API en Pilot (appsettings.Pilot.json, como publicación) con los
+#                             secretos de compose.production.yaml y encima compose.pilot.yaml, y su propia base,
+#                             tercertiempo_Piloto, en el SQL Server de Windows del equipo (login de
+#                             scripts/local-sql-login.sql), para abrirlo por un túnel. Genera .env.pilot la primera
+#                             vez; la contraseña de /jobs sale de los user-secrets.
+#   -Environment FakeDatos    datos falsos: API en FakeDatos (appsettings.FakeDatos.json: desarrollo con la base
+#                             tercertiempo_DatosFake, de clubes inventados) con compose.fakedatos.yaml y el
+#                             login de scripts/local-sql-login.sql del SQL Server de Windows del equipo. Genera
+#                             .env.fakedatos la primera vez; la contraseña de /jobs sale de los user-secrets.
+#   -SkipBuild                reutiliza las imágenes existentes.
+#   -ReplaceData              vuelve a copiar al volumen los escudos y fotos de src/TercerTiempo.Api/data.
+param(
+    [ValidateSet('Development', 'Production', 'Pilot', 'FakeDatos')][string]$Environment = 'Development',
+    [ValidateSet('Local', 'Container')][string]$Database,
+    [switch]$WithDatabase,
+    [switch]$WithJobs,
+    [switch]$SkipBuild,
+    [switch]$ReplaceData
+)
+$ErrorActionPreference = 'Stop'
+Set-Location -LiteralPath $PSScriptRoot
+
+# Ejecuta un comando nativo y falla con su código de salida (sus avisos van a stderr, que Windows PowerShell 5.1
+# convierte en errores con 'Stop').
+function Invoke-Native([scriptblock]$Command, [string]$Message) {
+    $ErrorActionPreference = 'Continue'
+    & $Command
+    if ($LASTEXITCODE -ne 0) { throw $Message }
+}
+
+function Read-EnvFile([string]$Path) {
+    $values = @{}
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$') { $values[$Matches[1]] = $Matches[2].Trim() }
+    }
+    return $values
+}
+
+function New-Secret([int]$Length) {
+    $chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    $bytes = New-Object byte[] $Length
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    # Siempre con mayúscula, minúscula y número: es la política de contraseñas de SQL Server.
+    return 'Tt9' + (-join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] }))
+}
+
+$dockerOs = docker info --format '{{.OSType}}' 2>$null
+if ($LASTEXITCODE -ne 0 -or $dockerOs -ne 'linux') { throw 'Docker Desktop debe estar iniciado con contenedores Linux.' }
+
+$envName = $Environment.ToLowerInvariant()
+$envFile = Join-Path $PSScriptRoot ".env.$envName"
+if (-not (Test-Path -LiteralPath $envFile)) {
+    if ($Environment -eq 'Production') { throw 'Falta .env.production: copia .env.example y rellena los secretos de publicación.' }
+    if ($Environment -eq 'Pilot') {
+        @(
+            '# Generado por Start-Docker.ps1 para el piloto con clubes (como publicación, con su propia base). No se versiona.'
+            'TT_DATA_VOLUME=tercer-tiempo-pilot-data'
+            'TT_API_PORT=8181'
+            '# Dirección por la que entran los clubes (la del túnel): CORS y vuelta de los pagos.'
+            'TT_PUBLIC_URL=http://127.0.0.1:8180'
+            'TT_ADMIN_USER=diego'
+            "TT_JWT_KEY=$(New-Secret 48)"
+            '# Base del piloto en el SQL Server de Windows del equipo; el login tercertiempo_app es el de .env.development.'
+            'TT_PILOT_DATABASE=tercertiempo_Piloto'
+            'TT_ADMIN_RESET_MFA=false'
+        ) | Set-Content -LiteralPath $envFile -Encoding ascii
+        Write-Host "Creado $envFile con una clave JWT aleatoria." -ForegroundColor Cyan
+    } elseif ($Environment -eq 'FakeDatos') {
+        @(
+            '# Generado por Start-Docker.ps1 para los datos falsos (desarrollo con su propia base). No se versiona.'
+            'TT_DATA_VOLUME=tercer-tiempo-fakedatos-data'
+            'TT_API_PORT=8181'
+            'TT_PUBLIC_URL=http://127.0.0.1:8180'
+            'TT_ADMIN_USER=diego'
+            '# Base de datos falsos en el SQL Server de Windows del equipo; el login tercertiempo_app es el de .env.development.'
+            'TT_FAKE_DATABASE=tercertiempo_DatosFake'
+        ) | Set-Content -LiteralPath $envFile -Encoding ascii
+        Write-Host "Creado $envFile." -ForegroundColor Cyan
+    } else {
+        @(
+            '# Generado por Start-Docker.ps1 para el entorno de desarrollo en Docker. No se versiona.'
+            'TT_DATA_VOLUME=tercer-tiempo-dev-data'
+            'TT_API_PORT=8181'
+            'TT_PUBLIC_URL=http://127.0.0.1:8180'
+            'TT_ADMIN_USER=diego'
+            '# Base de datos por defecto: Local (SQL Server de Windows) o Container.'
+            'TT_DEV_DATABASE=Container'
+            '# Login tercertiempo_app del SQL Server local (scripts/local-sql-login.sql).'
+            'TT_LOCAL_SQL_PASSWORD='
+            "TT_SQL_PASSWORD=$(New-Secret 20)"
+            'TT_SQL_PORT=14333'
+        ) | Set-Content -LiteralPath $envFile -Encoding ascii
+        Write-Host "Creado $envFile con una contraseña de sa aleatoria." -ForegroundColor Cyan
+    }
+}
+$settings = Read-EnvFile $envFile
+
+# La contraseña de /jobs del desarrollo, del piloto y de los datos falsos es la de los user-secrets de la API (nunca se
+# escribe en disco).
+if ($Environment -in 'Development', 'Pilot', 'FakeDatos' -and -not $settings['TT_ADMIN_PASSWORD']) {
+    $secret = dotnet user-secrets list --project src/TercerTiempo.Api 2>$null | Select-String '^Admin:Password = '
+    if ($secret) { $env:TT_ADMIN_PASSWORD = ($secret.Line -split ' = ', 2)[1] }
+}
+
+# Recursos compartidos: la red une API y frontal; los volúmenes guardan ficheros y base de datos.
+$network = docker network ls --filter 'name=^tercer-tiempo-net$' --format '{{.Name}}'
+if (-not $network) { Invoke-Native { docker network create tercer-tiempo-net | Out-Null } 'No se pudo crear la red tercer-tiempo-net.' }
+$dataVolume = $settings['TT_DATA_VOLUME']
+if (-not $dataVolume) { throw "Falta TT_DATA_VOLUME en $envFile." }
+Invoke-Native { docker volume create $dataVolume | Out-Null } "No se pudo preparar el volumen $dataVolume."
+
+# El piloto toma los secretos de publicación: compose.production.yaml y, encima, compose.pilot.yaml.
+$compose = @('compose', '-f', 'compose.yaml')
+if ($Environment -eq 'Pilot') { $compose += @('-f', 'compose.production.yaml') }
+$compose += @('-f', "compose.$envName.yaml", '--env-file', $envFile)
+if ($Environment -eq 'Production' -and $WithDatabase) { $compose += @('--profile', 'database') }
+
+# Desarrollo: la cadena de conexión depende de qué SQL Server se use (la variable del proceso manda sobre el .env).
+if ($Environment -eq 'Development') {
+    if (-not $Database) { $Database = if ($settings['TT_DEV_DATABASE'] -eq 'Local') { 'Local' } else { 'Container' } }
+    if ($Database -eq 'Local') {
+        $localPassword = $settings['TT_LOCAL_SQL_PASSWORD']
+        if (-not $localPassword) { throw 'Falta TT_LOCAL_SQL_PASSWORD en .env.development (login de scripts/local-sql-login.sql).' }
+        $env:TT_DB_CONNECTION = "Server=host.docker.internal,1433;Database=TercerTiempo;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
+        $env:TT_REAL_DB_CONNECTION = "Server=host.docker.internal,1433;Database=tercertiempo_DatosReales;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
+        # El SQL del contenedor no hace falta: si estaba en marcha, se para (sus datos siguen en su volumen).
+        if (docker ps -q --filter 'name=^tercer-tiempo-db$') { Invoke-Native { docker stop tercer-tiempo-db | Out-Null } 'No se pudo parar tercer-tiempo-db.' }
+        if (-not $WithJobs) {
+            $compose += @('-f', 'compose.nojobs.yaml')
+            Write-Host 'Trabajos programados: solo a mano desde /jobs (compose.nojobs.yaml; -WithJobs los activa)' -ForegroundColor Cyan
+        }
+    } else {
+        if (-not $settings['TT_SQL_PASSWORD']) {
+            $settings['TT_SQL_PASSWORD'] = New-Secret 20
+            Add-Content -LiteralPath $envFile -Value "TT_SQL_PASSWORD=$($settings['TT_SQL_PASSWORD'])", 'TT_SQL_PORT=14333' -Encoding ascii
+            $settings['TT_SQL_PORT'] = '14333'
+        }
+        $env:TT_DB_CONNECTION = "Server=db;Database=TercerTiempo;User Id=sa;Password=$($settings['TT_SQL_PASSWORD']);TrustServerCertificate=True;Encrypt=True"
+        $env:TT_REAL_DB_CONNECTION = "Server=db;Database=tercertiempo_DatosReales;User Id=sa;Password=$($settings['TT_SQL_PASSWORD']);TrustServerCertificate=True;Encrypt=True"
+        $compose += @('--profile', 'container-db')
+    }
+    Write-Host "Base de datos de desarrollo: $Database" -ForegroundColor Cyan
+}
+
+# Piloto y datos falsos: cada uno su propia base en el SQL Server de Windows, con el mismo login que el desarrollo con
+# -Database Local.
+if ($Environment -in 'Pilot', 'FakeDatos') {
+    $localPassword = $settings['TT_LOCAL_SQL_PASSWORD']
+    $devFile = Join-Path $PSScriptRoot '.env.development'
+    if (-not $localPassword -and (Test-Path -LiteralPath $devFile)) { $localPassword = (Read-EnvFile $devFile)['TT_LOCAL_SQL_PASSWORD'] }
+    if (-not $localPassword) { throw "Falta TT_LOCAL_SQL_PASSWORD (en .env.$envName o en .env.development): la del login de scripts/local-sql-login.sql." }
+    if ($Environment -eq 'Pilot') {
+        $ownDatabase = if ($settings['TT_PILOT_DATABASE']) { $settings['TT_PILOT_DATABASE'] } else { 'tercertiempo_Piloto' }
+        $databaseLabel = 'del piloto'
+    } else {
+        $ownDatabase = if ($settings['TT_FAKE_DATABASE']) { $settings['TT_FAKE_DATABASE'] } else { 'tercertiempo_DatosFake' }
+        $databaseLabel = 'de los datos falsos'
+    }
+    $env:TT_DB_CONNECTION = "Server=host.docker.internal,1433;Database=$ownDatabase;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
+    $env:TT_REAL_DB_CONNECTION = "Server=host.docker.internal,1433;Database=tercertiempo_DatosReales;User Id=tercertiempo_app;Password=$localPassword;TrustServerCertificate=True;Encrypt=True"
+    if (docker ps -q --filter 'name=^tercer-tiempo-db$') { Invoke-Native { docker stop tercer-tiempo-db | Out-Null } 'No se pudo parar tercer-tiempo-db.' }
+    Write-Host "Base de datos ${databaseLabel}: $ownDatabase (SQL Server de Windows del equipo)" -ForegroundColor Cyan
+}
+
+if (-not $SkipBuild) {
+    Invoke-Native { docker @compose build api videos } 'No se pudieron construir las imágenes de la API y del servicio de vídeo.'
+}
+
+# Copia al volumen los escudos y fotos guardados en local cuando el volumen está vacío (o con -ReplaceData). La
+# carpeta se monta de solo lectura y nunca entra en la imagen.
+$localData = Join-Path $PSScriptRoot 'src/TercerTiempo.Api/data'
+if (Test-Path -LiteralPath $localData) {
+    $replace = if ($ReplaceData) { '1' } else { '0' }
+    # Sin comillas dobles dentro: Windows PowerShell 5.1 no las escapa para los comandos nativos.
+    $script = 'set -e; for d in crests photos; do mkdir -p /app/data/$d; ' +
+        'if [ -d /import/$d ] && { [ $REPLACE = 1 ] || [ $(ls -A /app/data/$d | wc -l) = 0 ]; }; then ' +
+        'cp -a /import/$d/. /app/data/$d/; echo Copiado $d al volumen.; fi; done; chown -R app:app /app/data'
+    Invoke-Native {
+        docker run --rm --user 0 --entrypoint sh -e "REPLACE=$replace" `
+            --mount "type=volume,source=$dataVolume,target=/app/data" `
+            --mount "type=bind,source=$localData,target=/import,readonly" `
+            tercer-tiempo-api:local -c $script
+    } 'No se pudieron copiar los ficheros locales al volumen.'
+}
+
+Invoke-Native { docker @compose up -d --wait --wait-timeout 300 } 'La API o el servicio de vídeo no alcanzaron un estado saludable. Consulta docker compose logs.'
+$apiPort = if ($settings['TT_API_PORT']) { $settings['TT_API_PORT'] } else { '8181' }
+$videosPort = if ($settings['TT_VIDEOS_PORT']) { $settings['TT_VIDEOS_PORT'] } else { '8182' }
+Write-Host "API Docker ($Environment) lista en el contenedor tercer-tiempo-api-${envName}: http://127.0.0.1:$apiPort/api/health" -ForegroundColor Green
+Write-Host "Servicio de vídeo ($Environment) listo en el contenedor tercer-tiempo-videos-${envName}: http://127.0.0.1:$videosPort/media/health (ffmpeg comprime los vídeos subidos)" -ForegroundColor Green
+if ($Environment -eq 'Development') {
+    Write-Host "Referencia de la API: http://127.0.0.1:$apiPort/docs" -ForegroundColor Green
+    if ($Database -eq 'Container') {
+        Write-Host "SQL Server del contenedor: 127.0.0.1,$($settings['TT_SQL_PORT']) (usuario sa, contraseña en .env.development)" -ForegroundColor Green
+    } else {
+        Write-Host 'Base de datos: el SQL Server local del equipo (TercerTiempo)' -ForegroundColor Green
+    }
+}
+if ($Environment -eq 'FakeDatos') {
+    Write-Host "Referencia de la API: http://127.0.0.1:$apiPort/docs" -ForegroundColor Green
+    Write-Host 'Datos falsos: se entra por la web (http://127.0.0.1:8180) con las cuentas @datosfake.test.' -ForegroundColor Green
+}
+if ($Environment -eq 'Pilot') {
+    Write-Host 'Piloto: se entra por la web (http://127.0.0.1:8180) y se abre a los clubes con un túnel, p. ej.' -ForegroundColor Green
+    Write-Host '  cloudflared tunnel --url http://127.0.0.1:8180' -ForegroundColor Green
+}
+docker @compose ps

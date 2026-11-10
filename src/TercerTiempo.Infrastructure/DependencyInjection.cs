@@ -1,69 +1,181 @@
+using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Application.Abstractions.OfficialSheets;
+using TercerTiempo.Application.Abstractions.Teams;
+using TercerTiempo.Domain.Common.Errors;
+using TercerTiempo.Application.Abstractions.Videos;
+using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Videos;
+using TercerTiempo.Application.Licensing;
+using TercerTiempo.Domain.Licensing;
+using TercerTiempo.Infrastructure.Licensing;
 using TercerTiempo.Infrastructure.FootballData;
-using TercerTiempo.Infrastructure.FootballData.BeSoccer;
 using TercerTiempo.Infrastructure.FootballData.Fake;
+using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.FootballData.JsonFiles;
 using TercerTiempo.Infrastructure.Identity;
+using TercerTiempo.Infrastructure.Jobs;
+using TercerTiempo.Application.Jobs;
+using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
+using TercerTiempo.Infrastructure.Security;
+using TercerTiempo.Infrastructure.Teams;
 using TercerTiempo.Infrastructure.Persistence;
 using TercerTiempo.Infrastructure.Persistence.Stores;
+using TercerTiempo.Infrastructure.RealData;
+using TercerTiempo.Infrastructure.Videos;
 
 namespace TercerTiempo.Infrastructure;
 
 public static class DependencyInjection
 {
+    // La API: todo, con los trabajos en segundo plano (descargas, copias, renovaciones, avisos...).
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddInfrastructureCore(configuration);
+        AddBackgroundWork(services);
+
+        return services;
+    }
+
+    // Lo que necesita cualquier proceso de la solución (la API y el servicio de vídeo): base de datos, identidad,
+    // proveedores, almacenamiento y los servicios que usan los handlers; sin los trabajos en segundo plano, que
+    // solo lanza la API (el servicio de vídeo tiene el suyo).
+    public static IServiceCollection AddInfrastructureCore(this IServiceCollection services, IConfiguration configuration)
     {
         services.TryAddSingleton(TimeProvider.System);
 
         AddPersistence(services, configuration);
         AddIdentity(services, configuration);
         AddFootballData(services, configuration);
+        AddOfficialSheets(services, configuration);
+        AddVideos(services, configuration);
 
         return services;
     }
 
+    private static void AddBackgroundWork(IServiceCollection services)
+    {
+        // Datos reales: un solo entorno descarga a la vez (RealDataLease) y todos copian la base compartida a la suya.
+        services.AddHostedService(sp => sp.GetRequiredService<RealDataLease>());
+        services.AddHostedService<RealDataCopyWorker>();
+
+        services.AddHostedService<FootballDataSyncWorker>();
+
+        // Actas oficiales: el proceso que las descarga y guarda, y el que encola las del fin de semana.
+        services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetSyncWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.OfficialSheets.WeeklySheetQueueWorker>();
+
+        services.AddHostedService<LicenseRenewalWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Alerts.LicenseAlertsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Referees.MatchOfficialsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.FootballData.LeagueZonesWorker>();
+
+        // Cola de avisos de la pasarela (webhooks de Stripe o eventos de la simulada) y el proceso que los aplica.
+        services.AddHostedService<PaymentEventWorker>();
+    }
+
     private static void AddPersistence(IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Default") ?? "Data Source=tercertiempo.db";
+        var connectionString = configuration.GetConnectionString("Default")
+            ?? throw new InvalidOperationException("Falta la cadena de conexión ConnectionStrings:Default (SQL Server).");
+        var realDataConnection = configuration.GetConnectionString("RealData") is { Length: > 0 } realData
+            ? realData
+            : throw new InvalidOperationException("Falta la cadena de conexión ConnectionStrings:RealData (base de datos reales que comparten los entornos).");
 
-        services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
+        // SQL Server. Varios agregados cargan dos colecciones a la vez (plantilla: staff y fichas; acta oficial: líneas y
+        // sucesos): en consultas separadas se evita el producto cartesiano de una sola JOIN. Reintentos ante errores
+        // transitorios (arranque del servidor, cortes breves de red).
+        services.AddSingleton<Search.SearchIndexInvalidator>();
+        // La base del entorno o, en las descargas, la de los datos reales (RealDataAmbient).
+        services.AddSingleton(new RealDataConnections(connectionString, realDataConnection));
+        services.AddScoped<DatabaseTarget>();
+        services.AddDbContext<AppDbContext>((sp, options) => options
+            .UseSqlServer(sp.GetRequiredService<DatabaseTarget>().RealData ? realDataConnection : connectionString, sql => sql
+                .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
+                .EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorNumbersToAdd: null)
+                .CommandTimeout(60))
+            .AddInterceptors(sp.GetRequiredService<Search.SearchIndexInvalidator>()));
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
+        services.AddDbContext<RealDataDbContext>(options => options.UseSqlServer(realDataConnection, sql => sql.CommandTimeout(120)));
+
+        // El bloqueo de las descargas de datos reales lo pide la API al arrancar (AddBackgroundWork); aquí solo se sabe
+        // si este proceso lo tiene.
+        services.AddOptions<RealDataOptions>().Bind(configuration.GetSection(RealDataOptions.SectionName));
+        services.AddSingleton<RealDataLease>();
+        services.AddSingleton<IRealDataLease>(sp => sp.GetRequiredService<RealDataLease>());
+        services.AddSingleton<RealDataCopier>();
+        services.AddScoped<TercerTiempo.Application.Abstractions.RealData.IRealData, RealDataGateway>();
+        services.AddScoped<TercerTiempo.Application.Abstractions.RealData.IEnvironmentData, EnvironmentDataGateway>();
 
         services.AddScoped<IPlayerStore, PlayerStore>();
+        services.AddScoped<ICoachStore, CoachStore>();
+        services.AddScoped<ISquadStore, SquadStore>();
+        services.AddScoped<IInjuryStore, InjuryStore>();
+        services.AddScoped<ITeamMatchStatsStore, TeamMatchStatsStore>();
         services.AddScoped<ITeamStore, TeamStore>();
         services.AddScoped<ICompetitionStore, CompetitionStore>();
         services.AddScoped<IMatchStore, MatchStore>();
         services.AddScoped<IStandingStore, StandingStore>();
         services.AddScoped<IPerformanceStore, PerformanceStore>();
+        services.AddScoped<IPerformanceSuggestionStore, SuggestionStore>();
+        services.AddScoped<IClubStore, ClubStore>();
+        services.AddScoped<IClubInvitationStore, ClubInvitationStore>();
+        services.AddScoped<ICoachAppointmentStore, CoachAppointmentStore>();
+        services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
+        services.AddScoped<IMatchVideoStore, MatchVideoStore>();
+        services.AddScoped<IMatchVideoAnalysisStore, MatchVideoAnalysisStore>();
+        services.AddScoped<IVideoUploadStore, VideoUploadStore>();
+        services.AddScoped<TercerTiempo.Domain.Trainings.IExerciseStore, ExerciseStore>();
+        services.AddScoped<TercerTiempo.Domain.Trainings.ITrainingStore, TrainingStore>();
+        services.AddScoped<TercerTiempo.Domain.Trainings.ICallUpStore, CallUpStore>();
+        services.AddScoped<TercerTiempo.Domain.Trainings.ITrialPlayerStore, TrialPlayerStore>();
+        services.AddScoped<TercerTiempo.Domain.Passes.IMatchPassStore, MatchPassStore>();
+        services.AddScoped<TercerTiempo.Domain.Passes.IMatchPassRequestStore, MatchPassRequestStore>();
+        services.AddScoped<TercerTiempo.Domain.Passes.IMatchPassPriceStore, MatchPassPriceStore>();
+        services.AddScoped<TercerTiempo.Domain.Passes.IPassSaleStore, PassSaleStore>();
+        services.AddScoped<ILicenseStore, LicenseStore>();
+        services.AddScoped<TercerTiempo.Domain.Alerts.IAlertStore, TercerTiempo.Infrastructure.Alerts.AlertStore>();
+        services.AddScoped<TercerTiempo.Domain.Referees.IRefereeStore, TercerTiempo.Infrastructure.Referees.RefereeStore>();
+        services.AddScoped<TercerTiempo.Domain.Moderation.IForbiddenWordStore, TercerTiempo.Infrastructure.Moderation.ForbiddenWordStore>();
+        services.AddScoped<TercerTiempo.Domain.Competitions.ISeasonZoneStore, Persistence.Stores.SeasonZoneStore>();
+        services.AddScoped<ILicensingSettingsStore, TercerTiempo.Infrastructure.Licensing.LicensingSettingsStore>();
+        services.AddScoped<TercerTiempo.Domain.Competitions.IFootballSyncSettingsStore, FootballData.FootballSyncSettingsStore>();
+        services.AddScoped<TercerTiempo.Domain.Competitions.ISeasonYearStore, Persistence.Stores.SeasonYearStore>();
+        services.AddScoped<TercerTiempo.Domain.Privacy.ICookieStore, Privacy.CookieStore>();
+        services.AddScoped<TercerTiempo.Domain.Privacy.IAnalyticsStore, Privacy.AnalyticsStore>();
+        services.AddScoped<TercerTiempo.Application.Privacy.IAnalyticsReports, Privacy.AnalyticsReports>();
     }
 
     private static void AddIdentity(IServiceCollection services, IConfiguration configuration)
     {
         services
-            .AddIdentityCore<ApplicationUser>(options =>
-            {
-                options.User.RequireUniqueEmail = true;
-                options.Password.RequiredLength = 8;
-                options.Password.RequireDigit = true;
-                options.Password.RequireUppercase = false;
-                options.Password.RequireLowercase = false;
-                options.Password.RequireNonAlphanumeric = false;
-            })
+            .AddIdentityCore<ApplicationUser>(IdentitySetup.Configure)
             .AddRoles<IdentityRole<Guid>>()
-            .AddEntityFrameworkStores<AppDbContext>();
+            .AddEntityFrameworkStores<AppDbContext>()
+            .AddPasswordValidator<PasswordRulesValidator>()
+            .AddTokenProvider<AuthenticatorTokenProvider<ApplicationUser>>(TokenOptions.DefaultAuthenticatorProvider);
+
+        services.Configure<PasswordHasherOptions>(IdentitySetup.ConfigureHasher);
+        services.AddSingleton<SessionStamps>();
+        // Solo para el billete del segundo paso del administrador (5 minutos): no hace falta guardar las claves.
+        services.AddDataProtection();
 
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
@@ -71,7 +183,13 @@ public static class DependencyInjection
                 "Jwt:Key debe configurarse con al menos 32 caracteres (user-secrets o variable de entorno).")
             .ValidateOnStart();
 
+        services.AddOptions<AdminOptions>().Bind(configuration.GetSection(AdminOptions.SectionName));
+        services.AddOptions<AccountLockoutOptions>().Bind(configuration.GetSection(AccountLockoutOptions.SectionName));
+        services.AddOptions<TercerTiempo.Application.Clubs.Invitations.RegistrationOptions>()
+            .Bind(configuration.GetSection(TercerTiempo.Application.Clubs.Invitations.RegistrationOptions.SectionName));
+
         services.AddScoped<IIdentityService, IdentityService>();
+        services.AddScoped<IAdminSecondFactor, AdminSecondFactor>();
         services.AddSingleton<ITokenService, JwtTokenService>();
     }
 
@@ -80,13 +198,12 @@ public static class DependencyInjection
         services.AddOptions<FootballDataOptions>()
             .Bind(configuration.GetSection(FootballDataOptions.SectionName));
 
-        var provider = configuration[$"{FootballDataOptions.SectionName}:Provider"] ?? FootballDataOptions.FakeProvider;
+        var provider = configuration[$"{FootballDataOptions.SectionName}:Provider"] ?? FootballDataOptions.FutbolAsturianoProvider;
 
-        switch (provider.ToLowerInvariant())
+        switch (provider.Trim().ToLowerInvariant())
         {
-            case FootballDataOptions.BeSoccerProvider:
-                services.AddHttpClient<BeSoccerFootballDataProvider>();
-                services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<BeSoccerFootballDataProvider>());
+            case FootballDataOptions.FakeProvider:
+                services.AddSingleton<IFootballDataProvider, FakeFootballDataProvider>();
                 break;
 
             case FootballDataOptions.JsonFilesProvider:
@@ -94,17 +211,145 @@ public static class DependencyInjection
                 break;
 
             default:
-                services.AddSingleton<IFootballDataProvider, FakeFootballDataProvider>();
+                // Una instancia por ámbito (sincronización): cachea catálogos de temporada, estadios, posiciones y jugadores.
+                services.AddHttpClient<FutbolAsturianoFootballDataProvider>((sp, client) =>
+                {
+                    var settings = sp.GetRequiredService<IOptions<FootballDataOptions>>().Value.FutbolAsturiano;
+                    client.BaseAddress = new Uri(settings.BaseUrl.EndsWith('/') ? settings.BaseUrl : settings.BaseUrl + "/");
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
+                    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                }).LogScrapes("futbolasturiano");
+                services.AddScoped<IFootballDataProvider>(sp => sp.GetRequiredService<FutbolAsturianoFootballDataProvider>());
                 break;
         }
 
-        services.AddHostedService<FootballDataSyncWorker>();
+        // Trabajos en segundo plano: cuándo tocan, su historial y el lanzamiento a mano desde /jobs.
+        services.AddSingleton<JobScheduler>();
+        services.AddScoped<IJobsMonitor, JobsMonitor>();
+        services.AddScoped<TercerTiempo.Application.Search.ISearchCorpusSource, Search.SearchCorpusSource>();
+
+        // Actas oficiales: cola en memoria (el proceso que la consume va en AddBackgroundWork).
+        services.AddSingleton<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>();
+        services.AddSingleton<TercerTiempo.Application.OfficialSheets.IOfficialSheetQueue>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
+        services.AddSingleton<TercerTiempo.Application.OfficialSheets.ISheetDownloadSignal>(sp => sp.GetRequiredService<TercerTiempo.Infrastructure.OfficialSheets.OfficialSheetQueue>());
+        services.AddScoped<TercerTiempo.Application.OfficialSheets.ISheetDownloadStore, TercerTiempo.Infrastructure.OfficialSheets.SheetDownloadStore>();
     }
 
-    /// <summary>Aplica las migraciones pendientes. Se invoca desde la API al arrancar.</summary>
+    private static void AddOfficialSheets(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton<IAsturfutbolRequestStore, SqlAsturfutbolRequestStore>();
+        services.AddSingleton<AsturfutbolRequestGate>();
+        services.AddSingleton<AsturfutbolSession>();
+        services.AddOptions<OfficialSheetOptions>()
+            .Bind(configuration.GetSection(OfficialSheetOptions.SectionName));
+
+        // Cookie compartida; los saltos de sesión también pasan por el control persistente de peticiones.
+        services.AddHttpClient<AsturfutbolClient>((sp, client) =>
+            {
+                var settings = sp.GetRequiredService<IOptions<OfficialSheetOptions>>().Value.Asturfutbol;
+                client.BaseAddress = new Uri(settings.BaseUrl.EndsWith('/') ? settings.BaseUrl : settings.BaseUrl + "/");
+                client.Timeout = TimeSpan.FromSeconds(40);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
+                client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
+            })
+            .ConfigurePrimaryHttpMessageHandler(sp => new HttpClientHandler
+            {
+                UseCookies = true,
+                CookieContainer = sp.GetRequiredService<AsturfutbolSession>().Cookies,
+                AllowAutoRedirect = false,
+                AutomaticDecompression = System.Net.DecompressionMethods.All,
+            })
+            .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
+            .LogScrapes(AsturfutbolOfficialSheetProvider.Name);
+
+        services.AddScoped<IOfficialSheetProvider, AsturfutbolOfficialSheetProvider>();
+        services.AddScoped<ITeamProfileProvider, AsturfutbolTeamProfileProvider>();
+
+        // Webs del acta pública (OfficialSheets:Sources): hoy solo la federación.
+        services.AddOptions<TercerTiempo.Application.OfficialSheets.PublicSheetOptions>()
+            .Bind(configuration.GetSection(TercerTiempo.Application.OfficialSheets.PublicSheetOptions.SectionName));
+
+        services.AddOptions<CrestOptions>()
+            .Bind(configuration.GetSection(CrestOptions.SectionName));
+        // Los escudos que se descargan van a la base de datos reales; los de los clubes y los que se sirven, a ficheros.
+        services.AddSingleton<FileSystemCrestStorage>();
+        services.AddScoped<ICrestStorage>(sp => sp.GetRequiredService<DatabaseTarget>().RealData
+            ? ActivatorUtilities.CreateInstance<RealDataCrestStorage>(sp)
+            : sp.GetRequiredService<FileSystemCrestStorage>());
+        services.AddSingleton<IPlayerPhotoStorage, FileSystemPlayerPhotoStorage>();
+        services.AddScoped<IErrorMessageStore, ErrorMessageStore>();
+
+        // Límite de llamadas por IP y por endpoint con bloqueos crecientes (el middleware vive en Hosting).
+        services.AddOptions<ThrottlingOptions>().Bind(configuration.GetSection(ThrottlingOptions.SectionName));
+        services.AddSingleton<ClientThrottle>();
+        services.AddHttpClient<ICrestDownloader, HttpCrestDownloader>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("TercerTiempo/1.0 (+https://github.com/diegoesp10/TercerTiempo-Back)");
+            client.DefaultRequestHeaders.Accept.ParseAdd("image/*");
+        }).LogScrapes("escudos");
+    }
+
+    private static void AddVideos(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<VideoOptions>()
+            .Bind(configuration.GetSection(VideoOptions.SectionName));
+        services.AddOptions<VideoProcessingOptions>()
+            .Bind(configuration.GetSection(VideoProcessingOptions.SectionName));
+        services.AddOptions<VideoAnalysisOptions>()
+            .Bind(configuration.GetSection(VideoAnalysisOptions.SectionName));
+        services.AddOptions<TercerTiempo.Application.Passes.PassOptions>()
+            .Bind(configuration.GetSection(TercerTiempo.Application.Passes.PassOptions.SectionName));
+
+        // Licencias por equipo: planes, precios, prueba y pasarela («mock» = pago simulado, «stripe»).
+        services.AddOptions<LicensingOptions>()
+            .Bind(configuration.GetSection(LicensingOptions.SectionName));
+        if (configuration.GetValue<string>($"{LicensingOptions.SectionName}:Provider") == "stripe")
+        {
+            services.AddHttpClient<ILicensePaymentGateway, StripeLicensePaymentGateway>((sp, client) =>
+            {
+                var stripe = sp.GetRequiredService<IOptions<LicensingOptions>>().Value.Stripe;
+                client.BaseAddress = new Uri(stripe.ApiBaseUrl.EndsWith('/') ? stripe.ApiBaseUrl : stripe.ApiBaseUrl + "/");
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
+            services.AddScoped<IPaymentSimulator, DisabledPaymentSimulator>();
+        }
+        else
+        {
+            services.AddScoped<MockPaymentGateway>();
+            services.AddScoped<ILicensePaymentGateway>(sp => sp.GetRequiredService<MockPaymentGateway>());
+            services.AddScoped<IPaymentSimulator>(sp => sp.GetRequiredService<MockPaymentGateway>());
+        }
+
+        // Cola de avisos de la pasarela; el proceso que los aplica va en AddBackgroundWork.
+        services.AddScoped<IPaymentEventInbox, PaymentEventInbox>();
+        services.AddSingleton<PaymentEventSignal>();
+        services.AddSingleton<IPaymentEventSignal>(sp => sp.GetRequiredService<PaymentEventSignal>());
+
+        services.AddMemoryCache();
+        // Los vídeos en disco (el servicio de vídeo los sube, sirve y comprime; la API solo lista sus filas).
+        services.AddSingleton<FileSystemVideoStorage>();
+        services.AddSingleton<IVideoStorage>(sp => sp.GetRequiredService<FileSystemVideoStorage>());
+        services.AddSingleton<IVideoTickets, MemoryVideoTickets>();
+        services.AddSingleton<IVideoTranscoder, FfmpegTranscoder>();
+        services.AddSingleton<IVideoProcessingSignal, VideoProcessingSignal>();
+        // El analizador de vídeo (TercerTiempo.Analisis) lo lanza el servicio de vídeo; la API solo lee su resultado.
+        services.AddSingleton<IVideoAnalyzer, UvVideoAnalyzer>();
+        services.AddSingleton<IVideoAnalysisSignal, VideoAnalysisSignal>();
+        services.AddSingleton<IVideoJobLog, VideoJobLog>();
+        services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
+    }
+
+    // Primero la base de datos reales (y, si está vacía y este entorno la crea, sus datos desde la base del entorno, antes
+    // de que las migraciones del entorno quiten las tablas que ya solo viven en ella); después la del entorno.
     public static async Task MigrateDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
     {
         using var scope = services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<RealDataDbContext>().Database.MigrateAsync(cancellationToken);
+        if (scope.ServiceProvider.GetRequiredService<IOptions<RealDataOptions>>().Value.SeedFromThisEnvironment)
+            await scope.ServiceProvider.GetRequiredService<RealDataCopier>().SeedAsync(cancellationToken);
+
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.MigrateAsync(cancellationToken);
     }

@@ -1,11 +1,34 @@
 namespace TercerTiempo.Application.Abstractions.Identity;
 
-/// <summary>Gestión de usuarios/credenciales. La infraestructura lo implementa con ASP.NET Core Identity.</summary>
+// Cuándo se cambió la contraseña por última vez y desde cuándo se puede volver a cambiar (null: ya se puede).
+public sealed record PasswordState(DateTimeOffset? ChangedAt, DateTimeOffset? NextChangeAt);
+
 public interface IIdentityService
 {
-    /// <summary>Crea el usuario y devuelve su Id. Lanza ConflictException si el email ya existe.</summary>
+    // Crea la cuenta sin confirmar. El email solo está ocupado si es de una cuenta confirmada; la de un alta que se cortó
+    // a medias se sustituye.
     Task<Guid> CreateUserAsync(string email, string password, CancellationToken cancellationToken);
 
-    /// <summary>Devuelve el Id del usuario si las credenciales son válidas; null en caso contrario.</summary>
+    // Marca la cuenta como confirmada sin guardarla: se guarda en el mismo SaveChanges que su perfil, así que o quedan
+    // las dos cosas o ninguna.
+    Task ConfirmUserAsync(Guid userId, CancellationToken cancellationToken);
+
+    // Borra la cuenta si sigue sin confirmar (el alta ha fallado después de crearla). Nunca lanza: si no se puede, la
+    // cuenta sin confirmar no entra ni ocupa el email.
+    Task DiscardUnconfirmedUserAsync(Guid userId);
+
+    // Cada fallo cuenta para el bloqueo temporal; con la cuenta bloqueada lanza auth.locked_out.
     Task<Guid?> ValidateCredentialsAsync(string email, string password, CancellationToken cancellationToken);
+
+    // Solo usuarios con el rol Admin; cada fallo cuenta para el bloqueo temporal de Identity. Con el segundo paso
+    // pendiente (MFA), una contraseña buena no borra los fallos: así no se puede probar códigos sin fin.
+    Task<Guid?> ValidateAdminAsync(string userName, string password, bool secondFactorPending, CancellationToken cancellationToken);
+
+    // Huella de la sesión que viaja en el token: cambia con la contraseña y deja sin valor los tokens anteriores.
+    Task<string> GetSessionStampAsync(Guid userId, CancellationToken cancellationToken);
+
+    Task<PasswordState> GetPasswordStateAsync(Guid userId, CancellationToken cancellationToken);
+
+    // Devuelve el email de la cuenta, para emitir el token de la sesión que hace el cambio.
+    Task<string> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, CancellationToken cancellationToken);
 }
