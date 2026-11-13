@@ -1,8 +1,10 @@
 """Genera el PDF compacto del manual de uso a partir de la exportación HTML del documento de Claude Docs.
 
-Uso:  python build.py <manual.html> <salida.pdf> [--tamano 9.5]
+Uso:  python build.py [manual.html] [salida.pdf] [--tamano 9.5]
 
-El HTML es el que exporta Claude Docs (solo el cuerpo: h1, h2, h3, p, listas, tablas, figuras). El script lo envuelve
+Sin argumentos toma el `manual.html` que hay junto al script (la última exportación del documento) y deja el PDF en la
+raíz del proyecto (`Manual de uso de Tercer Tiempo.pdf`). El HTML es el que exporta Claude Docs (solo el cuerpo: h1,
+h2, h3, p, listas, tablas, figuras); al cambiar el documento hay que volver a exportarlo aquí. El script lo envuelve
 en una página con estilo compacto (letra de 9,5 pt, márgenes estrechos) y lo imprime con Google Chrome (o Edge) en
 modo sin ventana. No hace falta instalar nada más.
 """
@@ -25,6 +27,10 @@ NAVEGADORES = [
     Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
     Path(r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"),
 ]
+
+AQUI = Path(__file__).resolve().parent
+HTML_POR_DEFECTO = AQUI / "manual.html"
+PDF_POR_DEFECTO = AQUI.parents[2] / "Manual de uso de Tercer Tiempo.pdf"
 
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
@@ -107,11 +113,17 @@ def paginas(pdf: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PDF compacto del manual de uso desde la exportación HTML de Claude Docs.")
-    parser.add_argument("html", type=Path)
-    parser.add_argument("pdf", type=Path)
+    parser.add_argument("html", type=Path, nargs="?", default=HTML_POR_DEFECTO, help=f"Exportación HTML del documento (por defecto {HTML_POR_DEFECTO}).")
+    parser.add_argument("pdf", type=Path, nargs="?", default=PDF_POR_DEFECTO, help=f"PDF de salida (por defecto {PDF_POR_DEFECTO}).")
     parser.add_argument("--tamano", type=float, default=9.5, help="Tamaño de la letra en puntos (9,5 por defecto).")
     args = parser.parse_args(argv)
 
+    if not args.html.exists() and args.html.parent == Path(".") and (AQUI / args.html.name).exists():
+        # `python build.py manual.html …` desde otra carpeta: el de junto al script.
+        args.html = AQUI / args.html.name
+    if not args.html.exists():
+        print(f"No existe {args.html}. Exporta la pestaña del manual de Claude Docs en HTML y guárdala ahí (o pásala como primer argumento).", file=sys.stderr)
+        return 2
     cuerpo = args.html.read_text(encoding="utf-8")
     with tempfile.TemporaryDirectory() as carpeta:
         pagina = Path(carpeta) / "manual.html"
