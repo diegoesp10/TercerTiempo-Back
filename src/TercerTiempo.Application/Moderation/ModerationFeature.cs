@@ -77,7 +77,7 @@ public sealed record RefereeCommentAdminDto(
     string TeamName,
     RefereeRaterDto RatedBy,
     OfficialRole Role,
-    int Score,
+    int? Score,
     [property: Description("El comentario completo, también si está oculto.")]
     string Comment,
     [property: Description("Retirado por la administración: la nota se publica, el comentario no.")]

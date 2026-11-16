@@ -208,6 +208,19 @@ asignación viaja con el volcado (no hay `PUT …/tracklets` aparte) y no hay `P
 `acta-propuesta.json` guardado tal cual. Queda fuera, de momento, la campanita al terminar, el minimapa y los eventos
 con su clip. Cómo funciona: README del backend, «Análisis del vídeo: la propuesta de acta interna».
 
+**Hecho el 16-11-2026** (que funcione de punta a punta sin vigilarlo): en el servicio de vídeo, `Analysis:Enabled`
+(encolar) va aparte de `Analysis:RunWorker` (analizar en este proceso), así que en Docker se encola y analiza
+`Start-Analyzer.ps1` con la GPU del equipo, que `Start-Docker.ps1` lanza solo en Development y FakeDatos si hay
+`nvidia-smi` y `uv` (`-NoAnalyzer` para no hacerlo) y que antes comprueba uv, `uv sync --frozen`, CUDA, los pesos y la
+carpeta de los vídeos. Cada analizador deja un latido (`VideoAnalyzerHeartbeats`) y el acta interna avisa si hay
+vídeos esperando y ninguno encendido; el análisis en marcha lleva arrendamiento (`WorkerId` y `HeartbeatAt`), y lo que
+deja un analizador muerto vuelve a la cola (con el intento contado) sin tocar lo de otro vivo. El cuerpo técnico puede
+cancelar lo que está en cola o analizándose. Los fallos pasajeros se reintentan (`MaxAttempts`), un analizador callado
+15 minutos se da por colgado, los procesos hijos mueren con el servicio (Job Object en Windows), la salida de error
+queda entera en `stderr.txt`, `uv run --frozen` no reinstala nada a mitad, la propuesta trae `version` y la app
+rechaza la que no entiende, el JSON se escribe sin NaN, y si el analizador no pudo leer todos los fotogramas del
+archivo lo dice (`pct_leido`): por debajo de 95 % la propuesta va con aviso y por debajo de 50 % el análisis falla.
+
 ## 7. Riesgos y límites, sin maquillar
 
 - **La cámara manda.** Sin encuadre fijo lateral, la posesión es basura. Hay que probar con un vídeo real del

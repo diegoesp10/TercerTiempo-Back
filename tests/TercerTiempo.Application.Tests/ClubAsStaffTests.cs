@@ -172,10 +172,10 @@ public class ClubAsStaffTests
             _season = Competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
             Competition.MarkCurrent(_season.Id);
             Club.AddTeam(Team.Id, Now);
-            _rosterEntry = RosterEntry.Create(Team.Id, _season.Id, "Pelayo Fernández", Position.Forward, 9, null, Now);
+            _rosterEntry = RosterEntry.Create(Team.Id, _season.Id, "Pelayo Fernández", Position.Forward, null, Now);
             _roster.Add(_rosterEntry);
             if (publishedTwice)
-                _roster.Add(RosterEntry.Create(Team.Id, _season.Id, "Pelayo Fernández", null, 19, null, Now));
+                _roster.Add(RosterEntry.Create(Team.Id, _season.Id, "Pelayo Fernández", null, null, Now));
             Played = Match.Schedule(_season.Id, 1, Team.Id, Rival.Id, Now.AddDays(-2), null, null);
             Played.RecordResult(2, 1, Now.AddDays(-2).AddHours(2));
             Upcoming = Match.Schedule(_season.Id, 2, Team.Id, Rival.Id, Now.AddDays(3), null, null);
@@ -183,7 +183,7 @@ public class ClubAsStaffTests
             if (withSquad)
             {
                 var squad = Squad.Open(Team.Id, _season.Id, Now);
-                squad.AddPlayer(_rosterEntry.FullName, _rosterEntry.Position, _rosterEntry.ShirtNumber, _rosterEntry.Id, Now);
+                squad.AddPlayer(_rosterEntry.FullName, _rosterEntry.Position, 9, _rosterEntry.Id, Now);
                 Squads.Add(squad);
             }
         }

@@ -6,8 +6,9 @@ using TercerTiempo.Domain.Squads;
 namespace TercerTiempo.Domain.Trainings;
 
 // La convocatoria de un partido: a quién lleva el cuerpo técnico, dónde y a qué hora se queda. En borrador solo la ve
-// el cuerpo técnico; al publicarla se avisa a toda la plantilla (al que va y al que no) y cada jugador la firma desde la
-// app: el convocado firma que va, el que no va se da por enterado.
+// el cuerpo técnico; al enviarla (publicarla) se avisa a toda la plantilla (al que va y al que no) y cada jugador la
+// firma desde la app: el convocado firma que va, el que no va se da por enterado. Antes de la firma, el cuerpo técnico
+// ve a quién le ha llegado (NotifiedAt) y quién la ha abierto (SeenAt), como el doble check de un mensaje.
 public sealed class MatchCallUp : AggregateRoot
 {
     private readonly List<CallUpEntry> _entries = [];
@@ -70,8 +71,20 @@ public sealed class MatchCallUp : AggregateRoot
             if (entry.SetCalled(called, now)) changed.Add(entry);
         }
 
+        var place = string.IsNullOrWhiteSpace(meetPlace) ? null : Guard.NotEmpty(meetPlace, "lugar", 150);
+        // Ya enviada, si cambia la hora o el sitio de la cita, los convocados tienen que enterarse: se les vuelve a avisar
+        // y el doble check vuelve a gris hasta que la abran otra vez. La firma se mantiene: siguen convocados.
+        if (IsPublished && (meetAt != MeetAt || place != MeetPlace))
+        {
+            foreach (var entry in _entries.Where(e => e.Called && !changed.Contains(e)))
+            {
+                entry.MeetingChanged();
+                changed.Add(entry);
+            }
+        }
+
         MeetAt = meetAt;
-        MeetPlace = string.IsNullOrWhiteSpace(meetPlace) ? null : Guard.NotEmpty(meetPlace, "lugar", 150);
+        MeetPlace = place;
         Notes = string.IsNullOrWhiteSpace(notes) ? null : Guard.NotEmpty(notes, "notas", 1000);
         UpdatedAt = now;
         return changed;
@@ -110,6 +123,21 @@ public sealed class MatchCallUp : AggregateRoot
     }
 
     public CallUpEntry? EntryOf(Guid squadPlayerId) => _entries.FirstOrDefault(e => e.SquadPlayerId == squadPlayerId);
+
+    // El jugador abre la convocatoria enviada. Abrirla otra vez no cambia la hora de la primera.
+    public CallUpEntry MarkSeen(Guid squadPlayerId, DateTimeOffset now)
+    {
+        if (!IsPublished)
+            throw new DomainException(ErrorCode.CallUpNotPublished);
+
+        var entry = EntryOf(squadPlayerId)
+            ?? throw new DomainException(ErrorCode.SquadPlayerNotMember);
+        entry.MarkSeen(now);
+        return entry;
+    }
+
+    // A quién se le puede volver a enviar: ya enviada y sin abrir.
+    public IEnumerable<CallUpEntry> UnseenEntries() => IsPublished ? _entries.Where(e => e.SeenAt is null) : [];
 }
 
 public sealed class CallUpEntry : Entity
@@ -120,6 +148,7 @@ public sealed class CallUpEntry : Entity
     public CallUpResponse Response { get; private set; }
     public DateTimeOffset? RespondedAt { get; private set; }
     public DateTimeOffset? NotifiedAt { get; private set; }
+    public DateTimeOffset? SeenAt { get; private set; }
 
     private CallUpEntry() { }
 
@@ -140,6 +169,7 @@ public sealed class CallUpEntry : Entity
         Response = CallUpResponse.Pending;
         RespondedAt = null;
         NotifiedAt = null;
+        SeenAt = null;
         return true;
     }
 
@@ -147,6 +177,15 @@ public sealed class CallUpEntry : Entity
     {
         Response = response;
         RespondedAt = now;
+        SeenAt ??= now;
+    }
+
+    internal void MarkSeen(DateTimeOffset now) => SeenAt ??= now;
+
+    internal void MeetingChanged()
+    {
+        NotifiedAt = null;
+        SeenAt = null;
     }
 
     public void MarkNotified(DateTimeOffset now) => NotifiedAt = now;
@@ -160,5 +199,9 @@ public interface ICallUpStore
 
     // Todas, borradores incluidos: solo para quien las prepara.
     Task<IReadOnlyList<MatchCallUp>> GetBySquadAsync(Guid squadId, CancellationToken cancellationToken = default);
+
+    // Las de esos partidos: todas o solo las publicadas.
+    Task<IReadOnlyList<MatchCallUp>> GetBySquadAndMatchesAsync(
+        Guid squadId, IEnumerable<Guid> matchIds, bool publishedOnly, CancellationToken cancellationToken = default);
     void Add(MatchCallUp callUp);
 }

@@ -49,15 +49,28 @@ public sealed record ClubCatalogEntry(string Name, string NormalizedName, IReadO
 
 internal static partial class ClubCatalog
 {
-    public static async Task<IReadOnlyList<ClubCatalogEntry>> LoadAsync(AccountStores stores, CancellationToken cancellationToken)
+    // El catálogo solo cambia con los datos reales (equipos, ligas, clasificaciones y partidos): se guarda entre peticiones.
+    public static Task<IReadOnlyList<ClubCatalogEntry>> LoadAsync(AccountStores stores, CancellationToken cancellationToken) =>
+        stores.Cache is { } cache
+            ? cache.GetAsync("club-catalog", ct => ReadAsync(stores, ct), cancellationToken)
+            : ReadAsync(stores, cancellationToken);
+
+    private static async Task<IReadOnlyList<ClubCatalogEntry>> ReadAsync(AccountStores stores, CancellationToken cancellationToken)
     {
-        // Competición en curso de cada equipo: una consulta por temporada activa en lugar de una por equipo.
+        // Competición en curso de cada equipo: una sola consulta para todas las temporadas activas. Si un equipo sale en
+        // varias, se queda con la primera liga en el orden de siempre (SortOrder y nombre).
+        var current = (await stores.Competitions.GetAllAsync(cancellationToken))
+            .Where(c => c.CurrentSeason is not null)
+            .Select(c => (Competition: c, SeasonId: c.CurrentSeason!.Id))
+            .ToList();
         var competitionByTeam = new Dictionary<Guid, string>();
-        foreach (var competition in await stores.Competitions.GetAllAsync(cancellationToken))
+        if (current.Count > 0)
         {
-            if (competition.CurrentSeason is not { } season) continue;
-            foreach (var team in await stores.Teams.GetBySeasonAsync(season.Id, cancellationToken))
-                competitionByTeam.TryAdd(team.Id, competition.Name);
+            var teamsBySeason = (await stores.Teams.GetSeasonTeamsAsync(current.Select(c => c.SeasonId), cancellationToken))
+                .ToLookup(r => r.SeasonId, r => r.TeamId);
+            foreach (var (competition, seasonId) in current)
+                foreach (var teamId in teamsBySeason[seasonId])
+                    competitionByTeam.TryAdd(teamId, competition.Name);
         }
 
         var teams = await stores.Teams.GetAllAsync(cancellationToken);
@@ -76,16 +89,17 @@ internal static partial class ClubCatalog
     public static IReadOnlyList<ClubCatalogEntry> Build(IEnumerable<CatalogTeam> teams)
     {
         var groups = new List<Group>();
+        var byKey = new Dictionary<string, Group>(StringComparer.Ordinal);
         foreach (var team in teams)
         {
             var (core, suffix) = TeamNameSimilarity.Split(team.Team.Name);
             if (core.Count == 0) continue;
 
             var key = string.Join(' ', core.Order(StringComparer.Ordinal));
-            var group = groups.FirstOrDefault(g => g.Key == key);
-            if (group is null)
+            if (!byKey.TryGetValue(key, out var group))
             {
                 group = new Group(key, core);
+                byKey.Add(key, group);
                 groups.Add(group);
             }
             group.Teams.Add((team, suffix));

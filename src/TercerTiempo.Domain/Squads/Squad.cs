@@ -183,5 +183,5 @@ public sealed class Squad : AggregateRoot
         (coachId is { } c && IsStaff(c, today))
         || (playerId is { } p && IsMember(p));
 
-    public static DateOnly Today(DateTimeOffset now) => DateOnly.FromDateTime(now.UtcDateTime);
+    public static DateOnly Today(DateTimeOffset now) => SpainTime.Today(now);
 }

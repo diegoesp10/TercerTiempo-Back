@@ -116,6 +116,28 @@ internal static class VideoUploads
         return match;
     }
 
+    // El archivo ya está en el almacén pero la fila no se pudo guardar (otra subida de la misma parte ganó, se cortó la
+    // base): se borra para no dejar gigas huérfanos que nadie ve, y el error sigue su camino.
+    public static async Task SaveOrDiscardAsync(IUnitOfWork unitOfWork, IVideoStorage storage, string storageKey, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            try
+            {
+                await storage.DeleteAsync(storageKey, CancellationToken.None);
+            }
+            catch
+            {
+                // Lo importante es el error original; si tampoco se puede borrar, queda un sobrante en disco.
+            }
+            throw;
+        }
+    }
+
     public static async Task EnsurePartAvailableAsync(Squad squad, Guid matchId, VideoPart part, IMatchVideoStore videos, CancellationToken cancellationToken)
     {
         var existing = (await videos.GetByMatchAsync(matchId, cancellationToken)).Where(v => v.SquadId == squad.Id);
@@ -241,7 +263,7 @@ internal sealed class CompleteVideoUploadHandler(
 
         videos.Add(video);
         uploads.Remove(session);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        await VideoUploads.SaveOrDiscardAsync(unitOfWork, storage, storageKey, cancellationToken);
         processing.Wake();
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);

@@ -105,6 +105,9 @@ internal sealed class TrialPlayerConfiguration : IEntityTypeConfiguration<TrialP
     {
         builder.ToTable("TrialPlayers");
         builder.ConfigureAggregate();
+
+        // Dos técnicos tocando a la vez la misma prueba (pasarlo a ficha y descartarlo): el segundo recibe un 409.
+        builder.Property<byte[]>("Version").IsRowVersion();
         builder.Ignore(t => t.IsPromoted);
 
         builder.Property(t => t.FullName).HasMaxLength(150).IsRequired();
@@ -126,6 +129,9 @@ internal sealed class MatchCallUpConfiguration : IEntityTypeConfiguration<MatchC
     {
         builder.ToTable("MatchCallUps");
         builder.ConfigureAggregate();
+
+        // Publicar y editar la misma convocatoria a la vez: el segundo guardado no pisa al primero.
+        builder.Property<byte[]>("Version").IsRowVersion();
         builder.Ignore(c => c.IsPublished);
         builder.Ignore(c => c.Called);
 

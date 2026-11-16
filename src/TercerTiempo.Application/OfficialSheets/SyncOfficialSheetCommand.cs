@@ -64,6 +64,7 @@ internal sealed class SyncOfficialSheetHandler(
         var (competition, season) = await Resolvers.SeasonByIdAsync(competitions, match.SeasonId, cancellationToken);
 
         SheetFetch? pending = null;
+        SheetFetch? provisional = null;
         var unreachable = false;
         foreach (var source in Ordered())
         {
@@ -90,20 +91,24 @@ internal sealed class SyncOfficialSheetHandler(
             }
 
             if (fetch is null) continue;
-            if (!fetch.Complete)
+            if (!fetch.HasLineups)
             {
                 pending ??= fetch;
                 continue;
             }
 
-            sheet = Link(sheet, match, fetch, now);
-            sheet.Apply(fetch.Data!, now);
-            // El equipo arbitral del acta (árbitro, asistentes y cuarto árbitro) va a su propia tabla.
-            if (fetch.Data!.Officials is { Count: > 0 } team)
-                await officials.ApplyAsync(match.Id, team, fetch.Provider, authoritative: true, cancellationToken);
-            await unitOfWork.SaveChangesAsync(cancellationToken);
-            return Result(sheet, match, OfficialSheetAvailability.Available, null);
+            // Con alineaciones pero sin cerrar: se sigue buscando un acta cerrada en las demás webs.
+            if (!OfficialSheetRefresh.IsClosed(fetch.Data!, match, now))
+            {
+                provisional ??= fetch;
+                continue;
+            }
+
+            return await SaveAsync(sheet, match, fetch, closed: true, now, cancellationToken);
         }
+
+        if (provisional is not null)
+            return await SaveAsync(sheet, match, provisional, closed: false, now, cancellationToken);
 
         if (sheet is null && pending is not null)
             sheet = Link(null, match, pending, now);
@@ -122,6 +127,19 @@ internal sealed class SyncOfficialSheetHandler(
         return OfficialSheetMapper.Empty(match.Id,
             unreachable ? OfficialSheetAvailability.Pending : OfficialSheetAvailability.Unavailable, null,
             unreachable ? "No se ha podido consultar alguna web de actas; se volverá a intentar." : "No se ha encontrado este partido en ninguna web de actas.");
+    }
+
+    private async Task<OfficialSheetDto> SaveAsync(OfficialMatchSheet? sheet, Match match, SheetFetch fetch, bool closed, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        sheet = Link(sheet, match, fetch, now);
+        sheet.Apply(fetch.Data!, now, closed);
+        // El equipo arbitral del acta (árbitro, asistentes y cuarto árbitro) va a su propia tabla.
+        if (fetch.Data!.Officials is { Count: > 0 } team)
+            await officials.ApplyAsync(match.Id, team, fetch.Provider, authoritative: true, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return closed
+            ? Result(sheet, match, OfficialSheetAvailability.Available, null)
+            : Result(sheet, match, OfficialSheetAvailability.Provisional, OfficialSheetMapper.ProvisionalMessage);
     }
 
     private IEnumerable<IPublicSheetSource> Ordered()
@@ -148,5 +166,8 @@ internal sealed class SyncOfficialSheetHandler(
     private static OfficialSheetDto Result(OfficialMatchSheet? sheet, Match match, OfficialSheetAvailability status, string? message) =>
         sheet is null
             ? OfficialSheetMapper.Empty(match.Id, status, null, message)
-            : OfficialSheetMapper.ToDto(sheet, match.HomeTeamId, match.AwayTeamId, sheet.IsAvailable ? OfficialSheetAvailability.Available : status, message);
+            : sheet.IsAvailable ? OfficialSheetMapper.ToDto(sheet, match.HomeTeamId, match.AwayTeamId, OfficialSheetAvailability.Available, null)
+            : sheet.IsProvisional && status == OfficialSheetAvailability.Pending
+                ? OfficialSheetMapper.ToDto(sheet, match.HomeTeamId, match.AwayTeamId, OfficialSheetAvailability.Provisional, OfficialSheetMapper.ProvisionalMessage)
+            : OfficialSheetMapper.ToDto(sheet, match.HomeTeamId, match.AwayTeamId, status, message);
 }

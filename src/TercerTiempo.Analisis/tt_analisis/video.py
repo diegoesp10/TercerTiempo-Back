@@ -49,8 +49,29 @@ class Fotograma:
     imagen: np.ndarray
 
 
-def fotogramas(config: Configuracion, info: InfoVideo, paso: int | None = None, inicio_s: float | None = None, fin_s: float | None = None) -> Iterator[Fotograma]:
-    """Fotogramas del tramo, uno de cada `paso` (por defecto, los que hagan falta para `fps_muestreo`)."""
+# Por debajo de esto el tramo no se ha leído entero (archivo dañado o cortado): se avisa en el análisis.
+PCT_LEIDO_MINIMO = 95.0
+
+
+@dataclass
+class Lectura:
+    """Lo que se ha podido leer del tramo: si OpenCV deja de dar fotogramas antes del final, dónde se cortó."""
+
+    leidos: int = 0
+    cortado_en_s: float | None = None
+
+
+def pct_leido(leidos: int, esperados: int) -> float:
+    """% de los fotogramas esperados del tramo que se han leído (100 si no se esperaba ninguno)."""
+    if esperados <= 0:
+        return 100.0
+    return round(100.0 * min(leidos, esperados) / esperados, 1)
+
+
+def fotogramas(config: Configuracion, info: InfoVideo, paso: int | None = None, inicio_s: float | None = None, fin_s: float | None = None,
+               lectura: Lectura | None = None) -> Iterator[Fotograma]:
+    """Fotogramas del tramo, uno de cada `paso` (por defecto, los que hagan falta para `fps_muestreo`). Con `lectura`, se
+    apunta cuántos se leyeron y, si el archivo se acabó antes de tiempo, en qué segundo."""
     paso = paso or max(1, round(info.fps / config.fps_muestreo))
     inicio = config.segmento.inicio if inicio_s is None else inicio_s
     fin = config.segmento.fin if fin_s is None else fin_s
@@ -67,11 +88,17 @@ def fotogramas(config: Configuracion, info: InfoVideo, paso: int | None = None, 
         emitidos = 0
         while indice < ultimo:
             if not cap.grab():
+                if lectura is not None:
+                    lectura.cortado_en_s = round(indice / info.fps, 1)
                 break
             if (indice - primero) % paso == 0:
                 ok, imagen = cap.retrieve()
                 if not ok:
+                    if lectura is not None:
+                        lectura.cortado_en_s = round(indice / info.fps, 1)
                     break
+                if lectura is not None:
+                    lectura.leidos += 1
                 yield Fotograma(indice, indice / info.fps, imagen)
                 emitidos += 1
                 if config.max_fotogramas is not None and emitidos >= config.max_fotogramas:

@@ -70,6 +70,10 @@ internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchS
         RuleFor(x => x.SquadId).NotEmpty();
         RuleFor(x => x.MatchId).NotEmpty();
         RuleFor(x => x.Entries).NotNull();
+        RuleFor(x => x.Entries)
+            .Must(entries => entries.Select(e => e.SquadPlayerId).Distinct().Count() == entries.Count)
+            .When(x => x.Entries is not null)
+            .WithCatalogMessage(ErrorCode.SheetDuplicatePlayer);
         RuleForEach(x => x.Entries).ChildRules(entry =>
         {
             entry.RuleFor(e => e.SquadPlayerId).NotEmpty();

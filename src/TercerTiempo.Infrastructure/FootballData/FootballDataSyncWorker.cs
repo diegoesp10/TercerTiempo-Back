@@ -71,6 +71,7 @@ internal sealed class FootballDataSyncWorker(
 
         var result = await handler.Handle(new SyncSeasonCommand(syncScope), cancellationToken);
         scope.ServiceProvider.GetRequiredService<TercerTiempo.Application.Search.SearchIndexHolder>().Invalidate();
+        scope.ServiceProvider.GetRequiredService<TercerTiempo.Application.Common.PublicDataCache>().Invalidate();
 
         logger.LogInformation(
             "Datos de fútbol sincronizados ({Provider}): {Competitions} competiciones, {Teams} equipos, {Matches} partidos, {Roster} fichas de plantilla, {Errors} errores",

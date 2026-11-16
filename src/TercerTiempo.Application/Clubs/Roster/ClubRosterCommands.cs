@@ -19,16 +19,13 @@ public sealed record AddClubRosterEntryCommand(
     Guid TeamId,
     [property: Description("Nombre y apellidos.")]
     string FullName,
-    Position? Position,
-    [property: Description("1-99, opcional.")]
-    int? ShirtNumber) : ICommand<IReadOnlyList<RosterEntryDto>>;
+    Position? Position) : ICommand<IReadOnlyList<RosterEntryDto>>;
 
 public sealed record UpdateClubRosterEntryCommand(
     Guid TeamId,
     Guid EntryId,
     string FullName,
-    Position? Position,
-    int? ShirtNumber) : ICommand<IReadOnlyList<RosterEntryDto>>;
+    Position? Position) : ICommand<IReadOnlyList<RosterEntryDto>>;
 
 public sealed record RemoveClubRosterEntryCommand(Guid TeamId, Guid EntryId) : ICommand<IReadOnlyList<RosterEntryDto>>;
 
@@ -39,7 +36,6 @@ internal sealed class AddClubRosterEntryValidator : AbstractValidator<AddClubRos
         RuleFor(x => x.TeamId).NotEmpty();
         RuleFor(x => x.FullName).NotEmpty().MinimumLength(2).MaximumLength(150);
         RuleFor(x => x.Position).IsInEnum().When(x => x.Position.HasValue);
-        RuleFor(x => x.ShirtNumber).InclusiveBetween(1, 99).When(x => x.ShirtNumber.HasValue);
     }
 }
 
@@ -51,7 +47,6 @@ internal sealed class UpdateClubRosterEntryValidator : AbstractValidator<UpdateC
         RuleFor(x => x.EntryId).NotEmpty();
         RuleFor(x => x.FullName).NotEmpty().MinimumLength(2).MaximumLength(150);
         RuleFor(x => x.Position).IsInEnum().When(x => x.Position.HasValue);
-        RuleFor(x => x.ShirtNumber).InclusiveBetween(1, 99).When(x => x.ShirtNumber.HasValue);
     }
 }
 
@@ -82,6 +77,13 @@ internal static class ClubRoster
     public static Task<IReadOnlyList<RosterEntryDto>> ListAsync(Guid teamId, Guid seasonId, RosterStores stores, CancellationToken cancellationToken) =>
         RosterSummary.ListAsync(teamId, seasonId, stores.Teams, stores.Matches, stores.Sheets, cancellationToken);
 
+    public static async Task<IReadOnlyList<RosterEntry>> FichasOfAsync(Guid teamId, Guid seasonId, RosterEntry entry, RosterStores stores, CancellationToken cancellationToken)
+    {
+        var all = await stores.Teams.GetRosterAsync(teamId, seasonId, cancellationToken);
+        var people = await RosterSummary.PeopleAsync(teamId, seasonId, all, stores.Matches, stores.Sheets, cancellationToken);
+        return people.FirstOrDefault(p => p.Person.Entries.Any(e => e.Id == entry.Id))?.Person.Entries ?? [entry];
+    }
+
     public static async Task<RosterEntry> EntryAsync(Guid teamId, Guid seasonId, Guid entryId, ITeamStore teams, CancellationToken cancellationToken)
     {
         var entry = await teams.GetRosterEntryAsync(entryId, cancellationToken);
@@ -100,11 +102,12 @@ internal sealed class AddClubRosterEntryHandler(ICurrentUser currentUser, Accoun
     {
         var (seasonId, now) = await ClubRoster.ContextAsync(command.TeamId, currentUser, stores, cancellationToken);
 
+        // «Lucas Paredes» ya está si hay un «Lucas Paredes Rivera»: es la misma persona y saldría en la misma fila.
         var current = await stores.Teams.GetRosterAsync(command.TeamId, seasonId, cancellationToken);
-        if (current.Any(r => r.Matches(command.FullName)))
+        if (current.Any(r => r.IsSamePersonAs(command.FullName)))
             throw new ConflictException(ErrorCode.RosterEntryDuplicateName);
 
-        stores.Teams.AddRosterEntry(RosterEntry.CreateByClub(command.TeamId, seasonId, command.FullName.Trim(), command.Position, command.ShirtNumber, now));
+        stores.Teams.AddRosterEntry(RosterEntry.CreateByClub(command.TeamId, seasonId, command.FullName.Trim(), command.Position, now));
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return await ClubRoster.ListAsync(command.TeamId, seasonId, roster, cancellationToken);
@@ -119,7 +122,7 @@ internal sealed class UpdateClubRosterEntryHandler(ICurrentUser currentUser, Acc
         var (seasonId, now) = await ClubRoster.ContextAsync(command.TeamId, currentUser, stores, cancellationToken);
         var entry = await ClubRoster.EntryAsync(command.TeamId, seasonId, command.EntryId, stores.Teams, cancellationToken);
 
-        entry.UpdateByClub(command.FullName.Trim(), command.Position, command.ShirtNumber, now);
+        entry.UpdateByClub(command.FullName.Trim(), command.Position, now);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return await ClubRoster.ListAsync(command.TeamId, seasonId, roster, cancellationToken);
@@ -134,11 +137,15 @@ internal sealed class RemoveClubRosterEntryHandler(ICurrentUser currentUser, Acc
         var (seasonId, _) = await ClubRoster.ContextAsync(command.TeamId, currentUser, stores, cancellationToken);
         var entry = await ClubRoster.EntryAsync(command.TeamId, seasonId, command.EntryId, stores.Teams, cancellationToken);
 
-        // Las fichas del proveedor se ocultan (volverían al sincronizar); las del club se borran.
-        if (entry.ExternalRef is null)
-            stores.Teams.RemoveRosterEntry(entry);
-        else
-            entry.Hide();
+        // Se retira a la persona: todas sus fichas, o volvería a salir con otra de las que publica la web. Las del
+        // proveedor se ocultan (volverían al sincronizar); las del club se borran.
+        foreach (var ficha in await ClubRoster.FichasOfAsync(command.TeamId, seasonId, entry, roster, cancellationToken))
+        {
+            if (ficha.ExternalRef is null)
+                stores.Teams.RemoveRosterEntry(ficha);
+            else
+                ficha.Hide();
+        }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

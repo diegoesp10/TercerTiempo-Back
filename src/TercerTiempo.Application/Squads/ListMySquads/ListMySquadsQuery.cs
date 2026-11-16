@@ -22,10 +22,7 @@ internal sealed class ListMySquadsHandler(
     {
         var coach = await Resolvers.CurrentCoachAsync(currentUser, coaches, cancellationToken);
 
-        var result = new List<SquadSummaryDto>();
-        foreach (var squad in await squads.GetByCoachAsync(coach.Id, SquadAccess.Today(clock), cancellationToken))
-            result.Add(await SquadMapper.ToSummaryAsync(squad, coach.Id, clock, teams, competitions, cancellationToken));
-
-        return result;
+        var mine = await squads.GetByCoachAsync(coach.Id, SquadAccess.Today(clock), cancellationToken);
+        return await SquadMapper.ToSummariesAsync(mine, coach.Id, clock, teams, competitions, cancellationToken);
     }
 }

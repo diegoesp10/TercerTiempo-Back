@@ -106,9 +106,11 @@ internal sealed class GetLicensesOverviewHandler(
 
         var clubNames = new Dictionary<Guid, string>();
         var clubTeams = new Dictionary<Guid, IReadOnlyList<Guid>>();
-        foreach (var clubId in all.Select(l => l.ClubId).Concat(payments.Select(p => p.ClubId)).Distinct())
+        var clubIds = all.Select(l => l.ClubId).Concat(payments.Select(p => p.ClubId)).Distinct().ToList();
+        var clubMap = (await clubs.GetByIdsAsync(clubIds, cancellationToken)).ToDictionary(c => c.Id);
+        foreach (var clubId in clubIds)
         {
-            var club = await clubs.GetByIdAsync(clubId, cancellationToken);
+            var club = clubMap.GetValueOrDefault(clubId);
             clubNames[clubId] = club?.Name ?? "Club eliminado";
             clubTeams[clubId] = club?.Teams.OrderBy(t => t.AddedAt).Select(t => t.TeamId).ToList() ?? [];
         }

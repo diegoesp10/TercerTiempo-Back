@@ -50,6 +50,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<MatchVideo> MatchVideos => Set<MatchVideo>();
     public DbSet<MatchVideoAnalysis> MatchVideoAnalyses => Set<MatchVideoAnalysis>();
     public DbSet<VideoAnalysisCrop> VideoAnalysisCrops => Set<VideoAnalysisCrop>();
+    public DbSet<VideoAnalyzerHeartbeat> VideoAnalyzerHeartbeats => Set<VideoAnalyzerHeartbeat>();
     public DbSet<ClubLicense> ClubLicenses => Set<ClubLicense>();
     public DbSet<LicensingSettings> LicensingSettings => Set<LicensingSettings>();
     public DbSet<TercerTiempo.Domain.Privacy.CookieDefinition> CookieDefinitions => Set<TercerTiempo.Domain.Privacy.CookieDefinition>();
@@ -79,6 +80,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         // mismo contexto contra esa base), pero las migraciones del entorno no crean sus tablas.
         foreach (var type in RealData.RealDataModel.SharedOnly)
             builder.Entity(type).Metadata.SetIsTableExcludedFromMigrations(true);
+    }
+
+    public void ResetTracking(IEnumerable<object> keep)
+    {
+        ChangeTracker.Clear();
+        foreach (var entity in keep) Attach(entity);
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -124,6 +131,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             && ex.Entries.Any(e => e.Entity is RefereeRating))
         {
             throw new ConflictException(ErrorCode.RefereeAlreadyRated, "ese árbitro");
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 }
+            && !ex.Entries.Any(e => e.Entity is Licensing.PaymentEvent))
+        {
+            // Dos peticiones crearon a la vez lo que solo puede existir una vez (el primer borrador de una convocatoria,
+            // el primer guardado del acta, un precio por partido...): la segunda recibe un 409 y vuelve a cargar, en vez
+            // de un 500. La bandeja de pagos se queda fuera: ella misma trata el duplicado como «ya recibido».
+            throw new ConflictException(ErrorCode.CommonConcurrentChange);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictException(ErrorCode.CommonConcurrentChange);
         }
 
         foreach (var aggregate in aggregates)

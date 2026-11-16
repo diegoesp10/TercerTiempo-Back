@@ -5,8 +5,35 @@ namespace TercerTiempo.Infrastructure.Persistence.Stores;
 
 internal sealed class ClubStore(AppDbContext db) : IClubStore
 {
-    public Task<Club?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        db.Clubs.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    // El club de la cuenta se mira muchas veces en una misma petición (cada comprobación de acceso a una plantilla, cada
+    // equipo de una ficha): en las lecturas sin seguimiento se guarda lo leído durante el ámbito; con seguimiento, el que ya
+    // tiene el contexto (con lo que la petición haya cambiado) sirve sin volver a la base.
+    private readonly Dictionary<Guid, Club?> _readById = [];
+    private readonly Dictionary<Guid, Club?> _readByTeam = [];
+
+    private bool Reading => db.ChangeTracker.QueryTrackingBehavior != QueryTrackingBehavior.TrackAll;
+
+    public async Task<Club?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (db.Clubs.Local.FindEntry(id) is { State: not EntityState.Detached } tracked) return tracked.Entity;
+        if (!Reading) return await db.Clubs.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        if (_readById.TryGetValue(id, out var cached)) return cached;
+        return _readById[id] = await db.Clubs.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Club>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        var list = ids.Distinct().ToList();
+        if (list.Count == 0) return [];
+        return await db.Clubs.Where(c => list.Contains(c.Id)).ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Club>> GetByTeamsAsync(IEnumerable<Guid> teamIds, CancellationToken cancellationToken = default)
+    {
+        var list = teamIds.Distinct().ToList();
+        if (list.Count == 0) return [];
+        return await db.Clubs.Where(c => c.Teams.Any(t => list.Contains(t.TeamId))).ToListAsync(cancellationToken);
+    }
 
     public async Task<IReadOnlyList<Club>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await db.Clubs.AsNoTracking().OrderBy(c => c.Name).ToListAsync(cancellationToken);
@@ -20,8 +47,14 @@ internal sealed class ClubStore(AppDbContext db) : IClubStore
     public async Task<IReadOnlyList<string>> GetRegisteredNamesAsync(CancellationToken cancellationToken = default) =>
         await db.Clubs.Select(c => c.NormalizedName).ToListAsync(cancellationToken);
 
-    public Task<Club?> GetByTeamAsync(Guid teamId, CancellationToken cancellationToken = default) =>
-        db.Clubs.FirstOrDefaultAsync(c => c.Teams.Any(t => t.TeamId == teamId), cancellationToken);
+    public async Task<Club?> GetByTeamAsync(Guid teamId, CancellationToken cancellationToken = default)
+    {
+        if (!Reading) return await db.Clubs.FirstOrDefaultAsync(c => c.Teams.Any(t => t.TeamId == teamId), cancellationToken);
+        if (_readByTeam.TryGetValue(teamId, out var cached)) return cached;
+        var club = await db.Clubs.FirstOrDefaultAsync(c => c.Teams.Any(t => t.TeamId == teamId), cancellationToken);
+        if (club is not null) _readById.TryAdd(club.Id, club);
+        return _readByTeam[teamId] = club;
+    }
 
     public void Add(Club club) => db.Clubs.Add(club);
 }
@@ -42,6 +75,15 @@ internal sealed class CoachAppointmentStore(AppDbContext db) : ICoachAppointment
 
     public async Task<IReadOnlyList<CoachAppointment>> GetByTeamAndSeasonAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken = default) =>
         await db.CoachAppointments.Where(a => a.TeamId == teamId && a.SeasonId == seasonId).ToListAsync(cancellationToken);
+
+    // De esos equipos en esas temporadas; quien llama empareja equipo y temporada.
+    public async Task<IReadOnlyList<CoachAppointment>> GetByTeamsAndSeasonsAsync(IEnumerable<Guid> teamIds, IEnumerable<Guid> seasonIds, CancellationToken cancellationToken = default)
+    {
+        var teams = teamIds.Distinct().ToList();
+        var seasons = seasonIds.Distinct().ToList();
+        if (teams.Count == 0 || seasons.Count == 0) return [];
+        return await db.CoachAppointments.Where(a => teams.Contains(a.TeamId) && seasons.Contains(a.SeasonId)).ToListAsync(cancellationToken);
+    }
 
     public void Add(CoachAppointment appointment) => db.CoachAppointments.Add(appointment);
 }

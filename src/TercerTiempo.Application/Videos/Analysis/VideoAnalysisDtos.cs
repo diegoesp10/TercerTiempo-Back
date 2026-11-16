@@ -17,6 +17,9 @@ public enum VideoAnalysisState
     Running,
     Ready,
     Failed,
+
+    // El cuerpo técnico lo paró mientras esperaba o se analizaba; se puede volver a pedir.
+    Cancelled,
 }
 
 public sealed record MatchVideoAnalysisDto(
@@ -25,7 +28,11 @@ public sealed record MatchVideoAnalysisDto(
     [property: Description("Club propietario o cuerpo técnico vigente: puede relanzar el análisis y volcarlo al acta. El administrador solo lo ve.")]
     bool CanManage,
     [property: Description("Un elemento por vídeo de la plantilla en este partido (el partido entero, o la primera y la segunda parte); vacío si no hay vídeo.")]
-    IReadOnlyList<VideoAnalysisPartDto> Videos);
+    IReadOnlyList<VideoAnalysisPartDto> Videos,
+    [property: Description("Algún analizador (Start-Analyzer.ps1 o el servicio de vídeo con Analysis:RunWorker) ha dado señales en los últimos 2 minutos. Si no, lo que esté en cola no avanza.")]
+    bool AnalyzerOnline = false,
+    [property: Description("Última señal de un analizador; null si nunca ha habido ninguno.")]
+    DateTimeOffset? AnalyzerSeenAt = null);
 
 public sealed record VideoAnalysisPartDto(
     Guid VideoId,
@@ -36,11 +43,11 @@ public sealed record VideoAnalysisPartDto(
     int VideoProgress,
     [property: Description("Duración del vídeo en segundos, cuando se conoce: el análisis tarda más o menos lo mismo.")]
     int? DurationSeconds,
-    [property: Description("NotRequested, WaitingForVideo (se está comprimiendo), Pending (en cola), Running, Ready o Failed.")]
+    [property: Description("NotRequested, WaitingForVideo (se está comprimiendo), Pending (en cola), Running, Ready, Failed o Cancelled.")]
     VideoAnalysisState State,
     [property: Description("Avance del análisis en %, mientras está en Running.")]
     int Progress,
-    [property: Description("Por qué no se pudo analizar (sin GPU, sin analizador, vídeo ilegible...).")]
+    [property: Description("Por qué no se pudo analizar (sin GPU, sin analizador, vídeo ilegible...). En Pending, el motivo del intento anterior si se está reintentando.")]
     string? Error,
     DateTimeOffset? RequestedAt,
     DateTimeOffset? StartedAt,
@@ -71,7 +78,11 @@ public sealed record VideoAnalysisQualityDto(
     decimal? PitchLengthM,
     decimal? PitchWidthM,
     [property: Description("El club del equipo local no había apuntado las medidas de su campo: se calibró con las genéricas.")]
-    bool GenericPitch);
+    bool GenericPitch,
+    [property: Description("% de los fotogramas del tramo que el analizador pudo leer del archivo; null en análisis anteriores al dato.")]
+    decimal? ReadFramesPct = null,
+    [property: Description("No se leyó al menos el 95 % de los fotogramas (archivo dañado o cortado): la propuesta sale de menos.")]
+    bool LowRead = false);
 
 public sealed record VideoAnalysisTeamDto(
     int Index,
@@ -135,6 +146,7 @@ internal static class VideoAnalysisMapper
             VideoAnalysisStatus.Running => VideoAnalysisState.Running,
             VideoAnalysisStatus.Ready => VideoAnalysisState.Ready,
             VideoAnalysisStatus.Failed => VideoAnalysisState.Failed,
+            VideoAnalysisStatus.Cancelled => VideoAnalysisState.Cancelled,
             _ => MatchVideoAnalysis.CanAnalyze(video) ? VideoAnalysisState.NotRequested : VideoAnalysisState.WaitingForVideo,
         };
 
@@ -161,7 +173,8 @@ internal static class VideoAnalysisMapper
             ? new VideoAnalysisQualityDto(
                 frames, ball, calibrated, analysis.AnalyzedSeconds ?? 0,
                 ball < MatchVideoAnalysis.LowBallFramesPct, calibrated < MatchVideoAnalysis.LowCalibratedFramesPct,
-                analysis.PitchLengthM, analysis.PitchWidthM, analysis.GenericPitch)
+                analysis.PitchLengthM, analysis.PitchWidthM, analysis.GenericPitch,
+                analysis.ReadFramesPct, analysis.ReadFramesPct < MatchVideoAnalysis.LowReadFramesPct)
             : null;
 
         return new VideoAnalysisPartDto(

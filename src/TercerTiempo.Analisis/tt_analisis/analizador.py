@@ -28,7 +28,7 @@ from .modelos import cargar_modelos, describir_gpu, exigir_gpu
 from .posesion import MaquinaPosesion, acciones_por_jugador, resumir_posesion, secuencias
 from .seguimiento import Seguidor
 from .tipos import Instante, Persona, formato_minuto
-from .video import fotograma_en, fotogramas, info_video
+from .video import PCT_LEIDO_MINIMO, Lectura, fotograma_en, fotogramas, info_video, pct_leido
 
 RUTA_FFMPEG_WINGET = Path.home() / "AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe"
 
@@ -122,8 +122,9 @@ def analizar(config: Configuracion, informar=print) -> dict:
     if config.max_fotogramas:
         total = min(total, config.max_fotogramas)
     n = 0
+    lectura = Lectura()
     progreso.fase("pasada", 0, total)
-    for fotograma in tqdm(fotogramas(config, info, paso=paso), total=total, desc="Analizando", unit="fot", disable=config.progreso):
+    for fotograma in tqdm(fotogramas(config, info, paso=paso, lectura=lectura), total=total, desc="Analizando", unit="fot", disable=config.progreso):
         n += 1
         progreso.fase("pasada", n, total)
         imagen = fotograma.imagen
@@ -190,6 +191,11 @@ def analizar(config: Configuracion, informar=print) -> dict:
     tiempos["pasada_s"] = time.time() - t0
     if not instantes:
         raise RuntimeError("No se ha leído ningún fotograma del tramo indicado.")
+    # OpenCV deja de dar fotogramas sin avisar si el archivo está dañado o cortado: se compara con lo esperado.
+    leido_pct = pct_leido(n, total)
+    if leido_pct < PCT_LEIDO_MINIMO:
+        corte = f" (se cortó en {formato_minuto(lectura.cortado_en_s)})" if lectura.cortado_en_s is not None else ""
+        informar(f"Aviso: solo se han podido leer {n} de los {total} fotogramas esperados del tramo ({leido_pct} %){corte}; el archivo puede estar dañado o cortado.")
 
     # 3. Lo que sale de las posiciones. Primero la trayectoria del balón (se quitan los avistamientos sueltos y se
     # rellenan los huecos cortos) y, con ella, quién tiene el balón en cada instante.
@@ -270,6 +276,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
             "fotogramas": len(instantes), "con_balon": con_balon, "pct_con_balon": round(100 * con_balon / len(instantes), 1),
             "con_balon_interpolado": balon_cobertura["interpolados"], "pct_con_balon_total": balon_cobertura["pct_con_balon"], "balon_relleno": relleno.a_dict(),
             "pct_calibrados": round(100 * calibrados / len(instantes), 1),
+            # Lo que se pudo leer del archivo frente a lo esperado: por debajo del 95 % la app lo marca como calidad baja.
+            "fotogramas_esperados": total, "pct_leido": leido_pct, "lectura_cortada_s": lectura.cortado_en_s,
             "muestras_equipos": muestras, "reparto_equipos": list(reparto), "tracklets": len(resumenes), "tracklets_partidos": seguidor.cortes, "toques": len(toques), "secuencias": len(secs), "busquedas_finas_balon": detector.busquedas_finas,
             "balones_descartados": detector.descartados, "balones_flojos_descartados": detector.flojos_descartados, "personas_fuera_del_campo": fuera_de_campo, "clips": clips,
         },

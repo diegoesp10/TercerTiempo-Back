@@ -39,12 +39,12 @@ internal static class TeamEndpoints
                 var photo = await teams.OpenRosterPhotoAsync(teamId, entryId, ct);
                 if (photo is null) return Results.NotFound();
 
-                context.Response.Headers.CacheControl = "public, max-age=86400";
+                context.Response.Headers.CacheControl = "private, max-age=86400";
                 return Results.Stream(photo.Content, photo.ContentType);
             })
             .WithName("GetRosterPhoto")
             .WithSummary("Foto de un jugador de la plantilla")
-            .WithDescription("Foto subida por el club (photoUrl de las fichas apunta aquí cuando existe). 404 si no hay foto. Público.")
+            .WithDescription("Foto subida por el club (photoUrl de las fichas apunta aquí cuando existe). Solo con sesión: el club del equipo, su cuerpo técnico y sus jugadores, y el administrador; a los demás, 404 como si no hubiera foto.")
             .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
             .ProducesProblem(StatusCodes.Status404NotFound);
 

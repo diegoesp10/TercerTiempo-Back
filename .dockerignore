@@ -15,3 +15,7 @@
 *.md
 *.ps1
 compose*.yaml
+# El analizador de vídeo (Python + GPU) no va en estas imágenes: su entorno, sus modelos y sus salidas pesan varios GB
+# y, si entran en el contexto, la construcción se queda minutos enviándolos.
+src/TercerTiempo.Analisis
+runs

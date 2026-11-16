@@ -38,13 +38,19 @@ internal static class MatchSheetBuilder
         var linkedIds = squad.Players.Where(p => p.PlayerId is not null).Select(p => p.PlayerId!.Value);
         var linkedMap = (await players.GetByIdsAsync(linkedIds, cancellationToken)).ToDictionary(p => p.Id);
 
+        // Las observaciones del técnico son para el club y el cuerpo técnico: un jugador solo lee las de su propia línea.
+        var isManager = await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken);
+        var seesAllNotes = isManager || currentUser.IsAdmin;
+
         var entries = SquadMapper.Ordered(squad.Players.Where(p => p.IsActive || recorded.ContainsKey(p.Id)))
             .Select(p => new MatchSheetEntryDto(
                 SquadMapper.ToPlayerDto(p, linkedMap),
-                recorded.TryGetValue(p.Id, out var performance) ? PerformanceMapper.ToDto(performance, p) : null))
+                recorded.TryGetValue(p.Id, out var performance)
+                    ? PerformanceMapper.ToDto(performance, p) is var dto && (seesAllNotes || (currentUser.PlayerId is { } me && p.PlayerId == me)) ? dto : dto with { Notes = null }
+                    : null))
             .ToList();
 
-        var canEdit = match.Status == MatchStatus.Played && await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken);
+        var canEdit = match.Status == MatchStatus.Played && isManager;
         var team = await teamStats.GetAsync(squad.Id, match.Id, cancellationToken);
 
         return new MatchSheetDto(summary, matchDto, canEdit, entries, team is null ? null : TeamStats.TeamMatchStatsMapper.ToDto(team));

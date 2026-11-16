@@ -107,7 +107,7 @@ internal static class SquadEndpoints
         group.MapGet("/{squadId:guid}/matches/{matchId:guid}/video-analysis", (Guid squadId, Guid matchId, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.GetAsync(squadId, matchId, ct))
             .WithName("GetMatchVideoAnalysis")
             .WithSummary("Propuesta de acta interna que sale del vídeo")
-            .WithDescription("Club propietario, cuerpo técnico vigente y el administrador (solo lectura). Un elemento por vídeo de la plantilla en el partido con el estado de su análisis (NotRequested, WaitingForVideo, Pending, Running con su %, Ready o Failed con el motivo), la calidad (fotogramas con balón y con el campo calibrado), los datos de los dos equipos que ha separado el analizador (él no sabe cuál es el del club) y los jugadores seguidos con la URL de su recorte y lo que propone para su línea. El análisis lo hace el servicio de vídeo al terminar la compresión.")
+            .WithDescription("Club propietario, cuerpo técnico vigente y el administrador (solo lectura). Un elemento por vídeo de la plantilla en el partido con el estado de su análisis (NotRequested, WaitingForVideo, Pending, Running con su %, Ready, Failed con el motivo o Cancelled), la calidad (fotogramas con balón y con el campo calibrado), los datos de los dos equipos que ha separado el analizador (él no sabe cuál es el del club) y los jugadores seguidos con la URL de su recorte y lo que propone para su línea. El análisis lo hace el analizador que esté en marcha al terminar la compresión; analyzerOnline dice si hay alguno encendido (si no, lo que está en cola no avanza).")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
@@ -120,6 +120,14 @@ internal static class SquadEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis/cancel", (Guid squadId, Guid matchId, CancelVideoAnalysisRequest? request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.CancelAsync(squadId, matchId, request, ct))
+            .WithName("CancelMatchVideoAnalysis")
+            .WithSummary("Cancelar el análisis del vídeo del partido")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Para lo que está en cola o analizándose del vídeo indicado (o de todos los de la plantilla en el partido): queda como Cancelled y se puede volver a pedir. El analizador lo nota al renovar su latido (en unos segundos), para el proceso de Python y no guarda nada. 409 (video_analysis.not_active) si no hay nada en cola ni analizándose. El cuerpo es opcional.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis/apply", (Guid squadId, Guid matchId, ApplyVideoAnalysisRequest request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.ApplyAsync(squadId, matchId, request, ct))
             .WithName("ApplyMatchVideoAnalysis")

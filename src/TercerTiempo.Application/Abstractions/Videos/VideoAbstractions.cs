@@ -37,7 +37,7 @@ public interface IVideoTickets
     VideoPlaybackGrant? Resolve(string ticket);
 }
 
-public sealed record VideoPlaybackGrant(Guid VideoId, bool Download);
+public sealed record VideoPlaybackGrant(Guid VideoId, bool Download, Guid UserId);
 
 public sealed class VideoOptions
 {
@@ -62,7 +62,9 @@ public sealed class VideoOptions
     // Minutos sin usarse tras los que caduca un ticket, y horas como máximo aunque se siga usando.
     public int TicketMinutes { get; set; } = 30;
 
-    public int TicketMaxHours { get; set; } = 8;
+    public int TicketMaxHours { get; set; } = 4;
+
+    public int DownloadTicketMinutes { get; set; } = 15;
 
     public long MaxSizeBytes => (long)MaxSizeMb * 1024 * 1024;
 

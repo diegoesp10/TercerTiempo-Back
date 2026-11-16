@@ -64,14 +64,44 @@ public class MatchCallUpTests
         callUp.Respond(xuan.Id, CallUpResponse.Acknowledged, match, TestData.Now);
 
         // Nel se cae y Xuan entra; Pelayo sigue igual.
-        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, xuan.Id }, null, null, "Llevad las dos equipaciones", TestData.Now.AddHours(1));
+        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, xuan.Id }, match.KickoffAt.AddHours(-2), "Puerta del campo", "Llevad las dos equipaciones", TestData.Now.AddHours(1));
 
         Assert.Equal([nel.Id, xuan.Id], changed.Select(e => e.SquadPlayerId).OrderBy(id => Array.IndexOf([nel.Id, xuan.Id], id)));
         Assert.Equal(CallUpResponse.Confirmed, callUp.EntryOf(pelayo.Id)!.Response);
         Assert.Equal((false, CallUpResponse.Pending), (callUp.EntryOf(nel.Id)!.Called, callUp.EntryOf(nel.Id)!.Response));
         Assert.Equal((true, CallUpResponse.Pending), (callUp.EntryOf(xuan.Id)!.Called, callUp.EntryOf(xuan.Id)!.Response));
-        Assert.Null(callUp.MeetAt);
+        Assert.Equal(match.KickoffAt.AddHours(-2), callUp.MeetAt);
         Assert.Equal("Llevad las dos equipaciones", callUp.Notes);
+    }
+
+    [Fact]
+    public void Moving_the_meeting_of_a_sent_call_up_warns_every_called_player_again_and_keeps_their_signature()
+    {
+        var (squad, editor, pelayo, nel, xuan) = SquadWithThreePlayers();
+        var match = TestData.ScheduledMatch();
+        var callUp = Published(squad, editor, match, pelayo.Id, nel.Id);
+        callUp.Respond(pelayo.Id, CallUpResponse.Confirmed, match, TestData.Now);
+        callUp.MarkSeen(nel.Id, TestData.Now);
+
+        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-1), "Puerta del campo", null, TestData.Now.AddHours(1));
+
+        Assert.Equal(new[] { pelayo.Id, nel.Id }.Order(), changed.Select(e => e.SquadPlayerId).Order());
+        Assert.DoesNotContain(changed, e => e.SquadPlayerId == xuan.Id);
+        Assert.All(changed, e => Assert.Null(e.SeenAt));
+        Assert.Equal(CallUpResponse.Confirmed, callUp.EntryOf(pelayo.Id)!.Response);
+        Assert.Equal(2, callUp.UnseenEntries().Count(e => e.Called));
+    }
+
+    [Fact]
+    public void Saving_a_sent_call_up_with_the_same_meeting_warns_nobody()
+    {
+        var (squad, editor, pelayo, nel, _) = SquadWithThreePlayers();
+        var match = TestData.ScheduledMatch();
+        var callUp = Published(squad, editor, match, pelayo.Id, nel.Id);
+
+        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), "Puerta del campo", "Notas nuevas", TestData.Now.AddHours(1));
+
+        Assert.Empty(changed);
     }
 
     [Fact]

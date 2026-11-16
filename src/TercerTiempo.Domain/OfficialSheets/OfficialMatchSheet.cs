@@ -30,6 +30,10 @@ public sealed class OfficialMatchSheet : AggregateRoot
 
     public bool IsAvailable => Status == OfficialSheetStatus.Available;
 
+    public bool IsProvisional => Status == OfficialSheetStatus.Provisional;
+
+    public bool HasLineups => _lines.Count > 0;
+
     private OfficialMatchSheet() { }
 
     public static OfficialMatchSheet Create(Guid matchId, string provider, string externalId, string? sourceUrl, DateTimeOffset now) =>
@@ -54,13 +58,15 @@ public sealed class OfficialMatchSheet : AggregateRoot
         SourceUrl = sourceUrl;
     }
 
-    public void Apply(OfficialSheetData data, DateTimeOffset now)
+    // closed = false: la web ya publica las alineaciones, pero el árbitro aún no ha cerrado el acta (faltan goles, cambios
+    // o tarjetas). Se guarda como provisional, sin marcador, y no cuenta para minutos ni estadísticas.
+    public void Apply(OfficialSheetData data, DateTimeOffset now, bool closed = true)
     {
         Referee = data.Referee;
         HomeTeamName = Guard.NotEmpty(data.HomeTeamName, "equipo local", 150);
         AwayTeamName = Guard.NotEmpty(data.AwayTeamName, "equipo visitante", 150);
-        HomeGoals = data.HomeGoals;
-        AwayGoals = data.AwayGoals;
+        HomeGoals = closed ? data.HomeGoals : null;
+        AwayGoals = closed ? data.AwayGoals : null;
 
         _lines.Clear();
         _events.Clear();
@@ -72,9 +78,11 @@ public sealed class OfficialMatchSheet : AggregateRoot
         foreach (var item in data.Events)
             _events.Add(OfficialSheetEvent.Create(Id, item, order++));
 
-        Status = _lines.Count > 0 ? OfficialSheetStatus.Available : OfficialSheetStatus.Pending;
+        Status = _lines.Count == 0 ? OfficialSheetStatus.Pending
+            : closed ? OfficialSheetStatus.Available
+            : OfficialSheetStatus.Provisional;
         CheckedAt = now;
-        if (Status == OfficialSheetStatus.Available)
+        if (_lines.Count > 0)
             FetchedAt = now;
     }
 
@@ -85,6 +93,7 @@ public enum OfficialSheetStatus
 {
     Pending = 1,
     Available = 2,
+    Provisional = 3,
 }
 
 public enum MatchSide

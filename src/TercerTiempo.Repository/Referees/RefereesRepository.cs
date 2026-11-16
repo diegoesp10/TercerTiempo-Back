@@ -14,16 +14,25 @@ public interface IRefereesRepository
     Task<IReadOnlyList<PendingRefereeRatingDto>> GetPendingAsync(CancellationToken cancellationToken = default);
     Task<MatchOfficialsDto> GetMatchOfficialsAsync(Guid matchId, CancellationToken cancellationToken = default);
     Task<MatchOfficialsDto> RateAsync(Guid matchId, Guid refereeId, RefereeRatingRequest request, CancellationToken cancellationToken = default);
+    Task<MatchOfficialsDto> NoVoteAsync(Guid matchId, NoVoteMatchRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed record RefereeRatingRequest(
-    [property: Description("De 0 a 10.")]
-    int Score,
+    [property: Description("De 0 a 10; sin enviar (o null) si noVote es true.")]
+    int? Score,
     [property: Description("Opcional: por qué esa nota (hasta 1000 caracteres).")]
     string? Comment,
     [property: Description("Solo si el club tiene los dos equipos del partido: en nombre de cuál puntúa.")]
     Guid? TeamId = null,
     [property: Description("Tiene que ser true: la nota es definitiva, no se puede cambiar, y se confirma antes de guardarla.")]
+    bool Confirmed = false,
+    [property: Description("true para no votar a este árbitro: queda «No votado» con quién lo decidió, sin nota ni comentario.")]
+    bool NoVote = false);
+
+public sealed record NoVoteMatchRequest(
+    [property: Description("Solo si el club tiene los dos equipos del partido: en nombre de cuál.")]
+    Guid? TeamId = null,
+    [property: Description("Tiene que ser true: es definitivo.")]
     bool Confirmed = false);
 
 internal sealed class RefereesRepository(
@@ -32,7 +41,8 @@ internal sealed class RefereesRepository(
     IQueryHandler<GetRefereeQuery, RefereeDetailDto> get,
     IQueryHandler<ListPendingRefereeRatingsQuery, IReadOnlyList<PendingRefereeRatingDto>> pending,
     IQueryHandler<GetMatchOfficialsQuery, MatchOfficialsDto> officials,
-    ICommandHandler<RateRefereeCommand, MatchOfficialsDto> rate) : IRefereesRepository
+    ICommandHandler<RateRefereeCommand, MatchOfficialsDto> rate,
+    ICommandHandler<NoVoteMatchOfficialsCommand, MatchOfficialsDto> noVote) : IRefereesRepository
 {
     public Task<RefereeCategoryListDto> ListAsync(
         string category, OfficialDuty? duty, string? search, RefereeSort? sort, SortOrder? order, CancellationToken cancellationToken = default) =>
@@ -51,5 +61,8 @@ internal sealed class RefereesRepository(
         officials.Handle(new GetMatchOfficialsQuery(matchId), cancellationToken);
 
     public Task<MatchOfficialsDto> RateAsync(Guid matchId, Guid refereeId, RefereeRatingRequest request, CancellationToken cancellationToken = default) =>
-        rate.Handle(new RateRefereeCommand(matchId, refereeId, request.Score, request.Comment, request.TeamId, request.Confirmed), cancellationToken);
+        rate.Handle(new RateRefereeCommand(matchId, refereeId, request.Score, request.Comment, request.TeamId, request.Confirmed, request.NoVote), cancellationToken);
+
+    public Task<MatchOfficialsDto> NoVoteAsync(Guid matchId, NoVoteMatchRequest request, CancellationToken cancellationToken = default) =>
+        noVote.Handle(new NoVoteMatchOfficialsCommand(matchId, request.TeamId, request.Confirmed), cancellationToken);
 }

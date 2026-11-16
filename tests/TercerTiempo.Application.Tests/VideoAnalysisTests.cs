@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Videos;
+using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Application.Squads.MatchSheet;
 using TercerTiempo.Application.Squads.TeamStats;
@@ -200,7 +201,8 @@ public class UvVideoAnalyzerTests
 
         var args = UvVideoAnalyzer.Arguments(@"C:\videos\clave.mp4", @"C:\videos\analysis\abc", request, new VideoAnalysisOptions()).ToList();
 
-        Assert.Equal(["run", "tt-analisis", "analizar", @"C:\videos\clave.mp4"], args.Take(4));
+        // --frozen: nunca se resuelve ni se reinstala nada (torch) a mitad de un análisis.
+        Assert.Equal(["run", "--frozen", "tt-analisis", "analizar", @"C:\videos\clave.mp4"], args.Take(5));
         Assert.Equal(@"C:\videos\analysis\abc", args[args.IndexOf("--salida") + 1]);
         Assert.Equal("CD Vallobín,Real Titánico  S.A.D.", args[args.IndexOf("--equipos") + 1]);
         Assert.Equal("98.5x62", args[args.IndexOf("--campo") + 1]);
@@ -279,6 +281,100 @@ public class UvVideoAnalyzerTests
     }
 }
 
+public class UvVideoAnalyzerOutputTests
+{
+    [Theory]
+    [InlineData("\"version\": 2,")]
+    [InlineData("")]
+    public void A_proposal_of_an_unknown_version_is_rejected_with_a_clear_message(string version) =>
+        WithOutput(VideoAnalysisSamples.Proposal.Replace("\"version\": 1,", version), VideoAnalysisSamples.Analysis, folder =>
+        {
+            var error = Assert.Throws<VideoAnalysisException>(() => UvVideoAnalyzer.ReadRun(folder, "analysis/abc"));
+            Assert.Contains("esta app solo entiende la 1", error.Message);
+        });
+
+    [Fact]
+    public void A_file_with_nan_is_a_failure_of_the_analysis_and_not_a_passing_one() =>
+        WithOutput(VideoAnalysisSamples.Proposal, VideoAnalysisSamples.Analysis.Replace("\"pct_calibrados\": 67.1", "\"pct_calibrados\": NaN"), folder =>
+        {
+            var error = Assert.Throws<VideoAnalysisException>(() => UvVideoAnalyzer.ReadRun(folder, "analysis/abc"));
+            Assert.Contains("analisis.json", error.Message);
+        });
+
+    [Fact]
+    public void What_was_read_from_the_file_is_kept_and_a_badly_damaged_file_fails()
+    {
+        WithOutput(VideoAnalysisSamples.Proposal, VideoAnalysisSamples.Analysis.Replace("\"tracklets\": 61", "\"tracklets\": 61, \"pct_leido\": 88.04"), folder =>
+            Assert.Equal(88m, UvVideoAnalyzer.ReadRun(folder, "analysis/abc").ReadFramesPct));
+        WithOutput(VideoAnalysisSamples.Proposal, VideoAnalysisSamples.Analysis, folder =>
+            Assert.Null(UvVideoAnalyzer.ReadRun(folder, "analysis/abc").ReadFramesPct));
+        WithOutput(VideoAnalysisSamples.Proposal, VideoAnalysisSamples.Analysis.Replace("\"tracklets\": 61", "\"tracklets\": 61, \"pct_leido\": 31"), folder =>
+            Assert.Contains("dañado o cortado", Assert.Throws<VideoAnalysisException>(() => UvVideoAnalyzer.ReadRun(folder, "analysis/abc")).Message));
+    }
+
+    [Fact]
+    public async Task The_whole_error_output_is_kept_in_a_file_and_the_exit_code_is_returned()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var folder = Directory.CreateTempSubdirectory("tt-analisis-").FullName;
+        try
+        {
+            var stderr = Path.Combine(folder, UvVideoAnalyzer.StderrFile);
+            var progress = new List<int>();
+
+            var result = await UvVideoAnalyzer.RunAsync("cmd.exe", ["/c", "echo ##progreso 40& echo Traceback: CUDA out of memory 1>&2& exit /b 7"], folder, stderr,
+                TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1), (p, _) => { progress.Add(p); return Task.CompletedTask; }, default);
+
+            Assert.Equal(7, result.ExitCode);
+            Assert.Equal([40], progress);
+            Assert.Contains("CUDA out of memory", result.StderrTail);
+            Assert.Contains("CUDA out of memory", await File.ReadAllTextAsync(stderr));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task An_analyzer_that_stops_writing_is_killed_as_hung()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var folder = Directory.CreateTempSubdirectory("tt-analisis-").FullName;
+        try
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+
+            // Un minuto en silencio, con dos segundos de margen: se mata enseguida.
+            var error = await Assert.ThrowsAsync<VideoAnalysisException>(() => UvVideoAnalyzer.RunAsync(
+                "cmd.exe", ["/c", "ping -n 60 127.0.0.1 >nul"], folder, Path.Combine(folder, UvVideoAnalyzer.StderrFile),
+                TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(2), (_, _) => Task.CompletedTask, default));
+
+            Assert.Contains("sin dar señales", error.Message);
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30), $"Tardó {clock.Elapsed}");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    private static void WithOutput(string proposal, string analysis, Action<string> check)
+    {
+        var folder = Directory.CreateTempSubdirectory("tt-analisis-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "acta-propuesta.json"), proposal);
+            File.WriteAllText(Path.Combine(folder, "analisis.json"), analysis);
+            check(folder);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+}
+
 public class VideoAnalysisProcessorTests
 {
     private static readonly DateTimeOffset Start = new(2026, 11, 6, 10, 0, 0, TimeSpan.Zero);
@@ -321,7 +417,7 @@ public class VideoAnalysisProcessorTests
         await world.Queue.EnqueueAsync(video, default);
         world.Analyzer.Run = VideoAnalysisSamples.Run();
 
-        var analysis = await world.Processor.ClaimNextAsync(default);
+        var analysis = await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default);
         Assert.Equal(VideoAnalysisStatus.Running, analysis!.Status);
         await world.Processor.ProcessAsync(analysis, default);
 
@@ -340,7 +436,7 @@ public class VideoAnalysisProcessorTests
         Assert.True(world.Jobs.Finished!.Value.Succeeded);
         Assert.Contains("CD Vallobín - Real Titánico (partido completo)", world.Jobs.Finished!.Value.Summary);
         Assert.Contains("19,3 %", world.Jobs.Finished!.Value.Summary);
-        Assert.Null(await world.Processor.ClaimNextAsync(default));
+        Assert.Null(await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default));
     }
 
     [Fact]
@@ -351,7 +447,7 @@ public class VideoAnalysisProcessorTests
         await world.Queue.EnqueueAsync(video, default);
         world.Analyzer.Run = VideoAnalysisSamples.Run();
 
-        await world.Processor.ProcessAsync((await world.Processor.ClaimNextAsync(default))!, default);
+        await world.Processor.ProcessAsync((await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!, default);
 
         // Nuestro equipo es el visitante y el local no ha apuntado las medidas de su campo.
         Assert.Equal(("Real Titánico", "CD Vallobín"), (world.Analyzer.Request!.OurTeam, world.Analyzer.Request.RivalTeam));
@@ -367,7 +463,7 @@ public class VideoAnalysisProcessorTests
         await world.Queue.EnqueueAsync(video, default);
         world.Analyzer.Failure = new VideoAnalysisException("Este equipo no tiene una GPU que el analizador pueda usar (torch no ve CUDA): el vídeo no se analiza.");
 
-        var analysis = await world.Processor.ClaimNextAsync(default);
+        var analysis = await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default);
         await world.Processor.ProcessAsync(analysis!, default);
 
         Assert.Equal(VideoAnalysisStatus.Failed, analysis!.Status);
@@ -377,7 +473,7 @@ public class VideoAnalysisProcessorTests
         Assert.False(world.Jobs.Finished!.Value.Succeeded);
         Assert.StartsWith("Este equipo no tiene una GPU", world.Jobs.Finished!.Value.Error);
         // No se reintenta solo: lo vuelve a pedir el cuerpo técnico.
-        Assert.Null(await world.Processor.ClaimNextAsync(default));
+        Assert.Null(await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default));
     }
 
     [Fact]
@@ -389,12 +485,14 @@ public class VideoAnalysisProcessorTests
         world.Analyzer.ProgressSteps = [10, 20, 30];
         world.Analyzer.BeforeProgress = () => world.Clock.Now += TimeSpan.FromSeconds(3);
 
-        var analysis = await world.Processor.ClaimNextAsync(default);
+        var analysis = await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default);
         var savesBefore = world.UnitOfWork.Saves;
         await world.Processor.ProcessAsync(analysis!, default);
 
-        // 10 % (3 s, no), 20 % (6 s, sí), 30 % (9 s, no) y el final.
-        Assert.Equal(savesBefore + 2, world.UnitOfWork.Saves);
+        // 10 % (3 s, no), 20 % (6 s, sí), 30 % (9 s, no); el final lo guarda el almacén junto con los recortes.
+        Assert.Equal(savesBefore + 1, world.UnitOfWork.Saves);
+        Assert.Equal(VideoAnalysisStatus.Ready, analysis!.Status);
+        Assert.NotEmpty(world.Analyses.Crops[analysis.Id]);
     }
 
     [Fact]
@@ -406,7 +504,7 @@ public class VideoAnalysisProcessorTests
         using var stopping = new CancellationTokenSource();
         world.Analyzer.OnAnalyze = () => stopping.Cancel();
 
-        var analysis = await world.Processor.ClaimNextAsync(default);
+        var analysis = await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => world.Processor.ProcessAsync(analysis!, stopping.Token));
 
         Assert.Equal((VideoAnalysisStatus.Pending, 0), (analysis!.Status, analysis.Attempts));
@@ -417,7 +515,7 @@ public class VideoAnalysisProcessorTests
             world.Videos.DeletedIds.Add(video.Id);
             deleted.Cancel();
         };
-        analysis = await world.Processor.ClaimNextAsync(default);
+        analysis = await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => world.Processor.ProcessAsync(analysis!, deleted.Token));
 
         Assert.Equal(VideoAnalysisStatus.Running, analysis!.Status);
@@ -425,14 +523,92 @@ public class VideoAnalysisProcessorTests
     }
 
     [Fact]
-    public async Task Interrupted_analyses_are_requeued_when_the_service_starts()
+    public async Task What_a_dead_analyzer_left_running_goes_back_to_the_queue_and_a_live_one_is_left_alone()
     {
         var world = new AnalysisWorld();
         await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
-        await world.Processor.ClaimNextAsync(default);
+        var analysis = (await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!;
+        Assert.Equal((AnalysisWorld.Worker, AnalysisWorld.Start), (analysis.WorkerId, analysis.HeartbeatAt));
 
-        Assert.Equal(1, await world.Processor.RequeueInterruptedAsync(default));
-        Assert.Equal(VideoAnalysisStatus.Pending, world.Analyses.Items.Single().Status);
+        // Latido reciente y de otro proceso vivo: no se toca.
+        world.Clock.Now += TimeSpan.FromMinutes(5);
+        Assert.Equal(0, await world.Processor.RecoverAbandonedAsync(_ => false, default));
+        Assert.Equal(VideoAnalysisStatus.Running, analysis.Status);
+
+        // Al arrancar, el de un proceso de este equipo que ya no existe se recoge sin esperar a que caduque.
+        Assert.Equal(1, await world.Processor.RecoverAbandonedAsync(worker => worker == AnalysisWorld.Worker, default));
+        Assert.Equal((VideoAnalysisStatus.Pending, 1, null), (analysis.Status, analysis.Attempts, analysis.WorkerId));
+        Assert.Contains("se paró a medias", analysis.Error);
+    }
+
+    [Fact]
+    public async Task A_lease_without_heartbeat_expires_and_after_the_last_attempt_the_analysis_fails()
+    {
+        var world = new AnalysisWorld();
+        await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
+
+        var analysis = (await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!;
+        world.Clock.Now += TimeSpan.FromMinutes(11);
+        Assert.Equal(1, await world.Processor.RecoverAbandonedAsync(_ => false, default));
+        Assert.Equal(VideoAnalysisStatus.Pending, analysis.Status);
+
+        // Segundo intento (MaxAttempts = 2) y vuelve a morir: ya no se reintenta.
+        Assert.Same(analysis, await world.Processor.ClaimNextAsync("otro:7", default));
+        world.Clock.Now += TimeSpan.FromMinutes(11);
+        Assert.Equal(1, await world.Processor.RecoverAbandonedAsync(_ => false, default));
+        Assert.Equal((VideoAnalysisStatus.Failed, 2), (analysis.Status, analysis.Attempts));
+        Assert.Null(await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default));
+    }
+
+    [Fact]
+    public async Task A_passing_failure_is_retried_while_attempts_remain()
+    {
+        var world = new AnalysisWorld();
+        await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
+        world.Analyzer.Failure = new IOException("La red del volumen se cortó");
+
+        var analysis = (await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!;
+        await world.Processor.ProcessAsync(analysis, default);
+
+        Assert.Equal((VideoAnalysisStatus.Pending, 1, "La red del volumen se cortó"), (analysis.Status, analysis.Attempts, analysis.Error));
+        Assert.Contains("se vuelve a intentar", world.Jobs.Finished!.Value.Summary);
+
+        await world.Processor.ProcessAsync((await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!, default);
+        Assert.Equal((VideoAnalysisStatus.Failed, 2), (analysis.Status, analysis.Attempts));
+    }
+
+    [Fact]
+    public async Task When_the_row_changes_mid_analysis_it_stops_without_saving_anything()
+    {
+        var world = new AnalysisWorld();
+        await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
+        world.Analyzer.Run = VideoAnalysisSamples.Run();
+        world.Analyzer.ProgressSteps = [10, 20];
+        world.Analyzer.BeforeProgress = () => world.Clock.Now += TimeSpan.FromSeconds(10);
+
+        var analysis = (await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!;
+        // El cuerpo técnico lo cancela (o se elimina el vídeo): al guardar el avance, la fila ya es otra.
+        world.UnitOfWork.Failure = () => new ConcurrentChangeException();
+        await world.Processor.ProcessAsync(analysis, default);
+
+        Assert.Empty(world.Analyses.Crops);
+        Assert.Null(analysis.ProposalJson);
+        Assert.False(world.Jobs.Finished!.Value.Succeeded);
+        Assert.Contains("detenido", world.Jobs.Finished!.Value.Summary);
+    }
+
+    [Fact]
+    public async Task What_could_not_be_read_from_the_file_is_kept_and_lowers_the_quality()
+    {
+        var world = new AnalysisWorld();
+        await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
+        world.Analyzer.Run = VideoAnalysisSamples.Run() with { BallFramesPct = 80m, CalibratedFramesPct = 90m, ReadFramesPct = 82.5m };
+
+        var analysis = (await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!;
+        await world.Processor.ProcessAsync(analysis, default);
+
+        Assert.Equal((VideoAnalysisStatus.Ready, 82.5m, true), (analysis.Status, analysis.ReadFramesPct, analysis.LowQuality));
+        Assert.Contains("82,5 %", world.Jobs.Finished!.Value.Summary);
     }
 }
 
@@ -488,6 +664,7 @@ internal static class VideoAnalysisSamples
 internal sealed class AnalysisWorld
 {
     public static readonly DateTimeOffset Start = new(2026, 11, 6, 10, 0, 0, TimeSpan.Zero);
+    public const string Worker = "EQUIPO-GPU:4242";
 
     public readonly ManualClock Clock = new() { Now = Start };
     public readonly FakeVideoStore Videos = new();
@@ -507,7 +684,7 @@ internal sealed class AnalysisWorld
     {
         _away = away;
         Match = Match.Schedule(Guid.NewGuid(), 1, Home.Id, Away.Id, Start.AddDays(-3), null, null);
-        var options = Options.Create(new VideoAnalysisOptions { Enabled = enabled });
+        var options = Options.Create(new VideoAnalysisOptions { Enabled = enabled, MaxAttempts = 2, LeaseMinutes = 10 });
         var matches = TestStub.Of<IMatchStore>((name, _) => name == nameof(IMatchStore.GetByIdAsync) ? Task.FromResult<Match?>(Match) : throw new NotSupportedException(name));
         var teams = TestStub.Of<ITeamStore>((name, _) => name == nameof(ITeamStore.GetByIdsAsync) ? Task.FromResult<IReadOnlyList<Team>>([Home, Away]) : throw new NotSupportedException(name));
         Queue = new VideoAnalysisQueue(Analyses, options, Signal, UnitOfWork, Clock);
@@ -585,11 +762,12 @@ internal sealed class FakeAnalysisStore : IMatchVideoAnalysisStore
             .OrderBy(a => a.RequestedAt).FirstOrDefault());
     public Task<IReadOnlyList<MatchVideoAnalysis>> GetRunningAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<MatchVideoAnalysis>>(Items.Where(a => a.Status == VideoAnalysisStatus.Running).ToList());
-    public Task ReplaceCropsAsync(Guid analysisId, IReadOnlyCollection<VideoAnalysisCrop> crops, CancellationToken cancellationToken = default)
+    public Task SaveResultAsync(Guid analysisId, IReadOnlyCollection<VideoAnalysisCrop> crops, CancellationToken cancellationToken = default)
     {
         Crops[analysisId] = crops.ToList();
         return Task.CompletedTask;
     }
+    public Task<bool> DiscardChangesAsync(MatchVideoAnalysis analysis, CancellationToken cancellationToken = default) => Task.FromResult(Items.Contains(analysis));
     public Task<byte[]?> GetCropAsync(Guid analysisId, int tracklet, CancellationToken cancellationToken = default) =>
         Task.FromResult(Crops.GetValueOrDefault(analysisId)?.FirstOrDefault(c => c.Tracklet == tracklet)?.Content);
     public Task<IReadOnlySet<int>> GetCropTrackletsAsync(Guid analysisId, CancellationToken cancellationToken = default) =>
@@ -661,10 +839,29 @@ internal sealed class FakeVideoJobs : IVideoJobLog
 internal sealed class CountingUnitOfWork : IUnitOfWork
 {
     public int Saves;
+    public Func<Exception>? Failure;
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        if (Failure is not null) throw Failure();
         Saves++;
         return Task.FromResult(1);
+    }
+}
+
+internal sealed class FakeAnalyzerHeartbeats : IVideoAnalyzerHeartbeatStore
+{
+    public DateTimeOffset? LastSeen;
+
+    public Task BeatAsync(string workerId, DateTimeOffset startedAt, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        LastSeen = now;
+        return Task.CompletedTask;
+    }
+    public Task<DateTimeOffset?> LastSeenAsync(CancellationToken cancellationToken = default) => Task.FromResult(LastSeen);
+    public Task RemoveAsync(string workerId, CancellationToken cancellationToken = default)
+    {
+        LastSeen = null;
+        return Task.CompletedTask;
     }
 }

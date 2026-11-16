@@ -17,7 +17,7 @@ public sealed class RegistrationOptions
 
     // Beta cerrada: un club solo puede darse de alta con una invitación del administrador (técnicos y jugadores ya
     // entran siempre con el código que les da su club).
-    public bool ClubInviteRequired { get; set; }
+    public bool ClubInviteRequired { get; set; } = true;
 }
 
 public sealed record RegistrationOptionsDto(bool ClubInviteRequired);

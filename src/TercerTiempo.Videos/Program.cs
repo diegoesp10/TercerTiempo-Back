@@ -32,6 +32,7 @@ if (behindProxy)
 
 // Las migraciones las aplica la API al arrancar: este proceso usa la base tal como esté.
 
+app.UseSecurityHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 

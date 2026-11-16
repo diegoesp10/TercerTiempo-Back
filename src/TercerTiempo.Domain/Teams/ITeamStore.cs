@@ -1,5 +1,7 @@
 namespace TercerTiempo.Domain.Teams;
 
+public sealed record SeasonTeam(Guid SeasonId, Guid TeamId);
+
 public interface ITeamStore
 {
     Task<Team?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
@@ -7,6 +9,7 @@ public interface ITeamStore
     Task<IReadOnlyList<Team>> GetAllAsync(CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<Team>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SeasonTeam>> GetSeasonTeamsAsync(IEnumerable<Guid> seasonIds, CancellationToken cancellationToken = default);
 
     void Add(Team team);
 

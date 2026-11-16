@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.Extensions.Logging;
 using TercerTiempo.Application.Abstractions.Teams;
+using TercerTiempo.Application.Common;
 
 namespace TercerTiempo.Infrastructure.Teams;
 
@@ -17,8 +18,13 @@ internal sealed class HttpCrestDownloader(HttpClient http, ILogger<HttpCrestDown
     {
         try
         {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+            {
+                logger.LogWarning("Escudo {Url}: solo se descargan direcciones http(s)", url);
+                return null;
+            }
             // De la federación solo se leen actas: cada petición de más acerca el bloqueo por IP.
-            if (new Uri(url).Host.EndsWith("asturfutbol.es", StringComparison.OrdinalIgnoreCase))
+            if (uri.Host.EndsWith("asturfutbol.es", StringComparison.OrdinalIgnoreCase))
             {
                 logger.LogWarning("Escudo {Url}: no se descargan imágenes de asturfutbol.es", url);
                 return null;
@@ -36,7 +42,13 @@ internal sealed class HttpCrestDownloader(HttpClient http, ILogger<HttpCrestDown
 
             if (response.Content.Headers.ContentLength > MaxBytes) return null;
             var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            return content.Length is 0 or > MaxBytes ? null : new CrestImage(content, contentType.ToLowerInvariant());
+            if (content.Length is 0 or > MaxBytes) return null;
+            if (!ImageSignature.Matches(content, contentType))
+            {
+                logger.LogWarning("Escudo {Url}: el contenido no es un {ContentType}", url, contentType);
+                return null;
+            }
+            return new CrestImage(content, contentType.ToLowerInvariant());
         }
         catch (HttpRequestException ex)
         {

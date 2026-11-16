@@ -31,8 +31,8 @@ public class SearchIndexTests
         ],
         [new CorpusClub(Guid.NewGuid(), "TSK Roces", [Roces])],
         [
-            new CorpusPlayer(PepeEntry, Roces, "José Fernández Álvarez", Position.Forward, 10, null),
-            new CorpusPlayer(Guid.NewGuid(), Vallobin, "Pedro García", Position.Goalkeeper, 1, null),
+            new CorpusPlayer(PepeEntry, Roces, "José Fernández Álvarez", Position.Forward, null),
+            new CorpusPlayer(Guid.NewGuid(), Vallobin, "Pedro García", Position.Goalkeeper, null),
         ],
         [new CorpusMatch(NalonRoces, League, 6, Nalon, Roces, Now.AddDays(-7), MatchStatus.Played, 0, 1)],
         [new CorpusSquad(RocesSquad, Roces, "2026/2027", [
@@ -84,11 +84,24 @@ public class SearchIndexTests
     }
 
     [Fact]
-    public void Players_are_found_by_any_name_and_shirt_number_and_lead_to_their_team()
+    public void Players_are_found_by_any_name_and_lead_to_their_team()
     {
-        var hit = Index().Search("alvarez 10", Stranger, null).Hits[0];
+        var hit = Index().Search("alvarez roces", Stranger, null).Hits[0];
         Assert.Equal((SearchTypes.Player, $"/equipos/{Roces}/jugadores/{PepeEntry}"), (hit.Doc.Type, hit.Link));
         Assert.Contains("TSK Roces", hit.Doc.Subtitle);
+
+        // La ficha publicada no lleva dorsal (cambia de un partido a otro): ni se enseña ni sirve para buscar, así que
+        // con un número solo queda la coincidencia parcial por el apellido.
+        Assert.DoesNotContain("Dorsal", hit.Doc.Subtitle);
+        Assert.True(Index().Search("alvarez 10", Stranger, null).Partial);
+    }
+
+    [Fact]
+    public void A_player_added_by_the_staff_is_also_found_by_the_shirt_number_they_gave_him()
+    {
+        var hit = Index().Search("juvenil 22", RocesStaff, null).Hits[0];
+        Assert.Equal(ManualPlayer, hit.Doc.Id);
+        Assert.Contains("Dorsal 22", hit.Doc.Subtitle);
     }
 
     [Fact]

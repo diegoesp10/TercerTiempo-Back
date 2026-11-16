@@ -231,8 +231,28 @@ internal sealed class JobScheduler
     }
 
     // Primera ejecución tras arrancar: un intervalo después de la última guardada (o enseguida si nunca se ha hecho).
-    // Las que quedaron en marcha porque la API se paró a medias se cierran como interrumpidas.
+    // Las que quedaron en marcha porque la API se paró a medias se cierran como interrumpidas. Si la base no responde
+    // (arranca a la vez, un corte de red), se reintenta con esperas crecientes: un fallo aquí saldría del trabajo y, con
+    // él, pararía la API entera.
     public async Task<DateTimeOffset?> FirstDueAsync(string job, CancellationToken cancellationToken)
+    {
+        var wait = TimeSpan.FromSeconds(5);
+        while (true)
+        {
+            try
+            {
+                return await FirstDueOnceAsync(job, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "{Job}: no se pudo leer la última ejecución; se reintenta en {Seconds} s", job, (int)wait.TotalSeconds);
+                await Task.Delay(wait, _clock, cancellationToken);
+                wait = TimeSpan.FromSeconds(Math.Min(wait.TotalSeconds * 2, 300));
+            }
+        }
+    }
+
+    private async Task<DateTimeOffset?> FirstDueOnceAsync(string job, CancellationToken cancellationToken)
     {
         var definition = Get(job);
         await WhenCanRunAsync(job, cancellationToken);
@@ -323,12 +343,14 @@ internal sealed class JobScheduler
         string? summary = null;
         IReadOnlyList<string> errors = [];
         var quiet = false;
+        var leaseLost = slot.Definition.RealData ? _lease.HeldToken : CancellationToken.None;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, leaseLost);
         try
         {
             await SaveAsync(db => db.Add(run));
             JobContext.RunId = run.Id;
 
-            var outcome = await work(cancellationToken);
+            var outcome = await work(linked.Token);
             summary = outcome.Summary;
             errors = outcome.Errors;
             status = errors.Count == 0 ? JobRunStatus.Succeeded : JobRunStatus.Partial;
@@ -339,6 +361,11 @@ internal sealed class JobScheduler
             status = JobRunStatus.Interrupted;
             summary = "Parada al apagar la API";
             throw;
+        }
+        catch (OperationCanceledException) when (leaseLost.IsCancellationRequested)
+        {
+            status = JobRunStatus.Interrupted;
+            summary = "Parada: este entorno ha perdido el bloqueo de los datos reales y puede descargarlos otro";
         }
         catch (ProviderThrottledException ex)
         {

@@ -6,8 +6,13 @@ public sealed class VideoAnalysisOptions
 {
     public const string SectionName = "Analysis";
 
-    // Desactivado donde no hay GPU (Docker, el servidor): los vídeos no entran en la cola y la app lo dice.
+    // Se admiten análisis: la API deja pedirlos y el compresor encola cada vídeo al terminar. Desactivado donde no hay
+    // GPU en ningún sitio (Pilot, Production): los vídeos no entran en la cola y la app lo dice.
     public bool Enabled { get; set; }
+
+    // Este proceso atiende la cola y lanza el analizador (hace falta uv, TercerTiempo.Analisis y la GPU). En Docker no:
+    // allí se encola y lo analiza Start-Analyzer.ps1 desde Windows contra la misma base.
+    public bool RunWorker { get; set; }
 
     // Ejecutable de uv; admite variables de entorno (%APPDATA%\Python\Python314\Scripts\uv.exe).
     public string UvPath { get; set; } = "uv";
@@ -27,11 +32,19 @@ public sealed class VideoAnalysisOptions
     // Sin GPU el analizador tardaría horas en CPU: se da por fallido con un mensaje claro.
     public bool RequireGpu { get; set; } = true;
 
-    public int MaxAttempts { get; set; } = 1;
+    // Intentos por vídeo ante fallos pasajeros (la base, el disco) o un proceso que murió a medias; un fallo del propio
+    // análisis (sin GPU, vídeo ilegible) no se reintenta.
+    public int MaxAttempts { get; set; } = 2;
 
     public int PollSeconds { get; set; } = 15;
 
     public int TimeoutMinutes { get; set; } = 480;
+
+    // Sin ninguna línea del analizador en este tiempo se da por colgado y se para (0 = sin vigilancia).
+    public int InactivityMinutes { get; set; } = 15;
+
+    // Un análisis «en marcha» cuyo latido lleva más de esto sin renovarse vuelve a la cola: su proceso murió.
+    public int LeaseMinutes { get; set; } = 10;
 }
 
 // Los nombres van en el orden «el nuestro, el rival», pero el analizador no sabe cuál es cuál: separa dos equipaciones
@@ -55,7 +68,8 @@ public sealed record VideoAnalysisRun(
     int AnalyzedSeconds,
     decimal? PitchLengthM,
     decimal? PitchWidthM,
-    IReadOnlyDictionary<int, byte[]> Crops);
+    IReadOnlyDictionary<int, byte[]> Crops,
+    decimal? ReadFramesPct = null);
 
 public interface IVideoAnalyzer
 {

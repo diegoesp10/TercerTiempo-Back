@@ -40,7 +40,9 @@ public class FederationDatabaseFirstTests
             Stub<IMatchStore>((_, _) => Task.FromResult<Match?>(match)),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<OfficialMatchSheet?>(sheet)),
             Stub<IOfficialSheetQueue>((method, _) => throw new Exception($"Unexpected queue call: {method}")),
-            new OfficialSheetSyncMemory(), TimeProvider.System);
+            new OfficialSheetSyncMemory(),
+            Stub<TercerTiempo.Application.Abstractions.Identity.ICurrentUser>((method, _) => method == "get_IsAuthenticated" ? true : null),
+            TimeProvider.System);
         var result = await handler.Handle(new(match.Id), default);
         Assert.Equal(OfficialSheetAvailability.Available, result.Status);
         Assert.NotEmpty(result.Home!.Starters);
@@ -69,7 +71,7 @@ public class FederationDatabaseFirstTests
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
             Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([match])),
             Stub<IEnvironmentData>((_, _) => Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid> { match.HomeTeamId })),
-            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([sheet])),
+            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialSheetState>>([OfficialSheetState.From(sheet)])),
             AllSources, Options.Create(new PublicSheetOptions()), new OfficialSheetSyncMemory(), TimeProvider.System);
         Assert.Empty(await handler.Handle(new(20), default));
     }
@@ -87,7 +89,7 @@ public class FederationDatabaseFirstTests
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
             Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([withSquad, others])),
             Stub<IEnvironmentData>((_, _) => Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid> { ours })),
-            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([])),
+            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialSheetState>>([])),
             AllSources, Options.Create(new PublicSheetOptions { Sources = ["otra-web", "asturfutbol"] }), new OfficialSheetSyncMemory(), TimeProvider.System);
         Assert.Equal([new PlannedSheet(withSquad.Id, true), new PlannedSheet(others.Id, false)], await handler.Handle(new(20), default));
     }
@@ -141,7 +143,7 @@ public class FederationDatabaseFirstTests
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition])),
             Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([withSquad, others])),
             Stub<IEnvironmentData>((_, _) => Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid> { ours })),
-            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([fromRemovedSource])),
+            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialSheetState>>([OfficialSheetState.From(fromRemovedSource)])),
             AllSources, Options.Create(new PublicSheetOptions()), new OfficialSheetSyncMemory(), TimeProvider.System);
 
         Assert.Equal([new PlannedSheet(withSquad.Id, true)], await handler.Handle(new(20), default));
@@ -171,8 +173,8 @@ public class FederationDatabaseFirstTests
             Stub<ICompetitionStore>((_, _) => Task.FromResult<IReadOnlyList<Competition>>([competition, other])),
             Stub<IOfficialSheetProvider>((_, _) => true),
             Stub<IMatchStore>((_, args) => Task.FromResult<IReadOnlyList<Match>>(
-                (Guid)args![0]! == season.Id ? [saved, round2, round1, future, cancelled] : [otherLeague])),
-            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([sheet])),
+                [.. new[] { saved, round2, round1, future, cancelled, otherLeague }.Where(m => ((IEnumerable<Guid>)args![0]!).Contains(m.SeasonId))])),
+            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialSheetState>>([OfficialSheetState.From(sheet)])),
             Stub<ISheetDownloadStore>((method, args) =>
             {
                 requested.AddRange((IReadOnlyList<Guid>)args![0]!);

@@ -27,9 +27,10 @@ internal sealed class AsturfutbolClient(
         return await store.PeekAsync(key, cancellationToken) is { } cached ? Decode(cached.Content, cached.ContentType) : null;
     }
 
-    public async Task<string?> GetHtmlAsync(string pathAndQuery, CancellationToken cancellationToken)
+    // refresh: la copia guardada no sirve aunque no haya caducado; la petición pasa por los mismos límites que cualquiera.
+    public async Task<string?> GetHtmlAsync(string pathAndQuery, CancellationToken cancellationToken, bool refresh = false)
     {
-        var response = await FetchAsync(pathAndQuery, html: true, cancellationToken);
+        var response = await FetchAsync(pathAndQuery, html: true, cancellationToken, refresh);
         return response.Content is null ? null : Decode(response.Content, response.ContentType);
     }
 
@@ -41,7 +42,7 @@ internal sealed class AsturfutbolClient(
 
     public string AbsoluteUrl(string pathAndQuery) => new Uri(http.BaseAddress!, pathAndQuery).ToString();
 
-    private async Task<FederationResponse> FetchAsync(string pathAndQuery, bool html, CancellationToken ct)
+    private async Task<FederationResponse> FetchAsync(string pathAndQuery, bool html, CancellationToken ct, bool refresh = false)
     {
         var original = new Uri(http.BaseAddress!, pathAndQuery);
         EnsureHost(original);
@@ -57,7 +58,7 @@ internal sealed class AsturfutbolClient(
             while (true)
             {
                 var now = clock.GetUtcNow();
-                var reservation = await store.ReserveAsync(key, original.AbsoluteUri, lease, redirect, now, _options.AsturfutbolLimits, ct);
+                var reservation = await store.ReserveAsync(key, original.AbsoluteUri, lease, redirect, now, _options.AsturfutbolLimits, ct, refresh);
                 if (reservation.Cached is { } cached) return cached;
                 if (reservation.RetryAt is { } retry)
                 {

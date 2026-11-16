@@ -10,15 +10,20 @@ public enum AlertKind
     // Alguien pide acceso al acta interna o al vídeo de un partido del club.
     PassRequest = 2,
 
-    // Para el jugador: va convocado a un partido y tiene que contestar.
-    CallUp = 3,
+    // Para el jugador: va convocado a un partido y tiene que firmar. Solo partidos: a los entrenamientos se cita a toda
+    // la plantilla y no hay convocatoria.
+    MatchCallUp = 3,
 
-    // Para el jugador: la convocatoria se ha publicado y no entra en ella.
-    NotCalledUp = 4,
+    // Para el jugador: la convocatoria del partido se ha publicado y no entra en ella.
+    MatchNotCalledUp = 4,
 
     // Para el cuerpo técnico y el club: un jugador avisa de que falta a un entrenamiento. (Los partidos no llevan
     // avisos del jugador: la convocatoria la emite el cuerpo técnico y el jugador solo la firma.)
     TrainingAbsence = 6,
+
+    // Para el jugador: le citan a entrenar (una sesión o una serie semanal), o una sesión cambia o se anula. No se firma:
+    // a los entrenamientos se cita a toda la plantilla y el jugador solo avisa si falta.
+    TrainingCall = 7,
 }
 
 // Aviso dentro de la app: la campanita del panel. Cada aviso tiene un solo destinatario: una cuenta de club, un jugador
@@ -91,6 +96,9 @@ public sealed class Alert : AggregateRoot
         };
 }
 
+// La campanita de una cuenta: cuántos avisos siguen sin leer y vigentes, y los últimos (solo para leer).
+public sealed record AlertPage(int Unread, IReadOnlyList<Alert> Latest);
+
 public interface IAlertStore
 {
     Task<Alert?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
@@ -99,5 +107,14 @@ public interface IAlertStore
     // Los de una cuenta: el club, el jugador o el técnico que haya detrás (solo uno de los tres).
     Task<IReadOnlyList<Alert>> GetForAsync(Guid? clubId, Guid? playerId, Guid? coachId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Alert>> GetByKindAsync(AlertKind kind, CancellationToken cancellationToken = default);
+    Task<AlertPage> GetPageForAsync(Guid? clubId, Guid? playerId, Guid? coachId, int take, CancellationToken cancellationToken = default);
+
+    // Sin resolver y cuya clave empieza por keyPrefix, de cualquiera de esos destinatarios (con seguimiento, para resolverlos).
+    Task<IReadOnlyList<Alert>> GetOpenByKeyPrefixAsync(
+        string keyPrefix, IReadOnlyCollection<Guid> playerIds, IReadOnlyCollection<Guid> coachIds, Guid? clubId, CancellationToken cancellationToken = default);
+
+    // Marca como leídos de una vez (sin cargarlos) los avisos sin leer de la cuenta.
+    Task<int> MarkAllReadAsync(Guid? clubId, Guid? playerId, Guid? coachId, DateTimeOffset now, CancellationToken cancellationToken = default);
+    Task<int> DeleteResolvedBeforeAsync(DateTimeOffset before, CancellationToken cancellationToken = default);
     void Add(Alert alert);
 }

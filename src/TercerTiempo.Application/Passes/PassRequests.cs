@@ -13,6 +13,7 @@ using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Licensing;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Passes;
+using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
@@ -56,7 +57,7 @@ internal static class PassRequestAlerts
     public static async Task ResolveAsync(MatchPassRequest request, IAlertStore alerts, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var key = Key(request.Id);
-        foreach (var alert in (await alerts.GetByClubAsync(request.ClubId, cancellationToken)).Where(a => a.Key == key))
+        foreach (var alert in (await alerts.GetOpenByKeyPrefixAsync(key, [], [], request.ClubId, cancellationToken)).Where(a => a.Key == key))
             alert.Resolve(now);
     }
 
@@ -227,6 +228,7 @@ internal sealed class ApprovePassRequestHandler(
     IMatchPassStore passes,
     IMatchPassPriceStore prices,
     IAlertStore alerts,
+    IPerformanceStore performances,
     IOptions<PassOptions> options,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<ApprovePassRequestCommand, ClubPassRequestDto>
@@ -239,6 +241,8 @@ internal sealed class ApprovePassRequestHandler(
 
         if (command.IncludesVideo && !(await videos.GetByMatchAsync(request.MatchId, cancellationToken)).Any(v => v.SquadId == squad.Id))
             throw new ConflictException(ErrorCode.PassNoVideo);
+        if (command.IncludesSheet && (await performances.GetBySquadAndMatchAsync(squad.Id, request.MatchId, cancellationToken)).Count == 0)
+            throw new ConflictException(ErrorCode.PassNoSheet);
 
         var price = command.PriceCents
             ?? PassContext.Total(await PassContext.PricesAsync(club, squad.Id, request.MatchId, prices, cancellationToken), command.IncludesSheet, command.IncludesVideo);

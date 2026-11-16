@@ -45,6 +45,13 @@ internal sealed class RefereeStore(AppDbContext db) : IRefereeStore
     public async Task<IReadOnlyList<MatchOfficial>> GetAllOfficialsAsync(CancellationToken cancellationToken = default) =>
         await db.Set<MatchOfficial>().AsNoTracking().ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<OfficialAppearanceRow>> GetAllAppearancesAsync(CancellationToken cancellationToken = default) =>
+        await (from o in db.Set<MatchOfficial>()
+               join m in db.Set<Match>() on o.MatchId equals m.Id into games
+               from m in games.DefaultIfEmpty()
+               select new OfficialAppearanceRow(o.MatchId, o.RefereeId, o.Role, m == null ? null : m.SeasonId, m == null ? null : m.KickoffAt))
+            .ToListAsync(cancellationToken);
+
     public void AddOfficial(MatchOfficial official) => db.Set<MatchOfficial>().Add(official);
 
     public async Task<IReadOnlyList<Guid>> GetMatchesWithOfficialsAsync(IEnumerable<Guid> teamIds, DateTimeOffset since, CancellationToken cancellationToken = default)
@@ -91,6 +98,23 @@ internal sealed class RefereeStore(AppDbContext db) : IRefereeStore
 
     public async Task<IReadOnlyList<RefereeRating>> GetRatingsByRefereeAsync(Guid refereeId, CancellationToken cancellationToken = default) =>
         await db.Set<RefereeRating>().AsNoTracking().Where(r => r.RefereeId == refereeId).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<RatingScoreRow>> GetAllScoresAsync(CancellationToken cancellationToken = default) =>
+        await db.Set<RefereeRating>()
+            .Where(r => r.Score != null)
+            .Select(r => new RatingScoreRow(r.MatchId, r.RefereeId, r.Score!.Value))
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<RoleScoreTotal>> GetScoreTotalsAsync(IEnumerable<Guid> refereeIds, CancellationToken cancellationToken = default)
+    {
+        var list = refereeIds.Distinct().ToList();
+        if (list.Count == 0) return [];
+        return await db.Set<RefereeRating>()
+            .Where(r => list.Contains(r.RefereeId) && r.Score != null)
+            .GroupBy(r => new { r.RefereeId, r.Role })
+            .Select(g => new RoleScoreTotal(g.Key.RefereeId, g.Key.Role, g.Count(), g.Sum(r => r.Score!.Value)))
+            .ToListAsync(cancellationToken);
+    }
 
     public async Task<IReadOnlyList<RefereeRating>> GetAllRatingsAsync(CancellationToken cancellationToken = default) =>
         await db.Set<RefereeRating>().AsNoTracking().ToListAsync(cancellationToken);

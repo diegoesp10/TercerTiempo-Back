@@ -25,8 +25,17 @@ internal sealed class RealDataCopier(
     RealDataConnections connections,
     IServiceScopeFactory scopes,
     FileSystemCrestStorage crestFiles,
-    ILogger<RealDataCopier> logger)
+    ILogger<RealDataCopier> logger,
+    TimeProvider? clock = null)
 {
+    // Aunque la base real parezca igual, se copia entera al menos cada tanto: hay cambios que la marca no ve (lo que la
+    // administración de otro entorno toca en las tablas grandes, una corrección a mano).
+    public static readonly TimeSpan ForceCopyAfter = TimeSpan.FromHours(1);
+
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private readonly Lock _markLock = new();
+    private (string Mark, DateTimeOffset At)? _lastCopy;
+
     private static readonly HashSet<string> NeverRemoved = ["SeasonYears", "Competitions", "Seasons", "Teams"];
 
     private static readonly Dictionary<string, TableRule> Rules = new()
@@ -56,13 +65,34 @@ internal sealed class RealDataCopier(
     private static readonly string[] IngestJobs =
         [JobNames.FootballData, JobNames.OfficialSheets, JobNames.WeeklySheets, JobNames.MatchOfficials, JobNames.LeagueZones];
 
+    // La copia de cada pocos minutos: si la base real no ha cambiado desde la última copia (misma marca), no se copia.
+    // force: se ha pedido (a mano, tras una descarga o un cambio de la administración en este proceso) y se copia siempre.
+    public async Task<JobOutcome> CopyIfChangedAsync(bool force, CancellationToken cancellationToken)
+    {
+        (string Mark, DateTimeOffset At)? last;
+        lock (_markLock) last = _lastCopy;
+
+        if (!force && last is { } previous && _clock.GetUtcNow() - previous.At < ForceCopyAfter)
+        {
+            await using var source = new SqlConnection(connections.RealData);
+            await source.OpenAsync(cancellationToken);
+            if (await ChangeMarkAsync(source, null, cancellationToken) == previous.Mark)
+                return new JobOutcome("Sin cambios en la base de datos reales", [], Quiet: true);
+        }
+
+        return await CopyAsync(cancellationToken);
+    }
+
     public async Task<JobOutcome> CopyAsync(CancellationToken cancellationToken)
     {
         var tables = TableNames(RealDataModel.Copied);
+        var startedAt = _clock.GetUtcNow();
 
         await using var source = new SqlConnection(connections.RealData);
         await source.OpenAsync(cancellationToken);
         await using var snapshot = (SqlTransaction)await source.BeginTransactionAsync(IsolationLevel.Snapshot, cancellationToken);
+        // La marca de la misma foto fija que se copia: lo que se escriba después la cambia y se copiará la próxima vez.
+        var mark = await ChangeMarkAsync(source, snapshot, cancellationToken);
 
         await using var target = new SqlConnection(connections.Environment);
         await target.OpenAsync(cancellationToken);
@@ -107,6 +137,7 @@ internal sealed class RealDataCopier(
 
         await transaction.CommitAsync(cancellationToken);
         await snapshot.CommitAsync(cancellationToken);
+        lock (_markLock) _lastCopy = mark is null ? null : (mark, startedAt);
 
         var crests = await CopyCrestFilesAsync(cancellationToken);
         var changed = changes.Where(c => c.Total > 0).ToList();
@@ -114,7 +145,10 @@ internal sealed class RealDataCopier(
             return new JobOutcome(crests > 0 ? $"{crests} escudos copiados" : "Sin cambios", [], Quiet: crests == 0);
 
         using (var scope = scopes.CreateScope())
+        {
             scope.ServiceProvider.GetRequiredService<TercerTiempo.Application.Search.SearchIndexHolder>().Invalidate();
+            scope.ServiceProvider.GetRequiredService<TercerTiempo.Application.Common.PublicDataCache>().Invalidate();
+        }
         logger.LogInformation("Datos reales copiados: {Changes}", string.Join(", ", changed.Select(c => $"{c.Table} +{c.Inserted} ~{c.Updated} -{c.Deleted}")));
 
         var parts = changed.Select(c => $"{c.Total} {Labels.GetValueOrDefault(c.Table, c.Table)}").ToList();
@@ -185,6 +219,28 @@ internal sealed class RealDataCopier(
         await transaction.CommitAsync(cancellationToken);
         logger.LogInformation("Base de datos reales creada desde este entorno ({Crests} escudos)", crests);
         return true;
+    }
+
+    // Marca barata de «la base real ha cambiado»: lo escriben las descargas (su última ejecución terminada; mientras haya
+    // una en marcha, null = cambia sin parar y se copia siempre), las actas que se piden al abrir un partido (su última
+    // comprobación, que también trae el equipo arbitral) y lo que la administración cambia en las tablas pequeñas
+    // (temporadas, ligas, equipos: suma de comprobación de sus filas).
+    private static async Task<string?> ChangeMarkAsync(SqlConnection connection, SqlTransaction? transaction, CancellationToken cancellationToken)
+    {
+        var jobs = string.Join(", ", IngestJobs.Select(j => $"'{j}'"));
+        var sql =
+            $"SELECT (SELECT COUNT(*) FROM dbo.JobRuns WHERE Job IN ({jobs}) AND Status = @running AND StartedAt > DATEADD(hour, -6, SYSDATETIMEOFFSET())), " +
+            $"(SELECT CONVERT(nvarchar(40), MAX(FinishedAt), 127) FROM dbo.JobRuns WHERE Job IN ({jobs})), " +
+            "(SELECT CONCAT(COUNT_BIG(*), '/', CONVERT(nvarchar(40), MAX(CheckedAt), 127)) FROM dbo.OfficialSheets), " +
+            "(SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(BINARY_CHECKSUM(*))) FROM dbo.SeasonYears), " +
+            "(SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(BINARY_CHECKSUM(*))) FROM dbo.Competitions), " +
+            "(SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(BINARY_CHECKSUM(*))) FROM dbo.Seasons), " +
+            "(SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(BINARY_CHECKSUM(*))) FROM dbo.Teams);";
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@running", TercerTiempo.Application.Jobs.JobRunStatus.Running);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken) || reader.GetInt32(0) > 0) return null;
+        return string.Join('|', Enumerable.Range(1, reader.FieldCount - 1).Select(i => reader.IsDBNull(i) ? "" : reader.GetValue(i).ToString()));
     }
 
     private static string? SeedExpression(string table, string column) => (table, column) switch

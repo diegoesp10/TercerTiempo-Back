@@ -30,6 +30,7 @@ internal sealed class VideoAnalysisReader(
     IMatchStore matches,
     IMatchVideoStore videos,
     IMatchVideoAnalysisStore analyses,
+    IVideoAnalyzerHeartbeatStore analyzers,
     IOptions<VideoAnalysisOptions> options,
     TimeProvider clock)
 {
@@ -70,7 +71,11 @@ internal sealed class VideoAnalysisReader(
                 : new HashSet<int>();
             parts.Add(VideoAnalysisMapper.ToDto(scope.Squad, video, analysis, crops));
         }
-        return new MatchVideoAnalysisDto(Enabled, scope.CanManage, parts);
+
+        // Si nadie atiende la cola (no hay ningún analizador encendido) lo pendiente se quedaría «en cola» sin más: la
+        // app lo avisa.
+        var seen = await analyzers.LastSeenAsync(cancellationToken);
+        return new MatchVideoAnalysisDto(Enabled, scope.CanManage, parts, VideoAnalyzerHeartbeat.IsOnline(seen, clock.GetUtcNow()), seen);
     }
 }
 
@@ -149,6 +154,43 @@ internal sealed class RequestVideoAnalysisHandler(
 
         var all = scope.Analyses.Concat(created).ToDictionary(a => a.Key, a => a.Value);
         return await reader.BuildAsync(scope with { Analyses = all }, cancellationToken);
+    }
+}
+
+// Parar lo que está en cola o analizándose (el vídeo indicado o todos los de la plantilla en el partido). El analizador lo
+// nota al renovar su latido (en unos segundos), para el proceso de Python y no guarda nada.
+public sealed record CancelVideoAnalysisCommand(Guid SquadId, Guid MatchId, Guid? VideoId) : ICommand<MatchVideoAnalysisDto>;
+
+internal sealed class CancelVideoAnalysisValidator : AbstractValidator<CancelVideoAnalysisCommand>
+{
+    public CancelVideoAnalysisValidator()
+    {
+        RuleFor(x => x.SquadId).NotEmpty();
+        RuleFor(x => x.MatchId).NotEmpty();
+    }
+}
+
+internal sealed class CancelVideoAnalysisHandler(
+    VideoAnalysisReader reader,
+    IUnitOfWork unitOfWork,
+    TimeProvider clock) : ICommandHandler<CancelVideoAnalysisCommand, MatchVideoAnalysisDto>
+{
+    public async Task<MatchVideoAnalysisDto> Handle(CancelVideoAnalysisCommand command, CancellationToken cancellationToken)
+    {
+        var scope = await reader.ScopeAsync(command.SquadId, command.MatchId, managersOnly: true, cancellationToken);
+        if (command.VideoId is { } videoId && scope.Videos.All(v => v.Id != videoId))
+            throw new NotFoundException(ErrorCode.VideoNotFound, videoId);
+
+        var now = clock.GetUtcNow();
+        var active = scope.Analyses.Values
+            .Where(a => a.IsActive && (command.VideoId is null || a.VideoId == command.VideoId))
+            .ToList();
+        if (active.Count == 0)
+            throw new ConflictException(ErrorCode.VideoAnalysisNotActive);
+
+        foreach (var analysis in active) analysis.Cancel(now);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return await reader.BuildAsync(scope, cancellationToken);
     }
 }
 

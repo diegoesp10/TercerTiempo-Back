@@ -195,7 +195,7 @@ internal sealed class RecordPresenceHandler(
 
         if (type == AccountType.Coach && await coaches.GetByUserIdAsync(userId, cancellationToken) is { } coach)
         {
-            var coached = await squads.GetByCoachAsync(coach.Id, SquadAccess.Today(clock), cancellationToken);
+            var coached = await squads.GetRefsByCoachAsync(coach.Id, SquadAccess.Today(clock), cancellationToken);
             return new PresenceProfile(coach.DisplayName, await TeamNamesAsync(coached.Select(s => s.TeamId), cancellationToken));
         }
 

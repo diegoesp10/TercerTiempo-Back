@@ -95,5 +95,15 @@ internal sealed class CallUpStore(AppDbContext db) : ICallUpStore
     public async Task<IReadOnlyList<MatchCallUp>> GetBySquadAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         await db.MatchCallUps.Where(c => c.SquadId == squadId).ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<MatchCallUp>> GetBySquadAndMatchesAsync(
+        Guid squadId, IEnumerable<Guid> matchIds, bool publishedOnly, CancellationToken cancellationToken = default)
+    {
+        var list = matchIds.Distinct().ToList();
+        if (list.Count == 0) return [];
+        return await db.MatchCallUps
+            .Where(c => c.SquadId == squadId && list.Contains(c.MatchId) && (!publishedOnly || c.Status == CallUpStatus.Published))
+            .ToListAsync(cancellationToken);
+    }
+
     public void Add(MatchCallUp callUp) => db.MatchCallUps.Add(callUp);
 }

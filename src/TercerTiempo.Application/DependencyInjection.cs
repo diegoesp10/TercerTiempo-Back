@@ -48,6 +48,9 @@ public static class DependencyInjection
         services.AddScoped<Squads.MatchSheet.MatchSheetWriter>();
         services.AddSingleton<OfficialSheets.OfficialSheetSyncMemory>();
         services.AddScoped<IPublicSheetSource, FederationSheetSource>();
+        services.AddSingleton<Common.PublicDataCache>();
+        // Sin infraestructura (algunas pruebas) las consultas leen igual; la de EF Core la sustituye.
+        services.TryAddScoped<IReadScope, NoReadScope>();
 
         var handlerTypes = assembly.GetTypes()
             .Where(t => t is { IsClass: true, IsAbstract: false, IsGenericTypeDefinition: false });
@@ -69,7 +72,12 @@ public static class DependencyInjection
                 }
                 else if (definition == typeof(IQueryHandler<,>))
                 {
-                    services.AddScoped(contract, handlerType);
+                    var concrete = handlerType;
+                    var decorator = typeof(ReadOnlyQueryHandler<,>).MakeGenericType(contract.GetGenericArguments());
+
+                    services.AddScoped(concrete);
+                    services.AddScoped(contract, provider =>
+                        ActivatorUtilities.CreateInstance(provider, decorator, provider.GetRequiredService(concrete)));
                 }
             }
         }

@@ -49,6 +49,7 @@ public sealed record FormResultDto(
 
 public sealed record PreviewPlayerDto(
     string Name,
+    [property: System.ComponentModel.Description("El dorsal que más ha llevado en los partidos que ha jugado, según las actas oficiales.")]
     int? ShirtNumber,
     int Matches,
     int Started,
@@ -169,8 +170,7 @@ internal sealed class GetMatchPreviewHandler(
     private async Task<(IReadOnlyList<PreviewPlayerDto> Players, SetPiecesDto SetPieces, int Sheets)> PlayersFromSheetsAsync(
         Guid teamId, List<Match> mine, CancellationToken cancellationToken)
     {
-        var available = (await sheets.GetByMatchIdsAsync(mine.Select(m => m.Id), cancellationToken))
-            .Where(s => s.IsAvailable)
+        var available = (await sheets.GetAvailableLinesByMatchIdsAsync(mine.Select(m => m.Id), cancellationToken))
             .ToDictionary(s => s.MatchId);
         if (available.Count == 0)
             return ([], new SetPiecesDto(0, 0, 0, 0, 0, 0), 0);
@@ -200,7 +200,7 @@ internal sealed class GetMatchPreviewHandler(
                 if (!totals.TryGetValue(line.NormalizedName, out var acc))
                     totals[line.NormalizedName] = acc = new Accumulator(line.FullName);
 
-                acc.ShirtNumber = line.ShirtNumber ?? acc.ShirtNumber;
+                if (line.ShirtNumber is { } number) acc.Worn.Add((number, m.KickoffAt));
                 acc.Matches++;
                 acc.Started += line.Started ? 1 : 0;
                 acc.Minutes += line.MinutesPlayed;
@@ -220,7 +220,7 @@ internal sealed class GetMatchPreviewHandler(
 
         var players = totals.Values
             .Select(a => new PreviewPlayerDto(
-                a.Name, a.ShirtNumber, a.Matches, a.Started, a.Minutes, a.Goals, a.PenaltyGoals, a.Yellow, a.Red, a.GoalsLastThree,
+                a.Name, Teams.Roster.ShirtNumberUsage.From(a.Worn).FirstOrDefault()?.Number, a.Matches, a.Started, a.Minutes, a.Goals, a.PenaltyGoals, a.Yellow, a.Red, a.GoalsLastThree,
                 Math.Round(a.Goals * 3 + a.GoalsLastThree * 2 + a.Minutes / 90.0 * 0.5 + a.Started * 0.3, 1),
                 photos.GetValueOrDefault(NameNormalizer.Normalize(a.Name))))
             .OrderByDescending(p => p.FormScore)
@@ -338,7 +338,7 @@ internal sealed class GetMatchPreviewHandler(
     private sealed class Accumulator(string name)
     {
         public string Name { get; } = name;
-        public int? ShirtNumber { get; set; }
+        public List<(int Number, DateTimeOffset KickoffAt)> Worn { get; } = [];
         public int Matches { get; set; }
         public int Started { get; set; }
         public int Minutes { get; set; }

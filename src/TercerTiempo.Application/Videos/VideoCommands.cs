@@ -70,7 +70,7 @@ internal sealed class UploadMatchVideoHandler(
             clock.GetUtcNow(), uploader.ClubId);
 
         videos.Add(video);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        await VideoUploads.SaveOrDiscardAsync(unitOfWork, storage, storageKey, cancellationToken);
         processing.Wake();
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
@@ -114,10 +114,24 @@ internal sealed class DeleteVideoHandler(
         // Si se estaba comprimiendo o analizando, el proceso para y descarta lo suyo; el archivo que se servía se borra aquí.
         processing.Cancel(video.Id);
         analysis.Cancel(video.Id);
-        await storage.DeleteAsync(video.StorageKey, cancellationToken);
-        await analyzer.DeleteOutputAsync(video.Id, cancellationToken);
+        // El vídeo ya está borrado para todos: si el disco falla al quitar los archivos, la respuesta no puede ser un error
+        // (el club volvería a intentarlo y recibiría «no encontrado»); queda un sobrante en disco y nada más.
+        await BestEffortAsync(() => storage.DeleteAsync(video.StorageKey, CancellationToken.None));
+        await BestEffortAsync(() => analyzer.DeleteOutputAsync(video.Id, CancellationToken.None));
 
         return true;
+    }
+
+    private static async Task BestEffortAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception)
+        {
+            // Ver arriba: el borrado lógico ya está guardado.
+        }
     }
 }
 

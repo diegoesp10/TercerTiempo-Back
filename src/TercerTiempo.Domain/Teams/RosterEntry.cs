@@ -1,9 +1,10 @@
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Players;
-using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Teams;
 
+// La ficha no lleva dorsal: en estas categorías cambia de un partido a otro, así que el de cada jornada es el de la
+// línea del acta de ese partido y de ahí salen los dorsales usados por el jugador.
 public sealed class RosterEntry : AggregateRoot
 {
     public Guid TeamId { get; private set; }
@@ -11,7 +12,6 @@ public sealed class RosterEntry : AggregateRoot
     public string FullName { get; private set; } = string.Empty;
     public string NormalizedName { get; private set; } = string.Empty;
     public Position? Position { get; private set; }
-    public int? ShirtNumber { get; private set; }
     public ExternalRef? ExternalRef { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -23,16 +23,16 @@ public sealed class RosterEntry : AggregateRoot
 
     private RosterEntry() { }
 
-    public static RosterEntry CreateByClub(Guid teamId, Guid seasonId, string fullName, Position? position, int? shirtNumber, DateTimeOffset now)
+    public static RosterEntry CreateByClub(Guid teamId, Guid seasonId, string fullName, Position? position, DateTimeOffset now)
     {
-        var entry = Create(teamId, seasonId, fullName, position, shirtNumber, null, now);
+        var entry = Create(teamId, seasonId, fullName, position, null, now);
         entry.ManagedByClub = true;
         return entry;
     }
 
-    public void UpdateByClub(string fullName, Position? position, int? shirtNumber, DateTimeOffset now)
+    public void UpdateByClub(string fullName, Position? position, DateTimeOffset now)
     {
-        Update(fullName, position, shirtNumber, now);
+        Update(fullName, position, now);
         ManagedByClub = true;
         Hidden = false;
     }
@@ -42,7 +42,7 @@ public sealed class RosterEntry : AggregateRoot
     public void SetPhoto(string photoKey) => PhotoKey = Guard.NotEmpty(photoKey, nameof(photoKey), 100);
 
     public static RosterEntry Create(
-        Guid teamId, Guid seasonId, string fullName, Position? position, int? shirtNumber, ExternalRef? externalRef, DateTimeOffset now)
+        Guid teamId, Guid seasonId, string fullName, Position? position, ExternalRef? externalRef, DateTimeOffset now)
     {
         var name = Guard.NotEmpty(fullName, "nombre", 150);
 
@@ -54,24 +54,19 @@ public sealed class RosterEntry : AggregateRoot
             FullName = name,
             NormalizedName = NameNormalizer.Normalize(name),
             Position = position,
-            ShirtNumber = shirtNumber,
             ExternalRef = externalRef,
             UpdatedAt = now,
         };
     }
 
-    public void Update(string fullName, Position? position, int? shirtNumber, DateTimeOffset now)
+    public void Update(string fullName, Position? position, DateTimeOffset now)
     {
-        if (shirtNumber is < 1 or > 99)
-            throw new DomainException(ErrorCode.PlayerShirtNumberRange);
-
         var name = Guard.NotEmpty(fullName, "nombre", 150);
         FullName = name;
         NormalizedName = NameNormalizer.Normalize(name);
         Position = position;
-        ShirtNumber = shirtNumber;
         UpdatedAt = now;
     }
 
-    public bool Matches(string name) => NormalizedName == NameNormalizer.Normalize(name);
+    public bool IsSamePersonAs(string name) => PersonName.SamePerson(NormalizedName, NameNormalizer.Normalize(name));
 }

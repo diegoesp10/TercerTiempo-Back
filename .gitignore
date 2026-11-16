@@ -37,3 +37,6 @@ desktop.ini
 
 # Datos en tiempo de ejecución (vídeos subidos y escudos descargados)
 data/
+
+# Salidas de entrenamiento de Ultralytics (pesos y conjuntos de datos locales)
+runs/

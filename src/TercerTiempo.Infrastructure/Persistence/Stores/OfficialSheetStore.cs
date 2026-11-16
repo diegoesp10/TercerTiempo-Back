@@ -25,6 +25,30 @@ internal sealed class OfficialSheetStore(AppDbContext db, IOptions<PublicSheetOp
         return await db.OfficialSheets.Where(s => list.Contains(s.MatchId)).ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<OfficialMatchSheet>> GetAvailableLinesByMatchIdsAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default)
+    {
+        var list = matchIds.Distinct().ToList();
+        if (list.Count == 0) return [];
+
+        var found = await db.OfficialSheets.AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Include(s => s.Lines)
+            .Where(s => list.Contains(s.MatchId) && s.Status == OfficialSheetStatus.Available)
+            .ToListAsync(cancellationToken);
+        return found.Where(s => options.Value.Allows(s.Provider)).ToList();
+    }
+
+    public async Task<IReadOnlyList<OfficialSheetState>> GetStoredStatesAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default)
+    {
+        var list = matchIds.Distinct().ToList();
+        if (list.Count == 0) return [];
+
+        return await db.OfficialSheets
+            .Where(s => list.Contains(s.MatchId))
+            .Select(s => new OfficialSheetState(s.MatchId, s.Status, s.CheckedAt, s.Provider))
+            .ToListAsync(cancellationToken);
+    }
+
     public void Add(OfficialMatchSheet sheet) => db.OfficialSheets.Add(sheet);
 }
 

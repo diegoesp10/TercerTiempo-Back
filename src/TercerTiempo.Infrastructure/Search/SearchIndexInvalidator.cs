@@ -1,23 +1,32 @@
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Search;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
+using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Referees;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Infrastructure.Search;
 
 // Al guardar cambios en lo que enlaza el buscador (plantillas y sus jugadores, fichas, equipos, clubes, ligas, cuentas
-// de jugador), el índice se da por viejo cuando el guardado ha terminado: la siguiente búsqueda ya ve lo nuevo.
-internal sealed class SearchIndexInvalidator(SearchIndexHolder holder) : SaveChangesInterceptor
+// de jugador), el índice se da por viejo cuando el guardado ha terminado: la siguiente búsqueda ya ve lo nuevo. Lo mismo
+// con las lecturas públicas en memoria (PublicDataCache) cuando cambian ligas, partidos, clasificaciones o árbitros.
+internal sealed class SearchIndexInvalidator(SearchIndexHolder holder, PublicDataCache publicData) : SaveChangesInterceptor
 {
     private static readonly Type[] Indexed =
         [typeof(Squad), typeof(SquadPlayer), typeof(RosterEntry), typeof(Team), typeof(Club), typeof(ClubTeam), typeof(Competition), typeof(Season), typeof(Player)];
 
-    private readonly ConditionalWeakTable<DbContext, object> _pending = [];
+    private static readonly Type[] Public =
+        [typeof(SeasonYear), typeof(Competition), typeof(Season), typeof(Team), typeof(Match), typeof(Standing), typeof(SeasonZone),
+         typeof(Referee), typeof(MatchOfficial), typeof(RefereeRating)];
+
+    private readonly ConditionalWeakTable<DbContext, Pending> _pending = [];
 
     public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
     {
@@ -46,13 +55,22 @@ internal sealed class SearchIndexInvalidator(SearchIndexHolder holder) : SaveCha
     private void Track(DbContext? context)
     {
         if (context is null) return;
-        var touched = context.ChangeTracker.Entries()
-            .Any(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted && Indexed.Contains(e.Metadata.ClrType));
-        if (touched) _pending.AddOrUpdate(context, true);
+        var changed = context.ChangeTracker.Entries()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .Select(e => e.Metadata.ClrType)
+            .Distinct()
+            .ToList();
+        var pending = new Pending(changed.Any(Indexed.Contains), changed.Any(Public.Contains));
+        if (pending.Search || pending.PublicData) _pending.AddOrUpdate(context, pending);
     }
 
     private void Flush(DbContext? context)
     {
-        if (context is not null && _pending.Remove(context)) holder.Invalidate();
+        if (context is null || !_pending.TryGetValue(context, out var pending)) return;
+        _pending.Remove(context);
+        if (pending.Search) holder.Invalidate();
+        if (pending.PublicData) publicData.Invalidate();
     }
+
+    private sealed record Pending(bool Search, bool PublicData);
 }

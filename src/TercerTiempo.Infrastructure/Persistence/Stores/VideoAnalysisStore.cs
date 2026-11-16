@@ -29,11 +29,30 @@ internal sealed class MatchVideoAnalysisStore(AppDbContext db) : IMatchVideoAnal
     public async Task<IReadOnlyList<MatchVideoAnalysis>> GetRunningAsync(CancellationToken cancellationToken = default) =>
         await db.MatchVideoAnalyses.Where(a => a.Status == VideoAnalysisStatus.Running).ToListAsync(cancellationToken);
 
-    // Los recortes de la pasada anterior se van en el momento; los nuevos se guardan con el resto de la unidad de trabajo.
-    public async Task ReplaceCropsAsync(Guid analysisId, IReadOnlyCollection<VideoAnalysisCrop> crops, CancellationToken cancellationToken = default)
+    // El borrado de los recortes anteriores va con SQL directo: dentro de la misma transacción que el guardado, para que
+    // un fallo a medias no deje el análisis sin recortes (o con los de otra pasada).
+    public async Task SaveResultAsync(Guid analysisId, IReadOnlyCollection<VideoAnalysisCrop> crops, CancellationToken cancellationToken = default)
     {
-        await db.VideoAnalysisCrops.Where(c => c.AnalysisId == analysisId).ExecuteDeleteAsync(cancellationToken);
-        db.VideoAnalysisCrops.AddRange(crops);
+        await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            await db.VideoAnalysisCrops.Where(c => c.AnalysisId == analysisId).ExecuteDeleteAsync(cancellationToken);
+            foreach (var crop in crops)
+                if (db.Entry(crop).State == EntityState.Detached) db.VideoAnalysisCrops.Add(crop);
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        });
+    }
+
+    public async Task<bool> DiscardChangesAsync(MatchVideoAnalysis analysis, CancellationToken cancellationToken = default)
+    {
+        foreach (var pending in db.ChangeTracker.Entries<VideoAnalysisCrop>().Where(e => e.Entity.AnalysisId == analysis.Id && e.State == EntityState.Added).ToList())
+            pending.State = EntityState.Detached;
+
+        var entry = db.Entry(analysis);
+        if (entry.State == EntityState.Detached) return false;
+        await entry.ReloadAsync(cancellationToken);
+        return entry.State != EntityState.Detached;
     }
 
     public Task<byte[]?> GetCropAsync(Guid analysisId, int tracklet, CancellationToken cancellationToken = default) =>

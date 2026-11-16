@@ -50,7 +50,8 @@ public class EnvironmentSettingsTests
     }
 
     // El analizador de vídeo necesita GPU: solo va en los entornos del equipo de desarrollo, y la API y el servicio de
-    // vídeo tienen que estar de acuerdo (la API deja pedirlo, el servicio lo hace). El analizador vive junto al servicio.
+    // vídeo tienen que estar de acuerdo (la API deja pedirlo, el servicio lo encola). Fuera de Docker el servicio también
+    // lo ejecuta (RunWorker); en Docker no (ver el test de compose.yaml).
     [Theory]
     [InlineData("Development", true)]
     [InlineData("FakeDatos", true)]
@@ -62,11 +63,26 @@ public class EnvironmentSettingsTests
 
         Assert.Equal(enabled, Load(environment).GetValue<bool>("Analysis:Enabled"));
         Assert.Equal(enabled, service.GetValue<bool>("Analysis:Enabled"));
+        Assert.Equal(enabled, service.GetValue<bool>("Analysis:RunWorker"));
+        Assert.True(service.GetValue<int>("Analysis:MaxAttempts") >= 2);
+        Assert.True(service.GetValue<int>("Analysis:InactivityMinutes") > 0);
         if (!enabled) return;
 
         var analyzer = Path.GetFullPath(Path.Combine(ProjectFolder(VideoService), service["Analysis:Directory"]!));
         Assert.True(File.Exists(Path.Combine(analyzer, "pyproject.toml")), analyzer);
         Assert.EndsWith("uv.exe", service["Analysis:UvPath"]);
+    }
+
+    // En Docker el servicio de vídeo encola (Analysis:Enabled sale de su appsettings.{Entorno}.json) pero no analiza: no
+    // tiene GPU ni Python. Lo hace Start-Analyzer.ps1 desde Windows. Si compose apagara Enabled, la compresión dejaría de
+    // encolar aunque el acta diga que el análisis empieza solo.
+    [Fact]
+    public void In_docker_the_video_service_queues_the_analysis_but_does_not_run_it()
+    {
+        var compose = File.ReadAllText(Path.Combine(Path.GetDirectoryName(ProjectFolder(VideoService))!, "..", "compose.yaml"));
+
+        Assert.Contains("Analysis__RunWorker: \"false\"", compose);
+        Assert.DoesNotContain("Analysis__Enabled", compose);
     }
 
     [Fact]
@@ -79,8 +95,8 @@ public class EnvironmentSettingsTests
     }
 
     [Fact]
-    public void The_pilot_limits_requests_by_the_ip_the_tunnel_sends() =>
-        Assert.True(Load("Pilot").GetValue<bool>("Throttling:TrustForwardedHeaders"));
+    public void The_pilot_trusts_the_tunnel_and_nginx_as_forwarding_proxies() =>
+        Assert.Equal(2, Load("Pilot").GetValue<int>("ReverseProxy:ForwardLimit"));
 
     // El servicio de vídeo valida el JWT que firma la API: misma clave, emisor y audiencia en cada entorno (en Pilot y
     // Production las dos claves llegan por TT_JWT_KEY, así que aquí las dos están vacías).

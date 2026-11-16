@@ -14,13 +14,13 @@ internal static class PlayerEndpoints
                 var photo = await players.OpenPhotoAsync(playerId, ct);
                 if (photo is null) return Results.NotFound();
 
-                context.Response.Headers.CacheControl = "public, max-age=86400";
+                context.Response.Headers.CacheControl = "private, max-age=86400";
                 return Results.Stream(photo.Content, photo.ContentType);
             })
             .WithTags("Jugadores")
             .WithName("GetPlayerPhoto")
             .WithSummary("Foto de un jugador")
-            .WithDescription("Foto que ha subido el propio jugador (photoUrl apunta aquí, con la versión en la URL). 404 si no tiene.")
+            .WithDescription("Foto que ha subido el propio jugador (photoUrl apunta aquí, con la versión en la URL). Solo con sesión: el propio jugador, su club, cuerpo técnico y compañeros, y el administrador; si su perfil es público, cualquier cuenta. A los demás, y si no tiene, 404.")
             .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .ProducesProblem(StatusCodes.Status404NotFound);
 

@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using TercerTiempo.Application.Matches;
+using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Trainings;
 
@@ -127,9 +129,21 @@ public sealed record CallUpEntryDto(
     bool Called,
     [property: Description("Pending (sin firmar), Confirmed (el convocado la ha firmado) o Acknowledged (el no convocado se ha dado por enterado).")]
     CallUpResponse Response,
-    DateTimeOffset? RespondedAt);
+    DateTimeOffset? RespondedAt,
+    [property: Description("Cuándo le llegó el aviso de la convocatoria (un check); null si no se ha enviado o no tiene cuenta.")]
+    DateTimeOffset? SentAt,
+    [property: Description("Cuándo la abrió por primera vez (doble check); null si aún no la ha visto. Firmarla también cuenta como vista.")]
+    DateTimeOffset? SeenAt);
 
-public sealed record CallUpCountsDto(int Called, int Confirmed, int Pending, int Acknowledged);
+public sealed record CallUpCountsDto(
+    int Called,
+    int Confirmed,
+    int Pending,
+    int Acknowledged,
+    [property: Description("Jugadores con cuenta a los que les ha llegado la convocatoria.")]
+    int Sent,
+    [property: Description("Jugadores que la han abierto.")]
+    int Seen);
 
 public sealed record MatchCallUpDto(
     [property: Description("null si el cuerpo técnico aún no ha empezado la convocatoria de este partido.")]
@@ -189,12 +203,16 @@ internal static class TrainingMapper
     public static TrialPlayerDto ToDto(TrialPlayer trial, TrialAttendanceCounts? counts) =>
         new(trial.Id, trial.FullName, trial.Notes, trial.CreatedAt, counts?.Sessions ?? 0, counts?.Attended ?? 0, trial.PromotedSquadPlayerId, trial.PromotedAt);
 
-    // Las líneas que cuentan: las de los jugadores en activo (el que aún no tiene línea cuenta como esperado) y las de
-    // prueba apuntadas a la sesión.
+    // Las líneas que cuentan: las de quien era de la plantilla a la hora de la sesión (el que aún no tiene línea cuenta como
+    // esperado; quien ya tenía línea cuenta aunque luego causara baja) y las de prueba apuntadas a la sesión.
     private static IEnumerable<(TrainingAttendance? Line, SquadPlayer? Player, Guid? TrialPlayerId)> Rows(TrainingSession session, Squad squad)
     {
-        foreach (var player in squad.ActivePlayers)
-            yield return (session.AttendanceOf(player.Id), player, null);
+        foreach (var player in squad.Players)
+        {
+            var line = session.AttendanceOf(player.Id);
+            if (line is not null || (player.IsActive && session.WasInSquad(player)))
+                yield return (line, player, null);
+        }
         foreach (var line in session.Attendance.Where(a => a.IsTrial))
             yield return (line, null, line.TrialPlayerId);
     }
@@ -217,6 +235,8 @@ internal static class TrainingMapper
                     ? ToDto(line, player)
                     : new TrainingAttendanceDto(player.Id, null, player.FullName, player.ShirtNumber, player.IsLinked, false, AttendanceStatus.Expected, null, session.CreatedAt)
                 : ToDto(r.Line!, trials.GetValueOrDefault(r.TrialPlayerId!.Value)))
+            // El motivo de una ausencia es de quien la avisa y del cuerpo técnico: los compañeros ven solo el estado.
+            .Select(a => canEdit || a.SquadPlayerId == viewerSquadPlayerId ? a : a with { Reason = null })
             .OrderBy(a => a.Trial)
             .ThenBy(a => a.ShirtNumber ?? 999)
             .ThenBy(a => a.PlayerName)
@@ -243,20 +263,23 @@ internal static class TrainingMapper
     }
 
     public static CallUpEntryDto ToDto(CallUpEntry entry, SquadPlayer? player) =>
-        new(entry.Id, entry.SquadPlayerId, player?.FullName ?? "Jugador", player?.ShirtNumber, player?.IsLinked ?? false, entry.Called, entry.Response, entry.RespondedAt);
+        new(entry.Id, entry.SquadPlayerId, player?.FullName ?? "Jugador", player?.ShirtNumber, player?.IsLinked ?? false, entry.Called, entry.Response, entry.RespondedAt,
+            player?.IsLinked == true ? entry.NotifiedAt : null, entry.SeenAt);
 
     public static CallUpCountsDto Counts(IReadOnlyList<CallUpEntryDto> entries) =>
         new(entries.Count(e => e.Called),
             entries.Count(e => e.Called && e.Response == CallUpResponse.Confirmed),
             entries.Count(e => e.Called && e.Response == CallUpResponse.Pending),
-            entries.Count(e => !e.Called && e.Response == CallUpResponse.Acknowledged));
+            entries.Count(e => !e.Called && e.Response == CallUpResponse.Acknowledged),
+            entries.Count(e => e.SentAt is not null),
+            entries.Count(e => e.SeenAt is not null));
 
     public static MatchCallUpDto ToDto(MatchCallUp? callUp, Squad squad, MatchDto match, bool canEdit, Guid? viewerSquadPlayerId, DateTimeOffset now)
     {
         var players = squad.Players.ToDictionary(p => p.Id);
         var active = squad.ActivePlayers.Select(p => p.Id).ToHashSet();
         var entries = callUp is null
-            ? squad.ActivePlayers.Select(p => new CallUpEntryDto(Guid.Empty, p.Id, p.FullName, p.ShirtNumber, p.IsLinked, false, CallUpResponse.Pending, null)).ToList()
+            ? squad.ActivePlayers.Select(p => new CallUpEntryDto(Guid.Empty, p.Id, p.FullName, p.ShirtNumber, p.IsLinked, false, CallUpResponse.Pending, null, null, null)).ToList()
             : callUp.Entries.Where(e => active.Contains(e.SquadPlayerId)).Select(e => ToDto(e, players.GetValueOrDefault(e.SquadPlayerId))).ToList();
         entries = entries.OrderByDescending(e => e.Called).ThenBy(e => e.ShirtNumber ?? 999).ThenBy(e => e.PlayerName).ToList();
         var mine = viewerSquadPlayerId is { } me ? entries.FirstOrDefault(e => e.SquadPlayerId == me) : null;
@@ -272,6 +295,16 @@ internal static class TrainingMapper
 internal static class TrainingClock
 {
     public static readonly TimeZoneInfo Zone = Resolve();
+
+    // Tope de días por consulta del calendario y del listado de entrenamientos (el frontal pide como mucho seis semanas):
+    // evita que un intervalo enorme cargue años de sesiones de golpe.
+    public const int MaxRangeDays = 120;
+
+    public static void EnsureRange(DateOnly from, DateOnly to)
+    {
+        if (to.DayNumber - from.DayNumber + 1 > MaxRangeDays)
+            throw new DomainException(ErrorCode.CommonOutOfRange, "Días entre from y to", 1, MaxRangeDays);
+    }
 
     private static TimeZoneInfo Resolve()
     {

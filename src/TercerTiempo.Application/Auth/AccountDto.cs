@@ -26,7 +26,8 @@ internal sealed record AccountStores(
     ICompetitionStore Competitions,
     ILicenseGate Licenses,
     TimeProvider Clock,
-    Seasons.ISeasonContext Seasons);
+    Seasons.ISeasonContext Seasons,
+    PublicDataCache? Cache = null);
 
 internal static class AccountResolver
 {

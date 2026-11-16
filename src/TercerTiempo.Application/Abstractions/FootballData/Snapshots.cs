@@ -48,4 +48,4 @@ public sealed record StandingSnapshot(
     int GoalsAgainst,
     int Points);
 
-public sealed record RosterEntrySnapshot(string? ExternalId, string FullName, Position? Position, int? ShirtNumber);
+public sealed record RosterEntrySnapshot(string? ExternalId, string FullName, Position? Position);

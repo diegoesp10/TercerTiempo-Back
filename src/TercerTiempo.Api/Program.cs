@@ -38,6 +38,7 @@ app.Services.ApplyCrestPolicy();
 // Las actas antiguas (o sin nota) reciben la nota calculada con sus datos.
 await app.Services.RecalculateMissingRatingsAsync();
 
+app.UseSecurityHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 

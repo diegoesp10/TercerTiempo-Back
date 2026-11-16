@@ -242,7 +242,7 @@ internal sealed class OfficialSheetSyncWorker(
             catch (ProviderThrottledException ex)
             {
                 await MarkAsync(matchId, SheetDownloadStatus.Pending,
-                    ex.RetryAt is { } until ? $"En espera: la federación está en pausa hasta {until.ToLocalTime():dd/MM HH:mm}" : "En espera de la federación",
+                    ex.RetryAt is { } until ? $"En espera: la federación está en pausa hasta {TercerTiempo.Domain.Common.SpainTime.Local(until):dd/MM HH:mm}" : "En espera de la federación",
                     CancellationToken.None);
                 throw;
             }
@@ -274,6 +274,9 @@ internal sealed class OfficialSheetSyncWorker(
             return (SheetDownloadStatus.Missing, "Ya se comprobó hace menos de un día y aún no estaba publicada");
         if (sheet.Status == OfficialSheetAvailability.Pending && sheet.Message?.StartsWith("No se ha podido", StringComparison.Ordinal) == true)
             return (SheetDownloadStatus.Failed, sheet.Message);
+        // Sin cerrar cuenta como «aún sin acta»: una nueva petición de la administración la vuelve a poner en cola.
+        if (sheet.Status == OfficialSheetAvailability.Provisional)
+            return (SheetDownloadStatus.Missing, "Alineaciones guardadas, pero el árbitro aún no ha cerrado el acta; se volverá a mirar en unas horas");
         if (sheet.Status != OfficialSheetAvailability.Available)
             return (SheetDownloadStatus.Missing, sheet.Message ?? "La federación aún no la ha publicado");
 

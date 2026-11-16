@@ -38,6 +38,9 @@ internal sealed class MatchPassConfiguration : IEntityTypeConfiguration<MatchPas
         builder.HasIndex(p => new { p.SquadId, p.MatchId });
         builder.HasIndex(p => p.RedeemedByUserId);
         builder.HasIndex(p => p.ForUserId);
+
+        // Una solicitud aprobada crea un único pase: dos aprobaciones a la vez no pueden generar dos.
+        builder.HasIndex(p => p.RequestId).IsUnique().HasFilter("[RequestId] IS NOT NULL");
     }
 }
 
@@ -47,6 +50,9 @@ internal sealed class MatchPassRequestConfiguration : IEntityTypeConfiguration<M
     {
         builder.ToTable("MatchPassRequests");
         builder.ConfigureAggregate();
+
+        // Aprobar y rechazar la misma solicitud a la vez: solo gana una de las dos.
+        builder.Property<byte[]>("Version").IsRowVersion();
         builder.Ignore(r => r.IsPending);
 
         builder.Property(r => r.RequesterName).HasMaxLength(150).IsRequired();

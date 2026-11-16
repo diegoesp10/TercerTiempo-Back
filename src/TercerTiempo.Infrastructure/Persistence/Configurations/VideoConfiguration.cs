@@ -42,6 +42,10 @@ internal sealed class MatchVideoConfiguration : IEntityTypeConfiguration<MatchVi
 
         builder.HasIndex(v => v.MatchId);
         builder.HasIndex(v => v.SquadId);
+
+        // Dos subidas de la misma parte que terminan a la vez: la comprobación de la aplicación las deja pasar a las dos,
+        // la base no.
+        builder.HasIndex(v => new { v.SquadId, v.MatchId, v.Part }).IsUnique().HasFilter("[DeletedAt] IS NULL");
     }
 }
 
@@ -61,6 +65,8 @@ internal sealed class MatchVideoAnalysisConfiguration : IEntityTypeConfiguration
         builder.Property(a => a.CalibratedFramesPct).HasPrecision(5, 1);
         builder.Property(a => a.PitchLengthM).HasPrecision(5, 1);
         builder.Property(a => a.PitchWidthM).HasPrecision(5, 1);
+        builder.Property(a => a.ReadFramesPct).HasPrecision(5, 1);
+        builder.Property(a => a.WorkerId).HasMaxLength(MatchVideoAnalysis.MaxWorkerIdLength);
         // El analizador (servicio de vídeo) y las peticiones de la API (volver a analizar, volcar) pueden tocar la misma
         // fila: quien llega tarde se entera.
         builder.Property<byte[]>("Version").IsRowVersion();
@@ -81,6 +87,16 @@ internal sealed class VideoAnalysisCropConfiguration : IEntityTypeConfiguration<
         builder.Property(c => c.Content).IsRequired();
 
         builder.HasOne<MatchVideoAnalysis>().WithMany().HasForeignKey(c => c.AnalysisId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class VideoAnalyzerHeartbeatConfiguration : IEntityTypeConfiguration<VideoAnalyzerHeartbeat>
+{
+    public void Configure(EntityTypeBuilder<VideoAnalyzerHeartbeat> builder)
+    {
+        builder.ToTable("VideoAnalyzerHeartbeats");
+        builder.HasKey(h => h.WorkerId);
+        builder.Property(h => h.WorkerId).HasMaxLength(VideoAnalyzerHeartbeat.MaxWorkerIdLength);
     }
 }
 

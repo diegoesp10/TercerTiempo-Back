@@ -35,8 +35,12 @@ internal sealed class GetCompetitionMatchdayHandler(
     IMatchStore matches,
     ITeamStore teams,
     Seasons.ISeasonContext seasons,
+    PublicDataCache cache,
     TimeProvider clock) : IQueryHandler<GetCompetitionMatchdayQuery, CompetitionMatchdayDto>
 {
+    // Los partidos de la temporada y sus equipos, de solo lectura: la jornada en curso se calcula en cada petición.
+    private sealed record SeasonMatches(IReadOnlyList<Match> All, IReadOnlyDictionary<Guid, Team> Teams);
+
     public async Task<CompetitionMatchdayDto> Handle(GetCompetitionMatchdayQuery query, CancellationToken cancellationToken)
     {
         var competition = await competitions.GetByIdAsync(query.CompetitionId, cancellationToken)
@@ -46,7 +50,13 @@ internal sealed class GetCompetitionMatchdayHandler(
         if (Common.Resolvers.SeasonFor(competition, await seasons.SelectedAsync(cancellationToken)) is not { } season)
             return new CompetitionMatchdayDto(competition.Id, competition.Name, null, null, null, [], [], "Todavía no hay temporada en curso: los partidos aparecerán cuando la federación publique el calendario.");
 
-        var all = await matches.GetBySeasonAsync(season.Id, cancellationToken);
+        var seasonMatches = await cache.GetAsync($"matchday:{season.Id}", async ct =>
+        {
+            var list = await matches.GetBySeasonAsync(season.Id, ct);
+            var teamIds = list.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();
+            return new SeasonMatches(list, (await teams.GetByIdsAsync(teamIds, ct)).ToDictionary(t => t.Id));
+        }, cancellationToken);
+        var all = seasonMatches.All;
         if (all.Count == 0)
             return new CompetitionMatchdayDto(competition.Id, competition.Name, SeasonDto.From(competition, season), null, null, [], [], "Todavía no hay partidos de esta temporada: aparecerán cuando la federación publique el calendario.");
 
@@ -63,8 +73,7 @@ internal sealed class GetCompetitionMatchdayHandler(
             .ThenBy(m => m.Id)
             .ToList();
 
-        var teamIds = selected.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();
-        var teamMap = (await teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
+        var teamMap = seasonMatches.Teams;
 
         return new CompetitionMatchdayDto(
             competition.Id,

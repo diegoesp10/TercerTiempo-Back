@@ -58,6 +58,8 @@ internal sealed class UploadTeamCrestHandler(
         await command.File.Content.CopyToAsync(buffer, cancellationToken);
         if (buffer.Length == 0 || buffer.Length > UploadTeamCrestValidator.MaxBytes)
             throw new DomainException(ErrorCode.ClubCrestInvalid);
+        if (!ImageSignature.Matches(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), command.File.ContentType))
+            throw new DomainException(ErrorCode.ClubCrestFormat);
 
         var image = new CrestImage(buffer.ToArray(), command.File.ContentType.ToLowerInvariant());
         team.SetCrest(await crests.SaveAsync(team.Id, image, cancellationToken), fromClub: true);

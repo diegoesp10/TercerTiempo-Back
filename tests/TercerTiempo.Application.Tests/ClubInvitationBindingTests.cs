@@ -169,6 +169,8 @@ public class ClubInvitationBindingTests
         {
             nameof(IClubStore.GetByNormalizedNameAsync) => Task.FromResult(_clubs.FirstOrDefault(c => c.NormalizedName == (string)args![0]!)),
             nameof(IClubStore.GetByTeamAsync) => Task.FromResult(_clubs.FirstOrDefault(c => c.Manages((Guid)args![0]!))),
+            nameof(IClubStore.GetByTeamsAsync) => Task.FromResult<IReadOnlyList<Club>>(
+                [.. _clubs.Where(c => ((IEnumerable<Guid>)args![0]!).Any(c.Manages))]),
             nameof(IClubStore.GetByIdAsync) => Task.FromResult(_clubs.FirstOrDefault(c => c.Id == (Guid)args![0]!)),
             nameof(IClubStore.GetByUserIdAsync) => Task.FromResult(_clubs.FirstOrDefault(c => c.UserId == (Guid)args![0]!)),
             nameof(IClubStore.Add) => Run(() => _clubs.Add((Club)args![0]!)),
@@ -228,7 +230,9 @@ public class ClubInvitationBindingTests
             var inner = type.GetGenericArguments()[0];
             object? value = inner.IsGenericType && inner.GetGenericTypeDefinition() == typeof(IReadOnlyList<>)
                 ? Array.CreateInstance(inner.GetGenericArguments()[0], 0)
-                : inner.IsValueType ? Activator.CreateInstance(inner) : null;
+                : inner.IsGenericType && inner.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>)
+                    ? Activator.CreateInstance(typeof(Dictionary<,>).MakeGenericType(inner.GetGenericArguments()))
+                    : inner.IsValueType ? Activator.CreateInstance(inner) : null;
             return typeof(Task).GetMethod(nameof(Task.FromResult))!.MakeGenericMethod(inner).Invoke(null, [value]);
         }
     }

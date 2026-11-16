@@ -8,6 +8,14 @@ public interface ISquadStore
 
     Task<IReadOnlyList<Squad>> GetByCoachAsync(Guid coachId, DateOnly today, CancellationToken cancellationToken = default);
 
+    // Solo los datos de la plantilla, sin jugadores ni cuerpo técnico: para saber cuáles son y de qué equipo.
+    Task<IReadOnlyList<SquadRef>> GetRefsByCoachAsync(Guid coachId, DateOnly today, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SquadRef>> GetRefsBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default);
+
+    // De esos equipos en esas temporadas; quien llama empareja equipo y temporada.
+    Task<IReadOnlyList<SquadRef>> GetRefsAsync(IEnumerable<Guid> teamIds, IEnumerable<Guid> seasonIds, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Squad>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default);
+
     Task<Squad?> GetByPlayerAsync(Guid playerId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<Squad>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default);
@@ -18,3 +26,5 @@ public interface ISquadStore
 
     void Add(Squad squad);
 }
+
+public sealed record SquadRef(Guid Id, Guid TeamId, Guid SeasonId, SquadVisibility Visibility);

@@ -1,3 +1,4 @@
+using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 
@@ -19,16 +20,19 @@ internal static class SquadOpening
         return squad;
     }
 
-    // Las fichas publicadas que aún no están en la plantilla. Un nombre que ya está no se duplica: lo añadió el club a
-    // mano o el proveedor publica al mismo jugador dos veces (dos fichas con distinto id y el mismo nombre).
+    // Las personas publicadas que aún no están en la plantilla, una vez cada una: el proveedor publica a algunos
+    // jugadores dos veces ("Lucas Paredes" y "Lucas Paredes Rivera", con distinto id) y el club puede haberlos añadido
+    // ya a mano. Llegan sin dorsal (la ficha publicada no lo lleva): el habitual lo pone el cuerpo técnico y el de cada
+    // partido va en su acta.
     public static void ImportRoster(Squad squad, IEnumerable<RosterEntry> roster, DateTimeOffset now)
     {
-        foreach (var entry in roster)
+        foreach (var person in RosterPeople.Group(roster))
         {
-            if (squad.ActivePlayers.Any(p => p.RosterEntryId == entry.Id || p.NormalizedName == entry.NormalizedName))
+            var fichas = person.Entries.Select(e => e.Id).ToHashSet();
+            if (squad.ActivePlayers.Any(p => p.RosterEntryId is { } id && fichas.Contains(id) || PersonName.SamePerson(p.NormalizedName, person.Main.NormalizedName)))
                 continue;
 
-            squad.AddPlayer(entry.FullName, entry.Position, entry.ShirtNumber, entry.Id, now);
+            squad.AddPlayer(person.Main.FullName, person.Position, null, person.Main.Id, now);
         }
     }
 }

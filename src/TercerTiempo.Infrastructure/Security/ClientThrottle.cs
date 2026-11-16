@@ -20,8 +20,6 @@ public sealed class ThrottlingOptions
 
     public int StrikeMemoryHours { get; set; } = 24 * 7;
 
-    public bool TrustForwardedHeaders { get; set; }
-
     public string[] ExemptRoutes { get; set; } = [];
 }
 

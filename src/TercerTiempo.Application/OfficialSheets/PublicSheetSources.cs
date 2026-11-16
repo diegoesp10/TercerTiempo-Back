@@ -29,7 +29,8 @@ public sealed class PublicSheetOptions
 
 internal sealed record SheetFetch(string Provider, string ExternalId, string? SourceUrl, OfficialSheetData? Data)
 {
-    public bool Complete => Data is { Lines.Count: > 0 };
+    // Con alineaciones; si el acta está cerrada lo decide OfficialSheetRefresh.IsClosed.
+    public bool HasLineups => Data is { Lines.Count: > 0 };
 }
 
 // Una web de la que se puede sacar el acta pública de un partido. null si no tiene ese partido.
@@ -71,6 +72,9 @@ internal sealed class FederationSheetSource(
             if (code is null) return null;
         }
 
-        return new SheetFetch(Name, code, provider.SheetUrl(code), await provider.GetSheetAsync(code, cancellationToken));
+        // Un acta guardada como provisional se vuelve a pedir a la web: la copia de la página de hace unas horas es
+        // justo la que estaba sin cerrar.
+        var refresh = current is { IsProvisional: true } && current.Provider == Name && current.ExternalId == code;
+        return new SheetFetch(Name, code, provider.SheetUrl(code), await provider.GetSheetAsync(code, refresh, cancellationToken));
     }
 }

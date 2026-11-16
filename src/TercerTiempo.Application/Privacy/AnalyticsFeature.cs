@@ -122,7 +122,7 @@ internal sealed class TrackEventsHandler(
                 var squad = await squads.GetByPlayerAsync(playerId, cancellationToken);
                 return (AnalyticsActor.Player, squad is null ? null : (await clubs.GetByTeamAsync(squad.TeamId, cancellationToken))?.Id);
             case AccountType.Coach when currentUser.CoachId is { } coachId:
-                var first = (await squads.GetByCoachAsync(coachId, SquadAccess.Today(clock), cancellationToken)).FirstOrDefault();
+                var first = (await squads.GetRefsByCoachAsync(coachId, SquadAccess.Today(clock), cancellationToken)).FirstOrDefault();
                 return (AnalyticsActor.Coach, first is null ? null : (await clubs.GetByTeamAsync(first.TeamId, cancellationToken))?.Id);
             default:
                 return (AnalyticsActor.Anonymous, null);

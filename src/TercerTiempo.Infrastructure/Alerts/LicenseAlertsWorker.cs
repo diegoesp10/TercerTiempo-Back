@@ -50,6 +50,7 @@ internal sealed class LicenseAlertsWorker(
         var result = await handler.Handle(new SyncLicenseAlertsCommand(), cancellationToken);
         var summary = result.Raised == 0 ? "Ningún aviso nuevo" : $"{result.Raised} {(result.Raised == 1 ? "aviso nuevo" : "avisos nuevos")}";
         if (result.Resolved > 0) summary += $"; {result.Resolved} {(result.Resolved == 1 ? "resuelto" : "resueltos")}";
+        if (result.Purged > 0) summary += $"; {result.Purged} {(result.Purged == 1 ? "antiguo borrado" : "antiguos borrados")}";
         return new JobOutcome(summary, []);
     }
 }

@@ -88,6 +88,9 @@ internal sealed class SyncSeasonHandler(
                 var counts = await SyncCompetitionAsync(snapshot, providerName, teamsByExternalId, YearOf(snapshot, years), scope, now, cancellationToken);
                 progress.League(snapshot.Name, l => l with { Stage = "Guardando" });
                 await unitOfWork.SaveChangesAsync(cancellationToken);
+                // Cada liga trae sus partidos, clasificación y fichas: ya guardados, no hace falta seguirlos en las
+                // siguientes. Solo siguen los equipos y las temporadas de la app, que se reutilizan de liga en liga.
+                unitOfWork.ResetTracking(teamsByExternalId.Values.Cast<object>().Concat(years));
                 progress.League(snapshot.Name, l => l with { Status = SyncLeagueStatus.Done, Stage = null });
 
                 totals.Competitions++;
@@ -281,11 +284,11 @@ internal sealed class SyncSeasonHandler(
                 if (entry is null)
                 {
                     var externalRef = rs.ExternalId is null ? null : ExternalRef.Create(providerName, rs.ExternalId);
-                    teams.AddRosterEntry(RosterEntry.Create(team.Id, season.Id, rs.FullName, rs.Position, rs.ShirtNumber, externalRef, now));
+                    teams.AddRosterEntry(RosterEntry.Create(team.Id, season.Id, rs.FullName, rs.Position, externalRef, now));
                 }
                 else if (!entry.ManagedByClub)
                 {
-                    entry.Update(rs.FullName, rs.Position, rs.ShirtNumber, now);
+                    entry.Update(rs.FullName, rs.Position, now);
                 }
 
                 syncedRoster++;

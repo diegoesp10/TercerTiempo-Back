@@ -110,6 +110,7 @@ internal sealed class CreateMatchPassHandler(
     IMatchPassStore passes,
     IMatchPassPriceStore prices,
     IMatchVideoStore videos,
+    IPerformanceStore performances,
     IOptions<PassOptions> options,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<CreateMatchPassCommand, MatchPassDto>
@@ -122,6 +123,8 @@ internal sealed class CreateMatchPassHandler(
 
         if (command.IncludesVideo && !(await videos.GetByMatchAsync(match.Id, cancellationToken)).Any(v => v.SquadId == squad.Id))
             throw new ConflictException(ErrorCode.PassNoVideo);
+        if (command.IncludesSheet && (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken)).Count == 0)
+            throw new ConflictException(ErrorCode.PassNoSheet);
 
         var price = command.PriceCents
             ?? PassContext.Total(await PassContext.PricesAsync(club, squad.Id, match.Id, prices, cancellationToken), command.IncludesSheet, command.IncludesVideo);

@@ -103,6 +103,14 @@ public class LicenseAlertTests
             Task.FromResult<IReadOnlyList<Alert>>(alerts.Where(a => a.Kind == kind).ToList());
         public Task<IReadOnlyList<Alert>> GetForAsync(Guid? clubId, Guid? playerId, Guid? coachId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Alert>>(alerts.Where(a => a.IsFor(clubId, playerId, coachId)).ToList());
+        public Task<AlertPage> GetPageForAsync(Guid? clubId, Guid? playerId, Guid? coachId, int take, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<IReadOnlyList<Alert>> GetOpenByKeyPrefixAsync(
+            string keyPrefix, IReadOnlyCollection<Guid> playerIds, IReadOnlyCollection<Guid> coachIds, Guid? clubId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<int> MarkAllReadAsync(Guid? clubId, Guid? playerId, Guid? coachId, DateTimeOffset now, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<int> DeleteResolvedBeforeAsync(DateTimeOffset before, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public void Add(Alert alert) => alerts.Add(alert);
     }
 

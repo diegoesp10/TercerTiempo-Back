@@ -52,6 +52,8 @@ internal sealed class UploadMyCoachPhotoHandler(
         await command.File.Content.CopyToAsync(buffer, cancellationToken);
         if (buffer.Length == 0 || buffer.Length > PlayerPhotos.MaxBytes)
             throw new DomainException(ErrorCode.PlayerPhotoTooLarge);
+        if (!ImageSignature.Matches(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), command.File.ContentType))
+            throw new DomainException(ErrorCode.RosterPhotoFormat);
 
         var image = new CrestImage(buffer.ToArray(), command.File.ContentType.ToLowerInvariant());
         coach.SetPhoto(await photos.SaveAsync(coach.Id, image, cancellationToken));

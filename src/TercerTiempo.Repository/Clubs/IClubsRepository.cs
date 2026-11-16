@@ -34,9 +34,7 @@ public sealed record RosterEntryRequest(
     [property: Description("Nombre y apellidos.")]
     string FullName,
     [property: Description("Goalkeeper, Defender, Midfielder, Forward o vacío.")]
-    Position? Position,
-    [property: Description("1-99, opcional.")]
-    int? ShirtNumber);
+    Position? Position);
 
 public sealed record OpenClubSquadRequest(
     [property: Description("Partido desde el que se abre: la plantilla es la de la temporada de ese partido. Vacío = la temporada que se está viendo.")]

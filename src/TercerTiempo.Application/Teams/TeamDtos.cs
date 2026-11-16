@@ -64,14 +64,17 @@ public sealed record RosterEntryDto(
     Guid Id,
     string FullName,
     Position? Position,
-    int? ShirtNumber,
     bool ManagedByClub,
     string? PhotoUrl,
     [property: System.ComponentModel.Description("Totales de la temporada según las actas oficiales; null si aún no aparece en ninguna.")]
-    RosterEntryStatsDto? Stats)
+    RosterEntryStatsDto? Stats,
+    [property: System.ComponentModel.Description("Dorsales que ha llevado según las actas oficiales, del más usado al menos; vacío si aún no aparece en ninguna con dorsal. La ficha no tiene un dorsal fijo.")]
+    IReadOnlyList<ShirtNumberUsageDto> ShirtNumbers)
 {
-    public static RosterEntryDto From(RosterEntry entry, RosterEntryStatsDto? stats = null) =>
-        new(entry.Id, entry.FullName, entry.Position, entry.ShirtNumber, entry.ManagedByClub, entry.PhotoLink(), stats);
+    // Una fila por persona: si la web la publica en varias fichas, la principal con lo que las otras aporten.
+    public static RosterEntryDto From(RosterPerson person, RosterEntryStatsDto? stats = null, IReadOnlyList<ShirtNumberUsageDto>? shirtNumbers = null) =>
+        new(person.Main.Id, person.Main.FullName, person.Position, person.Entries.Any(e => e.ManagedByClub), person.WithPhoto?.PhotoLink(),
+            stats, shirtNumbers ?? []);
 }
 
 public sealed record TeamSquadDto(Guid SquadId, SquadVisibility Visibility, int PlayersCount, int StaffCount, bool CanView, bool IsMine);

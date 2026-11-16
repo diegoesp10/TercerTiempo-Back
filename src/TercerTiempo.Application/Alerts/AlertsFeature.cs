@@ -39,7 +39,7 @@ public sealed record MarkAllAlertsReadCommand : ICommand<ClubAlertsDto>;
 
 public sealed record SyncLicenseAlertsCommand : ICommand<LicenseAlertsSynced>;
 
-public sealed record LicenseAlertsSynced(int Raised, int Resolved);
+public sealed record LicenseAlertsSynced(int Raised, int Resolved, int Purged = 0);
 
 internal static class ClubAlerts
 {
@@ -55,18 +55,24 @@ internal static class ClubAlerts
                 .ToList());
     }
 
-    // Los avisos de la cuenta que mira: el club, el jugador o el técnico que lleva en el token. El administrador no tiene.
-    public static Task<IReadOnlyList<Alert>> MineAsync(ICurrentUser user, IAlertStore alerts, CancellationToken cancellationToken)
+    public static ClubAlertsDto ToDto(AlertPage page) =>
+        new(page.Unread, page.Latest
+            .Select(a => new AlertDto(a.Id, a.Kind, a.Title, a.Message, a.Link, a.DueOn, a.CreatedAt, a.IsRead, a.IsResolved))
+            .ToList());
+
+    // La campanita de la cuenta que mira: el club, el jugador o el técnico que lleva en el token. El administrador no
+    // tiene. Se cuentan los sin leer en SQL y solo se leen los últimos que se enseñan.
+    public static async Task<ClubAlertsDto> MineAsync(ICurrentUser user, IAlertStore alerts, CancellationToken cancellationToken)
     {
         if (!user.IsAuthenticated) throw new UnauthenticatedException();
-        return alerts.GetForAsync(user.ClubId, user.PlayerId, user.CoachId, cancellationToken);
+        return ToDto(await alerts.GetPageForAsync(user.ClubId, user.PlayerId, user.CoachId, Shown, cancellationToken));
     }
 }
 
 internal sealed class GetClubAlertsHandler(ICurrentUser currentUser, IAlertStore alerts) : IQueryHandler<GetClubAlertsQuery, ClubAlertsDto>
 {
-    public async Task<ClubAlertsDto> Handle(GetClubAlertsQuery query, CancellationToken cancellationToken) =>
-        ClubAlerts.ToDto(await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken));
+    public Task<ClubAlertsDto> Handle(GetClubAlertsQuery query, CancellationToken cancellationToken) =>
+        ClubAlerts.MineAsync(currentUser, alerts, cancellationToken);
 }
 
 internal sealed class MarkAlertReadHandler(ICurrentUser currentUser, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
@@ -74,27 +80,25 @@ internal sealed class MarkAlertReadHandler(ICurrentUser currentUser, IAlertStore
 {
     public async Task<ClubAlertsDto> Handle(MarkAlertReadCommand command, CancellationToken cancellationToken)
     {
-        var mine = await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken);
-        var alert = mine.FirstOrDefault(a => a.Id == command.AlertId)
-            ?? throw new NotFoundException(ErrorCode.AlertNotFound, command.AlertId);
+        if (!currentUser.IsAuthenticated) throw new UnauthenticatedException();
+        var alert = await alerts.GetByIdAsync(command.AlertId, cancellationToken);
+        if (alert is null || !alert.IsFor(currentUser.ClubId, currentUser.PlayerId, currentUser.CoachId))
+            throw new NotFoundException(ErrorCode.AlertNotFound, command.AlertId);
 
         alert.MarkRead(clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return ClubAlerts.ToDto(mine);
+        return await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken);
     }
 }
 
-internal sealed class MarkAllAlertsReadHandler(ICurrentUser currentUser, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class MarkAllAlertsReadHandler(ICurrentUser currentUser, IAlertStore alerts, TimeProvider clock)
     : ICommandHandler<MarkAllAlertsReadCommand, ClubAlertsDto>
 {
     public async Task<ClubAlertsDto> Handle(MarkAllAlertsReadCommand command, CancellationToken cancellationToken)
     {
-        var list = await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken);
-        var now = clock.GetUtcNow();
-        foreach (var alert in list)
-            alert.MarkRead(now);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-        return ClubAlerts.ToDto(list);
+        if (!currentUser.IsAuthenticated) throw new UnauthenticatedException();
+        await alerts.MarkAllReadAsync(currentUser.ClubId, currentUser.PlayerId, currentUser.CoachId, clock.GetUtcNow(), cancellationToken);
+        return await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken);
     }
 }
 
@@ -147,16 +151,21 @@ internal sealed class LicenseAlertSync(IAlertStore alerts, ILicensingCatalog cat
     }
 }
 
-// El trabajo de los avisos: repasa la licencia de cada club.
+// El trabajo de los avisos: repasa la licencia de cada club y borra los avisos resueltos hace más de PurgeAfter (ya no
+// salen en la campanita: solo se enseñan los últimos y los resueltos no cuentan).
 internal sealed class SyncLicenseAlertsHandler(
     IClubStore clubs,
     ILicenseStore licenses,
     IAlertStore alerts,
     LicenseAlertSync sync,
-    IUnitOfWork unitOfWork) : ICommandHandler<SyncLicenseAlertsCommand, LicenseAlertsSynced>
+    IUnitOfWork unitOfWork,
+    TimeProvider clock) : ICommandHandler<SyncLicenseAlertsCommand, LicenseAlertsSynced>
 {
+    public static readonly TimeSpan PurgeAfter = TimeSpan.FromDays(90);
+
     public async Task<LicenseAlertsSynced> Handle(SyncLicenseAlertsCommand command, CancellationToken cancellationToken)
     {
+        var purged = await alerts.DeleteResolvedBeforeAsync(clock.GetUtcNow() - PurgeAfter, cancellationToken);
         var byClub = (await alerts.GetByKindAsync(AlertKind.LicenseExpiring, cancellationToken)).ToLookup(a => a.ClubId);
         int raised = 0, resolved = 0;
         foreach (var license in await licenses.GetAllAsync(cancellationToken))
@@ -167,6 +176,6 @@ internal sealed class SyncLicenseAlertsHandler(
             resolved += result.Resolved;
         }
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return new LicenseAlertsSynced(raised, resolved);
+        return new LicenseAlertsSynced(raised, resolved, purged);
     }
 }

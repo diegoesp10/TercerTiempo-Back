@@ -6,6 +6,7 @@ from __future__ import annotations
 import csv
 import gzip
 import json
+import math
 from collections import defaultdict
 from pathlib import Path
 
@@ -260,8 +261,28 @@ def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str
 
 
 def escribir_json(datos: dict, ruta: Path) -> None:
+    """JSON estricto: un NaN o un infinito (una media sin muestras, una división por cero) no es JSON y la app no lo
+    leería, así que se escribe como null; si aun así quedara alguno, falla aquí y no al leerlo."""
     ruta.parent.mkdir(parents=True, exist_ok=True)
-    ruta.write_text(json.dumps(datos, ensure_ascii=False, indent=2, default=_json_default), encoding="utf-8")
+    ruta.write_text(json.dumps(sanear_json(datos), ensure_ascii=False, indent=2, default=_json_default, allow_nan=False), encoding="utf-8")
+
+
+def sanear_json(valor):
+    """Copia de `valor` lista para JSON estricto: NaN e infinitos pasan a None y los tipos de numpy a los de Python."""
+    if isinstance(valor, dict):
+        return {k: sanear_json(v) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [sanear_json(v) for v in valor]
+    if isinstance(valor, np.ndarray):
+        return sanear_json(valor.tolist())
+    if isinstance(valor, (bool, np.bool_)):
+        return bool(valor)
+    if isinstance(valor, np.integer):
+        return int(valor)
+    if isinstance(valor, (float, np.floating)):
+        numero = float(valor)
+        return numero if math.isfinite(numero) else None
+    return valor
 
 
 def _json_default(valor):

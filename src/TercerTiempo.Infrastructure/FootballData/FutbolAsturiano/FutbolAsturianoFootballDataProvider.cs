@@ -278,16 +278,16 @@ internal sealed class FutbolAsturianoFootballDataProvider(
 
             var positionIds = Json.GetIntArray(player, "sp_position");
             var position = positionIds.Count > 0 && positions.TryGetValue(positionIds[0], out var mapped) ? mapped : null;
-            var number = Json.GetInt(player, "number");
 
+            // El «number» de la web no se guarda: es un dorsal fijo que no se mantiene (se repite entre compañeros); el
+            // de cada partido está en las actas.
             roster.Add(new RosterEntrySnapshot(
                 Json.GetInt(player, "id")?.ToString(CultureInfo.InvariantCulture),
                 name,
-                position,
-                number is > 0 and < 100 ? number : null));
+                position));
         }
 
-        return roster.OrderBy(r => r.ShirtNumber ?? int.MaxValue).ThenBy(r => r.FullName).ToList();
+        return roster.OrderBy(r => r.FullName).ToList();
     }
 
     // ---------------------------------------------------------------------------------------------

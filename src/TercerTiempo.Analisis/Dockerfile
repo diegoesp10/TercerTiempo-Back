@@ -7,12 +7,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 git ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# uv fijado (el mismo con el que se generó uv.lock) y la instalación tal cual dice uv.lock (--frozen): la imagen no
+# resuelve versiones nuevas al construirse.
+COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /usr/local/bin/uv
 
 WORKDIR /app
-COPY pyproject.toml .python-version README.md ./
+COPY pyproject.toml uv.lock .python-version README.md ./
 COPY tt_analisis ./tt_analisis
-RUN uv sync --no-dev
+RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:${PATH}"
 VOLUME ["/app/modelos", "/app/salidas", "/videos"]

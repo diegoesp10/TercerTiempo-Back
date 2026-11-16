@@ -35,18 +35,12 @@ internal sealed class ListMatchVideosHandler(
         var list = await videos.GetByMatchAsync(query.MatchId, cancellationToken);
         if (list.Count == 0) return [];
 
-        var squadMap = new Dictionary<Guid, Squad>();
-        foreach (var squadId in list.Select(v => v.SquadId).Distinct())
-        {
-            if (await squads.GetByIdAsync(squadId, cancellationToken) is { } squad)
-                squadMap[squadId] = squad;
-        }
+        var squadMap = (await squads.GetByIdsAsync(list.Select(v => v.SquadId), cancellationToken)).ToDictionary(s => s.Id);
 
         var teamMap = (await teams.GetByIdsAsync(list.Select(v => v.TeamId), cancellationToken)).ToDictionary(t => t.Id);
         var coachMap = (await coaches.GetByIdsAsync(list.Where(v => v.UploadedByCoachId != null).Select(v => v.UploadedByCoachId!.Value), cancellationToken)).ToDictionary(c => c.Id);
-        var clubMap = new Dictionary<Guid, Club>();
-        foreach (var uploaderId in list.Where(v => v.UploadedByClubId != null).Select(v => v.UploadedByClubId!.Value).Distinct())
-            if (await clubs.GetByIdAsync(uploaderId, cancellationToken) is { } uploader) clubMap[uploaderId] = uploader;
+        var clubMap = (await clubs.GetByIdsAsync(list.Where(v => v.UploadedByClubId != null).Select(v => v.UploadedByClubId!.Value), cancellationToken))
+            .ToDictionary(c => c.Id);
 
         var insight = await PassAccess.AllAsync(currentUser, passes, cancellationToken);
         var club = currentUser.ClubId is { } clubId ? await clubs.GetByIdAsync(clubId, cancellationToken) : null;

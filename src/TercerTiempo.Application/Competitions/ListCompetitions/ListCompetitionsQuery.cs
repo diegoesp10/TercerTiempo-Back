@@ -11,24 +11,29 @@ public sealed record ListCompetitionsQuery : IQuery<IReadOnlyList<CompetitionDto
 internal sealed class ListCompetitionsHandler(
     ICompetitionStore competitions,
     IStandingStore standings,
-    ISeasonContext seasons) : IQueryHandler<ListCompetitionsQuery, IReadOnlyList<CompetitionDto>>
+    ISeasonContext seasons,
+    PublicDataCache cache) : IQueryHandler<ListCompetitionsQuery, IReadOnlyList<CompetitionDto>>
 {
     public async Task<IReadOnlyList<CompetitionDto>> Handle(ListCompetitionsQuery query, CancellationToken cancellationToken)
     {
-        var all = await competitions.GetAllAsync(cancellationToken);
         var year = await seasons.SelectedAsync(cancellationToken);
-        var result = new List<CompetitionDto>(all.Count);
+        return await cache.GetAsync($"competitions:{year?.Id}", ct => LoadAsync(year, ct), cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<CompetitionDto>> LoadAsync(SeasonYear? year, CancellationToken cancellationToken)
+    {
+        var all = await competitions.GetAllAsync(cancellationToken);
 
         // Solo las ligas que se jugaron en la temporada elegida.
-        foreach (var competition in all.OrderBy(c => c.SortOrder).ThenBy(c => c.Name))
-        {
-            var season = Resolvers.SeasonFor(competition, year);
-            if (year is not null && season is null) continue;
+        var listed = all
+            .OrderBy(c => c.SortOrder).ThenBy(c => c.Name)
+            .Select(c => (Competition: c, Season: Resolvers.SeasonFor(c, year)))
+            .Where(x => year is null || x.Season is not null)
+            .ToList();
 
-            var teamsCount = season is null ? 0 : (await standings.GetBySeasonAsync(season.Id, cancellationToken)).Count;
-            result.Add(CompetitionDto.From(competition, season, teamsCount));
-        }
-
-        return result;
+        var teams = await standings.CountBySeasonsAsync(listed.Where(x => x.Season is not null).Select(x => x.Season!.Id), cancellationToken);
+        return listed
+            .Select(x => CompetitionDto.From(x.Competition, x.Season, x.Season is null ? 0 : teams.GetValueOrDefault(x.Season.Id)))
+            .ToList();
     }
 }

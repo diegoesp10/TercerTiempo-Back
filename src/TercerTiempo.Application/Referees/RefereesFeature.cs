@@ -23,10 +23,12 @@ namespace TercerTiempo.Application.Referees;
 public sealed record RefereeStatsDto(
     [property: Description("Partidos en los que figura en el equipo arbitral (de los que tiene la app).")]
     int Matches,
-    [property: Description("Notas que le han puesto los equipos.")]
+    [property: Description("Notas que le han puesto los equipos (sin contar los «No votado»).")]
     int Ratings,
     [property: Description("Nota media (0-10); null sin notas.")]
     double? Average,
+    [property: Description("Veces que un equipo decidió no votarle («No votado»).")]
+    int NoVotes,
     [property: Description("Cuántas notas de cada valor, de 0 a 10 (11 posiciones).")]
     IReadOnlyList<int> Distribution);
 
@@ -101,7 +103,10 @@ public sealed record TeamRatingDto(
     Guid TeamId,
     string TeamName,
     string? TeamCrestUrl,
-    int Score,
+    [property: Description("De 0 a 10; null si el equipo decidió no votar («No votado»).")]
+    int? Score,
+    [property: Description("true si el equipo decidió no votar: queda quién lo decidió, sin nota ni comentario.")]
+    bool NoVote,
     [property: Description("Por qué esa nota, si lo explicó; null si no lo hizo o si la administración lo retiró.")]
     string? Comment,
     [property: Description("Comentario retirado por la administración por no respetar las normas (la nota sigue).")]
@@ -122,7 +127,9 @@ public sealed record RefereeRatingDto(
     string TeamName,
     string? TeamCrestUrl,
     OfficialRole Role,
-    int Score,
+    [property: Description("De 0 a 10; null si el equipo decidió no votar.")]
+    int? Score,
+    bool NoVote,
     [property: Description("Null si no lo hay o si la administración lo retiró.")]
     string? Comment,
     bool CommentHidden,
@@ -163,7 +170,9 @@ public sealed record MatchOfficialDto(
     [property: Description("Las notas de los dos equipos en este partido (primero la del local), con quién las puso y por qué.")]
     IReadOnlyList<TeamRatingDto> TeamRatings,
     [property: Description("La nota de tu equipo en este partido, si ya la ha puesto: es definitiva.")]
-    int? MyScore);
+    int? MyScore,
+    [property: Description("true si tu equipo decidió no votarle en este partido (también definitivo).")]
+    bool MyNoVote);
 
 public sealed record MatchOfficialsDto(
     Guid MatchId,
@@ -188,8 +197,10 @@ public sealed record PendingRefereeRatingDto(
     string TeamName,
     [property: Description("Miembros del equipo arbitral del partido.")]
     int Officials,
-    [property: Description("Cuántos ha puntuado ya el equipo.")]
-    int Rated);
+    [property: Description("Cuántos ha contestado ya el equipo (con nota o «No votado»).")]
+    int Rated,
+    [property: Description("De esos, cuántos quedaron como «No votado».")]
+    int NoVotes);
 
 // Los árbitros se buscan siempre dentro de una categoría: la categoría manda en el listado.
 public sealed record ListRefereesQuery(
@@ -205,13 +216,23 @@ public sealed record GetMatchOfficialsQuery(Guid MatchId) : IQuery<MatchOfficial
 public sealed record RateRefereeCommand(
     Guid MatchId,
     Guid RefereeId,
-    [property: Description("De 0 a 10.")]
-    int Score,
+    [property: Description("De 0 a 10; null (o sin enviar) si noVote es true.")]
+    int? Score,
     [property: Description("Opcional: por qué esa nota (hasta 1000 caracteres).")]
     string? Comment,
     [property: Description("Solo si el club tiene los dos equipos del partido: en nombre de cuál puntúa.")]
     Guid? TeamId = null,
     [property: Description("Tiene que ser true: la nota es definitiva y se confirma antes de guardarla.")]
+    bool Confirmed = false,
+    [property: Description("true para no votar a este árbitro («No votado»): sin nota ni comentario, y también definitivo.")]
+    bool NoVote = false) : ICommand<MatchOfficialsDto>;
+
+// No votar a nadie del equipo arbitral de un partido: «No votado» para cada uno al que el equipo aún no ha contestado.
+public sealed record NoVoteMatchOfficialsCommand(
+    Guid MatchId,
+    [property: Description("Solo si el club tiene los dos equipos del partido: en nombre de cuál.")]
+    Guid? TeamId = null,
+    [property: Description("Tiene que ser true: es definitivo.")]
     bool Confirmed = false) : ICommand<MatchOfficialsDto>;
 
 public sealed record ListPendingRefereeRatingsQuery : IQuery<IReadOnlyList<PendingRefereeRatingDto>>;
@@ -226,7 +247,9 @@ internal sealed class RateRefereeValidator : AbstractValidator<RateRefereeComman
     {
         RuleFor(x => x.MatchId).NotEmpty();
         RuleFor(x => x.RefereeId).NotEmpty();
-        RuleFor(x => x.Score).InclusiveBetween(0, RefereeRating.MaxScore).WithName("Nota");
+        RuleFor(x => x.Score).NotNull().InclusiveBetween(0, RefereeRating.MaxScore).WithName("Nota").When(x => !x.NoVote);
+        RuleFor(x => x.Score).Null().WithName("Nota").When(x => x.NoVote);
+        RuleFor(x => x.Comment).Empty().WithCatalogMessage(ErrorCode.RefereeNoVoteComment).When(x => x.NoVote);
         RuleFor(x => x.Comment).MaximumLength(RefereeRating.MaxCommentLength).WithName("Comentario");
         // Sin palabrotas, insultos, vejaciones ni amenazas (tabla PalabrasProhibidas): el comentario es público y definitivo.
         RuleFor(x => x.Comment).CustomAsync(async (comment, context, cancellationToken) =>
@@ -234,6 +257,15 @@ internal sealed class RateRefereeValidator : AbstractValidator<RateRefereeComman
             var found = await moderation.FindAsync(comment, cancellationToken);
             if (found.Count > 0) context.AddFailure(CommentModeration.Failure(nameof(RateRefereeCommand.Comment), found));
         });
+        RuleFor(x => x.Confirmed).Equal(true).WithCatalogMessage(ErrorCode.RefereeRatingNotConfirmed);
+    }
+}
+
+internal sealed class NoVoteMatchOfficialsValidator : AbstractValidator<NoVoteMatchOfficialsCommand>
+{
+    public NoVoteMatchOfficialsValidator()
+    {
+        RuleFor(x => x.MatchId).NotEmpty();
         RuleFor(x => x.Confirmed).Equal(true).WithCatalogMessage(ErrorCode.RefereeRatingNotConfirmed);
     }
 }
@@ -288,17 +320,20 @@ internal static class RefereeAccess
     {
         var team = teams.GetValueOrDefault(rating.TeamId);
         return new TeamRatingDto(
-            rating.TeamId, team?.Name ?? "Equipo", team?.CrestLink(), rating.Score, rating.PublicComment, rating.CommentHidden, Rater(rating), rating.CreatedAt);
+            rating.TeamId, team?.Name ?? "Equipo", team?.CrestLink(), rating.Score, rating.NoVote, rating.PublicComment, rating.CommentHidden, Rater(rating), rating.CreatedAt);
     }
 
     // Las notas de un partido, primero la del equipo local.
     public static IReadOnlyList<TeamRatingDto> TeamRatings(IEnumerable<RefereeRating> ratings, Match match, IReadOnlyDictionary<Guid, Team> teams) =>
         ratings.OrderBy(r => r.TeamId == match.HomeTeamId ? 0 : 1).Select(r => TeamRating(r, teams)).ToList();
 
+    // Las medias y los recuentos de notas solo cuentan las notas: un «No votado» no es un cero.
+    public static IEnumerable<RefereeRating> Scored(IEnumerable<RefereeRating> ratings) => ratings.Where(r => r.Score is not null);
+
     public static double? Average(IEnumerable<RefereeRating> ratings)
     {
-        var list = ratings.ToList();
-        return list.Count == 0 ? null : Math.Round(list.Average(r => r.Score), 2);
+        var list = Scored(ratings).ToList();
+        return list.Count == 0 ? null : Math.Round(list.Average(r => r.Score!.Value), 2);
     }
 }
 
@@ -335,40 +370,52 @@ internal static class RefereeCategories
 
     public static RefereeCategoryDto ToDto(RefereeCategory category, IReadOnlyList<Appearance> items, IReadOnlyList<Guid> competitionIds)
     {
-        int People(OfficialDuty duty) => items.Where(a => a.Duty == duty).Select(a => a.Official.RefereeId).Distinct().Count();
+        int People(OfficialDuty duty) => items.Where(a => a.Duty == duty).Select(a => a.RefereeId).Distinct().Count();
         return new RefereeCategoryDto(
             category.Key, category.Name, category.Level, category.Tier, People(OfficialDuty.Main), People(OfficialDuty.Assistant),
-            items.Select(a => a.Official.MatchId).Distinct().Count(), items.Sum(a => a.Ratings.Count), competitionIds);
+            items.Select(a => a.MatchId).Distinct().Count(), items.Sum(a => a.Scored), competitionIds);
     }
-
-    public static async Task<Dictionary<string, List<Guid>>> CompetitionIdsAsync(ICompetitionStore competitions, CancellationToken cancellationToken) =>
-        (await competitions.GetAllAsync(cancellationToken)).GroupBy(c => Key(c.Category)).ToDictionary(g => g.Key, g => g.Select(c => c.Id).ToList());
 }
 
-// Cada vez que un árbitro ha estado en un partido, con la categoría del partido y las notas que le pusieron en él: la base
-// de las cifras por categoría y función.
-internal sealed record Appearance(MatchOfficial Official, Match? Match, RefereeCategory? Category, IReadOnlyList<RefereeRating> Ratings)
-{
-    public OfficialDuty Duty => Official.Role.Duty();
-}
+// Cada vez que un árbitro ha estado en un partido, con la categoría del partido y las notas que le pusieron en él (cuántas
+// puntuadas y su suma): la base de las cifras por categoría y función.
+internal sealed record Appearance(Guid MatchId, Guid RefereeId, OfficialDuty Duty, RefereeCategory Category, DateTimeOffset? KickoffAt, int Scored, int ScoreSum);
 
-internal static class Appearances
+internal sealed record RefereeName(string Name, string NormalizedName);
+
+// Todas las designaciones con su categoría, los nombres de los árbitros y las ligas de cada categoría. Se arma con
+// proyecciones mínimas (sin cargar partidos ni notas enteras) y se guarda en PublicDataCache: cambia con los datos
+// reales y con cada nota, y las dos cosas invalidan lo guardado.
+internal sealed record RefereeStats(
+    IReadOnlyList<Appearance> Appearances, IReadOnlyDictionary<Guid, RefereeName> People, IReadOnlyDictionary<string, List<Guid>> CompetitionIds)
 {
-    public static async Task<IReadOnlyList<Appearance>> LoadAsync(
-        IReadOnlyList<MatchOfficial> officials, IReadOnlyList<RefereeRating> ratings, IMatchStore matches, ICompetitionStore competitions,
-        CancellationToken cancellationToken)
+    public static Task<RefereeStats> GetAsync(IRefereeStore referees, ICompetitionStore competitions, PublicDataCache cache, CancellationToken cancellationToken) =>
+        cache.GetAsync("referee-stats", ct => LoadAsync(referees, competitions, ct), cancellationToken);
+
+    private static async Task<RefereeStats> LoadAsync(IRefereeStore referees, ICompetitionStore competitions, CancellationToken cancellationToken)
     {
-        var matchMap = (await matches.GetByIdsAsync(officials.Select(o => o.MatchId).Distinct(), cancellationToken)).ToDictionary(m => m.Id);
-        var categories = await RefereeCategories.BySeasonAsync(competitions, cancellationToken);
-        var notes = ratings.ToLookup(r => (r.MatchId, r.RefereeId));
-        return officials
-            .Select(o =>
-            {
-                var match = matchMap.GetValueOrDefault(o.MatchId);
-                var category = match is null ? null : categories.GetValueOrDefault(match.SeasonId);
-                return new Appearance(o, match, category, notes[(o.MatchId, o.RefereeId)].ToList());
-            })
-            .ToList();
+        var all = await competitions.GetAllAsync(cancellationToken);
+        var categories = new Dictionary<Guid, RefereeCategory>();
+        foreach (var competition in all)
+        {
+            var category = new RefereeCategory(RefereeCategories.Key(competition.Category), competition.Category, competition.Level, competition.Tier);
+            foreach (var season in competition.Seasons) categories[season.Id] = category;
+        }
+
+        var notes = (await referees.GetAllScoresAsync(cancellationToken))
+            .GroupBy(r => (r.MatchId, r.RefereeId))
+            .ToDictionary(g => g.Key, g => (Count: g.Count(), Sum: g.Sum(r => r.Score)));
+        var appearances = new List<Appearance>();
+        foreach (var row in await referees.GetAllAppearancesAsync(cancellationToken))
+        {
+            if (row.SeasonId is not { } seasonId || !categories.TryGetValue(seasonId, out var category)) continue;
+            var (count, sum) = notes.GetValueOrDefault((row.MatchId, row.RefereeId));
+            appearances.Add(new Appearance(row.MatchId, row.RefereeId, row.Role.Duty(), category, row.KickoffAt, count, sum));
+        }
+
+        var people = (await referees.GetAllAsync(cancellationToken)).ToDictionary(r => r.Id, r => new RefereeName(r.Name, r.NormalizedName));
+        var competitionIds = all.GroupBy(c => RefereeCategories.Key(c.Category)).ToDictionary(g => g.Key, g => g.Select(c => c.Id).ToList());
+        return new RefereeStats(appearances, people, competitionIds);
     }
 }
 
@@ -454,15 +501,21 @@ internal static class MatchOfficialsBuilder
         var here = await referees.GetRatingsByMatchesAsync([match.Id], cancellationToken);
         var teamMap = (await teams.GetByIdsAsync([match.HomeTeamId, match.AwayTeamId], cancellationToken)).ToDictionary(t => t.Id);
 
+        // Media y número de notas de cada árbitro en su función: una consulta agrupada para todo el equipo arbitral.
+        var totals = (await referees.GetScoreTotalsAsync(officials.Select(o => o.RefereeId), cancellationToken))
+            .GroupBy(t => (t.RefereeId, Duty: t.Role.Duty()))
+            .ToDictionary(g => g.Key, g => (Count: g.Sum(t => t.Count), Sum: g.Sum(t => t.Sum)));
+
         var result = new List<MatchOfficialDto>();
         foreach (var official in officials)
         {
-            var all = (await referees.GetRatingsByRefereeAsync(official.RefereeId, cancellationToken)).Where(r => r.Role.Duty() == official.Role.Duty()).ToList();
+            var (count, sum) = totals.GetValueOrDefault((official.RefereeId, official.Role.Duty()));
             var mine = here.Where(r => r.RefereeId == official.RefereeId).ToList();
             result.Add(new MatchOfficialDto(
                 official.RefereeId, people.GetValueOrDefault(official.RefereeId)?.Name ?? "Árbitro", official.Role,
-                RefereeAccess.Average(all), all.Count, RefereeAccess.TeamRatings(mine, match, teamMap),
-                raterTeam is null ? null : mine.FirstOrDefault(r => r.TeamId == raterTeam)?.Score));
+                count == 0 ? null : Math.Round((double)sum / count, 2), count, RefereeAccess.TeamRatings(mine, match, teamMap),
+                raterTeam is null ? null : mine.FirstOrDefault(r => r.TeamId == raterTeam)?.Score,
+                raterTeam is not null && mine.Any(r => r.TeamId == raterTeam && r.NoVote)));
         }
 
         var teamName = raterTeam is { } id ? teamMap.GetValueOrDefault(id)?.Name : null;
@@ -506,39 +559,74 @@ internal sealed class RateRefereeHandler(
             throw new ConflictException(ErrorCode.RefereeAlreadyRated, (await referees.GetByIdAsync(official.RefereeId, cancellationToken))?.Name ?? "este árbitro");
 
         var rater = await RefereeAccess.RaterAsync(match, teamId, currentUser, clubs, coaches, squads, clock, cancellationToken);
-        referees.AddRating(RefereeRating.Rate(official, teamId, command.Score, command.Comment, rater, now));
+        referees.AddRating(RefereeRating.Rate(official, teamId, command.NoVote ? null : command.Score, command.NoVote ? null : command.Comment, rater, now));
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return await MatchOfficialsBuilder.BuildAsync(match, teamId, currentUser, licenses, teams, clubs, squads, referees, competitions, clock, cancellationToken);
     }
 }
 
-internal sealed class ListRefereesHandler(IRefereeStore referees, IMatchStore matches, ICompetitionStore competitions)
+internal sealed class NoVoteMatchOfficialsHandler(
+    ICurrentUser currentUser,
+    ILicenseGate licenses,
+    IMatchStore matches,
+    ITeamStore teams,
+    IClubStore clubs,
+    ISquadStore squads,
+    ICoachStore coaches,
+    IRefereeStore referees,
+    ICompetitionStore competitions,
+    IUnitOfWork unitOfWork,
+    TimeProvider clock) : ICommandHandler<NoVoteMatchOfficialsCommand, MatchOfficialsDto>
+{
+    public async Task<MatchOfficialsDto> Handle(NoVoteMatchOfficialsCommand command, CancellationToken cancellationToken)
+    {
+        await RefereeAccess.EnsureRaterAsync(currentUser, licenses, cancellationToken);
+        var match = await matches.GetByIdAsync(command.MatchId, cancellationToken)
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, command.MatchId);
+        var now = clock.GetUtcNow();
+        if (!match.IsOver(now)) throw new ConflictException(ErrorCode.RefereeMatchNotOver);
+
+        var teamId = await RefereeAccess.RaterTeamAsync(match, currentUser, clubs, squads, clock, command.TeamId, cancellationToken)
+            ?? throw new ForbiddenException(ErrorCode.RefereeTeamNotInMatch);
+        var answered = (await referees.GetRatingsByMatchesAsync([match.Id], cancellationToken))
+            .Where(r => r.TeamId == teamId).Select(r => r.RefereeId).ToHashSet();
+        var open = (await referees.GetOfficialsAsync(match.Id, cancellationToken)).Where(o => !answered.Contains(o.RefereeId)).ToList();
+        if (open.Count == 0) throw new ConflictException(ErrorCode.RefereeNothingToVote);
+
+        var rater = await RefereeAccess.RaterAsync(match, teamId, currentUser, clubs, coaches, squads, clock, cancellationToken);
+        foreach (var official in open)
+            referees.AddRating(RefereeRating.Rate(official, teamId, null, null, rater, now));
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return await MatchOfficialsBuilder.BuildAsync(match, teamId, currentUser, licenses, teams, clubs, squads, referees, competitions, clock, cancellationToken);
+    }
+}
+
+internal sealed class ListRefereesHandler(IRefereeStore referees, ICompetitionStore competitions, PublicDataCache cache)
     : IQueryHandler<ListRefereesQuery, RefereeCategoryListDto>
 {
     public async Task<RefereeCategoryListDto> Handle(ListRefereesQuery query, CancellationToken cancellationToken)
     {
         var key = RefereeCategories.Key(query.Category ?? string.Empty);
         var search = NameNormalizer.Normalize(query.Search);
-        var people = (await referees.GetAllAsync(cancellationToken)).ToDictionary(r => r.Id);
-        var inCategory = (await Appearances.LoadAsync(
-                await referees.GetAllOfficialsAsync(cancellationToken), await referees.GetAllRatingsAsync(cancellationToken), matches, competitions, cancellationToken))
-            .Where(a => a.Category?.Key == key)
-            .ToList();
+        var stats = await RefereeStats.GetAsync(referees, competitions, cache, cancellationToken);
+        var people = stats.People;
+        var inCategory = stats.Appearances.Where(a => a.Category.Key == key).ToList();
         if (inCategory.Count == 0) throw new NotFoundException(ErrorCode.RefereeCategoryNotFound, query.Category ?? string.Empty);
 
-        var category = RefereeCategories.ToDto(
-            inCategory[0].Category!, inCategory, (await RefereeCategories.CompetitionIdsAsync(competitions, cancellationToken)).GetValueOrDefault(key) ?? []);
+        var category = RefereeCategories.ToDto(inCategory[0].Category, inCategory, stats.CompetitionIds.GetValueOrDefault(key) ?? []);
         var rows = inCategory
-            .Where(a => (query.Duty is null || a.Duty == query.Duty) && people.ContainsKey(a.Official.RefereeId))
-            .Where(a => search.Length == 0 || people[a.Official.RefereeId].NormalizedName.Contains(search, StringComparison.Ordinal))
-            .GroupBy(a => (a.Official.RefereeId, a.Duty))
+            .Where(a => (query.Duty is null || a.Duty == query.Duty) && people.ContainsKey(a.RefereeId))
+            .Where(a => search.Length == 0 || people[a.RefereeId].NormalizedName.Contains(search, StringComparison.Ordinal))
+            .GroupBy(a => (a.RefereeId, a.Duty))
             .Select(g =>
             {
-                var notes = g.SelectMany(a => a.Ratings).ToList();
+                var scored = g.Sum(a => a.Scored);
                 return new RefereeSummaryDto(
                     g.Key.RefereeId, people[g.Key.RefereeId].Name, category.Key, category.Name, g.Key.Duty,
-                    g.Select(a => a.Official.MatchId).Distinct().Count(), notes.Count, RefereeAccess.Average(notes), g.Max(a => a.Match?.KickoffAt));
+                    g.Select(a => a.MatchId).Distinct().Count(), scored, scored == 0 ? null : Math.Round((double)g.Sum(a => a.ScoreSum) / scored, 2),
+                    g.Max(a => a.KickoffAt));
             });
 
         var sort = query.Sort ?? RefereeSort.Average;
@@ -574,18 +662,15 @@ internal static class RefereeSorting
         desc ? items.ThenByDescending(key) : items.ThenBy(key);
 }
 
-internal sealed class ListRefereeCategoriesHandler(IRefereeStore referees, IMatchStore matches, ICompetitionStore competitions)
+internal sealed class ListRefereeCategoriesHandler(IRefereeStore referees, ICompetitionStore competitions, PublicDataCache cache)
     : IQueryHandler<ListRefereeCategoriesQuery, IReadOnlyList<RefereeCategoryDto>>
 {
     public async Task<IReadOnlyList<RefereeCategoryDto>> Handle(ListRefereeCategoriesQuery query, CancellationToken cancellationToken)
     {
-        var appearances = await Appearances.LoadAsync(
-            await referees.GetAllOfficialsAsync(cancellationToken), await referees.GetAllRatingsAsync(cancellationToken), matches, competitions, cancellationToken);
-        var competitionIds = await RefereeCategories.CompetitionIdsAsync(competitions, cancellationToken);
-
-        var groups = appearances.Where(a => a.Category is not null).GroupBy(a => a.Category!.Key).Select(g => (Category: g.First().Category!, Items: g.ToList()));
+        var stats = await RefereeStats.GetAsync(referees, competitions, cache, cancellationToken);
+        var groups = stats.Appearances.GroupBy(a => a.Category.Key).Select(g => (Category: g.First().Category, Items: g.ToList()));
         return RefereeCategories.Ordered(groups, g => g.Category)
-            .Select(g => RefereeCategories.ToDto(g.Category, g.Items, competitionIds.GetValueOrDefault(g.Category.Key) ?? []))
+            .Select(g => RefereeCategories.ToDto(g.Category, g.Items, stats.CompetitionIds.GetValueOrDefault(g.Category.Key) ?? []))
             .ToList();
     }
 }
@@ -616,7 +701,7 @@ internal sealed class GetRefereeHandler(IRefereeStore referees, IMatchStore matc
             var category = CategoryOf(m.Id);
             return new RefereeRatingDto(
                 m.Id, m.KickoffAt, teamMap.GetValueOrDefault(m.HomeTeamId)?.Name ?? "Local", teamMap.GetValueOrDefault(m.AwayTeamId)?.Name ?? "Visitante",
-                category?.Key, category?.Name, r.TeamId, team?.Name ?? "Equipo", team?.CrestLink(), r.Role, r.Score, r.PublicComment, r.CommentHidden, RefereeAccess.Rater(r), r.CreatedAt);
+                category?.Key, category?.Name, r.TeamId, team?.Name ?? "Equipo", team?.CrestLink(), r.Role, r.Score, r.NoVote, r.PublicComment, r.CommentHidden, RefereeAccess.Rater(r), r.CreatedAt);
         }
 
         var ratingDtos = ratings.OrderByDescending(r => matchMap.GetValueOrDefault(r.MatchId)?.KickoffAt).ThenByDescending(r => r.CreatedAt)
@@ -624,7 +709,8 @@ internal sealed class GetRefereeHandler(IRefereeStore referees, IMatchStore matc
         var best = ratingDtos.Where(r => r.Comment is not null).OrderByDescending(r => r.Score).ThenByDescending(r => r.KickoffAt).Take(BestShown).ToList();
 
         var distribution = Enumerable.Range(0, RefereeRating.MaxScore + 1).Select(score => ratings.Count(r => r.Score == score)).ToList();
-        var stats = new RefereeStatsDto(officials.Select(o => o.MatchId).Distinct().Count(), ratings.Count, RefereeAccess.Average(ratings), distribution);
+        var stats = new RefereeStatsDto(
+            officials.Select(o => o.MatchId).Distinct().Count(), RefereeAccess.Scored(ratings).Count(), RefereeAccess.Average(ratings), ratings.Count(r => r.NoVote), distribution);
         var byCategory = RefereeCategories.Ordered(
                 officials
                     .Select(o => (Official: o, Category: CategoryOf(o.MatchId)))
@@ -636,7 +722,7 @@ internal sealed class GetRefereeHandler(IRefereeStore referees, IMatchStore matc
             .Select(g =>
             {
                 var notes = ratings.Where(r => g.Games.Contains(r.MatchId) && r.Role.Duty() == g.Duty).ToList();
-                return new RefereeCategoryStatsDto(g.Category.Key, g.Category.Name, g.Duty, g.Games.Count, notes.Count, RefereeAccess.Average(notes));
+                return new RefereeCategoryStatsDto(g.Category.Key, g.Category.Name, g.Duty, g.Games.Count, RefereeAccess.Scored(notes).Count(), RefereeAccess.Average(notes));
             })
             .ToList();
         var games = officials
@@ -647,7 +733,7 @@ internal sealed class GetRefereeHandler(IRefereeStore referees, IMatchStore matc
                 var notes = ratings.Where(r => r.MatchId == o.MatchId).ToList();
                 var category = CategoryOf(o.MatchId);
                 return new RefereeMatchDto(
-                    MatchMapper.ToDto(matchMap[o.MatchId], teamMap), category?.Key, category?.Name, o.Role, notes.Count, RefereeAccess.Average(notes),
+                    MatchMapper.ToDto(matchMap[o.MatchId], teamMap), category?.Key, category?.Name, o.Role, RefereeAccess.Scored(notes).Count(), RefereeAccess.Average(notes),
                     RefereeAccess.TeamRatings(notes, matchMap[o.MatchId], teamMap));
             })
             .ToList();
@@ -678,7 +764,7 @@ internal sealed class ListPendingRefereeRatingsHandler(
         if (currentUser.ClubId is { } clubId && await clubs.GetByIdAsync(clubId, cancellationToken) is { } club)
             myTeams.AddRange(club.Teams.Select(t => t.TeamId));
         else if (currentUser.CoachId is { } coachId)
-            myTeams.AddRange((await squads.GetByCoachAsync(coachId, SquadAccess.Today(clock), cancellationToken)).Select(s => s.TeamId));
+            myTeams.AddRange((await squads.GetRefsByCoachAsync(coachId, SquadAccess.Today(clock), cancellationToken)).Select(s => s.TeamId));
         if (myTeams.Count == 0) return [];
 
         var ids = await referees.GetMatchesWithOfficialsAsync(myTeams, now - Window, cancellationToken);
@@ -692,9 +778,10 @@ internal sealed class ListPendingRefereeRatingsHandler(
         {
             var team = myTeams.Contains(match.HomeTeamId) ? match.HomeTeamId : match.AwayTeamId;
             var people = officials[match.Id].Count();
-            var rated = ratings[(match.Id, team)].Count();
-            if (rated >= people) continue;
-            result.Add(new PendingRefereeRatingDto(MatchMapper.ToDto(match, teamMap), team, teamMap.GetValueOrDefault(team)?.Name ?? "Equipo", people, rated));
+            var answers = ratings[(match.Id, team)].ToList();
+            if (answers.Count >= people) continue;
+            result.Add(new PendingRefereeRatingDto(
+                MatchMapper.ToDto(match, teamMap), team, teamMap.GetValueOrDefault(team)?.Name ?? "Equipo", people, answers.Count, answers.Count(r => r.NoVote)));
         }
         return result;
     }

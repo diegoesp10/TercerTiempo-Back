@@ -1,4 +1,3 @@
-using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -26,7 +25,9 @@ internal sealed class ClientThrottlingMiddleware(RequestDelegate next, ClientThr
             return;
         }
 
-        var ip = ResolveIp(context, settings.TrustForwardedHeaders);
+        // Detrás del proxy, UseForwardedHeaders ya ha puesto aquí la IP del visitante (ReverseProxy:ForwardLimit saltos de
+        // confianza): un X-Forwarded-For inventado por el cliente no la cambia.
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "desconocida";
         var pattern = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? context.Request.Path.Value ?? "/";
         var countEndpoint = !settings.ExemptRoutes.Any(route => string.Equals(route, pattern, StringComparison.OrdinalIgnoreCase));
         var decision = throttle.Check(ip, $"{context.Request.Method} {pattern}", countEndpoint);
@@ -63,16 +64,6 @@ internal sealed class ClientThrottlingMiddleware(RequestDelegate next, ClientThr
             .WriteAsync(new ProblemDetailsContext { HttpContext = context, ProblemDetails = problem });
     }
 
-    private static string ResolveIp(HttpContext context, bool trustForwarded)
-    {
-        if (trustForwarded && context.Request.Headers.TryGetValue("X-Forwarded-For", out var forwarded))
-        {
-            var first = forwarded.ToString().Split(',')[0].Trim();
-            if (IPAddress.TryParse(first, out var parsed)) return parsed.ToString();
-        }
-
-        return context.Connection.RemoteIpAddress?.ToString() ?? "desconocida";
-    }
 }
 
 public static class ClientThrottlingExtensions

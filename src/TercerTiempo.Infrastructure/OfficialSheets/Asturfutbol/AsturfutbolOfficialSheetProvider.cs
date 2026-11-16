@@ -83,9 +83,9 @@ internal sealed class AsturfutbolOfficialSheetProvider(
 
     private string SheetPath(string sheetCode) => $"NFG_CmpPartido?cod_primaria={_settings.CalendarCode}&CodActa={sheetCode}&cod_acta={sheetCode}";
 
-    public async Task<OfficialSheetData?> GetSheetAsync(string sheetCode, CancellationToken cancellationToken)
+    public async Task<OfficialSheetData?> GetSheetAsync(string sheetCode, bool refresh, CancellationToken cancellationToken)
     {
-        var html = await client.GetHtmlAsync(SheetPath(sheetCode), cancellationToken);
+        var html = await client.GetHtmlAsync(SheetPath(sheetCode), cancellationToken, refresh);
 
         return html is null ? null : AsturfutbolPages.ParseSheet(html, _settings.MatchLength);
     }

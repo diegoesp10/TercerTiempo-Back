@@ -69,24 +69,25 @@ internal sealed class RequestSheetDownloadsHandler(
         var scope = command.Scope;
         var wanted = new List<Match>();
 
-        foreach (var competition in (await competitions.GetAllAsync(cancellationToken)).OrderBy(c => c.Tier).ThenBy(c => c.Name))
-        {
-            if (scope.CompetitionIds.Count > 0 && !scope.CompetitionIds.Contains(competition.Id)) continue;
-            if (!provider.Publishes(competition.Category)) continue;
-            if (competition.CurrentSeason is not { } season) continue;
+        // Una consulta de partidos para todas las ligas elegidas y otra con el estado de sus actas (sin cargarlas enteras).
+        var seasons = (await competitions.GetAllAsync(cancellationToken))
+            .OrderBy(c => c.Tier).ThenBy(c => c.Name)
+            .Where(c => scope.CompetitionIds.Count == 0 || scope.CompetitionIds.Contains(c.Id))
+            .Where(c => provider.Publishes(c.Category) && c.CurrentSeason is not null)
+            .Select(c => c.CurrentSeason!.Id)
+            .ToList();
+        if (seasons.Count == 0) return 0;
 
-            var played = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
-                .Where(m => OfficialSheetRefresh.IsPlayed(m, now) && m.Status != MatchStatus.Cancelled)
-                .Where(m => scope.Window is not { } window || window.Contains(DateOnly.FromDateTime(m.KickoffAt.UtcDateTime)))
-                .ToList();
-            if (played.Count == 0) continue;
-
-            var stored = (await sheets.GetStoredByMatchIdsAsync(played.Select(m => m.Id), cancellationToken))
-                .Where(s => s.IsAvailable)
-                .Select(s => s.MatchId)
-                .ToHashSet();
-            wanted.AddRange(played.Where(m => !stored.Contains(m.Id)).OrderBy(m => m.Matchday).ThenBy(m => m.KickoffAt));
-        }
+        var playedBySeason = (await matches.GetBySeasonsAsync(seasons, cancellationToken))
+            .Where(m => OfficialSheetRefresh.IsPlayed(m, now) && m.Status != MatchStatus.Cancelled)
+            .Where(m => scope.Window is not { } window || window.Contains(DateOnly.FromDateTime(m.KickoffAt.UtcDateTime)))
+            .ToLookup(m => m.SeasonId);
+        var available = (await sheets.GetStoredStatesAsync(playedBySeason.SelectMany(g => g).Select(m => m.Id), cancellationToken))
+            .Where(s => s.Status == OfficialSheetStatus.Available)
+            .Select(s => s.MatchId)
+            .ToHashSet();
+        foreach (var seasonId in seasons)
+            wanted.AddRange(playedBySeason[seasonId].Where(m => !available.Contains(m.Id)).OrderBy(m => m.Matchday).ThenBy(m => m.KickoffAt));
 
         if (wanted.Count == 0) return 0;
         var added = await downloads.RequestAsync(wanted.Select(m => m.Id).ToList(), now, cancellationToken);

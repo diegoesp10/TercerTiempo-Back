@@ -101,6 +101,53 @@ public class RefereeTests
     }
 
     [Fact]
+    public void Not_voting_keeps_who_decided_it_but_has_no_score_nor_comment()
+    {
+        var official = MatchOfficial.Assign(Guid.NewGuid(), Guid.NewGuid(), OfficialRole.Referee, "asturfutbol", Now);
+        var club = new RefereeRater(Guid.NewGuid(), null, Guid.NewGuid(), "CD Vallobín");
+
+        var noVote = RefereeRating.Rate(official, Guid.NewGuid(), null, null, club, Now);
+        Assert.Equal((true, (int?)null, "CD Vallobín"), (noVote.NoVote, noVote.Score, noVote.RaterName));
+        Assert.Equal(ErrorCode.RefereeNoVoteComment,
+            Assert.Throws<DomainException>(() => RefereeRating.Rate(official, Guid.NewGuid(), null, "Ni bien ni mal", club, Now)).Code);
+    }
+
+    [Fact]
+    public async Task Not_voting_the_whole_crew_answers_each_one_once_and_leaves_the_averages_alone()
+    {
+        var f = new Fixture();
+        var assistant = Referee.Create("Pérez Díaz, Luis", null, Now);
+        f.Store.Referees.Add(assistant);
+        f.Store.Officials.Add(MatchOfficial.Assign(f.Match.Id, assistant.Id, OfficialRole.AssistantReferee1, "asturfutbol", Now));
+
+        // La árbitra ya tenía nota; quedaba el asistente, que pasa a «No votado» en nombre del club.
+        await f.Rate(f.ClubUser, 7, null);
+        var after = await f.NoVote(f.ClubUser);
+
+        var noVote = Assert.Single(f.Store.Ratings, r => r.RefereeId == assistant.Id);
+        Assert.Equal((true, f.Club.Id, "CD Vallobín"), (noVote.NoVote, noVote.RatedByClubId, noVote.RaterName));
+        var line = Assert.Single(after.Officials, o => o.RefereeId == assistant.Id);
+        Assert.Equal((true, (int?)null, (double?)null, 0), (line.MyNoVote, line.MyScore, line.Average, line.Ratings));
+        Assert.Equal((true, (int?)null), (Assert.Single(line.TeamRatings).NoVote, line.TeamRatings[0].Score));
+        Assert.Equal((7, 7.0), (after.Officials.Single(o => o.RefereeId != assistant.Id).MyScore!.Value, after.Officials.Single(o => o.RefereeId != assistant.Id).Average!.Value));
+
+        // Definitivo: ni otra vez «No votado» ni una nota después.
+        Assert.Equal(ErrorCode.RefereeNothingToVote, (await Assert.ThrowsAsync<ConflictException>(() => f.NoVote(f.ClubUser))).Code);
+        Assert.Equal(ErrorCode.RefereeAlreadyRated, (await Assert.ThrowsAsync<ConflictException>(() => f.Rate(f.ClubUser, 5, null, assistant.Id))).Code);
+    }
+
+    [Fact]
+    public async Task A_no_vote_goes_without_score_or_comment()
+    {
+        var validator = new RateRefereeValidator(new CommentModeration(new InMemoryForbiddenWordStore()));
+        Assert.True((await validator.ValidateAsync(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), null, null, Confirmed: true, NoVote: true))).IsValid);
+        Assert.False((await validator.ValidateAsync(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), 6, null, Confirmed: true, NoVote: true))).IsValid);
+        var withComment = await validator.ValidateAsync(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), null, "Mal", Confirmed: true, NoVote: true));
+        Assert.Contains(withComment.Errors, e => e.ErrorCode == ErrorCode.RefereeNoVoteComment);
+        Assert.False((await validator.ValidateAsync(new RateRefereeCommand(Guid.NewGuid(), Guid.NewGuid(), null, null, Confirmed: true))).IsValid);
+    }
+
+    [Fact]
     public async Task The_club_rates_each_official_once_and_the_rating_is_final()
     {
         var f = new Fixture();
@@ -198,6 +245,7 @@ public class RefereeTests
         var sara = Referee.Create("Ovies García, Sara", null, Now);
         var pepe = Referee.Create("Pepe Pérez", null, Now);
         store.Referees.AddRange([sara, pepe]);
+        store.Matches.AddRange(games);
         store.Officials.Add(MatchOfficial.Assign(games[0].Id, sara.Id, OfficialRole.Referee, "asturfutbol", Now));
         store.Officials.Add(MatchOfficial.Assign(games[1].Id, sara.Id, OfficialRole.Referee, "asturfutbol", Now));
         store.Officials.Add(MatchOfficial.Assign(games[2].Id, sara.Id, OfficialRole.AssistantReferee1, "asturfutbol", Now));
@@ -206,12 +254,11 @@ public class RefereeTests
         store.Ratings.Add(RefereeRating.Rate(store.Officials[0], games[0].HomeTeamId, 8, null, rater, Now));
         store.Ratings.Add(RefereeRating.Rate(store.Officials[2], games[2].HomeTeamId, 4, null, rater, Now));
 
-        var matches = Stub<IMatchStore>((_, args) => Task.FromResult<IReadOnlyList<Match>>(games.Where(m => ((IEnumerable<Guid>)args![0]!).Contains(m.Id)).ToList()));
         var competitions = Stub<ICompetitionStore>((method, _) => method == nameof(ICompetitionStore.GetAllAsync)
             ? Task.FromResult<IReadOnlyList<Competition>>([third, thirdTwo, second])
             : Task.FromResult<Competition?>(third));
         Assert.Equal("3a-asturfutbol", RefereeCategories.Key("3ª AsturFútbol"));
-        var list = new ListRefereesHandler(store, matches, competitions);
+        var list = new ListRefereesHandler(store, competitions, new PublicDataCache(TimeProvider.System));
 
         var thirdMain = await list.Handle(new ListRefereesQuery("3a-asturfutbol", OfficialDuty.Main), default);
         var main = Assert.Single(thirdMain.Referees);
@@ -233,7 +280,7 @@ public class RefereeTests
         var unknown = await Assert.ThrowsAsync<NotFoundException>(() => list.Handle(new ListRefereesQuery("juveniles"), default));
         Assert.Equal(ErrorCode.RefereeCategoryNotFound, unknown.Code);
 
-        var categories = await new ListRefereeCategoriesHandler(store, matches, competitions).Handle(new ListRefereeCategoriesQuery(), default);
+        var categories = await new ListRefereeCategoriesHandler(store, competitions, new PublicDataCache(TimeProvider.System)).Handle(new ListRefereeCategoriesQuery(), default);
         Assert.Equal(["2a-asturfutbol", "3a-asturfutbol"], categories.Select(c => c.Key));
         var thirdCategory = categories[1];
         Assert.Equal((1, 1, 2, 1), (thirdCategory.Referees, thirdCategory.Assistants, thirdCategory.Matches, thirdCategory.Ratings));
@@ -301,11 +348,17 @@ public class RefereeTests
         private ICoachStore CoachStore => Stub<ICoachStore>((_, args) => Task.FromResult(Coaches.FirstOrDefault(c => c.Id == (Guid)args![0]!)));
         private ICompetitionStore Competitions => Stub<ICompetitionStore>((_, _) => Task.FromResult<Competition?>(null));
 
-        public Task<MatchOfficialsDto> Rate(ICurrentUser user, int score, string? comment) =>
+        public Task<MatchOfficialsDto> Rate(ICurrentUser user, int score, string? comment, Guid? refereeId = null) =>
             new RateRefereeHandler(
                 user, Licenses, Matches, Teams, ClubStore, SquadStore, CoachStore, Store, Competitions,
                 Stub<IUnitOfWork>((_, _) => Task.FromResult(1)),
-                new FixedClock(Now)).Handle(new RateRefereeCommand(Match.Id, Store.Referees[0].Id, score, comment, Confirmed: true), default);
+                new FixedClock(Now)).Handle(new RateRefereeCommand(Match.Id, refereeId ?? Store.Referees[0].Id, score, comment, Confirmed: true), default);
+
+        public Task<MatchOfficialsDto> NoVote(ICurrentUser user) =>
+            new NoVoteMatchOfficialsHandler(
+                user, Licenses, Matches, Teams, ClubStore, SquadStore, CoachStore, Store, Competitions,
+                Stub<IUnitOfWork>((_, _) => Task.FromResult(1)),
+                new FixedClock(Now)).Handle(new NoVoteMatchOfficialsCommand(Match.Id, Confirmed: true), default);
 
         public Task<MatchOfficialsDto> View(ICurrentUser user) =>
             new GetMatchOfficialsHandler(user, Licenses, Matches, Teams, ClubStore, SquadStore, Store, Competitions, new FixedClock(Now))
@@ -332,6 +385,7 @@ internal sealed class InMemoryRefereeStore : IRefereeStore
     public List<MatchOfficial> Officials { get; } = [];
     public List<MatchOfficialLookup> Lookups { get; } = [];
     public List<RefereeRating> Ratings { get; } = [];
+    public List<Match> Matches { get; } = [];
 
     public Task<Referee?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Referees.FirstOrDefault(r => r.Id == id));
     public Task<IReadOnlyList<Referee>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) =>
@@ -349,6 +403,11 @@ internal sealed class InMemoryRefereeStore : IRefereeStore
         Task.FromResult<IReadOnlyList<MatchOfficial>>(Officials.Where(o => o.RefereeId == refereeId).ToList());
     public Task<IReadOnlyList<MatchOfficial>> GetAllOfficialsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MatchOfficial>>(Officials.ToList());
     public void AddOfficial(MatchOfficial official) => Officials.Add(official);
+    public Task<IReadOnlyList<OfficialAppearanceRow>> GetAllAppearancesAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<OfficialAppearanceRow>>(Officials
+            .Select(o => (Official: o, Match: Matches.FirstOrDefault(m => m.Id == o.MatchId)))
+            .Select(x => new OfficialAppearanceRow(x.Official.MatchId, x.Official.RefereeId, x.Official.Role, x.Match?.SeasonId, x.Match?.KickoffAt))
+            .ToList());
 
     public Task<IReadOnlyList<Guid>> GetMatchesWithOfficialsAsync(IEnumerable<Guid> teamIds, DateTimeOffset since, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<Guid>>(Officials.Select(o => o.MatchId).Distinct().ToList());
@@ -364,6 +423,14 @@ internal sealed class InMemoryRefereeStore : IRefereeStore
     public Task<IReadOnlyList<RefereeRating>> GetRatingsByRefereeAsync(Guid refereeId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<RefereeRating>>(Ratings.Where(r => r.RefereeId == refereeId).ToList());
     public Task<IReadOnlyList<RefereeRating>> GetAllRatingsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<RefereeRating>>(Ratings.ToList());
+    public Task<IReadOnlyList<RatingScoreRow>> GetAllScoresAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<RatingScoreRow>>(Ratings.Where(r => r.Score is not null).Select(r => new RatingScoreRow(r.MatchId, r.RefereeId, r.Score!.Value)).ToList());
+    public Task<IReadOnlyList<RoleScoreTotal>> GetScoreTotalsAsync(IEnumerable<Guid> refereeIds, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<RoleScoreTotal>>(Ratings
+            .Where(r => refereeIds.Contains(r.RefereeId) && r.Score is not null)
+            .GroupBy(r => (r.RefereeId, r.Role))
+            .Select(g => new RoleScoreTotal(g.Key.RefereeId, g.Key.Role, g.Count(), g.Sum(r => r.Score!.Value)))
+            .ToList());
     public void AddRating(RefereeRating rating) => Ratings.Add(rating);
     public Task<RefereeRating?> GetRatingByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Ratings.FirstOrDefault(r => r.Id == id));
     public Task<IReadOnlyList<RefereeRating>> GetCommentedRatingsAsync(int max, CancellationToken cancellationToken = default) =>

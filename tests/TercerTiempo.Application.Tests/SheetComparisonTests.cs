@@ -138,10 +138,61 @@ public class SheetComparisonTests
     [InlineData("Pablo Suárez Suárez", "SUAREZ IGLESIAS, RUBEN")]
     [InlineData("Germán García González", "GARCIA LOPEZ, PEDRO")]
     [InlineData("Manu Fernández", "FERNANDEZ CASTIÑEIRA, IZAN")]
+    [InlineData("Juan Carlos Pérez", "PEREZ GOMEZ, JUAN MANUEL")]
+    [InlineData("Pablo Fernández Flórez", "FLORES RASTRERO, PABLO")]
     public void A_shared_surname_with_a_different_name_is_not_a_match(string player, string line)
     {
         var tokens = SheetMatcher.Tokens(NameNormalizer.Normalize(player));
         Assert.True(SheetMatcher.SurnameScore(tokens, line, null, null) < 0.6);
+    }
+
+    // Sin dorsal que lo confirme: el apodo puede estar en el acta y el segundo apellido, mal en la plantilla publicada.
+    [Theory]
+    [InlineData("Ignacio Puente Gutiérrez", "PUENTE GUTIERREZ, NACHO")]
+    [InlineData("Roberto Bastida González", "BASTIDA CORRALES, ROBERTO")]
+    [InlineData("Alejandro Iglesias Menéndez", "IGLESIAS MENDEZ, ALEJANDRO")]
+    [InlineData("Pablo Flores Rastrillo", "FLORES RASTRERO, PABLO")]
+    public void The_given_name_and_the_first_surname_are_enough_when_only_the_other_surname_differs(string player, string line)
+    {
+        var tokens = SheetMatcher.Tokens(NameNormalizer.Normalize(player));
+        Assert.True(SheetMatcher.SurnameScore(tokens, line, null, null) >= 0.6);
+    }
+
+    [Fact]
+    public void A_roster_with_one_word_per_player_is_matched_when_only_one_free_line_carries_that_word()
+    {
+        SheetMatcher.Candidate Entry(string name) => new(Guid.NewGuid(), NameNormalizer.Normalize(name), null);
+        var guzman = Entry("Guzmán");
+        var surname = Entry("Ogbogbodu");
+        var sameByGivenName = Entry("Desmond");
+        var dani = Entry("Dani");
+        var daniel = Entry("Daniel Frechilla López");
+        var pelayo = Entry("Pelayo");
+        var martin = Entry("Martín");
+
+        var sheet = OfficialMatchSheet.Create(Guid.NewGuid(), "asturfutbol", "1", null, Now);
+        sheet.Apply(new OfficialSheetData(null, "Local", "Visitante", 0, 0,
+            [
+                Line("DIAZ HUERTA, GUZMAN", 1),
+                Line("OGBOGBODU, DESMOND TEGA", 19),
+                Line("FRECHILLA LOPEZ, DANIEL", 23),
+                Line("MARTINEZ RAMIREZ, DANIEL ANTONIO", 16),
+                Line("GONZALEZ ALVAREZ, PELAYO", 3),
+                Line("SECADES DIAZ, PELAYO", 8),
+            ], []), Now);
+
+        var matched = SheetMatcher.Match([guzman, sameByGivenName, surname, dani, daniel, pelayo, martin], sheet.Lines);
+
+        Assert.Equal("DIAZ HUERTA, GUZMAN", matched[guzman.Id].FullName);
+        // El mismo jugador publicado dos veces, por el nombre y por el apellido: la línea es de la ficha del apellido.
+        Assert.Equal("OGBOGBODU, DESMOND TEGA", matched[surname.Id].FullName);
+        Assert.False(matched.ContainsKey(sameByGivenName.Id));
+        Assert.Equal("FRECHILLA LOPEZ, DANIEL", matched[daniel.Id].FullName);
+        // El otro Daniel ya tiene su línea: «Dani» es el que queda.
+        Assert.Equal("MARTINEZ RAMIREZ, DANIEL ANTONIO", matched[dani.Id].FullName);
+        // Dos Pelayos en el acta y una sola ficha: por el nombre no se sabe cuál es. Y «Martín» no es «Martínez».
+        Assert.False(matched.ContainsKey(pelayo.Id));
+        Assert.False(matched.ContainsKey(martin.Id));
     }
 
     [Fact]

@@ -30,7 +30,7 @@ internal static class RefereeEndpoints
             .RequireAuthorization()
             .WithName("ListPendingRefereeRatings")
             .WithSummary("Equipos arbitrales por puntuar")
-            .WithDescription("Partidos de los últimos 30 días de los equipos de la cuenta (club: todos los suyos; técnico: los de sus plantillas) con equipo arbitral al que su equipo aún no ha puesto nota.")
+            .WithDescription("Partidos ya jugados de los últimos 30 días de los equipos de la cuenta (club: todos los suyos; técnico: los de sus plantillas) con algún miembro del equipo arbitral al que su equipo aún no ha contestado: ni nota ni «No votado».")
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
         group.MapGet("/{refereeId:guid}", (Guid refereeId, IRefereesRepository referees, CancellationToken ct) => referees.GetAsync(refereeId, ct))
@@ -54,7 +54,18 @@ internal static class RefereeEndpoints
             .RequireAuthorization()
             .WithName("RateReferee")
             .WithSummary("Puntuar a un miembro del equipo arbitral")
-            .WithDescription("Nota de 0 a 10 con un comentario opcional, en nombre del equipo de la cuenta (su club o su cuerpo técnico vigente, con licencia) en un partido que ya ha jugado. Una por equipo, árbitro y partido, y definitiva: confirmed tiene que ser true y una segunda nota del mismo equipo da 409. Se guarda quién la puso (el club o el técnico, con su función).")
+            .WithDescription("Nota de 0 a 10 con un comentario opcional, en nombre del equipo de la cuenta (su club o su cuerpo técnico vigente, con licencia) en un partido que ya ha jugado. Con noVote: true (y sin score ni comentario) queda «No votado»: el equipo decide no puntuarle, se guarda quién lo decidió y no entra en las medias. Una respuesta por equipo, árbitro y partido, y definitiva: confirmed tiene que ser true y una segunda del mismo equipo da 409. Se guarda quién la puso (el club o el técnico, con su función).")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        matches.MapPost("/no-vote", (Guid matchId, NoVoteMatchRequest request, IRefereesRepository referees, CancellationToken ct) =>
+                referees.NoVoteAsync(matchId, request, ct))
+            .RequireAuthorization()
+            .WithName("NoVoteMatchOfficials")
+            .WithSummary("No votar al equipo arbitral de un partido")
+            .WithDescription("«No votado» para cada miembro del equipo arbitral al que el equipo de la cuenta aún no ha contestado en ese partido ya jugado: deja de estar pendiente, queda quién lo decidió y no cuenta en las medias. Definitivo (confirmed: true); si ya no queda nadie por contestar, 409.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)

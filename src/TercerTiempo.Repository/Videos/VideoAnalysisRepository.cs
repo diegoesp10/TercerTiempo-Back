@@ -8,6 +8,10 @@ public sealed record RequestVideoAnalysisRequest(
     [property: Description("Vídeo que se quiere analizar; sin él, todos los de la plantilla en este partido que se puedan analizar.")]
     Guid? VideoId = null);
 
+public sealed record CancelVideoAnalysisRequest(
+    [property: Description("Vídeo cuyo análisis se cancela; sin él, todo lo que esté en cola o analizándose de la plantilla en este partido.")]
+    Guid? VideoId = null);
+
 public sealed record ApplyVideoAnalysisRequest(
     [property: Description("Un elemento por vídeo que se vuelca: cuál de los dos equipos detectados es el del club y a qué ficha corresponde cada jugador seguido. Con las dos partes del partido, lo de las dos se suma.")]
     IReadOnlyList<ApplyVideoPart> Videos,
@@ -24,6 +28,7 @@ public interface IVideoAnalysisRepository
 {
     Task<MatchVideoAnalysisDto> GetAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
     Task<MatchVideoAnalysisDto> RequestAsync(Guid squadId, Guid matchId, RequestVideoAnalysisRequest? request, CancellationToken cancellationToken = default);
+    Task<MatchVideoAnalysisDto> CancelAsync(Guid squadId, Guid matchId, CancelVideoAnalysisRequest? request, CancellationToken cancellationToken = default);
     Task<ApplyVideoAnalysisResultDto> ApplyAsync(Guid squadId, Guid matchId, ApplyVideoAnalysisRequest request, CancellationToken cancellationToken = default);
     Task<VideoAnalysisCropDto> GetCropAsync(Guid squadId, Guid matchId, int tracklet, Guid? videoId, CancellationToken cancellationToken = default);
 }
@@ -31,6 +36,7 @@ public interface IVideoAnalysisRepository
 internal sealed class VideoAnalysisRepository(
     IQueryHandler<GetVideoAnalysisQuery, MatchVideoAnalysisDto> get,
     ICommandHandler<RequestVideoAnalysisCommand, MatchVideoAnalysisDto> request,
+    ICommandHandler<CancelVideoAnalysisCommand, MatchVideoAnalysisDto> cancel,
     ICommandHandler<ApplyVideoAnalysisCommand, ApplyVideoAnalysisResultDto> apply,
     IQueryHandler<GetVideoAnalysisCropQuery, VideoAnalysisCropDto> crop) : IVideoAnalysisRepository
 {
@@ -39,6 +45,9 @@ internal sealed class VideoAnalysisRepository(
 
     public Task<MatchVideoAnalysisDto> RequestAsync(Guid squadId, Guid matchId, RequestVideoAnalysisRequest? body, CancellationToken cancellationToken = default) =>
         request.Handle(new RequestVideoAnalysisCommand(squadId, matchId, body?.VideoId), cancellationToken);
+
+    public Task<MatchVideoAnalysisDto> CancelAsync(Guid squadId, Guid matchId, CancelVideoAnalysisRequest? body, CancellationToken cancellationToken = default) =>
+        cancel.Handle(new CancelVideoAnalysisCommand(squadId, matchId, body?.VideoId), cancellationToken);
 
     public Task<ApplyVideoAnalysisResultDto> ApplyAsync(Guid squadId, Guid matchId, ApplyVideoAnalysisRequest body, CancellationToken cancellationToken = default) =>
         apply.Handle(body.ToCommand(squadId, matchId), cancellationToken);

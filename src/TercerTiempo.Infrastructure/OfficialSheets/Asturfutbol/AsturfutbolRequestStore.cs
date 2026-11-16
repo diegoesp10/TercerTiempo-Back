@@ -87,7 +87,8 @@ internal sealed record SourceLimits(
 
 internal interface IAsturfutbolRequestStore
 {
-    Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct);
+    // refresh: no se devuelve la copia guardada aunque siga vigente (todo lo demás, límites y tandas, igual).
+    Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct, bool refresh = false);
     Task CompleteAsync(string provider, string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct);
     Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, ProviderPause? pause, CancellationToken ct);
     Task<ProviderPause> RejectAsync(string provider, string key, int? status, string what, DateTimeOffset now, TimeSpan firstPause, TimeSpan maxPause, CancellationToken ct);
@@ -112,7 +113,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
         return cached is null ? null : (cached.Content!, cached.ContentType);
     }
 
-    public async Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct)
+    public async Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct, bool refresh = false)
     {
         using var scope = scopes.CreateRealDataScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -125,7 +126,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
                 .SingleOrDefaultAsync(ct);
             if (state is null) { state = new() { Id = limits.Provider }; db.Add(state); }
             var cached = await db.Set<FederationHttpCache>().SingleOrDefaultAsync(x => x.Key == key, ct);
-            if (!redirect && cached is { StatusCode: 200 or 404 } && cached.ExpiresAt > now)
+            if (!redirect && !refresh && cached is { StatusCode: 200 or 404 } && cached.ExpiresAt > now)
                 return new(Cached: new(cached.Content, cached.ContentType));
             if (!limits.Enabled) return new(RetryAt: now.AddHours(24));
             if (state.PausedUntil > now) return new(RetryAt: state.PausedUntil);

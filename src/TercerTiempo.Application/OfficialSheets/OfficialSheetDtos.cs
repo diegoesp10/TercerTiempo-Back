@@ -17,6 +17,9 @@ public enum OfficialSheetAvailability
 
     // En cola para descargarse de la federación en segundo plano; el frontal vuelve a preguntar en unos segundos.
     Fetching,
+
+    // Alineaciones publicadas, pero el árbitro aún no ha cerrado el acta: sin goles, cambios, tarjetas ni minutos.
+    Provisional,
 }
 
 public sealed record OfficialSheetDto(
@@ -91,6 +94,9 @@ public sealed record SheetComparisonSummaryDto(
 
 internal static class OfficialSheetMapper
 {
+    public const string ProvisionalMessage =
+        "La federación ya ha publicado las alineaciones, pero el árbitro aún no ha cerrado el acta: faltan los goles, los cambios y las tarjetas. Se vuelve a consultar cada pocas horas.";
+
     public static OfficialLineDto ToDto(OfficialSheetLine line) =>
         new(line.Id, line.ShirtNumber, line.FullName, line.Started, line.Played, line.MinuteIn, line.MinuteOut,
             line.MinutesPlayed, line.Goals, line.PenaltyGoals, line.OwnGoals, line.YellowCards, line.RedCard);
@@ -109,11 +115,15 @@ internal static class OfficialSheetMapper
 
     public static OfficialSheetDto ToDto(OfficialMatchSheet sheet, Guid homeTeamId, Guid awayTeamId, OfficialSheetAvailability status, string? message) =>
         new(sheet.MatchId, status, sheet.Provider, sheet.ExternalId, sheet.SourceUrl, sheet.CheckedAt, sheet.FetchedAt, sheet.Referee, message,
-            sheet.IsAvailable ? ToTeamDto(sheet, MatchSide.Home, homeTeamId) : null,
-            sheet.IsAvailable ? ToTeamDto(sheet, MatchSide.Away, awayTeamId) : null,
+            Shows(sheet, status) ? ToTeamDto(sheet, MatchSide.Home, homeTeamId) : null,
+            Shows(sheet, status) ? ToTeamDto(sheet, MatchSide.Away, awayTeamId) : null,
             sheet.Events.OrderBy(e => e.Order)
                 .Select(e => new OfficialEventDto(e.Side, e.Type, e.Minute, e.ExtraMinute, e.PlayerName, e.RelatedPlayerName))
                 .ToList());
+
+    // Las alineaciones de un acta provisional solo se enseñan como tal, nunca dentro de otro estado.
+    private static bool Shows(OfficialMatchSheet sheet, OfficialSheetAvailability status) =>
+        sheet.IsAvailable || (sheet.IsProvisional && status == OfficialSheetAvailability.Provisional);
 
     public static OfficialSheetDto Empty(Guid matchId, OfficialSheetAvailability status, string? provider, string? message) =>
         new(matchId, status, provider, null, null, null, null, null, message, null, null, []);

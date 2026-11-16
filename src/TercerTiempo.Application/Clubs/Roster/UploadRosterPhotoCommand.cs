@@ -55,6 +55,8 @@ internal sealed class UploadRosterPhotoHandler(
         await command.File.Content.CopyToAsync(buffer, cancellationToken);
         if (buffer.Length == 0 || buffer.Length > UploadRosterPhotoValidator.MaxBytes)
             throw new DomainException(ErrorCode.RosterPhotoInvalid);
+        if (!ImageSignature.Matches(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), command.File.ContentType))
+            throw new DomainException(ErrorCode.RosterPhotoFormat);
 
         var image = new CrestImage(buffer.ToArray(), command.File.ContentType.ToLowerInvariant());
         entry.SetPhoto(await photos.SaveAsync(entry.Id, image, cancellationToken));

@@ -46,6 +46,12 @@ public sealed record RespondCallUpCommand(Guid CallUpId, CallUpResponse Response
 
 public sealed record ListMyCallUpsQuery : IQuery<IReadOnlyList<MyCallUpDto>>;
 
+// El jugador abre la convocatoria: el cuerpo técnico pasa a ver el doble check.
+public sealed record MarkCallUpSeenCommand(Guid CallUpId) : ICommand<MyCallUpDto>;
+
+// El cuerpo técnico vuelve a enviar la convocatoria a quien todavía no la ha abierto.
+public sealed record ResendCallUpCommand(Guid SquadId, Guid MatchId) : ICommand<MatchCallUpDto>;
+
 internal sealed class SaveMatchCallUpValidator : AbstractValidator<SaveMatchCallUpCommand>
 {
     public SaveMatchCallUpValidator()
@@ -90,6 +96,24 @@ internal static class CallUps
 
     public static DateOnly DayOf(DateTimeOffset at) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, TrainingClock.Zone).DateTime);
 
+    // Los borradores solo los ve quien los prepara.
+    public static Task<IReadOnlyList<MatchCallUp>> VisibleAsync(Squad squad, bool manager, ICallUpStore callUps, CancellationToken cancellationToken) =>
+        manager ? callUps.GetBySquadAsync(squad.Id, cancellationToken) : callUps.GetPublishedBySquadAsync(squad.Id, cancellationToken);
+
+    public static IReadOnlyList<CallUpSummaryDto> Summaries(IEnumerable<MatchCallUp> list, Squad squad, Guid? viewer)
+    {
+        var players = squad.Players.ToDictionary(p => p.Id);
+        var active = squad.ActivePlayers.Select(p => p.Id).ToHashSet();
+        return list
+            .Select(c =>
+            {
+                var entries = c.Entries.Where(e => active.Contains(e.SquadPlayerId)).Select(e => TrainingMapper.ToDto(e, players.GetValueOrDefault(e.SquadPlayerId))).ToList();
+                var mine = viewer is { } me && c.IsPublished ? entries.FirstOrDefault(e => e.SquadPlayerId == me) : null;
+                return new CallUpSummaryDto(c.Id, c.MatchId, c.Status, c.PublishedAt, TrainingMapper.Counts(entries), mine);
+            })
+            .ToList();
+    }
+
     public static string PlayerKeyPrefix(Guid callUpId, Guid entryId) => $"callup:{callUpId}:{entryId}";
 
     // Avisa a cada jugador con cuenta de lo que le toca: va o no va. Un aviso anterior de la misma convocatoria se da
@@ -100,22 +124,28 @@ internal static class CallUps
         var now = clock.GetUtcNow();
         var fixture = Fixture(match);
         var meet = callUp.MeetAt is { } at ? $" Cita: {When(at)}{(callUp.MeetPlace is null ? "" : $" en {callUp.MeetPlace}")}." : "";
-        foreach (var entry in entries)
+        var list = entries.ToList();
+        var players = list
+            .Select(e => squad.Players.FirstOrDefault(p => p.Id == e.SquadPlayerId)?.PlayerId)
+            .Where(id => id is not null).Select(id => id!.Value).Distinct().ToList();
+        // Los avisos anteriores de esta convocatoria de todos los jugadores, de una vez; luego cada uno resuelve los suyos.
+        var previous = await alerts.GetOpenByKeyPrefixAsync($"callup:{callUp.Id}:", players, [], null, cancellationToken);
+        foreach (var entry in list)
         {
             var player = squad.Players.FirstOrDefault(p => p.Id == entry.SquadPlayerId);
             entry.MarkNotified(now);
             if (player?.PlayerId is not { } playerId) continue;
 
             var prefix = PlayerKeyPrefix(callUp.Id, entry.Id);
-            foreach (var old in await alerts.GetForAsync(null, playerId, null, cancellationToken))
-                if (old.Key.StartsWith(prefix, StringComparison.Ordinal)) old.Resolve(now);
+            foreach (var old in previous.Where(a => a.PlayerId == playerId && a.Key.StartsWith(prefix, StringComparison.Ordinal)))
+                old.Resolve(now);
 
             alerts.Add(entry.Called
-                ? Alert.ForPlayer(playerId, AlertKind.CallUp, $"{prefix}:{now.UtcTicks}",
+                ? Alert.ForPlayer(playerId, AlertKind.MatchCallUp, $"{prefix}:{now.UtcTicks}",
                     $"Vas convocado: {fixture}",
                     $"Entras en la convocatoria del partido del {When(match.KickoffAt)}.{meet} Fírmala desde la app.",
                     "/mis-convocatorias", DayOf(match.KickoffAt), now)
-                : Alert.ForPlayer(playerId, AlertKind.NotCalledUp, $"{prefix}:{now.UtcTicks}",
+                : Alert.ForPlayer(playerId, AlertKind.MatchNotCalledUp, $"{prefix}:{now.UtcTicks}",
                     $"No vas convocado: {fixture}",
                     $"El cuerpo técnico ha publicado la convocatoria del partido del {When(match.KickoffAt)} y esta vez no entras. Date por enterado desde la app.",
                     "/mis-convocatorias", DayOf(match.KickoffAt), now));
@@ -131,22 +161,9 @@ internal sealed class ListSquadCallUpsHandler(ICurrentUser currentUser, ISquadSt
         var squad = await TrainingAccess.SquadForViewerAsync(squads, clubs, currentUser, query.SquadId, clock, cancellationToken);
         var manager = await TrainingAccess.CanEditAsync(squad, currentUser, clock, clubs, cancellationToken);
         var viewer = TrainingAccess.ViewerEntry(squad, currentUser);
-        var players = squad.Players.ToDictionary(p => p.Id);
-        var active = squad.ActivePlayers.Select(p => p.Id).ToHashSet();
+        var list = await CallUps.VisibleAsync(squad, manager, callUps, cancellationToken);
 
-        // Los borradores solo los ve quien los prepara.
-        var list = manager
-            ? await callUps.GetBySquadAsync(squad.Id, cancellationToken)
-            : await callUps.GetPublishedBySquadAsync(squad.Id, cancellationToken);
-
-        return list
-            .Select(c =>
-            {
-                var entries = c.Entries.Where(e => active.Contains(e.SquadPlayerId)).Select(e => TrainingMapper.ToDto(e, players.GetValueOrDefault(e.SquadPlayerId))).ToList();
-                var mine = viewer is { } me && c.IsPublished ? entries.FirstOrDefault(e => e.SquadPlayerId == me) : null;
-                return new CallUpSummaryDto(c.Id, c.MatchId, c.Status, c.PublishedAt, TrainingMapper.Counts(entries), mine);
-            })
-            .ToList();
+        return CallUps.Summaries(list, squad, viewer);
     }
 }
 
@@ -242,6 +259,60 @@ internal sealed class RespondCallUpHandler(
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
         return new MyCallUpDto(callUp.Id, squad.Id, team?.Name ?? "Tu equipo", dto, callUp.MeetAt, callUp.MeetPlace, callUp.Notes, callUp.PublishedAt ?? now,
             match.KickoffAt <= now, TrainingMapper.ToDto(line, entry));
+    }
+}
+
+internal sealed class MarkCallUpSeenHandler(
+    ICurrentUser currentUser, IPlayerStore players, ISquadStore squads, IMatchStore matches, ITeamStore teams, ICallUpStore callUps,
+    IUnitOfWork unitOfWork, TimeProvider clock)
+    : ICommandHandler<MarkCallUpSeenCommand, MyCallUpDto>
+{
+    public async Task<MyCallUpDto> Handle(MarkCallUpSeenCommand command, CancellationToken cancellationToken)
+    {
+        var player = await Resolvers.CurrentPlayerAsync(currentUser, players, cancellationToken);
+        var callUp = await callUps.GetByIdAsync(command.CallUpId, cancellationToken)
+            ?? throw new NotFoundException(ErrorCode.CallUpNotFound, command.CallUpId);
+        var squad = await squads.GetByIdAsync(callUp.SquadId, cancellationToken)
+            ?? throw new NotFoundException(ErrorCode.SquadNotFound, callUp.SquadId);
+        var entry = squad.PlayerEntryOf(player.Id)
+            ?? throw new ForbiddenException(ErrorCode.SquadPrivate);
+        var match = await matches.GetByIdAsync(callUp.MatchId, cancellationToken)
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, callUp.MatchId);
+
+        var now = clock.GetUtcNow();
+        var line = callUp.MarkSeen(entry.Id, now);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var dto = await CallUps.MatchDtoAsync(match, teams, cancellationToken);
+        var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
+        return new MyCallUpDto(callUp.Id, squad.Id, team?.Name ?? "Tu equipo", dto, callUp.MeetAt, callUp.MeetPlace, callUp.Notes, callUp.PublishedAt ?? now,
+            match.KickoffAt <= now, TrainingMapper.ToDto(line, entry));
+    }
+}
+
+internal sealed class ResendCallUpHandler(
+    ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IMatchStore matches, ITeamStore teams, ICallUpStore callUps,
+    IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
+    : ICommandHandler<ResendCallUpCommand, MatchCallUpDto>
+{
+    public async Task<MatchCallUpDto> Handle(ResendCallUpCommand command, CancellationToken cancellationToken)
+    {
+        var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
+        var match = await CallUps.MatchOfSquadAsync(squad, command.MatchId, matches, cancellationToken);
+        var now = clock.GetUtcNow();
+        var callUp = await callUps.GetByMatchAsync(squad.Id, match.Id, cancellationToken);
+        if (callUp is not { IsPublished: true })
+            throw new DomainException(ErrorCode.CallUpNotPublished);
+        if (match.KickoffAt <= now)
+            throw new DomainException(ErrorCode.CallUpMatchStarted);
+
+        // Solo a quien tiene cuenta: al que no la tiene no hay a quién enviársela.
+        var linked = squad.ActivePlayers.Where(p => p.IsLinked).Select(p => p.Id).ToHashSet();
+        var dto = await CallUps.MatchDtoAsync(match, teams, cancellationToken);
+        await CallUps.NotifyPlayersAsync(callUp, squad, dto, callUp.UnseenEntries().Where(e => linked.Contains(e.SquadPlayerId)).ToList(), alerts, clock, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return TrainingMapper.ToDto(callUp, squad, dto, true, TrainingAccess.ViewerEntry(squad, currentUser), now);
     }
 }
 

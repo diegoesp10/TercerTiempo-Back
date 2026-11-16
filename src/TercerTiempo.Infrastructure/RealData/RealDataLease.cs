@@ -14,6 +14,9 @@ internal interface IRealDataLease
     bool IsHeld { get; }
 
     Task WhenHeldAsync(CancellationToken cancellationToken);
+
+    // Se cancela al perder el bloqueo: una descarga en marcha se para, porque otro entorno puede cogerlo y empezar la suya.
+    CancellationToken HeldToken => CancellationToken.None;
 }
 
 // Solo un proceso descarga a la vez los datos reales: el que tiene el bloqueo de la base compartida, un sp_getapplock de
@@ -32,8 +35,14 @@ internal sealed class RealDataLease(
 
     private readonly Lock _lock = new();
     private TaskCompletionSource _held = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private CancellationTokenSource _heldCts = new();
 
     public bool CanIngest => options.Value.Ingest;
+
+    public CancellationToken HeldToken
+    {
+        get { lock (_lock) return _heldCts.Token; }
+    }
 
     public bool IsHeld
     {
@@ -127,8 +136,16 @@ internal sealed class RealDataLease(
     {
         lock (_lock)
         {
-            if (held) _held.TrySetResult();
-            else if (_held.Task.IsCompleted) _held = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (held)
+            {
+                if (_heldCts.IsCancellationRequested) _heldCts = new CancellationTokenSource();
+                _held.TrySetResult();
+            }
+            else if (_held.Task.IsCompleted)
+            {
+                _held = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                _heldCts.Cancel();
+            }
         }
     }
 }

@@ -32,8 +32,8 @@ public class RealDataCopierTests(RealDataSqlFixture fixture) : IClassFixture<Rea
         var away = Team.Create("Real Titánico", "Titánico", ExternalRef.Create("fa", "t2"));
         away.SetCrest("titanico.png");
         var match = Match.Schedule(season.Id, 8, home.Id, away.Id, Now.AddDays(-4), "Vallobín", ExternalRef.Create("fa", "m1"));
-        var edited = RosterEntry.Create(home.Id, season.Id, "Pepe Pérez", null, 7, ExternalRef.Create("fa", "p1"), Now);
-        var hidden = RosterEntry.Create(home.Id, season.Id, "Juan López", null, 8, ExternalRef.Create("fa", "p2"), Now);
+        var edited = RosterEntry.Create(home.Id, season.Id, "Pepe Pérez", null, ExternalRef.Create("fa", "p1"), Now);
+        var hidden = RosterEntry.Create(home.Id, season.Id, "Juan López", null, ExternalRef.Create("fa", "p2"), Now);
         var standing = Standing.Create(season.Id, home.Id, new StandingLine(1, 7, 5, 1, 1, 15, 5, 16), Now);
         var referee = Referee.Create("Árbitro Ejemplo", null, Now);
         var official = MatchOfficial.Assign(match.Id, referee.Id, OfficialRole.Referee, "acta", Now);
@@ -56,9 +56,9 @@ public class RealDataCopierTests(RealDataSqlFixture fixture) : IClassFixture<Rea
         {
             (await db.Set<Team>().SingleAsync(t => t.Id == home.Id)).SetCrest("vallobin-club.png", fromClub: true);
             (await db.Set<Team>().SingleAsync(t => t.Id == home.Id)).SetPitch(98.5m, 62m);
-            (await db.Set<RosterEntry>().SingleAsync(r => r.Id == edited.Id)).UpdateByClub("José Pérez", null, 10, Now);
+            (await db.Set<RosterEntry>().SingleAsync(r => r.Id == edited.Id)).UpdateByClub("José Pérez", null, Now);
             (await db.Set<RosterEntry>().SingleAsync(r => r.Id == hidden.Id)).Hide();
-            db.Add(RosterEntry.CreateByClub(home.Id, season.Id, "Fichado por el club", null, 22, Now));
+            db.Add(RosterEntry.CreateByClub(home.Id, season.Id, "Fichado por el club", null, Now));
             var club = Club.Register(Guid.NewGuid(), "CD Vallobín", Now);
             db.Add(club);
             db.Add(RefereeRating.Rate(official, home.Id, 7, null, new RefereeRater(club.Id, null, null, "CD Vallobín"), Now));
@@ -72,8 +72,8 @@ public class RealDataCopierTests(RealDataSqlFixture fixture) : IClassFixture<Rea
             var team = await real.Set<Team>().SingleAsync(t => t.Id == home.Id);
             team.UpdateDetails("CD Vallobín Oviedo", "Vallobín");
             team.SetCrest("vallobin-web.png");
-            (await real.Set<RosterEntry>().SingleAsync(r => r.Id == edited.Id)).Update("Pepe Pérez García", null, 7, Now);
-            (await real.Set<RosterEntry>().SingleAsync(r => r.Id == hidden.Id)).Update("Juan López Díaz", null, 8, Now);
+            (await real.Set<RosterEntry>().SingleAsync(r => r.Id == edited.Id)).Update("Pepe Pérez García", null, Now);
+            (await real.Set<RosterEntry>().SingleAsync(r => r.Id == hidden.Id)).Update("Juan López Díaz", null, Now);
             real.Remove(await real.Set<Standing>().SingleAsync());
             real.Remove(await real.Set<MatchOfficial>().SingleAsync());
             real.Remove(await real.Set<Referee>().SingleAsync());

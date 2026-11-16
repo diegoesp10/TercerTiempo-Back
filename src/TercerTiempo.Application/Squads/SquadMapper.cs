@@ -36,6 +36,28 @@ internal static class SquadMapper
         return ToSummary(squad, team, competition, season, coachId, SquadAccess.Today(clock));
     }
 
+    // Como ToSummaryAsync para varias plantillas: equipos y ligas en dos consultas en lugar de dos por plantilla.
+    public static async Task<IReadOnlyList<SquadSummaryDto>> ToSummariesAsync(
+        IReadOnlyList<Squad> squads, Guid? coachId, TimeProvider clock, ITeamStore teams, ICompetitionStore competitions, CancellationToken cancellationToken)
+    {
+        if (squads.Count == 0) return [];
+        var teamMap = (await teams.GetByIdsAsync(squads.Select(s => s.TeamId), cancellationToken)).ToDictionary(t => t.Id);
+        var bySeason = (await competitions.GetBySeasonIdsAsync(squads.Select(s => s.SeasonId), cancellationToken))
+            .SelectMany(c => c.Seasons.Select(season => (Competition: c, Season: season)))
+            .ToDictionary(x => x.Season.Id);
+        var today = SquadAccess.Today(clock);
+
+        return squads
+            .Select(squad =>
+            {
+                var team = teamMap.GetValueOrDefault(squad.TeamId) ?? throw new NotFoundException(ErrorCode.TeamNotFound, squad.TeamId);
+                if (!bySeason.TryGetValue(squad.SeasonId, out var found))
+                    throw new NotFoundException(ErrorCode.CompetitionNotFound, squad.SeasonId);
+                return ToSummary(squad, team, found.Competition, found.Season, coachId, today);
+            })
+            .ToList();
+    }
+
     public static SquadPlayerDto ToPlayerDto(SquadPlayer player, IReadOnlyDictionary<Guid, Player>? linkedPlayers, IReadOnlyDictionary<Guid, InjuryDto>? injuries = null) =>
         new(player.Id, player.FullName, player.Position, player.ShirtNumber,
             player.RosterEntryId is not null,
@@ -92,9 +114,14 @@ internal static class SquadMapper
             .ThenBy(s => s.JoinedAt)
             .ToList();
 
-        var activeInjuries = await SquadAccess.IsInsiderAsync(squad, currentUser, clock, clubs, cancellationToken)
-            ? InjuryMapper.ActiveByPlayer(await injuries.GetBySquadAsync(squad.Id, cancellationToken), squad, today)
-            : null;
+        IReadOnlyDictionary<Guid, InjuryDto>? activeInjuries = null;
+        if (await SquadAccess.IsInsiderAsync(squad, currentUser, clock, clubs, cancellationToken))
+        {
+            var visible = await InjuryAccess.VisibleSquadPlayersAsync(squad, currentUser, clock, clubs, cancellationToken);
+            activeInjuries = InjuryMapper.ActiveByPlayer(await injuries.GetBySquadAsync(squad.Id, cancellationToken), squad, today)
+                .Where(pair => visible(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+        }
 
         var photos = await PhotoLinksAsync(squad, teams, cancellationToken);
         var squadPlayers = Ordered(squad.ActivePlayers)

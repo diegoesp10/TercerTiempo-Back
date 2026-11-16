@@ -132,6 +132,67 @@ public class VideoAnalysisTests
     }
 
     [Fact]
+    public void The_running_analysis_keeps_a_lease_that_expires_without_heartbeat()
+    {
+        var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);
+        analysis.Start(TestData.Now, "EQUIPO-GPU:4242");
+        Assert.Equal(("EQUIPO-GPU:4242", TestData.Now), (analysis.WorkerId, analysis.HeartbeatAt));
+
+        analysis.Beat(TestData.Now.AddMinutes(8));
+        Assert.False(analysis.LeaseExpired(TestData.Now.AddMinutes(15), TimeSpan.FromMinutes(10)));
+        Assert.True(analysis.LeaseExpired(TestData.Now.AddMinutes(19), TimeSpan.FromMinutes(10)));
+
+        analysis.Complete(Outcome(), TestData.Now.AddMinutes(20));
+        Assert.False(analysis.LeaseExpired(TestData.Now.AddDays(1), TimeSpan.FromMinutes(10)));
+        Assert.Equal(ErrorCode.VideoAnalysisNotRunning, Assert.Throws<DomainException>(() => analysis.Beat(TestData.Now)).Code);
+    }
+
+    [Fact]
+    public void A_dead_analyzer_counts_as_an_attempt_and_a_passing_failure_goes_back_to_the_queue()
+    {
+        var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);
+        analysis.Start(TestData.Now, "A:1");
+
+        analysis.Recover(maxAttempts: 2, TestData.Now);
+        Assert.Equal((VideoAnalysisStatus.Pending, 1, null, null), (analysis.Status, analysis.Attempts, analysis.WorkerId, analysis.HeartbeatAt));
+
+        analysis.Start(TestData.Now, "B:2");
+        analysis.RetryLater("Se cortó la base");
+        Assert.Equal((VideoAnalysisStatus.Pending, 2, "Se cortó la base"), (analysis.Status, analysis.Attempts, analysis.Error));
+
+        analysis.Start(TestData.Now, "B:2");
+        analysis.Recover(maxAttempts: 2, TestData.Now);
+        Assert.Equal(VideoAnalysisStatus.Failed, analysis.Status);
+        Assert.Contains("ya no quedan reintentos", analysis.Error);
+    }
+
+    [Fact]
+    public void Only_what_is_queued_or_running_can_be_cancelled_and_then_asked_again()
+    {
+        var video = ReadyVideo();
+        var analysis = MatchVideoAnalysis.Queue(video, TestData.Now);
+        analysis.Cancel(TestData.Now);
+        Assert.Equal((VideoAnalysisStatus.Cancelled, false), (analysis.Status, analysis.IsActive));
+        Assert.Equal(ErrorCode.VideoAnalysisNotActive, Assert.Throws<DomainException>(() => analysis.Cancel(TestData.Now)).Code);
+
+        analysis.Restart(video, TestData.Now.AddMinutes(1));
+        analysis.Start(TestData.Now.AddMinutes(1), "A:1");
+        analysis.Cancel(TestData.Now.AddMinutes(2));
+        Assert.Equal((VideoAnalysisStatus.Cancelled, null, null), (analysis.Status, analysis.WorkerId, analysis.HeartbeatAt));
+    }
+
+    [Fact]
+    public void A_file_that_could_not_be_read_whole_lowers_the_quality()
+    {
+        var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);
+        analysis.Start(TestData.Now);
+        analysis.Complete(Outcome() with { ReadFramesPct = 90m }, TestData.Now);
+
+        Assert.Equal(90m, analysis.ReadFramesPct);
+        Assert.True(analysis.LowQuality);
+    }
+
+    [Fact]
     public void Only_a_ready_proposal_is_applied_and_the_team_is_one_of_the_two_detected()
     {
         var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);

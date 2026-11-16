@@ -135,6 +135,8 @@ public sealed record RefereeRater(Guid? ClubId, Guid? CoachId, Guid? UserId, str
 // Nota de un equipo a un miembro del equipo arbitral en un partido que ha jugado: de 0 a 10, con un comentario opcional
 // que la explique. La pone el club del equipo o su cuerpo técnico vigente; una por equipo, árbitro y partido, y es
 // definitiva: no se cambia ni se borra. Es pública, con quién la puso, para que se vea el porqué de cada nota.
+// El equipo también puede no votar: Score queda en null («No votado»), sin comentario, pero con quién lo decidió. Cuenta
+// como contestado (deja de estar pendiente) y no entra en las medias.
 public sealed class RefereeRating : AggregateRoot
 {
     public const int MaxScore = 10;
@@ -145,7 +147,7 @@ public sealed class RefereeRating : AggregateRoot
     public Guid RefereeId { get; private set; }
     public OfficialRole Role { get; private set; }
     public Guid TeamId { get; private set; }
-    public int Score { get; private set; }
+    public int? Score { get; private set; }
     public string? Comment { get; private set; }
     public Guid? RatedByClubId { get; private set; }
     public Guid? RatedByCoachId { get; private set; }
@@ -159,14 +161,16 @@ public sealed class RefereeRating : AggregateRoot
     public DateTimeOffset? CommentHiddenAt { get; private set; }
     public Guid? CommentHiddenByUserId { get; private set; }
 
+    public bool NoVote => Score is null;
     public bool CommentHidden => CommentHiddenAt is not null;
     public string? PublicComment => CommentHidden ? null : Comment;
 
     private RefereeRating() { }
 
-    public static RefereeRating Rate(MatchOfficial official, Guid teamId, int score, string? comment, RefereeRater rater, DateTimeOffset now)
+    public static RefereeRating Rate(MatchOfficial official, Guid teamId, int? score, string? comment, RefereeRater rater, DateTimeOffset now)
     {
         if (score is < 0 or > MaxScore) throw new DomainException(ErrorCode.RefereeScoreRange, MaxScore);
+        if (score is null && !string.IsNullOrWhiteSpace(comment)) throw new DomainException(ErrorCode.RefereeNoVoteComment);
         if (rater.ClubId is null == rater.CoachId is null) throw new DomainException(ErrorCode.RefereeRaterRequired);
 
         return new RefereeRating
@@ -205,6 +209,14 @@ public sealed class RefereeRating : AggregateRoot
 // Partido y código con el que pedir su equipo arbitral a una web (el del acta o el del proveedor de datos).
 public sealed record OfficialsSource(Guid MatchId, string ExternalId);
 
+// Lo justo de cada designación para las cifras por categoría: la temporada y la fecha salen de su partido (null si ya no está).
+public sealed record OfficialAppearanceRow(Guid MatchId, Guid RefereeId, OfficialRole Role, Guid? SeasonId, DateTimeOffset? KickoffAt);
+
+public sealed record RatingScoreRow(Guid MatchId, Guid RefereeId, int Score);
+
+// Notas (solo las puntuadas) de un árbitro en una función: cuántas y su suma.
+public sealed record RoleScoreTotal(Guid RefereeId, OfficialRole Role, int Count, int Sum);
+
 public interface IRefereeStore
 {
     Task<Referee?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
@@ -217,6 +229,7 @@ public interface IRefereeStore
     Task<IReadOnlyList<MatchOfficial>> GetOfficialsByMatchesAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MatchOfficial>> GetOfficialsByRefereeAsync(Guid refereeId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MatchOfficial>> GetAllOfficialsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OfficialAppearanceRow>> GetAllAppearancesAsync(CancellationToken cancellationToken = default);
     void AddOfficial(MatchOfficial official);
 
     // Partidos de esos equipos con equipo arbitral desde esa fecha (para pedir sus notas).
@@ -234,6 +247,8 @@ public interface IRefereeStore
 
     Task<IReadOnlyList<RefereeRating>> GetRatingsByMatchesAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RefereeRating>> GetRatingsByRefereeAsync(Guid refereeId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RatingScoreRow>> GetAllScoresAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RoleScoreTotal>> GetScoreTotalsAsync(IEnumerable<Guid> refereeIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RefereeRating>> GetAllRatingsAsync(CancellationToken cancellationToken = default);
     Task<RefereeRating?> GetRatingByIdAsync(Guid id, CancellationToken cancellationToken = default);
     // Las notas con comentario, de la más reciente a la más antigua (para la moderación).

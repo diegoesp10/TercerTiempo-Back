@@ -114,7 +114,7 @@ internal static class MediaEndpoints
             .RequireAuthorization()
             .WithName("IssueVideoDownloadTicket")
             .WithSummary("Ticket de descarga")
-            .WithDescription("Solo el club propietario, el cuerpo técnico vigente de la plantilla y quien tenga un pase del partido con descarga. Devuelve un ticket para GET /media/videos/{videoId}/download?ticket=...")
+            .WithDescription("Solo el club propietario, el cuerpo técnico vigente de la plantilla y quien tenga un pase del partido con descarga. Devuelve un ticket para GET /media/videos/{videoId}/download?ticket=..., válido Videos:DownloadTicketMinutes minutos.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 

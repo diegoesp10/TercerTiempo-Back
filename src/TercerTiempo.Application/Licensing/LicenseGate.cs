@@ -71,7 +71,7 @@ internal sealed class LicenseGate(
 
         if (user.CoachId is { } coachId)
         {
-            foreach (var squad in await squads.GetByCoachAsync(coachId, today, cancellationToken))
+            foreach (var squad in await squads.GetRefsByCoachAsync(coachId, today, cancellationToken))
                 if (await StatusForTeamAsync(squad.TeamId, cancellationToken) != LicenseStatus.Expired) return true;
             return false;
         }

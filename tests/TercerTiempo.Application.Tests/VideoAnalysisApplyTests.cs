@@ -45,6 +45,42 @@ public class VideoAnalysisApplyTests
     }
 
     [Fact]
+    public async Task The_staff_is_told_when_no_analyzer_is_running()
+    {
+        var f = new Fixture();
+        Assert.False((await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default)).AnalyzerOnline);
+
+        f.Heartbeats.LastSeen = DateTimeOffset.UtcNow.AddSeconds(-40);
+        var online = await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default);
+        Assert.True(online.AnalyzerOnline);
+        Assert.Equal(f.Heartbeats.LastSeen, online.AnalyzerSeenAt);
+
+        // Tres minutos sin latido: el analizador se paró (o se colgó el equipo).
+        f.Heartbeats.LastSeen = DateTimeOffset.UtcNow.AddMinutes(-3);
+        Assert.False((await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default)).AnalyzerOnline);
+    }
+
+    [Fact]
+    public async Task The_staff_cancels_what_is_queued_and_only_what_is_queued_or_running()
+    {
+        var f = new Fixture();
+        var notActive = await Assert.ThrowsAsync<ConflictException>(() => f.Cancel(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id, null), default));
+        Assert.Equal(ErrorCode.VideoAnalysisNotActive, notActive.Code);
+
+        await f.Request(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id, f.Video.Id), default);
+        Assert.Equal(ErrorCode.SquadManagersOnly, (await Assert.ThrowsAsync<ForbiddenException>(() => f.Cancel(new Admin(Guid.NewGuid())).Handle(new(f.Squad.Id, f.Played.Id, null), default))).Code);
+
+        var cancelled = await f.Cancel(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id, f.Video.Id), default);
+
+        Assert.Equal(VideoAnalysisState.Cancelled, Assert.Single(cancelled.Videos).State);
+        Assert.Equal(VideoAnalysisStatus.Cancelled, f.Analysis.Status);
+        // Se puede volver a pedir.
+        var again = await f.Request(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id, f.Video.Id), default);
+        Assert.Equal(VideoAnalysisState.Pending, Assert.Single(again.Videos).State);
+        await Assert.ThrowsAsync<NotFoundException>(() => f.Cancel(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id, Guid.NewGuid()), default));
+    }
+
+    [Fact]
     public async Task A_video_still_being_compressed_waits_and_no_video_means_an_empty_list()
     {
         var f = new Fixture();
@@ -246,6 +282,7 @@ public class VideoAnalysisApplyTests
         public FakeVideoStore Videos { get; } = new();
         public FakeAnalysisStore Analyses { get; } = new();
         public FakeAnalysisSignal Signal { get; } = new();
+        public FakeAnalyzerHeartbeats Heartbeats { get; } = new();
         public List<PlayerMatchPerformance> Performances { get; } = [];
         public List<TeamMatchStats> TeamStats { get; } = [];
         public User ClubUser => new(ClubId: Club.Id, UserId: Club.UserId);
@@ -328,13 +365,15 @@ public class VideoAnalysisApplyTests
         private static object? Run(Action action) { action(); return null; }
 
         private VideoAnalysisReader Reader(ICurrentUser user) =>
-            new(user, SquadStore, Clubs, Matches, Videos, Analyses, Options.Create(new VideoAnalysisOptions { Enabled = _enabled }), TimeProvider.System);
+            new(user, SquadStore, Clubs, Matches, Videos, Analyses, Heartbeats, Options.Create(new VideoAnalysisOptions { Enabled = _enabled }), TimeProvider.System);
 
         public GetVideoAnalysisHandler Get(ICurrentUser user) => new(Reader(user));
 
         public RequestVideoAnalysisHandler Request(ICurrentUser user) => new(Reader(user), Analyses, Signal, Unit, TimeProvider.System);
 
         public GetVideoAnalysisCropHandler Crop(ICurrentUser user) => new(Reader(user), Analyses);
+
+        public CancelVideoAnalysisHandler Cancel(ICurrentUser user) => new(Reader(user), Unit, TimeProvider.System);
 
         public ApplyVideoAnalysisHandler Apply(ICurrentUser user) =>
             new(Reader(user), user, Coaches, Clubs, Teams, Competitions, Players, PerformanceStore, TeamStatsStore,

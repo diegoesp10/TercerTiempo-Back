@@ -107,7 +107,12 @@ internal sealed class ListTrialPlayersHandler(ICurrentUser currentUser, ISquadSt
     public async Task<IReadOnlyList<TrialPlayerDto>> Handle(ListTrialPlayersQuery query, CancellationToken cancellationToken)
     {
         var squad = await TrainingAccess.SquadForViewerAsync(squads, clubs, currentUser, query.SquadId, clock, cancellationToken);
-        return await TrialPlayers.ListAsync(squad, trials, trainings, cancellationToken);
+        var list = await TrialPlayers.ListAsync(squad, trials, trainings, cancellationToken);
+
+        // Las notas del cuerpo técnico sobre quien está a prueba no son para los jugadores de la plantilla.
+        return currentUser.IsAdmin || await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken)
+            ? list
+            : list.Select(t => t with { Notes = null }).ToList();
     }
 }
 

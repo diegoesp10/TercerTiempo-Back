@@ -21,6 +21,7 @@ internal sealed class GetLeagueTableHandler(
     ITeamStore teams,
     ISeasonZoneStore zones,
     Seasons.ISeasonContext seasons,
+    PublicDataCache cache,
     TimeProvider clock) : IQueryHandler<GetLeagueTableQuery, LeagueTableDto>
 {
     public async Task<LeagueTableDto> Handle(GetLeagueTableQuery query, CancellationToken cancellationToken)
@@ -29,6 +30,11 @@ internal sealed class GetLeagueTableHandler(
         if (season is null)
             return new LeagueTableDto(null, [], "Todavía no hay temporada en curso: la clasificación aparecerá cuando empiecen los partidos.");
 
+        return await cache.GetAsync($"league-table:{season.Id}", ct => TableAsync(competition, season, ct), cancellationToken);
+    }
+
+    private async Task<LeagueTableDto> TableAsync(Competition competition, Season season, CancellationToken cancellationToken)
+    {
         var table = await standings.GetBySeasonAsync(season.Id, cancellationToken);
         if (table.Count == 0)
             return new LeagueTableDto(SeasonDto.From(competition, season), [], "Todavía no hay partidos jugados esta temporada: la clasificación aparecerá con la primera jornada.");
@@ -54,15 +60,15 @@ internal sealed class GetLeagueTableHandler(
             return (competition, Resolvers.SeasonFor(competition, await seasons.SelectedAsync(cancellationToken)));
         }
 
-        var squad = currentUser.PlayerId is { } playerId
-            ? await squads.GetByPlayerAsync(playerId, cancellationToken)
+        var seasonId = currentUser.PlayerId is { } playerId
+            ? (await squads.GetByPlayerAsync(playerId, cancellationToken))?.SeasonId
             : currentUser.CoachId is { } coachId
-                ? (await squads.GetByCoachAsync(coachId, SquadAccess.Today(clock), cancellationToken)).FirstOrDefault()
+                ? (await squads.GetRefsByCoachAsync(coachId, SquadAccess.Today(clock), cancellationToken)).FirstOrDefault()?.SeasonId
                 : null;
 
-        if (squad is null)
+        if (seasonId is null)
             throw new ConflictException(ErrorCode.LeagueCompetitionRequired);
 
-        return await Resolvers.SeasonOfSquadAsync(competitions, squad, cancellationToken);
+        return await Resolvers.SeasonByIdAsync(competitions, seasonId.Value, cancellationToken);
     }
 }

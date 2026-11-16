@@ -17,7 +17,7 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -245,9 +245,9 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AwayTeamId");
+                    b.HasIndex("AwayTeamId", "KickoffAt");
 
-                    b.HasIndex("HomeTeamId");
+                    b.HasIndex("HomeTeamId", "KickoffAt");
 
                     b.HasIndex("SeasonId", "AwayTeamId");
 
@@ -256,6 +256,8 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.HasIndex("SeasonId", "KickoffAt");
 
                     b.HasIndex("SeasonId", "Matchday");
+
+                    b.HasIndex("Status", "KickoffAt");
 
                     b.ToTable("Matches", (string)null);
                 });
@@ -317,6 +319,8 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
 
                     b.HasIndex("MatchId")
                         .IsUnique();
+
+                    b.HasIndex("Provider", "Status");
 
                     b.ToTable("OfficialSheets", (string)null);
                 });
@@ -585,9 +589,6 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
 
                     b.Property<Guid>("SeasonId")
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<int?>("ShirtNumber")
-                        .HasColumnType("int");
 
                     b.Property<Guid>("TeamId")
                         .HasColumnType("uniqueidentifier");

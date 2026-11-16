@@ -32,6 +32,15 @@ public enum AttendanceStatus
     Missed = 4,
 }
 
+// Lo que hay en la agenda de una plantilla. Son cosas distintas: al entrenamiento se cita a toda la plantilla y el
+// jugador solo avisa si falta (TrainingSession y su asistencia); al partido va quien convoca el cuerpo técnico y el
+// jugador firma la convocatoria (MatchCallUp).
+public enum SquadEventKind
+{
+    Training = 1,
+    Match = 2,
+}
+
 public enum CallUpStatus
 {
     Draft = 1,
@@ -57,6 +66,7 @@ public static class TrainingCatalog
     public const int MaxDurationMinutes = 300;
     public const int MaxItems = 40;
     public const int MaxSeriesSessions = 60;
+    public const int MaxAttendanceEntries = 200;
 
     public static readonly IReadOnlyList<TrainingKindInfo> Kinds =
     [

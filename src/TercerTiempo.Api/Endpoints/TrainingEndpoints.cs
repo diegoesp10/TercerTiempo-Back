@@ -53,14 +53,15 @@ internal static class TrainingEndpoints
         group.MapGet("/{squadId:guid}/trainings", (Guid squadId, DateOnly from, DateOnly to, ITrainingsRepository trainings, CancellationToken ct) => trainings.ListTrainingsAsync(squadId, from, to, ct))
             .WithName("ListTrainings")
             .WithSummary("Entrenamientos entre dos fechas (ambas incluidas)")
-            .WithDescription("Para el calendario: cada sesión con su tipo, hora, duración, cuántos ejercicios tiene y el recuento de asistencia. Un jugador vinculado recibe además su propia línea (mine).")
+            .WithDescription("Para el calendario: cada sesión con su tipo, hora, duración, cuántos ejercicios tiene y el recuento de asistencia. Un jugador vinculado recibe además su propia línea (mine). Como mucho 120 días por consulta (422 si se pasa).")
             .ProducesProblem(StatusCodes.Status403Forbidden)
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/{squadId:guid}/trainings", (Guid squadId, TrainingRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.PlanTrainingAsync(squadId, request, ct))
             .WithName("PlanTraining")
             .WithSummary("Preparar un entrenamiento (o una serie semanal)")
-            .WithDescription("Club propietario o cuerpo técnico vigente. Tipo, fecha y hora, duración (15-300 min), lugar, notas y ejercicios. Con repeatWeekdays y repeatUntil se crea una sesión por cada día elegido hasta esa fecha (máximo 60), todas con los mismos ejercicios y unidas por seriesId. Toda la plantilla queda como esperada en cada sesión.")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Tipo, fecha y hora, duración (15-300 min), lugar, notas y ejercicios. Con repeatWeekdays y repeatUntil se crea una sesión por cada día elegido hasta esa fecha (máximo 60), todas con los mismos ejercicios y unidas por seriesId. Toda la plantilla queda como esperada en cada sesión y cada jugador con cuenta recibe una citación (TrainingCall) en su campanita: una sola por toda la serie.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
@@ -74,7 +75,7 @@ internal static class TrainingEndpoints
         group.MapPut("/{squadId:guid}/trainings/{sessionId:guid}", (Guid squadId, Guid sessionId, TrainingRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.UpdateTrainingAsync(squadId, sessionId, request, ct))
             .WithName("UpdateTraining")
             .WithSummary("Cambiar tipo, fecha, duración, lugar o notas de un entrenamiento")
-            .WithDescription("Solo esa sesión (la repetición no se cambia aquí). Los ejercicios van en PUT …/items.")
+            .WithDescription("Solo esa sesión (la repetición no se cambia aquí). Los ejercicios van en PUT …/items. Si cambia el día, la hora o el lugar de una sesión que aún no ha empezado, se avisa a los jugadores con cuenta (TrainingCall).")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
@@ -98,7 +99,7 @@ internal static class TrainingEndpoints
         group.MapDelete("/{squadId:guid}/trainings/{sessionId:guid}", (Guid squadId, Guid sessionId, bool? series, ITrainingsRepository trainings, CancellationToken ct) => trainings.DeleteTrainingAsync(squadId, sessionId, series ?? false, ct))
             .WithName("DeleteTraining")
             .WithSummary("Borrar un entrenamiento")
-            .WithDescription("Con ?series=true se borran también las sesiones posteriores de la misma serie semanal.")
+            .WithDescription("Con ?series=true se borran también las sesiones posteriores de la misma serie semanal. Si la sesión aún no ha empezado, se avisa a los jugadores con cuenta de que se anula (TrainingCall).")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
@@ -159,6 +160,14 @@ internal static class TrainingEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        group.MapGet("/{squadId:guid}/agenda", (Guid squadId, DateOnly from, DateOnly to, ITrainingsRepository trainings, CancellationToken ct) => trainings.AgendaAsync(squadId, from, to, ct))
+            .WithName("GetSquadAgenda")
+            .WithSummary("Agenda de la plantilla entre dos fechas (ambas incluidas): entrenamientos y partidos")
+            .WithDescription("Para el calendario. Cada elemento dice su tipo: Training (citación a un entrenamiento, con el resumen de la sesión) o Match (partido, con el estado de su convocatoria). done indica si ya se ha realizado. Los partidos cancelados no salen; los borradores de convocatoria solo los ve quien los prepara. Como mucho 120 días por consulta (422 si se pasa).")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
         group.MapGet("/{squadId:guid}/callups", (Guid squadId, ITrainingsRepository trainings, CancellationToken ct) => trainings.ListCallUpsAsync(squadId, ct))
             .WithName("ListSquadCallUps")
             .WithSummary("Estado de las convocatorias de la plantilla, por partido")
@@ -176,13 +185,24 @@ internal static class TrainingEndpoints
 
         group.MapPut("/{squadId:guid}/matches/{matchId:guid}/callup", (Guid squadId, Guid matchId, CallUpRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.SaveCallUpAsync(squadId, matchId, request, ct))
             .WithName("SaveMatchCallUp")
-            .WithSummary("Guardar o publicar la convocatoria de un partido")
+            .WithSummary("Guardar o enviar (publicar) la convocatoria de un partido")
             .WithDescription("Club propietario o cuerpo técnico vigente, solo antes del partido. Quién va, cita (hora y lugar) y notas. Al publicar se avisa en la app a cada jugador con cuenta, vaya o no; después, solo a quien le cambie la convocatoria. El convocado la firma; el que no va se da por enterado.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        MapCallUpResend(group);
     }
+
+    private static void MapCallUpResend(RouteGroupBuilder group) =>
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/callup/resend", (Guid squadId, Guid matchId, ITrainingsRepository trainings, CancellationToken ct) => trainings.ResendCallUpAsync(squadId, matchId, ct))
+            .WithName("ResendMatchCallUp")
+            .WithSummary("Volver a enviar la convocatoria a quien no la ha abierto")
+            .WithDescription("Club propietario o cuerpo técnico vigente, con la convocatoria enviada y antes del partido. Cada jugador con cuenta que aún no la ha visto recibe otro aviso (el anterior se da por resuelto). En cada línea, sentAt es el check de enviada y seenAt el doble check de vista.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
     private static void MapPlayer(IEndpointRouteBuilder app)
     {
@@ -207,6 +227,14 @@ internal static class TrainingEndpoints
             .WithSummary("Convocatorias publicadas de mi equipo, con mi respuesta")
             .WithDescription("Las de los partidos que quedan y las de la última semana.")
             .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapPut("/callups/{callUpId:guid}/seen", (Guid callUpId, ITrainingsRepository trainings, CancellationToken ct) => trainings.MarkCallUpSeenAsync(callUpId, ct))
+            .WithName("MarkCallUpSeen")
+            .WithSummary("Marcar la convocatoria como vista")
+            .WithDescription("La llama la app al abrir la convocatoria: el cuerpo técnico ve el doble check. Solo cuenta la primera vez; firmarla también la da por vista.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPut("/callups/{callUpId:guid}/response", (Guid callUpId, CallUpResponseRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.RespondCallUpAsync(callUpId, request, ct))
             .WithName("RespondCallUp")

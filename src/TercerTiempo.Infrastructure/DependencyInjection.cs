@@ -113,6 +113,7 @@ public static class DependencyInjection
                 .CommandTimeout(60))
             .AddInterceptors(sp.GetRequiredService<Search.SearchIndexInvalidator>()));
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<AppDbContext>());
+        services.Replace(ServiceDescriptor.Scoped<TercerTiempo.Application.Abstractions.Messaging.IReadScope, DbReadScope>());
         services.AddDbContext<RealDataDbContext>(options => options.UseSqlServer(realDataConnection, sql => sql.CommandTimeout(120)));
 
         // El bloqueo de las descargas de datos reales lo pide la API al arrancar (AddBackgroundWork); aquí solo se sabe
@@ -141,6 +142,7 @@ public static class DependencyInjection
         services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
         services.AddScoped<IMatchVideoStore, MatchVideoStore>();
         services.AddScoped<IMatchVideoAnalysisStore, MatchVideoAnalysisStore>();
+        services.AddScoped<IVideoAnalyzerHeartbeatStore, VideoAnalyzerHeartbeatStore>();
         services.AddScoped<IVideoUploadStore, VideoUploadStore>();
         services.AddScoped<TercerTiempo.Domain.Trainings.IExerciseStore, ExerciseStore>();
         services.AddScoped<TercerTiempo.Domain.Trainings.ITrainingStore, TrainingStore>();
@@ -288,7 +290,13 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(30);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("TercerTiempo/1.0 (+https://github.com/diegoesp10/TercerTiempo-Back)");
             client.DefaultRequestHeaders.Accept.ParseAdd("image/*");
-        }).LogScrapes("escudos");
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            ConnectCallback = TercerTiempo.Infrastructure.Teams.PublicAddressConnector.ConnectAsync,
+            MaxAutomaticRedirections = 3,
+        })
+        .LogScrapes("escudos");
     }
 
     private static void AddVideos(IServiceCollection services, IConfiguration configuration)

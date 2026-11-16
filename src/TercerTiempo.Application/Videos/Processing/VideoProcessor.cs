@@ -91,7 +91,9 @@ public sealed class VideoProcessor(
             await unitOfWork.SaveChangesAsync(cancellationToken);
             newKey = null;
 
-            await storage.DeleteAsync(originalKey, CancellationToken.None);
+            // El comprimido ya está guardado y es el que se sirve: si el original no se puede borrar (alguien lo está
+            // descargando en Windows, un disco de red caído) se queda como sobrante, pero el vídeo no se da por fallido.
+            await DiscardAsync(originalKey);
 
             var minutes = Math.Max(1, (int)Math.Round((clock.GetUtcNow() - started).TotalMinutes));
             var summary = $"{label}: de {Gb(originalSize)} GB a {Gb(result.SizeBytes)} GB ({result.Height}p) en {minutes} min.";
@@ -123,8 +125,11 @@ public sealed class VideoProcessor(
         {
             await DiscardAsync(newKey);
             logger.LogError(ex, "Vídeo {Video} ({Label}): no se pudo comprimir", video.Id, label);
-            video.FailProcessing(ex.Message, clock.GetUtcNow());
-            await TrySaveAsync();
+            if (video.Status == VideoStatus.Processing)
+            {
+                video.FailProcessing(ex.Message, clock.GetUtcNow());
+                await TrySaveAsync();
+            }
             await jobs.FinishedAsync(runId, false, $"{label}: no se pudo comprimir; se sirve el original.", ex.Message, CancellationToken.None);
         }
     }

@@ -86,7 +86,7 @@ internal static class ClubEndpoints
             .RequireLicense(LicenseScope.Team)
             .WithName("UpdateClubRosterEntry")
             .WithSummary("Corregir una ficha de la plantilla")
-            .WithDescription("Nombre, posición y dorsal. A partir de la corrección manda el club: el proveedor ya no sobrescribe esa ficha.")
+            .WithDescription("Nombre y posición (la ficha no lleva dorsal: los que usa salen de las actas de cada partido). A partir de la corrección manda el club: el proveedor ya no sobrescribe esa ficha.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);

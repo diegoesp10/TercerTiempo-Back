@@ -132,7 +132,7 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
                 _ => Position.Forward,
             };
 
-            roster.Add(new RosterEntrySnapshot($"{teamExternalId}-{number}", fullName, position, number));
+            roster.Add(new RosterEntrySnapshot($"{teamExternalId}-{number}", fullName, position));
         }
 
         return Task.FromResult<IReadOnlyList<RosterEntrySnapshot>>(roster);

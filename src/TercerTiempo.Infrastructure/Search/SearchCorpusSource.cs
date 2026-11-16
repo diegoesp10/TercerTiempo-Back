@@ -5,6 +5,7 @@ using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Referees;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Teams;
 using TercerTiempo.Infrastructure.Persistence;
 
 namespace TercerTiempo.Infrastructure.Search;
@@ -27,7 +28,8 @@ internal sealed class SearchCorpusSource(AppDbContext db) : ISearchCorpusSource
         var teams = await db.Teams.AsNoTracking().ToListAsync(cancellationToken);
         var roster = await db.RosterEntries.AsNoTracking().Where(r => seasonIds.Contains(r.SeasonId) && !r.Hidden).ToListAsync(cancellationToken);
         var clubs = await db.Clubs.AsNoTracking().ToListAsync(cancellationToken);
-        var squads = await db.Squads.AsNoTracking().ToListAsync(cancellationToken);
+        // El cuerpo técnico no entra en el buscador: solo los jugadores.
+        var squads = await db.Squads.AsNoTracking().IgnoreAutoIncludes().Include(s => s.Players).ToListAsync(cancellationToken);
         var linkedPlayers = squads.SelectMany(s => s.Players).Select(p => p.PlayerId).OfType<Guid>().Distinct().ToList();
         var accountPhotos = await db.Players.AsNoTracking()
             .Where(p => linkedPlayers.Contains(p.Id) && p.PhotoKey != null)
@@ -61,8 +63,11 @@ internal sealed class SearchCorpusSource(AppDbContext db) : ISearchCorpusSource
             return new CorpusTeam(t.Id, t.Name, t.ShortName, t.CrestLink(), teamCompetition.TryGetValue(t.Id, out var c) ? c : null, standing?.Position, standing?.Points);
         }).ToList();
 
+        // Un resultado por persona: la web publica a algunos jugadores en dos fichas.
         var corpusPlayers = roster
-            .Select(r => new CorpusPlayer(r.Id, r.TeamId, r.FullName, r.Position, r.ShirtNumber, r.PhotoLink()))
+            .GroupBy(r => (r.TeamId, r.SeasonId))
+            .SelectMany(fichas => RosterPeople.Group(fichas))
+            .Select(p => new CorpusPlayer(p.Main.Id, p.Main.TeamId, p.Main.FullName, p.Position, p.WithPhoto?.PhotoLink()))
             .ToList();
 
         var corpusMatches = matches
@@ -80,16 +85,24 @@ internal sealed class SearchCorpusSource(AppDbContext db) : ISearchCorpusSource
 
         // Dónde pita cada árbitro: la categoría y la función en que más partidos tiene, para reconocerlo en los resultados.
         var categoryBySeason = competitions.SelectMany(c => c.Seasons.Select(s => (s.Id, c.Category))).ToDictionary(x => x.Id, x => x.Category);
+        // Se cuenta en SQL: designaciones por árbitro, temporada y función, y partidos distintos por árbitro.
         var appearances = await (
-                from o in db.Set<MatchOfficial>().AsNoTracking()
+                from o in db.Set<MatchOfficial>()
                 join m in db.Matches on o.MatchId equals m.Id
-                select new { o.RefereeId, o.MatchId, o.Role, m.SeasonId })
+                group o by new { o.RefereeId, m.SeasonId, o.Role } into g
+                select new { g.Key.RefereeId, g.Key.SeasonId, g.Key.Role, Count = g.Count() })
             .ToListAsync(cancellationToken);
+        var matchesByReferee = await (
+                from o in db.Set<MatchOfficial>()
+                join m in db.Matches on o.MatchId equals m.Id
+                group o.MatchId by o.RefereeId into g
+                select new { RefereeId = g.Key, Count = g.Distinct().Count() })
+            .ToDictionaryAsync(x => x.RefereeId, x => x.Count, cancellationToken);
         var refereeStats = appearances.GroupBy(a => a.RefereeId).ToDictionary(g => g.Key, g =>
         {
             var usual = g.GroupBy(a => (Category: categoryBySeason.GetValueOrDefault(a.SeasonId), Duty: a.Role.Duty()))
-                .OrderByDescending(x => x.Count()).ThenBy(x => x.Key.Duty).First().Key;
-            return (Matches: g.Select(a => a.MatchId).Distinct().Count(), usual.Category, Assistant: usual.Duty == OfficialDuty.Assistant);
+                .OrderByDescending(x => x.Sum(a => a.Count)).ThenBy(x => x.Key.Duty).First().Key;
+            return (Matches: matchesByReferee.GetValueOrDefault(g.Key), usual.Category, Assistant: usual.Duty == OfficialDuty.Assistant);
         });
         var corpusReferees = (await db.Set<Referee>().AsNoTracking().ToListAsync(cancellationToken))
             .Select(r => refereeStats.TryGetValue(r.Id, out var stats)

@@ -17,7 +17,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -209,7 +209,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CoachId", "CreatedAt");
 
+                    b.HasIndex("CoachId", "Key");
+
                     b.HasIndex("PlayerId", "CreatedAt");
+
+                    b.HasIndex("PlayerId", "Key");
 
                     b.HasIndex("ClubId", "PlayerId", "CoachId", "Key")
                         .IsUnique()
@@ -1555,6 +1559,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "sheet.duplicate_player",
+                            Language = "es",
+                            Message = "Un jugador aparece dos veces en el acta: deja una sola línea por jugador."
+                        },
+                        new
+                        {
                             Code = "sheet.passes_completed",
                             Language = "es",
                             Message = "Los pases completados no pueden superar los pases intentados."
@@ -1756,6 +1766,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "referee.rating_not_confirmed",
                             Language = "es",
                             Message = "Confirma la nota antes de guardarla: una vez guardada no se puede cambiar."
+                        },
+                        new
+                        {
+                            Code = "referee.no_vote_comment",
+                            Language = "es",
+                            Message = "«No votado» va sin comentario: si quieres explicar algo, pon una nota."
+                        },
+                        new
+                        {
+                            Code = "referee.nothing_to_vote",
+                            Language = "es",
+                            Message = "Tu equipo ya ha contestado por todo el equipo arbitral de este partido."
                         },
                         new
                         {
@@ -2065,6 +2087,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "video_analysis.not_active",
+                            Language = "es",
+                            Message = "Este vídeo no está en cola ni analizándose: no hay nada que cancelar."
+                        },
+                        new
+                        {
                             Code = "team.pitch_own_teams_only",
                             Language = "es",
                             Message = "Solo puedes cambiar las medidas del campo de los equipos de tu club."
@@ -2140,6 +2168,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "pass.no_video",
                             Language = "es",
                             Message = "La plantilla no tiene vídeo de este partido: el pase no puede incluirlo."
+                        },
+                        new
+                        {
+                            Code = "pass.no_sheet",
+                            Language = "es",
+                            Message = "La plantilla aún no ha rellenado el acta interna de este partido: el pase no puede incluirla."
                         },
                         new
                         {
@@ -2646,9 +2680,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AwayTeamId");
+                    b.HasIndex("AwayTeamId", "KickoffAt");
 
-                    b.HasIndex("HomeTeamId");
+                    b.HasIndex("HomeTeamId", "KickoffAt");
 
                     b.HasIndex("SeasonId", "AwayTeamId");
 
@@ -2657,6 +2691,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("SeasonId", "KickoffAt");
 
                     b.HasIndex("SeasonId", "Matchday");
+
+                    b.HasIndex("Status", "KickoffAt");
 
                     b.ToTable("Matches", (string)null);
                 });
@@ -5008,6 +5044,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("MatchId")
                         .IsUnique();
 
+                    b.HasIndex("Provider", "Status");
+
                     b.ToTable("OfficialSheets", (string)null);
                 });
 
@@ -5210,6 +5248,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("RedeemedByUserId");
 
+                    b.HasIndex("RequestId")
+                        .IsUnique()
+                        .HasFilter("[RequestId] IS NOT NULL");
+
                     b.HasIndex("TeamId");
 
                     b.HasIndex("SquadId", "MatchId");
@@ -5294,6 +5336,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("TeamId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<bool>("WantsSheet")
                         .HasColumnType("bit");
@@ -6156,7 +6203,7 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
-                    b.Property<int>("Score")
+                    b.Property<int?>("Score")
                         .HasColumnType("int");
 
                     b.Property<Guid>("TeamId")
@@ -6444,9 +6491,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("SeasonId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<int?>("ShirtNumber")
-                        .HasColumnType("int");
-
                     b.Property<Guid>("TeamId")
                         .HasColumnType("uniqueidentifier");
 
@@ -6513,6 +6557,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTimeOffset?>("SeenAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("SquadPlayerId")
                         .HasColumnType("uniqueidentifier");
@@ -6620,6 +6667,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.HasKey("Id");
 
@@ -6821,6 +6873,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByClubId");
@@ -6948,6 +7005,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("UploadedByCoachId");
 
+                    b.HasIndex("SquadId", "MatchId", "Part")
+                        .IsUnique()
+                        .HasFilter("[DeletedAt] IS NULL");
+
                     b.ToTable("MatchVideos", (string)null);
                 });
 
@@ -6990,6 +7051,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int?>("Frames")
                         .HasColumnType("int");
 
+                    b.Property<DateTimeOffset?>("HeartbeatAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<Guid>("MatchId")
                         .HasColumnType("uniqueidentifier");
 
@@ -7013,6 +7077,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("ProposalJson")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("ReadFramesPct")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("decimal(5,1)");
 
                     b.Property<DateTimeOffset>("RequestedAt")
                         .HasColumnType("datetimeoffset");
@@ -7040,6 +7108,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("WorkerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Status");
@@ -7065,6 +7137,23 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasKey("AnalysisId", "Tracklet");
 
                     b.ToTable("MatchVideoAnalysisCrops", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoAnalyzerHeartbeat", b =>
+                {
+                    b.Property<string>("WorkerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("SeenAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("WorkerId");
+
+                    b.ToTable("VideoAnalyzerHeartbeats", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Videos.VideoUploadSession", b =>

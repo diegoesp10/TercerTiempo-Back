@@ -29,6 +29,11 @@ internal sealed class MatchConfiguration : IEntityTypeConfiguration<Match>
         builder.HasIndex(m => new { m.SeasonId, m.HomeTeamId });
         builder.HasIndex(m => new { m.SeasonId, m.AwayTeamId });
         builder.HasIndex(m => new { m.SeasonId, m.KickoffAt });
+        // Partidos de un equipo por fecha sin pasar por la temporada (avisos de árbitros, agenda) y partidos jugados por
+        // fecha (búsqueda del equipo arbitral).
+        builder.HasIndex(m => new { m.HomeTeamId, m.KickoffAt });
+        builder.HasIndex(m => new { m.AwayTeamId, m.KickoffAt });
+        builder.HasIndex(m => new { m.Status, m.KickoffAt });
 
         builder.OwnsExternalRef(m => m.ExternalRef);
         builder.OwnsExternalRef(m => m.OfficialRef, "Official");

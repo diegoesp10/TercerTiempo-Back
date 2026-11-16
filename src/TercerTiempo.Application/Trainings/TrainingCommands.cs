@@ -168,6 +168,9 @@ internal sealed class SetAttendanceValidator : AbstractValidator<SetAttendanceCo
         RuleFor(x => x.SquadId).NotEmpty();
         RuleFor(x => x.SessionId).NotEmpty();
         RuleFor(x => x.Entries).NotNull();
+        // Una línea por jugador o jugador a prueba: una plantilla no pasa de unas decenas; miles de líneas solo cargarían el servidor.
+        RuleFor(x => x.Entries.Count).LessThanOrEqualTo(TrainingCatalog.MaxAttendanceEntries).When(x => x.Entries is not null)
+            .WithCatalogMessage(ErrorCode.CommonOutOfRange, "Asistencia", 1, TrainingCatalog.MaxAttendanceEntries);
         RuleForEach(x => x.Entries).ChildRules(entry =>
         {
             entry.RuleFor(e => e.HasOneTarget).Equal(true).WithCatalogMessage(ErrorCode.TrainingAttendanceTarget);
@@ -218,8 +221,18 @@ internal static class TrainingAccess
     public static Task<bool> CanEditAsync(Squad squad, ICurrentUser user, TimeProvider clock, IClubStore clubs, CancellationToken cancellationToken) =>
         SquadAccess.IsManagerAsync(squad, user, clock, clubs, cancellationToken);
 
-    public static IReadOnlyList<TrainingItemDraft> Drafts(IEnumerable<TrainingItemInput> items) =>
-        items.Select(i => new TrainingItemDraft(i.ExerciseId, i.Name, i.Type, i.DurationMinutes, i.Notes)).ToList();
+    // El enlace a la biblioteca solo vale para ejercicios de esta plantilla: un id de otra se descarta y el ejercicio se
+    // queda como copia suelta (con su nombre, tipo y duración), igual que cuando se borra el de la biblioteca.
+    public static async Task<IReadOnlyList<TrainingItemDraft>> DraftsAsync(
+        IReadOnlyList<TrainingItemInput> items, Guid squadId, IExerciseStore exercises, CancellationToken cancellationToken)
+    {
+        var own = items.Any(i => i.ExerciseId is not null)
+            ? (await exercises.GetBySquadAsync(squadId, cancellationToken)).Select(e => e.Id).ToHashSet()
+            : [];
+        return items
+            .Select(i => new TrainingItemDraft(i.ExerciseId is { } id && own.Contains(id) ? id : null, i.Name, i.Type, i.DurationMinutes, i.Notes))
+            .ToList();
+    }
 
     public static async Task<TrainingSessionDto> DetailAsync(
         TrainingSession session, Squad squad, ICurrentUser user, TimeProvider clock, IClubStore clubs, ITrialPlayerStore trials, CancellationToken cancellationToken)
@@ -249,12 +262,10 @@ internal static class StaffAlerts
     {
         var now = clock.GetUtcNow();
         var club = await clubs.GetByTeamAsync(squad.TeamId, cancellationToken);
-        foreach (var member in squad.StaffOn(SquadAccess.Today(clock)))
-            foreach (var alert in await alerts.GetForAsync(null, null, member.CoachId, cancellationToken))
-                if (alert.Key.StartsWith(keyPrefix, StringComparison.Ordinal)) alert.Resolve(now);
-        if (club is not null)
-            foreach (var alert in await alerts.GetByClubAsync(club.Id, cancellationToken))
-                if (alert.Key.StartsWith(keyPrefix, StringComparison.Ordinal)) alert.Resolve(now);
+        var coaches = squad.StaffOn(SquadAccess.Today(clock)).Select(m => m.CoachId).Distinct().ToList();
+        // Los del cuerpo técnico y los del club, de una vez.
+        foreach (var alert in await alerts.GetOpenByKeyPrefixAsync(keyPrefix, [], coaches, club?.Id, cancellationToken))
+            alert.Resolve(now);
     }
 }
 
@@ -324,6 +335,7 @@ internal sealed class ListTrainingsHandler(ICurrentUser currentUser, ISquadStore
 {
     public async Task<IReadOnlyList<TrainingSummaryDto>> Handle(ListTrainingsQuery query, CancellationToken cancellationToken)
     {
+        TrainingClock.EnsureRange(query.From, query.To);
         var squad = await TrainingAccess.SquadForViewerAsync(squads, clubs, currentUser, query.SquadId, clock, cancellationToken);
         var zone = TrainingClock.Zone;
         var from = new DateTimeOffset(query.From.ToDateTime(TimeOnly.MinValue), zone.GetUtcOffset(query.From.ToDateTime(TimeOnly.MinValue)));
@@ -348,7 +360,8 @@ internal sealed class GetTrainingHandler(ICurrentUser currentUser, ISquadStore s
     }
 }
 
-internal sealed class PlanTrainingHandler(ICurrentUser currentUser, ISquadStore squads, ICoachStore coaches, IClubStore clubs, ITrainingStore trainings, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class PlanTrainingHandler(
+    ICurrentUser currentUser, ISquadStore squads, ICoachStore coaches, IClubStore clubs, ITrainingStore trainings, IExerciseStore exercises, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<PlanTrainingCommand, IReadOnlyList<TrainingSummaryDto>>
 {
     public async Task<IReadOnlyList<TrainingSummaryDto>> Handle(PlanTrainingCommand command, CancellationToken cancellationToken)
@@ -356,7 +369,7 @@ internal sealed class PlanTrainingHandler(ICurrentUser currentUser, ISquadStore 
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var editor = await Resolvers.CurrentEditorAsync(currentUser, coaches, clubs, cancellationToken);
         var now = clock.GetUtcNow();
-        var drafts = TrainingAccess.Drafts(command.Items);
+        var drafts = await TrainingAccess.DraftsAsync(command.Items, squad.Id, exercises, cancellationToken);
 
         var dates = command.RepeatWeekdays.Count > 0
             ? TrainingSession.SeriesDates(command.StartsAt, command.RepeatWeekdays.ToHashSet(), command.RepeatUntil ?? throw new DomainException(ErrorCode.TrainingRepeatWeekdays), TrainingClock.Zone)
@@ -373,33 +386,41 @@ internal sealed class PlanTrainingHandler(ICurrentUser currentUser, ISquadStore 
             trainings.Add(session);
             created.Add(session);
         }
+        await TrainingCalls.PlannedAsync(squad, created, alerts, now, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return created.Select(s => TrainingMapper.ToSummary(s, squad, null, now)).ToList();
     }
 }
 
-internal sealed class UpdateTrainingHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class UpdateTrainingHandler(
+    ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IAlertStore alerts, IUnitOfWork unitOfWork,
+    TimeProvider clock)
     : ICommandHandler<UpdateTrainingCommand, TrainingSessionDto>
 {
     public async Task<TrainingSessionDto> Handle(UpdateTrainingCommand command, CancellationToken cancellationToken)
     {
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var session = await TrainingAccess.SessionOfAsync(squad, command.SessionId, trainings, cancellationToken);
-        session.Update(command.Kind, command.Title, command.StartsAt, command.DurationMinutes, command.Location, command.Notes, clock.GetUtcNow());
+        var now = clock.GetUtcNow();
+        var (previousStart, previousLocation) = (session.StartsAt, session.Location);
+        session.Update(command.Kind, command.Title, command.StartsAt, command.DurationMinutes, command.Location, command.Notes, now);
+        // Solo se avisa si cambia lo que el jugador necesita para llegar (día, hora o sitio) y aún no ha pasado.
+        if ((session.StartsAt != previousStart || session.Location != previousLocation) && !session.HasStarted(now) && previousStart > now)
+            await TrainingCalls.MovedAsync(squad, session, previousStart, alerts, now, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, cancellationToken);
     }
 }
 
-internal sealed class SetTrainingItemsHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class SetTrainingItemsHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, IExerciseStore exercises, ITrialPlayerStore trials, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<SetTrainingItemsCommand, TrainingSessionDto>
 {
     public async Task<TrainingSessionDto> Handle(SetTrainingItemsCommand command, CancellationToken cancellationToken)
     {
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var session = await TrainingAccess.SessionOfAsync(squad, command.SessionId, trainings, cancellationToken);
-        session.ReplaceItems(TrainingAccess.Drafts(command.Items), clock.GetUtcNow());
+        session.ReplaceItems(await TrainingAccess.DraftsAsync(command.Items, squad.Id, exercises, cancellationToken), clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, cancellationToken);
     }
@@ -432,7 +453,8 @@ internal sealed class SetAttendanceHandler(ICurrentUser currentUser, ISquadStore
     }
 }
 
-internal sealed class DeleteTrainingHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class DeleteTrainingHandler(
+    ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<DeleteTrainingCommand, bool>
 {
     public async Task<bool> Handle(DeleteTrainingCommand command, CancellationToken cancellationToken)
@@ -440,15 +462,18 @@ internal sealed class DeleteTrainingHandler(ICurrentUser currentUser, ISquadStor
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var session = await TrainingAccess.SessionOfAsync(squad, command.SessionId, trainings, cancellationToken);
 
-        if (command.Series && session.SeriesId is { } seriesId)
-        {
-            foreach (var later in await trainings.GetSeriesAsync(seriesId, session.StartsAt, cancellationToken))
-                trainings.Remove(later);
-        }
-        else
-        {
-            trainings.Remove(session);
-        }
+        var series = command.Series && session.SeriesId is not null;
+        IReadOnlyList<TrainingSession> removed = series
+            ? await trainings.GetSeriesAsync(session.SeriesId!.Value, session.StartsAt, cancellationToken)
+            : [session];
+        foreach (var item in removed) trainings.Remove(item);
+
+        // Anular lo que ya pasó no le cambia nada al jugador: solo se avisa de lo que estaba por venir (en una serie,
+        // aunque la sesión desde la que se anula ya haya pasado).
+        var now = clock.GetUtcNow();
+        var upcoming = removed.Where(s => !s.HasStarted(now)).OrderBy(s => s.StartsAt).ToList();
+        if (upcoming.Count > 0)
+            await TrainingCalls.CancelledAsync(squad, upcoming, series, alerts, now, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -483,7 +508,7 @@ internal sealed class ReportTrainingAbsenceHandler(
             await StaffAlerts.RaiseAsync(squad, clubs, alerts, AlertKind.TrainingAbsence, $"{keyPrefix}:{now.UtcTicks}",
                 $"{entry.FullName} falta al entrenamiento",
                 $"{entry.FullName} avisa de que no va al entrenamiento del {when} ({session.Title}) de {team?.Name ?? "su equipo"}.{reason}",
-                $"/plantillas/{squad.Id}/entrenamientos?sesion={session.Id}", DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(session.StartsAt, TrainingClock.Zone).DateTime), clock, cancellationToken);
+                $"/plantillas/{squad.Id}/agenda?sesion={session.Id}", DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(session.StartsAt, TrainingClock.Zone).DateTime), clock, cancellationToken);
         }
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

@@ -181,23 +181,33 @@ internal sealed class LicenseDescriber(
     }
 
     // Nombramientos de la temporada en curso que ocupan plaza: vigentes o pendientes de canjear.
-    public async Task<int> StaffCountAsync(Guid teamId, CancellationToken cancellationToken)
-    {
-        var season = (await competitions.GetByTeamAsync(teamId, cancellationToken: cancellationToken))?.CurrentSeason;
-        if (season is null) return 0;
-        var today = SquadAccess.Today(clock);
-        return (await appointments.GetByTeamAndSeasonAsync(teamId, season.Id, cancellationToken))
-            .Count(a => a.StatusOn(today) is AppointmentStatus.Pending or AppointmentStatus.Active);
-    }
+    public async Task<int> StaffCountAsync(Guid teamId, CancellationToken cancellationToken) =>
+        (await StaffCountsAsync([teamId], cancellationToken)).GetValueOrDefault(teamId);
 
     // Las licencias de técnico son una bolsa del club: cuentan los técnicos de todos sus equipos.
-    public async Task<int> ClubStaffCountAsync(Club club, CancellationToken cancellationToken)
+    public async Task<int> ClubStaffCountAsync(Club club, CancellationToken cancellationToken) =>
+        (await StaffCountsAsync(club.Teams.Select(t => t.TeamId), cancellationToken)).Values.Sum();
+
+    // La temporada en curso de cada equipo y sus nombramientos, para todos los equipos a la vez.
+    private async Task<(IReadOnlyDictionary<Guid, Season> Seasons, Dictionary<Guid, int> Staff)> SeasonsAndStaffAsync(
+        IEnumerable<Guid> teamIds, CancellationToken cancellationToken)
     {
-        var total = 0;
-        foreach (var clubTeam in club.Teams)
-            total += await StaffCountAsync(clubTeam.TeamId, cancellationToken);
-        return total;
+        var seasons = (await competitions.GetByTeamsAsync(teamIds, cancellationToken: cancellationToken))
+            .Where(pair => pair.Value.CurrentSeason is not null)
+            .ToDictionary(pair => pair.Key, pair => pair.Value.CurrentSeason!);
+        var today = SquadAccess.Today(clock);
+        var staff = seasons.Count == 0
+            ? new Dictionary<Guid, int>()
+            : (await appointments.GetByTeamsAndSeasonsAsync(seasons.Keys, seasons.Values.Select(s => s.Id), cancellationToken))
+                .Where(a => seasons.TryGetValue(a.TeamId, out var season) && season.Id == a.SeasonId)
+                .Where(a => a.StatusOn(today) is AppointmentStatus.Pending or AppointmentStatus.Active)
+                .GroupBy(a => a.TeamId)
+                .ToDictionary(g => g.Key, g => g.Count());
+        return (seasons, staff);
     }
+
+    private async Task<Dictionary<Guid, int>> StaffCountsAsync(IEnumerable<Guid> teamIds, CancellationToken cancellationToken) =>
+        (await SeasonsAndStaffAsync(teamIds, cancellationToken)).Staff;
 
     // Los técnicos de la licencia deben cubrir los nombramientos que ya tiene el club.
     public async Task EnsureStaffFitsAsync(Club club, int staffSeats, CancellationToken cancellationToken)
@@ -214,16 +224,28 @@ internal sealed class LicenseDescriber(
         var o = await catalog.GetAsync(cancellationToken);
         var club = await clubs.GetByIdAsync(license.ClubId, cancellationToken);
 
-        var covered = new List<LicensedTeamDto>();
-        foreach (var clubTeam in club?.Teams.OrderBy(t => t.AddedAt) ?? Enumerable.Empty<ClubTeam>())
-        {
-            if (onlyTeams is not null && !onlyTeams.Contains(clubTeam.TeamId)) continue;
-            var team = await teams.GetByIdAsync(clubTeam.TeamId, cancellationToken);
-            if (team is null) continue;
-            var season = (await competitions.GetByTeamAsync(team.Id, cancellationToken: cancellationToken))?.CurrentSeason;
-            var squad = season is null ? null : await squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
-            covered.Add(new LicensedTeamDto(team.Id, team.Name, team.CrestLink(), squad?.Id, await StaffCountAsync(team.Id, cancellationToken)));
-        }
+        // Equipos, temporadas, plantillas y nombramientos de todos los equipos cubiertos en unas pocas consultas.
+        var wanted = (club?.Teams.OrderBy(t => t.AddedAt) ?? Enumerable.Empty<ClubTeam>())
+            .Where(t => onlyTeams is null || onlyTeams.Contains(t.TeamId))
+            .Select(t => t.TeamId)
+            .ToList();
+        var teamMap = (await teams.GetByIdsAsync(wanted, cancellationToken)).ToDictionary(t => t.Id);
+        var found = wanted.Where(teamMap.ContainsKey).ToList();
+        var (seasons, staff) = await SeasonsAndStaffAsync(found, cancellationToken);
+        var squadByTeam = seasons.Count == 0
+            ? new Dictionary<Guid, Guid>()
+            : (await squads.GetRefsAsync(seasons.Keys, seasons.Values.Select(s => s.Id), cancellationToken))
+                .Where(s => seasons.TryGetValue(s.TeamId, out var season) && season.Id == s.SeasonId)
+                .GroupBy(s => s.TeamId)
+                .ToDictionary(g => g.Key, g => g.First().Id);
+
+        var covered = found
+            .Select(id => teamMap[id])
+            .Select(team => new LicensedTeamDto(
+                team.Id, team.Name, team.CrestLink(),
+                squadByTeam.TryGetValue(team.Id, out var squadId) ? squadId : null,
+                staff.GetValueOrDefault(team.Id)))
+            .ToList();
 
         int? renewalPrice = license.IsRenewing
             ? o.SubscriptionPriceCents(license.NextInterval ?? license.Interval!.Value, license.RenewalStaffSeats)
@@ -241,10 +263,9 @@ internal sealed class LicenseDescriber(
     public async Task<LicenseCheckoutDto> DescribeAsync(LicensePayment payment, ClubLicense? license, string url, CancellationToken cancellationToken)
     {
         var club = await clubs.GetByIdAsync(payment.ClubId, cancellationToken);
-        var teamNames = new List<string>();
-        foreach (var clubTeam in club?.Teams.OrderBy(t => t.AddedAt) ?? Enumerable.Empty<ClubTeam>())
-            if (await teams.GetByIdAsync(clubTeam.TeamId, cancellationToken) is { } team)
-                teamNames.Add(team.Name);
+        var ordered = (club?.Teams.OrderBy(t => t.AddedAt) ?? Enumerable.Empty<ClubTeam>()).Select(t => t.TeamId).ToList();
+        var teamMap = (await teams.GetByIdsAsync(ordered, cancellationToken)).ToDictionary(t => t.Id);
+        var teamNames = ordered.Where(teamMap.ContainsKey).Select(id => teamMap[id].Name).ToList();
 
         // Sin cobro hoy, el primero llega al acabar lo que ya cubría la licencia (una vez dada de alta, su renovación).
         var firstCharge = DateOnly.FromDateTime(payment.CreatedAt.UtcDateTime);
@@ -318,7 +339,7 @@ internal sealed class GetLicensingStatusHandler(
         {
             var ownTeams = new List<Guid>();
             if (currentUser.CoachId is { } coachId)
-                ownTeams.AddRange((await squads.GetByCoachAsync(coachId, today, cancellationToken)).Select(s => s.TeamId));
+                ownTeams.AddRange((await squads.GetRefsByCoachAsync(coachId, today, cancellationToken)).Select(s => s.TeamId));
             else if (await players.GetByUserIdAsync(userId, cancellationToken) is { } player
                 && await squads.GetByPlayerAsync(player.Id, cancellationToken) is { } own)
                 ownTeams.Add(own.TeamId);

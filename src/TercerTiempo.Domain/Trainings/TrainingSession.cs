@@ -34,6 +34,8 @@ public sealed class TrainingSession : AggregateRoot
 
     public bool HasStarted(DateTimeOffset now) => StartsAt <= now;
 
+    public bool IsDone(DateTimeOffset now) => EndsAt <= now;
+
     private TrainingSession() { }
 
     public static TrainingSession Plan(
@@ -107,15 +109,20 @@ public sealed class TrainingSession : AggregateRoot
 
     public int PlannedMinutes => _items.Sum(i => i.DurationMinutes);
 
-    // Alta nueva en la plantilla después de preparar la sesión: se le cuenta como esperado.
+    // Alta nueva en la plantilla después de preparar la sesión: se le cuenta como esperado, pero solo si ya era de la
+    // plantilla cuando empezó (un fichaje de marzo no estaba citado a un entrenamiento de octubre).
     public void EnsureAttendanceFor(IEnumerable<SquadPlayer> players, DateTimeOffset now)
     {
         foreach (var player in players)
         {
-            if (!player.IsActive || _attendance.Any(a => a.SquadPlayerId == player.Id)) continue;
+            if (!player.IsActive || !WasInSquad(player) || _attendance.Any(a => a.SquadPlayerId == player.Id)) continue;
             _attendance.Add(TrainingAttendance.Expected(Id, player.Id, now));
         }
     }
+
+    // Quien era de la plantilla a la hora de la sesión: dado de alta antes y sin baja hasta después.
+    public bool WasInSquad(SquadPlayer player) =>
+        player.AddedAt <= StartsAt && (player.LeftAt is null || player.LeftAt > StartsAt);
 
     public TrainingAttendance SetAttendance(Guid squadPlayerId, AttendanceStatus status, string? reason, DateTimeOffset now)
     {

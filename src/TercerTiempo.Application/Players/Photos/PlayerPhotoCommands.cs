@@ -69,6 +69,8 @@ internal sealed class UploadMyPhotoHandler(
         await command.File.Content.CopyToAsync(buffer, cancellationToken);
         if (buffer.Length == 0 || buffer.Length > PlayerPhotos.MaxBytes)
             throw new DomainException(ErrorCode.PlayerPhotoTooLarge);
+        if (!ImageSignature.Matches(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), command.File.ContentType))
+            throw new DomainException(ErrorCode.RosterPhotoFormat);
 
         var image = new CrestImage(buffer.ToArray(), command.File.ContentType.ToLowerInvariant());
         player.SetPhoto(await photos.SaveAsync(player.Id, image, cancellationToken));
@@ -95,11 +97,19 @@ internal sealed class DeleteMyPhotoHandler(
     }
 }
 
-internal sealed class OpenPlayerPhotoHandler(IPlayerStore players, IPlayerPhotoStorage photos) : IQueryHandler<OpenPlayerPhotoQuery, CrestFile?>
+internal sealed class OpenPlayerPhotoHandler(
+    IPlayerStore players,
+    IPlayerPhotoStorage photos,
+    ICurrentUser currentUser,
+    ISquadStore squads,
+    Domain.Clubs.IClubStore clubs,
+    TimeProvider clock) : IQueryHandler<OpenPlayerPhotoQuery, CrestFile?>
 {
     public async Task<CrestFile?> Handle(OpenPlayerPhotoQuery query, CancellationToken cancellationToken)
     {
         var player = (await players.GetByIdsAsync([query.PlayerId], cancellationToken)).FirstOrDefault();
-        return player?.PhotoKey is { } key ? await photos.OpenReadAsync(key, cancellationToken) : null;
+        if (player?.PhotoKey is not { } key) return null;
+        if (!await PhotoAccess.CanSeePlayerPhotoAsync(player, currentUser, squads, clubs, clock, cancellationToken)) return null;
+        return await photos.OpenReadAsync(key, cancellationToken);
     }
 }

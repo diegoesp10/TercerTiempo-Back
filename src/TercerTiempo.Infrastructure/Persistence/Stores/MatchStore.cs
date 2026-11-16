@@ -14,6 +14,17 @@ internal sealed class MatchStore(AppDbContext db) : IMatchStore
         return wanted.Count == 0 ? [] : await db.Matches.AsNoTracking().Where(m => wanted.Contains(m.Id)).ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Match>> GetBySeasonsAsync(IEnumerable<Guid> seasonIds, CancellationToken cancellationToken = default)
+    {
+        var list = seasonIds.Distinct().ToList();
+        if (list.Count == 0) return [];
+
+        return await db.Matches.AsNoTracking()
+            .Where(m => list.Contains(m.SeasonId))
+            .OrderBy(m => m.Matchday)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Match>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
         await db.Matches
             .Where(m => m.SeasonId == seasonId)

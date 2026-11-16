@@ -3,6 +3,7 @@ using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Clubs.Catalog;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Squads;
 
 using TercerTiempo.Application.Teams;
@@ -57,6 +58,8 @@ public sealed record AppointmentDto(
 
 internal static class ClubMapper
 {
+    // El panel del club se arma con unas pocas consultas en bloque (equipos, ligas, plantillas, temporadas y técnicos de
+    // todos los equipos y nombramientos a la vez) en lugar de varias por equipo y por nombramiento.
     public static async Task<ClubDto> ToDtoAsync(Club club, AccountStores stores, CancellationToken cancellationToken, bool withFilials = false)
     {
         var today = SquadAccess.Today(stores.Clock);
@@ -64,15 +67,31 @@ internal static class ClubMapper
         var license = await stores.Licenses.EnsureForClubAsync(club, cancellationToken);
 
         var year = await stores.Seasons.SelectedAsync(cancellationToken);
-        var teamsDto = new List<ClubTeamDto>();
-        foreach (var clubTeam in club.Teams.OrderBy(t => t.AddedAt))
-        {
-            var team = await stores.Teams.GetByIdAsync(clubTeam.TeamId, cancellationToken);
-            if (team is null) continue;
+        var clubTeams = club.Teams.OrderBy(t => t.AddedAt).ToList();
+        var teams = (await stores.Teams.GetByIdsAsync(clubTeams.Select(t => t.TeamId).Concat(appointments.Select(a => a.TeamId)), cancellationToken))
+            .ToDictionary(t => t.Id);
+        var managed = clubTeams.Where(t => teams.ContainsKey(t.TeamId)).Select(t => t.TeamId).ToList();
+        var competitionByTeam = managed.Count == 0
+            ? new Dictionary<Guid, Domain.Competitions.Competition>()
+            : await stores.Competitions.GetByTeamsAsync(managed, year?.Id, cancellationToken);
+        var seasonByTeam = managed
+            .Select(id => (Id: id, Season: competitionByTeam.TryGetValue(id, out var c) ? Resolvers.SeasonFor(c, year) : null))
+            .Where(x => x.Season is not null)
+            .ToDictionary(x => x.Id, x => x.Season!);
+        IReadOnlyList<SquadRef> squads = seasonByTeam.Count == 0
+            ? []
+            : (await stores.Squads.GetRefsAsync(seasonByTeam.Keys, seasonByTeam.Values.Select(s => s.Id), cancellationToken))
+                .Where(s => seasonByTeam.TryGetValue(s.TeamId, out var season) && season.Id == s.SeasonId)
+                .ToList();
 
-            var competition = await stores.Competitions.GetByTeamAsync(team.Id, year?.Id, cancellationToken);
-            var season = competition is null ? null : Resolvers.SeasonFor(competition, year);
-            var squad = season is null ? null : await stores.Squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
+        var teamsDto = new List<ClubTeamDto>();
+        foreach (var clubTeam in clubTeams)
+        {
+            if (!teams.TryGetValue(clubTeam.TeamId, out var team)) continue;
+
+            var competition = competitionByTeam.GetValueOrDefault(team.Id);
+            var season = seasonByTeam.GetValueOrDefault(team.Id);
+            var squad = season is null ? null : squads.FirstOrDefault(s => s.TeamId == team.Id);
 
             teamsDto.Add(new ClubTeamDto(
                 team.Id, team.Name, team.ShortName, team.CrestLink(),
@@ -82,9 +101,24 @@ internal static class ClubMapper
                 license.StatusOn(today), license.ValidUntil));
         }
 
-        var appointmentsDto = new List<AppointmentDto>();
-        foreach (var appointment in appointments.OrderByDescending(a => a.CreatedAt))
-            appointmentsDto.Add(await ToDtoAsync(appointment, stores, today, cancellationToken));
+        var seasons = appointments.Count == 0
+            ? new Dictionary<Guid, Domain.Competitions.Season>()
+            : (await stores.Competitions.GetBySeasonIdsAsync(appointments.Select(a => a.SeasonId).Distinct(), cancellationToken))
+                .SelectMany(c => c.Seasons)
+                .ToDictionary(s => s.Id);
+        var coachIds = appointments.Where(a => a.CoachId is not null).Select(a => a.CoachId!.Value).Distinct().ToList();
+        var coaches = coachIds.Count == 0
+            ? new Dictionary<Guid, Domain.Coaches.Coach>()
+            : (await stores.Coaches.GetByIdsAsync(coachIds, cancellationToken)).ToDictionary(c => c.Id);
+
+        var appointmentsDto = appointments
+            .OrderByDescending(a => a.CreatedAt)
+            .Select(a => ToDto(
+                a, teams.GetValueOrDefault(a.TeamId),
+                seasons.GetValueOrDefault(a.SeasonId) ?? throw new NotFoundException(ErrorCode.CompetitionNotFound, a.SeasonId),
+                a.CoachId is { } coachId ? coaches.GetValueOrDefault(coachId) : null,
+                today))
+            .ToList();
 
         return new ClubDto(club.Id, club.Name, teamsDto, appointmentsDto, withFilials ? await AvailableFilialsAsync(club, stores, cancellationToken) : []);
     }
@@ -92,13 +126,17 @@ internal static class ClubMapper
     private static async Task<IReadOnlyList<ClubFilialDto>> AvailableFilialsAsync(Club club, AccountStores stores, CancellationToken cancellationToken)
     {
         var entry = ClubCatalog.ForClub(await ClubCatalog.LoadAsync(stores, cancellationToken), club);
-        var result = new List<ClubFilialDto>();
-        foreach (var candidate in entry?.Teams ?? [])
-        {
-            if (club.Manages(candidate.Team.Id) || await stores.Clubs.GetByTeamAsync(candidate.Team.Id, cancellationToken) is not null) continue;
-            result.Add(new ClubFilialDto(candidate.Team.Id, candidate.Team.Name, candidate.Team.CrestLink(), candidate.CompetitionName));
-        }
-        return result;
+        var candidates = (entry?.Teams ?? []).Where(t => !club.Manages(t.Team.Id)).ToList();
+        if (candidates.Count == 0) return [];
+
+        // Los que ya tiene otro club, de una vez.
+        var taken = (await stores.Clubs.GetByTeamsAsync(candidates.Select(t => t.Team.Id), cancellationToken))
+            .SelectMany(c => c.Teams.Select(t => t.TeamId))
+            .ToHashSet();
+        return candidates
+            .Where(t => !taken.Contains(t.Team.Id))
+            .Select(t => new ClubFilialDto(t.Team.Id, t.Team.Name, t.Team.CrestLink(), t.CompetitionName))
+            .ToList();
     }
 
     public static async Task<AppointmentDto> ToDtoAsync(CoachAppointment appointment, AccountStores stores, DateOnly today, CancellationToken cancellationToken)
@@ -106,6 +144,12 @@ internal static class ClubMapper
         var team = await stores.Teams.GetByIdAsync(appointment.TeamId, cancellationToken);
         var (_, season) = await Resolvers.SeasonByIdAsync(stores.Competitions, appointment.SeasonId, cancellationToken);
         var coach = appointment.CoachId is { } coachId ? await stores.Coaches.GetByIdAsync(coachId, cancellationToken) : null;
+        return ToDto(appointment, team, season, coach, today);
+    }
+
+    private static AppointmentDto ToDto(
+        CoachAppointment appointment, Domain.Teams.Team? team, Domain.Competitions.Season season, Domain.Coaches.Coach? coach, DateOnly today)
+    {
         var status = appointment.StatusOn(today);
 
         return new AppointmentDto(

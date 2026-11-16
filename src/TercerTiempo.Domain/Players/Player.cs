@@ -26,7 +26,7 @@ public sealed class Player : AggregateRoot
         if (!Enum.IsDefined(position))
             throw new DomainException(ErrorCode.PlayerInvalidPosition);
 
-        if (birthDate is { } date && date > DateOnly.FromDateTime(now.UtcDateTime).AddYears(-14))
+        if (birthDate is { } date && date > SpainTime.Today(now).AddYears(-14))
             throw new DomainException(ErrorCode.PlayerMinAge);
 
         var player = new Player

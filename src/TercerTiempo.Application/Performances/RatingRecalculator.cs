@@ -15,23 +15,18 @@ internal static class RatingRecalculator
     {
         if (lines.Count == 0) return 0;
 
+        // Las plantillas y los partidos que faltan, de una vez (antes, una consulta por línea nueva).
         var squadMap = knownSquads.ToDictionary(s => s.Id);
-        var matchMap = new Dictionary<Guid, Match>();
+        var missingSquads = lines.Select(l => l.SquadId).Where(id => !squadMap.ContainsKey(id)).Distinct().ToList();
+        if (squads is not null && missingSquads.Count > 0)
+            foreach (var loaded in await squads.GetByIdsAsync(missingSquads, cancellationToken))
+                squadMap[loaded.Id] = loaded;
+        var matchMap = (await matches.GetByIdsAsync(lines.Select(l => l.MatchId), cancellationToken)).ToDictionary(m => m.Id);
         var recalculated = 0;
 
         foreach (var line in lines)
         {
-            if (!squadMap.TryGetValue(line.SquadId, out var squad))
-            {
-                if (squads is null || await squads.GetByIdAsync(line.SquadId, cancellationToken) is not { } loaded) continue;
-                squadMap[loaded.Id] = squad = loaded;
-            }
-
-            if (!matchMap.TryGetValue(line.MatchId, out var match))
-            {
-                if (await matches.GetByIdAsync(line.MatchId, cancellationToken) is not { } loaded) continue;
-                matchMap[loaded.Id] = match = loaded;
-            }
+            if (!squadMap.TryGetValue(line.SquadId, out var squad) || !matchMap.TryGetValue(line.MatchId, out var match)) continue;
 
             var player = squad.Players.FirstOrDefault(p => p.Id == line.SquadPlayerId);
             if (player is null) continue;

@@ -163,7 +163,7 @@ internal sealed class SearchIndex
         foreach (var p in corpus.Players)
         {
             if (!teams.TryGetValue(p.TeamId, out var team)) continue;
-            docs.Add(PlayerDoc(p.EntryId, p.FullName, p.Position, p.ShirtNumber, p.PhotoUrl, team, $"/equipos/{team.Id}/jugadores/{p.EntryId}", null, p.EntryId));
+            docs.Add(PlayerDoc(p.EntryId, p.FullName, p.Position, null, p.PhotoUrl, team, $"/equipos/{team.Id}/jugadores/{p.EntryId}", null, p.EntryId));
         }
 
         var rosterInSquads = new Dictionary<Guid, (Guid, Guid, Guid)>();

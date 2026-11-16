@@ -55,7 +55,8 @@ public sealed record SearchQuery(
 // vigencia, se rehace en segundo plano y mientras tanto se sigue buscando en el anterior.
 public sealed class SearchIndexHolder(IServiceScopeFactory scopes, TimeProvider clock, ILogger<SearchIndexHolder> logger)
 {
-    private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(5);
+    // Cada guardado que toca lo que se busca ya lo marca para rehacer (Invalidate); esto es solo por si algo cambia por fuera.
+    private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(30);
     private readonly SemaphoreSlim _building = new(1, 1);
     private volatile SearchIndex? _index;
     private volatile bool _stale;
@@ -153,7 +154,7 @@ internal sealed class SearchHandler(
             }
 
         if (currentUser.CoachId is { } coachId)
-            foreach (var squad in await squads.GetByCoachAsync(coachId, today, cancellationToken))
+            foreach (var squad in await squads.GetRefsByCoachAsync(coachId, today, cancellationToken))
             {
                 teams.Add(squad.TeamId);
                 visible.Add(squad.Id);

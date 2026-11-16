@@ -23,6 +23,7 @@ internal sealed class OfficialSheetConfiguration : IEntityTypeConfiguration<Offi
 
         builder.HasOne<Match>().WithMany().HasForeignKey(s => s.MatchId).OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(s => s.MatchId).IsUnique();
+        builder.HasIndex(s => new { s.Provider, s.Status });
 
         builder.HasMany(s => s.Lines).WithOne().HasForeignKey(l => l.SheetId).OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(s => s.Lines).UsePropertyAccessMode(PropertyAccessMode.Field).AutoInclude();

@@ -130,6 +130,24 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
     No hay código compartido de plantilla.
 - **Competition** (liga = categoría + grupo, con `Level`, `Tier`, `Group` y `SortOrder`) → **Season**;
   **Team**, **RosterEntry** (plantilla scrapeada), **Standing**.
+  - **Una persona, varias fichas.** La web publica a algunos jugadores dos veces, con distinto identificador y nombre
+    («Lucas Paredes» y «Lucas Paredes Rivera»). Lo publicado se guarda tal cual y se concilia al leer: `PersonName.
+    SamePerson` (mismo nombre de pila, con diminutivos y apodos, y lo demás del nombre corto en el largo, en orden) y
+    `RosterPeople.Group` juntan las fichas de la misma persona, y la plantilla, la ficha del jugador, el buscador y la
+    importación a la plantilla interna trabajan con personas (`RosterSummary.PeopleAsync`). Manda la ficha que tocó
+    el club y, si no, la del nombre más completo. No se juntan dos fichas que salen en la misma acta (son dos
+    jugadores) ni una que encaja con dos distintas («Mateo García» con «Mateo García Martínez» y «Mateo García Mazo»).
+  - **Dorsales.** `RosterEntry` no lleva dorsal: en estas categorías cambia de un partido a otro y el «number» de
+    futbolasturiano.es no se mantiene (se repite entre compañeros). El de cada jornada es el de la línea del acta
+    oficial de ese partido (`OfficialSheetLine.ShirtNumber`); `RosterSummary` cruza las fichas con las actas en dos
+    pasadas (por nombre y, para lo que el nombre deja en el aire, con el dorsal que más ha llevado cada ficha en lo
+    ya cruzado) y `ShirtNumberUsage` saca de ahí los dorsales que ha llevado cada jugador, del más usado al menos y
+    con su porcentaje (`RosterEntryDto.ShirtNumbers`). Sin dorsal fijo que confirme, `SheetMatcher` también cruza las
+    fichas de una sola palabra («Guzmán», «Ogbogbodu») con la única línea libre que la lleva, los apodos en
+    cualquiera de los dos lados y un segundo apellido distinto si el nombre de pila y el primer apellido coinciden. La ficha del equipo los agrupa por número y la del jugador los
+    enseña; el perfil interno (`SquadPlayerProfileDto.ShirtNumbers`) usa el del acta interna de cada partido y, si
+    no se apuntó, el del acta oficial. `SquadPlayer.ShirtNumber` sigue siendo el habitual que pone el cuerpo técnico
+    (ya no se importa de la plantilla publicada).
 - **Match**: partido sincronizado del proveedor, con resultado y estado. Sabe calcular resultado y
   puntos desde el punto de vista de cada equipo. `OfficialRef` guarda su acta en la federación una vez localizada
   (también `Season.OfficialRef` y `Team.OfficialRef` con los códigos de asturfutbol.es).
@@ -175,6 +193,22 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
   los partidos: la convocatoria la emite el cuerpo técnico y lo que cambie se habla con él. Si después cambia, solo
   se avisa a quien entra o sale, y su firma anterior se borra. Los avisos (`Alert`) son ya de cualquier cuenta (club,
   técnico o jugador): un «falto al entrenamiento» llega al cuerpo técnico vigente y al club del equipo.
+  Entrenamiento y partido nunca se mezclan: `SquadEventKind` (`Training`/`Match`) dice qué es cada cosa en la agenda
+  (`GET /api/squads/{id}/agenda`, que alimenta el calendario con las dos y marca con `done` lo ya realizado), y los
+  avisos de convocatoria se llaman `MatchCallUp`/`MatchNotCalledUp` (migración `MatchCallUpAlertKinds`, que renombra
+  los guardados). Al entrenamiento se cita a toda la plantilla; la convocatoria es solo de partidos. La **citación** llega
+  al jugador con cuenta como aviso `TrainingCall` (`TrainingCalls`): uno por serie al crearla, otro si una sesión cambia
+  de día, hora o lugar y otro si se anula; cada uno resuelve el anterior de la misma sesión o serie. No se firma.
+  Entrega de la convocatoria, como en un chat: cada línea lleva `SentAt` (un check: le llegó el aviso; solo con cuenta)
+  y `SeenAt` (doble check verde: la abrió; firmarla también cuenta), con recuentos `sent`/`seen`. La app del jugador la
+  marca vista al abrirla; el cuerpo técnico puede reenviarla a quien aún no la ha visto (migración `CallUpSeen`).
+  En el frontal la pestaña es **Agenda** (`/plantillas/{id}/agenda`; `/entrenamientos` sigue valiendo para los avisos
+  viejos): calendario y «Lo próximo» con entrenamientos y partidos juntos; el panel del club y del técnico enseña lo
+  próximo de cada plantilla.
+- **Árbitros: «No votado».** `RefereeRating.Score` es opcional (migración `RefereeNoVote`): null es «No votado», la
+  decisión del equipo de no puntuar, sin comentario pero con quién la tomó (club o técnico). Cuenta como contestado
+  (sale de pendientes) y no entra en medias ni recuentos de notas (`noVotes` aparte). `PUT …/officials/{refereeId}/rating`
+  admite `noVote: true`, y `POST /api/matches/{matchId}/officials/no-vote` lo aplica a todos los que falten.
 
 ## Casos de uso (endpoints)
 
@@ -207,6 +241,7 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET / POST | `/api/squads/{id}/matches/{matchId}/video-analysis` | **Del vídeo**: estado del análisis de cada vídeo de la plantilla en el partido, su calidad y la propuesta (los dos equipos detectados y los jugadores seguidos) / analizar o volver a analizar. Club, cuerpo técnico y, solo lectura, el administrador |
 | POST | `/api/squads/{id}/matches/{matchId}/video-analysis/apply` | Volcar al acta interna lo aceptado de la propuesta (datos de equipo marcados y jugadores seguidos asignados a fichas); 409 `video_analysis.overwrite` si pisa datos sin `overwrite = true` |
 | GET | `/api/squads/{id}/matches/{matchId}/video-analysis/crops/{tracklet}` | Recorte (JPEG) de un jugador seguido, para reconocerlo |
+| POST | `/api/squads/{id}/matches/{matchId}/video-analysis/cancel` | Cancelar lo que está en cola o analizándose (`videoId` opcional: sin él, todos los vídeos del partido); 409 `video_analysis.not_active` si no hay nada que cancelar. Club y cuerpo técnico |
 | GET | `/api/squads/{id}/matches/{matchId}/sheet/comparison` | **Comparador**: acta interna frente a la oficial guardada en SQL, jugador a jugador, con las discrepancias. `refresh` no fuerza descargas |
 | GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
 | GET | `/api/squads/{id}/players/{squadPlayerId}/profile` | Ficha para gráficos: serie partido a partido con el desglose de la nota, perfil por 90' y media/máximo de la plantilla |
@@ -221,12 +256,15 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | POST / DELETE | `/api/squads/{id}/trainings/{sessionId}/trial-players[/{trialPlayerId}]` | Apuntar a un **jugador a prueba** a la sesión (uno conocido por `trialPlayerId` o uno nuevo por `fullName`) / quitarlo de ella |
 | GET / POST / PUT / DELETE | `/api/squads/{id}/trial-players[/{trialPlayerId}]` | Los jugadores a prueba de la plantilla (nombre, notas, en cuántas sesiones están y a cuántas vinieron); el que ya tiene ficha no se borra |
 | POST | `/api/squads/{id}/trial-players/{trialPlayerId}/promote` | **Hacerle ficha**: alta en la plantilla con su nombre (posición y dorsal opcionales); sus asistencias de prueba pasan a la ficha |
+| GET | `/api/squads/{id}/agenda?from=&to=` | **Agenda** para el calendario: entrenamientos (`Training`) y partidos (`Match`, con su convocatoria), cada uno con `done` si ya se ha realizado |
 | GET | `/api/squads/{id}/callups` | **Convocatorias** de la plantilla con sus recuentos (los borradores solo para quien las prepara) |
 | GET / PUT | `/api/squads/{id}/matches/{matchId}/callup` | La convocatoria de un partido: quién va, cita y notas; `publish` la publica y avisa a toda la plantilla (al que va y al que no); después solo se avisa a quien le cambia |
+| POST | `/api/squads/{id}/matches/{matchId}/callup/resend` | Reenvía la convocatoria enviada a los jugadores con cuenta que aún no la han abierto |
 | GET | `/api/players/me/trainings` | Jugador: sus próximos entrenamientos con su estado de asistencia |
 | PUT | `/api/players/me/trainings/{sessionId}/absence` | Jugador: avisa de que no va (`willMiss`, motivo) o de que al final sí, antes de que empiece; el cuerpo técnico y el club reciben el aviso |
 | GET | `/api/players/me/callups` | Jugador: las convocatorias publicadas que le tocan (las de los partidos que quedan y la última semana) |
 | PUT | `/api/players/me/callups/{callUpId}/response` | Jugador: firma la convocatoria (`Confirmed` si va convocado; `Acknowledged` si no). Sin «no puedo» ni notas: eso se habla con el cuerpo técnico, que es quien la emite |
+| PUT | `/api/players/me/callups/{callUpId}/seen` | Jugador: la ha abierto (doble check para el cuerpo técnico); solo cuenta la primera vez |
 | GET | `/api/alerts` | Avisos de la campanita de la cuenta (club, técnico o jugador); `PUT /api/alerts/{id}/read` y `/api/alerts/read-all` los marcan leídos |
 | GET | `/api/players/me/invite/{code}` | Cuenta de jugador sin plantilla: solo la ficha asociada al código personal; nunca la plantilla completa |
 | POST / DELETE | `/api/players/me/squad` | Cuenta ya existente: vincularse con `{ "inviteCode": "..." }` (un solo uso, sin elegir ficha; la cuenta toma el nombre de la ficha) / desvincularse |
@@ -495,22 +533,39 @@ analizador [`TercerTiempo.Analisis`](src/TercerTiempo.Analisis/README.md) (Pytho
 carpeta:
 
 ```
-uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<vídeo> --equipos "<nuestro>,<rival>"
+uv run --frozen tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<vídeo> --equipos "<nuestro>,<rival>"
        [--campo LxA] --sin-clips --progreso --camara movil --exigir-gpu [--segmento 20:00-25:00]
 ```
 
 - **`MatchVideoAnalysis`** (tabla `MatchVideoAnalyses`, uno por vídeo): `Pending` → `Running` (con `Progress`, leído de
-  las líneas `##progreso N` del analizador y guardado cada pocos segundos) → `Ready`, o `Failed` con el motivo. Guarda la
+  las líneas `##progreso N` del analizador y guardado cada pocos segundos) → `Ready`, o `Failed` con el motivo, o
+  `Cancelled` si lo cancela el cuerpo técnico (en cola o a medias: el analizador lo nota al guardar el siguiente avance o
+  latido, porque la fila cambió, y se para sin guardar nada). Guarda la
   carpeta de salida, la versión del analizador, los pesos usados, `acta-propuesta.json` tal cual (compacto) y la
-  **calidad**: fotogramas analizados, % con balón y % con el campo calibrado (por debajo de 35 % y 50 % la propuesta va
-  con aviso). El mejor recorte de cada jugador seguido va a `MatchVideoAnalysisCrops` (JPEG de un par de KB), así la API
+  **calidad**: fotogramas analizados, % con balón, % con el campo calibrado y % de fotogramas que se pudieron leer del
+  archivo (`ReadFramesPct`, `pct_leido` del analizador; por debajo de 35 %, 50 % y 95 % la propuesta va con aviso, y por
+  debajo de 50 % leído el análisis falla: el archivo está dañado o cortado). El mejor recorte de cada jugador seguido va a `MatchVideoAnalysisCrops` (JPEG de un par de KB), así la API
   los sirve sin depender del disco del servicio de vídeo.
 - **Campo**: las medidas son las del equipo **local** (`Team.Profile.PitchLengthM/WidthM`), que apunta su club en la
   ficha del equipo; sin ellas el analizador calibra con su campo genérico de 120 × 70 m y la propuesta lo dice.
 - **Nunca frena la compresión**: es otro worker y otra cola. Si no hay `uv`, no existe la carpeta del analizador o no
   hay GPU (`--exigir-gpu`, código de salida 3), el análisis queda `Failed` con un mensaje claro y se puede volver a
-  pedir. No se reintenta solo (`Analysis:MaxAttempts` = 1). Al arrancar, lo que quedó `Running` vuelve a la cola; al
-  eliminar el vídeo se para el analizador y se borran el análisis, los recortes y su carpeta.
+  pedir. Al eliminar el vídeo se para el analizador y se borran el análisis, los recortes y su carpeta.
+- **Fallos y reintentos**: un fallo del propio análisis (`VideoAnalysisException`: sin GPU, vídeo ilegible, propuesta
+  de una versión que la app no entiende, JSON con NaN, analizador colgado) es definitivo → `Failed`. Uno pasajero (la
+  base, el disco, la red del volumen) vuelve a la cola con el motivo a la vista mientras queden intentos
+  (`Analysis:MaxAttempts`, 2). Si el analizador termina con error, su salida de error entera queda en el registro y en
+  `stderr.txt` de la carpeta de salida. Un analizador que pasa `Analysis:InactivityMinutes` (15) sin escribir nada se
+  da por colgado y se mata con todo su árbol; en Windows, además, los procesos hijos (`uv`, `python`) van en un Job
+  Object y mueren con el servicio aunque se cierre la ventana.
+- **Arrendamiento**: el análisis en marcha guarda quién lo lleva (`WorkerId`, «equipo:PID») y un latido
+  (`HeartbeatAt`, cada 15 s). En cada vuelta, lo que lleva más de `Analysis:LeaseMinutes` (10) sin latido vuelve a la
+  cola (el intento cuenta: tras el último, `Failed`); al arrancar, además, lo de un proceso de este mismo equipo que ya
+  no existe. Así nunca se retoma lo que otro analizador vivo está analizando. Al parar el servicio, lo que estaba a
+  medias vuelve a la cola sin contar el intento.
+- **¿Hay analizador?**: cada proceso que analiza deja un latido cada 30 s en `VideoAnalyzerHeartbeats` (uno por
+  `WorkerId`; lo borra al pararse). `GET …/video-analysis` devuelve `analyzerOnline` (alguno en los últimos 2 minutos)
+  y `analyzerSeenAt`, y el acta interna avisa si hay vídeos esperando y ningún analizador encendido.
 - Cada análisis queda en `JobRuns` como una ejecución de `video-analysis` («Análisis de vídeos» en `/jobs`: «CD Vallobín -
   Real Titánico (partido completo): 27 jugadores seguidos, balón a la vista en el 19,3 % de los fotogramas y campo
   calibrado en el 66,9 %, en 5 min»).
@@ -528,20 +583,30 @@ uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<víde
   de Pelayo (6 → 4)»); los goles solo se apuntan a quien no tenga ninguno; una línea nueva se crea con los minutos que
   se ha visto al jugador. Volver a analizar olvida la propuesta y las asignaciones, nunca el acta.
 - **Configuración** (`Analysis:*`): en la API, `Enabled` dice si se admiten peticiones de análisis (true en Development
-  y FakeDatos, false en Pilot y Production); en el servicio de vídeo, `Enabled` dice si este proceso las atiende, y
-  además `UvPath` (admite variables de entorno: `%APPDATA%\Python\Python314\Scripts\uv.exe`), `Directory` (carpeta
+  y FakeDatos, false en Pilot y Production); en el servicio de vídeo, `Enabled` dice si el compresor encola el análisis
+  al terminar cada vídeo y `RunWorker` si **este proceso** analiza (true en Development y FakeDatos fuera de Docker;
+  false en `appsettings.json`, Pilot, Production y en Docker), y además `MaxAttempts`, `InactivityMinutes`,
+  `LeaseMinutes`, `UvPath` (admite variables de entorno: `%APPDATA%\Python\Python314\Scripts\uv.exe`), `Directory` (carpeta
   del analizador, `../TercerTiempo.Analisis` desde el servicio), `OutputDirectory`, `Segment` (solo un tramo, para
   probar: `Analysis__Segment=20:00-25:00`), `Camera`, `RequireGpu`, `PollSeconds` (lo que se pide desde la API lo
   recoge el servicio al mirar la cola) y `TimeoutMinutes`. Una petición sin nadie que la atienda espera en cola, y la
   app lo dice.
 - **En Docker el analizador no corre**: la imagen del servicio de vídeo solo lleva .NET y ffmpeg, así que
-  `compose.yaml` le fija `Analysis__Enabled=false` (comprime, no analiza). Quien analiza es **`Start-Analyzer.ps1`**:
-  arranca este mismo servicio fuera de Docker solo como analizador (`VideoProcessing:Enabled=false`,
-  `Analysis:Enabled=true`, puerto 5083), contra la misma base y leyendo los vídeos del volumen de Docker Desktop a través
-  de `\\wsl.localhost\docker-desktop\mnt\docker-desktop-disk\data\docker\volumes\<TT_DATA_VOLUME>\_data\videos`
+  `compose.yaml` le fija `Analysis__RunWorker=false`: comprime y encola (`Analysis:Enabled` sale de su
+  `appsettings.{Entorno}.json`), pero no analiza. Quien analiza es **`Start-Analyzer.ps1`**: arranca este mismo servicio
+  fuera de Docker solo como analizador (`VideoProcessing:Enabled=false`, `Analysis:Enabled=true`,
+  `Analysis:RunWorker=true`, puerto 5083 en FakeDatos y 5084 en Development), contra la misma base y leyendo los vídeos
+  del volumen de Docker Desktop a través de
+  `\\wsl.localhost\docker-desktop\mnt\docker-desktop-disk\data\docker\volumes\<TT_DATA_VOLUME>\_data\videos`
   (`-Environment FakeDatos|Development`, `-Segment 20:00-25:00` para probar, `-VideosDirectory` si los vídeos están en
-  otra carpeta). Deja la propuesta en la base y la carpeta de salida junto al vídeo, así que el contenedor la borra con
-  él. Alternativa: un contenedor con GPU (`src/TercerTiempo.Analisis/Dockerfile`, `--gpus all`).
+  otra carpeta). Antes de arrancar comprueba, y dice qué falta: `uv`, `uv sync --frozen` del analizador, que torch vea
+  CUDA, los pesos de `modelos/` y que pueda leer y escribir en la carpeta de los vídeos. Solo uno por entorno a la vez
+  (mutex `Local\TercerTiempo.Analizador.<Entorno>`), y su salida queda en
+  `%LOCALAPPDATA%\TercerTiempo\analizador-<entorno>.log`. **`Start-Docker.ps1 -Environment FakeDatos|Development` lo
+  lanza solo** en una ventana minimizada si encuentra `nvidia-smi` y `uv` y no hay ya uno en marcha (`-NoAnalyzer` para
+  no lanzarlo). Deja la propuesta en la base y la carpeta de salida junto al vídeo, así que el contenedor la borra con
+  él. Alternativa: un contenedor con GPU (`src/TercerTiempo.Analisis/Dockerfile`, `--gpus all`, con `uv` fijado y
+  `uv sync --frozen` sobre `uv.lock`).
 
 **Acceso** (`VideoAccess`): un vídeo nunca es público. Lo ven la plantilla que lo subió (club, cuerpo técnico vigente y
 jugadores vinculados: `Owner`), el administrador (`Admin`) y quien tenga un pase del partido que lo incluya (`Pass`);
@@ -570,7 +635,12 @@ comparten origen. Con Docker Desktop en modo Linux:
 .\Start-Docker.ps1 -Environment Pilot                # piloto con clubes: publicación con la base tercertiempo_Piloto
 .\Start-Docker.ps1 -SkipBuild                         # reutiliza las imágenes
 .\Start-Docker.ps1 -ReplaceData                       # vuelve a copiar escudos y fotos de src/TercerTiempo.Api/data
+.\Start-Docker.ps1 -Environment FakeDatos -NoAnalyzer # sin lanzar el analizador de vídeo (Start-Analyzer.ps1)
 ```
+
+En Development y FakeDatos, si el equipo tiene GPU de NVIDIA (`nvidia-smi`) y `uv`, el script lanza al final
+`Start-Analyzer.ps1` en una ventana minimizada (si no hay ya uno de ese entorno en marcha) para que los vídeos se
+analicen sin más pasos.
 
 Desde el repositorio del frontal, su `Start-Docker.ps1` arranca también la API (mismo entorno) si no está en marcha.
 
@@ -588,8 +658,8 @@ prueben desde este equipo abriendo la web con un túnel (`cloudflared tunnel --u
 propia base, `tercertiempo_Piloto`, en el SQL Server de Windows con el login `tercertiempo_app` (la contraseña se toma
 de `.env.development`), y su volumen `tercer-tiempo-pilot-data`. `.env.pilot` se genera la primera vez (clave JWT
 aleatoria; `TT_PUBLIC_URL` es la del túnel cuando sea fija) y la contraseña de `/jobs` sale de los user-secrets. Como
-todas las visitas llegan por el túnel y Nginx, el limitador de peticiones usa la IP que manda el túnel
-(`Throttling:TrustForwardedHeaders`). La base se creó como copia de la de desarrollo (`BACKUP ... WITH COPY_ONLY` y
+todas las visitas llegan por el túnel y Nginx, la IP del visitante se lee dos saltos atrás en `X-Forwarded-For`
+(`ReverseProxy:ForwardLimit: 2`), y la que pudiera inventar el cliente más a la izquierda no cuenta. La base se creó como copia de la de desarrollo (`BACKUP ... WITH COPY_ONLY` y
 `RESTORE ... WITH MOVE`); sus contadores de peticiones a asturfutbol.es son aparte, así que mientras corre el piloto no
 conviene que la API de Visual Studio lance también los scrapeos de actas.
 
@@ -765,7 +835,8 @@ comprueba que todo `ErrorCode` tiene mensaje.
 reincidencia reciente (5 min, 30 min, 1 día) y, pasado el último escalón, el doble cada vez hasta `MaxBanMinutes`;
 tras `StrikeMemoryHours` sin incidencias vuelve al primer escalón. Mientras dura el bloqueo responde **429** con
 `Retry-After` y ProblemDetails (`throttle.too_many_requests` / `throttle.banned`). Las rutas de `ExemptRoutes` (los
-escudos) no cuentan para el límite por endpoint; `TrustForwardedHeaders` solo detrás de un proxy de confianza.
+escudos) no cuentan para el límite por endpoint. La IP es la que deja `UseForwardedHeaders` con
+`ReverseProxy:ForwardLimit` proxies de confianza delante (1 con Nginx solo, 2 con un túnel o un Caddy delante).
 Es por proceso: con varias instancias haría falta compartir los contadores (Redis).
 
 ## Decisiones y siguientes pasos sugeridos

@@ -31,7 +31,7 @@ public class PlayerCardTests
     {
         _season = _competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
         _competition.MarkCurrent(_season.Id);
-        _entry = RosterEntry.Create(_team.Id, _season.Id, "Mateo García Martínez", Position.Forward, 10, null, Now);
+        _entry = RosterEntry.Create(_team.Id, _season.Id, "Mateo García Martínez", Position.Forward, null, Now);
         _squad = Squad.Create(_team.Id, _season.Id, _coachId, Now);
         var player = _squad.AddPlayer(_entry.FullName, Position.Forward, 10, _entry.Id, Now);
         _squad.LinkPlayer(player.Id, _account.Id);

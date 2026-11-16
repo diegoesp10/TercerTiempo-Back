@@ -108,7 +108,7 @@ public sealed class CoachAppointment : AggregateRoot
         AccessCode = AccessCodes.Generate();
     }
 
-    internal static DateOnly Today(DateTimeOffset now) => DateOnly.FromDateTime(now.UtcDateTime);
+    internal static DateOnly Today(DateTimeOffset now) => SpainTime.Today(now);
 }
 
 public enum AppointmentStatus

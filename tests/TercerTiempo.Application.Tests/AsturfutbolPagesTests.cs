@@ -159,6 +159,63 @@ public class AsturfutbolPagesTests
     }
 
     [Fact]
+    public void A_sheet_the_referee_has_not_closed_has_lineups_but_no_events()
+    {
+        // J10 CD Vallobín 1-0 La Fresneda CF, descargada a las 15:26 del 15-11-2026: la federación ya enseña el 1-0 y las
+        // alineaciones, pero la tabla de goles está vacía y no hay apartados de sustituciones ni de tarjetas.
+        var sheet = AsturfutbolPages.ParseSheet(Fixture("acta-25744818-sin-cerrar.html"), matchLength: 90)!;
+
+        Assert.Equal("C.D. Vallobin A", sheet.HomeTeamName);
+        Assert.Equal("La Fresneda A", sheet.AwayTeamName);
+        Assert.Equal("Caicoya Beunza, Pablo", sheet.Referee);
+        Assert.Equal(3, sheet.Officials!.Count);
+
+        var home = sheet.Lines.Where(l => l.Side == MatchSide.Home).ToList();
+        var away = sheet.Lines.Where(l => l.Side == MatchSide.Away).ToList();
+        Assert.Equal(18, home.Count);
+        Assert.Equal(17, away.Count);
+        Assert.Equal(11, home.Count(l => l.Started));
+        Assert.Equal(11, away.Count(l => l.Started));
+        Assert.Contains(home, l => l.FullName == "FERNANDEZ PEÑA FERNANDEZ, MIGUEL" && l.ShirtNumber == 17);
+        Assert.Contains(home, l => l.FullName == "Mateo" && l.ShirtNumber == 10);
+
+        Assert.Empty(sheet.Events);
+        Assert.All(sheet.Lines, l => Assert.Equal(0, l.Goals + l.PenaltyGoals + l.OwnGoals + l.YellowCards));
+    }
+
+    [Fact]
+    public void The_same_sheet_once_closed_has_the_goal_the_changes_and_the_cards()
+    {
+        // La misma J10 descargada el 16-11-2026, ya cerrada por el árbitro: el marcado es el de siempre.
+        var sheet = AsturfutbolPages.ParseSheet(Fixture("acta-25744818.html"), matchLength: 90)!;
+
+        Assert.Equal(1, sheet.HomeGoals);
+        Assert.Equal(0, sheet.AwayGoals);
+        var goal = Assert.Single(sheet.Events, e => e.Type == OfficialEventType.Goal);
+        Assert.Equal((MatchSide.Home, 11, "GARCIA MARTINEZ, IGNACIO ALFONSO"), (goal.Side, goal.Minute, goal.PlayerName));
+
+        Assert.Equal(8, sheet.Events.Count(e => e.Type == OfficialEventType.Substitution));
+        Assert.Equal(10, sheet.Events.Count(e => e.Type == OfficialEventType.YellowCard));
+
+        var home = sheet.Lines.Where(l => l.Side == MatchSide.Home).ToList();
+        var espina = Assert.Single(home, l => l.ShirtNumber == 8);
+        Assert.Equal(62, espina.MinuteIn);
+        Assert.Equal(28, espina.MinutesPlayed);
+        Assert.Equal(1, espina.YellowCards);
+        var cendan = Assert.Single(home, l => l.ShirtNumber == 6);
+        Assert.Equal(62, cendan.MinuteOut);
+        Assert.Equal(62, cendan.MinutesPlayed);
+        Assert.Equal(1, Assert.Single(home, l => l.ShirtNumber == 11).Goals);
+        Assert.Null(Assert.Single(home, l => l.ShirtNumber == 13).MinuteIn);
+
+        var away = sheet.Lines.Where(l => l.Side == MatchSide.Away).ToList();
+        Assert.Equal(46, Assert.Single(away, l => l.ShirtNumber == 23).MinutesPlayed);
+        Assert.Equal(44, Assert.Single(away, l => l.ShirtNumber == 8).MinutesPlayed);
+        // Dos amarillas al segundo entrenador: suceso sin línea de jugador.
+        Assert.Equal(2, sheet.Events.Count(e => e.PlayerName == "FERNANDEZ MARTINEZ FARIZA, EMILIO"));
+    }
+
+    [Fact]
     public void A_page_without_teams_is_not_a_sheet()
     {
         Assert.Null(AsturfutbolPages.ParseSheet("<html><body><p>No se ha aceptado el cookie</p></body></html>", 90));

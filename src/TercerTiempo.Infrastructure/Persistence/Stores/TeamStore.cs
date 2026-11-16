@@ -32,6 +32,19 @@ internal sealed class TeamStore(AppDbContext db) : ITeamStore
             .ToListAsync(cancellationToken);
     }
 
+    // Como GetBySeasonAsync (clasificación y partidos), para varias temporadas a la vez y solo con los ids.
+    public async Task<IReadOnlyList<SeasonTeam>> GetSeasonTeamsAsync(IEnumerable<Guid> seasonIds, CancellationToken cancellationToken = default)
+    {
+        var list = seasonIds.Distinct().ToList();
+        if (list.Count == 0) return [];
+
+        var fromStandings = db.Standings.Where(s => list.Contains(s.SeasonId)).Select(s => new { s.SeasonId, s.TeamId });
+        var homeTeams = db.Matches.Where(m => list.Contains(m.SeasonId)).Select(m => new { m.SeasonId, TeamId = m.HomeTeamId });
+        var awayTeams = db.Matches.Where(m => list.Contains(m.SeasonId)).Select(m => new { m.SeasonId, TeamId = m.AwayTeamId });
+        var rows = await fromStandings.Union(homeTeams).Union(awayTeams).ToListAsync(cancellationToken);
+        return rows.Select(r => new SeasonTeam(r.SeasonId, r.TeamId)).ToList();
+    }
+
     public void Add(Team team) => db.Teams.Add(team);
 
     public async Task<IReadOnlyList<RosterEntry>> GetRosterAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken = default) =>

@@ -208,6 +208,7 @@ public static class ErrorCode
     public const string SheetTeamNotInvolved = "sheet.team_not_involved";
     public const string SheetMatchNotPlayed = "sheet.match_not_played";
     public const string SheetShotsOnTarget = "sheet.shots_on_target";
+    public const string SheetDuplicatePlayer = "sheet.duplicate_player";
     public const string SheetPassesCompleted = "sheet.passes_completed";
     public const string TeamStatsSetPieceGoals = "team_stats.set_piece_goals";
     public const string TeamStatsPenaltyGoals = "team_stats.penalty_goals";
@@ -242,6 +243,8 @@ public static class ErrorCode
     public const string RefereeMatchNotOver = "referee.match_not_over";
     public const string RefereeAlreadyRated = "referee.already_rated";
     public const string RefereeRatingNotConfirmed = "referee.rating_not_confirmed";
+    public const string RefereeNoVoteComment = "referee.no_vote_comment";
+    public const string RefereeNothingToVote = "referee.nothing_to_vote";
     public const string RefereeRatingNotFound = "referee.rating_not_found";
     public const string RefereeRatingNoComment = "referee.rating_no_comment";
     public const string RefereeCommentNotAllowed = "referee.comment_not_allowed";
@@ -297,6 +300,7 @@ public static class ErrorCode
     public const string VideoAnalysisNothingSelected = "video_analysis.nothing_selected";
     public const string VideoAnalysisOverwrite = "video_analysis.overwrite";
     public const string VideoAnalysisCropNotFound = "video_analysis.crop_not_found";
+    public const string VideoAnalysisNotActive = "video_analysis.not_active";
     public const string TeamPitchOwnTeamsOnly = "team.pitch_own_teams_only";
     public const string TeamPitchIncomplete = "team.pitch_incomplete";
     public const string PassNotFound = "pass.not_found";
@@ -310,6 +314,7 @@ public static class ErrorCode
     public const string PassPaidCannotRevoke = "pass.paid_cannot_revoke";
     public const string PassNoClub = "pass.no_club";
     public const string PassNoVideo = "pass.no_video";
+    public const string PassNoSheet = "pass.no_sheet";
     public const string PassOwnTeam = "pass.own_team";
     public const string PassMatchNotPlayed = "pass.match_not_played";
     public const string PassPaymentFailed = "pass.payment_failed";

@@ -30,7 +30,7 @@ internal sealed class EnvironmentDataGateway(IServiceScopeFactory scopes) : IEnv
     public async Task<IReadOnlySet<Guid>> TeamsWithSquadAsync(Guid seasonId, CancellationToken cancellationToken)
     {
         using var scope = scopes.CreateEnvironmentScope();
-        var squads = await scope.ServiceProvider.GetRequiredService<ISquadStore>().GetBySeasonAsync(seasonId, cancellationToken);
+        var squads = await scope.ServiceProvider.GetRequiredService<ISquadStore>().GetRefsBySeasonAsync(seasonId, cancellationToken);
         return squads.Select(s => s.TeamId).ToHashSet();
     }
 }
@@ -73,7 +73,8 @@ internal sealed class RealDataCopyWorker(
                 var manual = await scheduler.WaitAsync(job.Name, due, stoppingToken);
                 try
                 {
-                    await scheduler.RunAsync(job.Name, manual, copier.CopyAsync, stoppingToken);
+                    // A su hora solo si la base real ha cambiado; a mano o tras una descarga, siempre.
+                    await scheduler.RunAsync(job.Name, manual, ct => copier.CopyIfChangedAsync(force: manual, ct), stoppingToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
                 {

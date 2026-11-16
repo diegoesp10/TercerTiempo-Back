@@ -33,10 +33,14 @@ public static class WebHostExtensions
         services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
 
         // Detrás de un proxy (Nginx del frontal en Docker): la IP y el esquema del visitante llegan en X-Forwarded-*.
-        // El proxy está en la red interna de Docker, así que no se limita a una lista de direcciones conocidas.
+        // El proxy está en la red interna de Docker, así que no se limita a una lista de direcciones conocidas. Se leen
+        // tantas entradas, desde la derecha, como proxies de confianza hay delante (ReverseProxy:ForwardLimit: 1 con
+        // Nginx solo, 2 con un túnel o un Caddy delante); las de más a la izquierda las puede inventar el cliente.
+        var forwardLimit = Math.Max(1, configuration.GetValue("ReverseProxy:ForwardLimit", 1));
         services.Configure<ForwardedHeadersOptions>(options =>
         {
             options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.ForwardLimit = forwardLimit;
             options.KnownIPNetworks.Clear();
             options.KnownProxies.Clear();
         });

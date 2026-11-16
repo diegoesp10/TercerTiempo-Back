@@ -75,20 +75,23 @@ internal static class RosterEntryDetails
     public static async Task<Details> BuildAsync(
         Guid teamId, Guid seasonId, RosterEntry entry, RosterStores roster, ISquadStore squads, IPerformanceStore performances, CancellationToken cancellationToken)
     {
+        // La ficha que se pide puede ser una de las varias que la web publica de la misma persona: se enseña la persona.
+        // Una ficha retirada no está en la plantilla y va sola, sin actas.
         var allEntries = await roster.Teams.GetRosterAsync(teamId, seasonId, cancellationToken);
-        var appearances = await RosterSummary.AppearancesAsync(teamId, seasonId, allEntries, roster.Matches, roster.Sheets, cancellationToken);
-        var mine = appearances.GetValueOrDefault(entry.Id) ?? [];
+        var people = await RosterSummary.PeopleAsync(teamId, seasonId, allEntries, roster.Matches, roster.Sheets, cancellationToken);
+        var mine = people.FirstOrDefault(p => p.Person.Entries.Any(e => e.Id == entry.Id))
+            ?? new RosterPersonSeason(new RosterPerson(entry, [entry]), []);
 
         var matches = await roster.Matches.GetTeamMatchesAsync(seasonId, teamId, cancellationToken);
         var teamIds = matches.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();
         var teams = (await roster.Teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
 
-        var official = mine
+        var official = mine.Appearances
             .OrderByDescending(a => a.Match.Matchday)
             .Select(a => new RosterOfficialAppearanceDto(MatchMapper.ToDto(a.Match, teams), a.Home, OfficialSheetMapper.ToDto(a.Line)))
             .ToList();
 
-        var (squad, player) = await SquadPlayerAsync(teamId, seasonId, entry, allEntries, squads, cancellationToken);
+        var (squad, player) = await SquadPlayerAsync(teamId, seasonId, mine.Person, RosterSummary.Candidates(people), squads, cancellationToken);
         var internalRows = new List<RosterInternalAppearanceDto>();
         if (player is not null)
         {
@@ -102,24 +105,24 @@ internal static class RosterEntryDetails
                 .ToList();
         }
 
-        return new Details(RosterEntryDto.From(entry, RosterSummary.Stats(mine)), official, internalRows, squad, player);
+        return new Details(
+            RosterEntryDto.From(mine.Person, RosterSummary.Stats(mine.Appearances), RosterSummary.ShirtNumbers(mine.Appearances)),
+            official, internalRows, squad, player);
     }
 
-    // La ficha enlaza con el jugador de la plantilla interna por id (si se importó de aquí) o, si no, por el mismo
-    // cruce de nombre y dorsal que se usa con las actas oficiales.
+    // La persona enlaza con el jugador de la plantilla interna por la ficha de la que se importó (la principal antes
+    // que las otras, y uno en activo antes que uno de baja) o, si no, por el mismo cruce de nombres que se usa con las
+    // actas oficiales; de dorsal, el que más ha llevado en ellas frente al habitual que le pone el cuerpo técnico.
     private static async Task<(Squad? Squad, SquadPlayer? Player)> SquadPlayerAsync(
-        Guid teamId, Guid seasonId, RosterEntry entry, IReadOnlyList<RosterEntry> allEntries, ISquadStore squads, CancellationToken cancellationToken)
+        Guid teamId, Guid seasonId, RosterPerson person, IReadOnlyList<SheetMatcher.Candidate> people, ISquadStore squads, CancellationToken cancellationToken)
     {
         var squad = await squads.GetByTeamAndSeasonAsync(teamId, seasonId, cancellationToken);
         if (squad is null) return (null, null);
 
-        var player = squad.Players.FirstOrDefault(p => p.RosterEntryId == entry.Id);
+        var imported = person.Entries.SelectMany(e => squad.Players.Where(p => p.RosterEntryId == e.Id)).ToList();
+        var player = imported.FirstOrDefault(p => p.IsActive) ?? imported.FirstOrDefault();
         if (player is null)
-        {
-            var candidates = allEntries.Select(r => new SheetMatcher.Candidate(r.Id, r.NormalizedName, r.ShirtNumber));
-            var byName = SheetMatcher.MatchPlayers(candidates, squad.ActivePlayers);
-            byName.TryGetValue(entry.Id, out player);
-        }
+            SheetMatcher.MatchPlayers(people, squad.ActivePlayers).TryGetValue(person.Main.Id, out player);
         return (squad, player);
     }
 

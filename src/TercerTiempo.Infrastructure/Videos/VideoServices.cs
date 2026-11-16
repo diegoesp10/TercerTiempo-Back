@@ -32,7 +32,8 @@ internal sealed class FileSystemVideoStorage(IOptions<VideoOptions> options) : I
         if (!File.Exists(path))
             throw new FileNotFoundException("El archivo del vídeo no está en el almacenamiento.", storageKey);
 
-        Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
+        // FileShare.Delete: en Windows, que alguien esté viendo el original no impide borrarlo al acabar la compresión.
+        Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 1 << 16, useAsync: true);
         return Task.FromResult(stream);
     }
 
@@ -179,9 +180,13 @@ internal sealed class MemoryVideoTickets(IMemoryCache cache, IOptions<VideoOptio
         var ticket = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
         var settings = options.Value;
         var now = clock.GetUtcNow();
-        var expiresAt = now.AddHours(settings.TicketMaxHours);
+        // El de descarga solo tiene que servir para empezarla (y reanudarla poco después): un enlace de descarga que
+        // circule caduca enseguida.
+        var expiresAt = download
+            ? now.AddMinutes(Math.Max(1, settings.DownloadTicketMinutes))
+            : now.AddHours(Math.Max(1, settings.TicketMaxHours));
 
-        cache.Set(Key(ticket), new VideoPlaybackGrant(videoId, download), new MemoryCacheEntryOptions
+        cache.Set(Key(ticket), new VideoPlaybackGrant(videoId, download, userId), new MemoryCacheEntryOptions
         {
             SlidingExpiration = TimeSpan.FromMinutes(settings.TicketMinutes),
             AbsoluteExpiration = expiresAt,

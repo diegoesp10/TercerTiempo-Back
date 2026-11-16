@@ -13,7 +13,9 @@ public sealed record SquadPlayerProfileDto(
     PlayerAxesDto Profile,
     PlayerAxesDto SquadAverage,
     PlayerAxesDto SquadBest,
-    IReadOnlyList<PlayerMatchPointDto> Matches);
+    IReadOnlyList<PlayerMatchPointDto> Matches,
+    [property: System.ComponentModel.Description("Dorsales que ha llevado, del más usado al menos: en cada partido, el apuntado en el acta interna y, si no, el del acta oficial.")]
+    IReadOnlyList<Teams.Roster.ShirtNumberUsageDto> ShirtNumbers);
 
 public sealed record PlayerMatchPointDto(
     MatchDto Match,

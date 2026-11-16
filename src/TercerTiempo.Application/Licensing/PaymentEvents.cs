@@ -174,7 +174,7 @@ internal sealed class ApplyLicenseEventHandler(
                 payment.MarkFailed(failed.Reason);
                 licenses.AddPayment(payment);
                 await unitOfWork.SaveChangesAsync(cancellationToken);
-                var next = failed.NextAttemptAt is { } at ? $"; siguiente intento el {at.ToLocalTime():dd/MM HH:mm}" : "; sin más intentos";
+                var next = failed.NextAttemptAt is { } at ? $"; siguiente intento el {SpainTime.Local(at):dd/MM HH:mm}" : "; sin más intentos";
                 return new LicenseEventOutcome(true, license.Id, $"Cobro rechazado (intento {failed.AttemptCount}): {failed.Reason}{next}");
             }
 

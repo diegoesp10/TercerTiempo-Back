@@ -24,13 +24,18 @@
 #                             .env.fakedatos la primera vez; la contraseña de /jobs sale de los user-secrets.
 #   -SkipBuild                reutiliza las imágenes existentes.
 #   -ReplaceData              vuelve a copiar al volumen los escudos y fotos de src/TercerTiempo.Api/data.
+#   -NoAnalyzer               en Development y FakeDatos no arranca el analizador de vídeo. Sin él, si el equipo tiene
+#                             GPU de NVIDIA (nvidia-smi) y uv, al final se lanza Start-Analyzer.ps1 de ese entorno en
+#                             una ventana minimizada (salvo que ya haya uno en marcha), que analiza lo que el
+#                             contenedor de vídeo encola.
 param(
     [ValidateSet('Development', 'Production', 'Pilot', 'FakeDatos')][string]$Environment = 'Development',
     [ValidateSet('Local', 'Container')][string]$Database,
     [switch]$WithDatabase,
     [switch]$WithJobs,
     [switch]$SkipBuild,
-    [switch]$ReplaceData
+    [switch]$ReplaceData,
+    [switch]$NoAnalyzer
 )
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
@@ -220,3 +225,33 @@ if ($Environment -eq 'Pilot') {
     Write-Host '  cloudflared tunnel --url http://127.0.0.1:8180' -ForegroundColor Green
 }
 docker @compose ps
+
+# El contenedor de vídeo encola los análisis pero no los hace (no tiene GPU): los hace Start-Analyzer.ps1 desde Windows.
+if ($Environment -in 'Development', 'FakeDatos') {
+    $analyzerLog = Join-Path $env:LOCALAPPDATA "TercerTiempo\analizador-$envName.log"
+    $existing = $null
+    $running = [Threading.Mutex]::TryOpenExisting("Local\TercerTiempo.Analizador.$Environment", [ref]$existing)
+    if ($existing) { $existing.Dispose() }
+    $hasGpu = $false
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+        $ErrorActionPreference = 'Continue'
+        nvidia-smi -L 2>$null | Out-Null
+        $hasGpu = $LASTEXITCODE -eq 0
+        $ErrorActionPreference = 'Stop'
+    }
+    $hasUv = [bool](Get-Command uv -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Python\Python314\Scripts\uv.exe'))
+
+    if ($NoAnalyzer) {
+        Write-Host 'Analizador de vídeo: no se arranca (-NoAnalyzer); lo que se encole espera hasta lanzar .\Start-Analyzer.ps1.' -ForegroundColor Yellow
+    } elseif ($running) {
+        Write-Host "Analizador de vídeo ($Environment): ya hay uno en marcha en este equipo." -ForegroundColor Green
+    } elseif (-not $hasGpu -or -not $hasUv) {
+        Write-Host "Analizador de vídeo: no se arranca ($(if (-not $hasGpu) { 'sin GPU de NVIDIA (nvidia-smi)' } else { 'sin uv' })). Los vídeos se comprimen y se quedan en cola de análisis; el acta interna avisa de que no hay analizador." -ForegroundColor Yellow
+    } else {
+        # Una sola cadena con la ruta entre comillas: Start-Process de Windows PowerShell no las pone (la ruta lleva espacios).
+        $analyzerArgs = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Environment {1} -Background' -f (Join-Path $PSScriptRoot 'Start-Analyzer.ps1'), $Environment
+        if ($Environment -eq 'Development' -and $Database) { $analyzerArgs += " -Database $Database" }
+        Start-Process -FilePath 'powershell.exe' -ArgumentList $analyzerArgs -WindowStyle Minimized -WorkingDirectory $PSScriptRoot | Out-Null
+        Write-Host "Analizador de vídeo ($Environment) arrancando en una ventana minimizada («Analizador de vídeo ($Environment)»); registro en $analyzerLog" -ForegroundColor Green
+    }
+}

@@ -20,6 +20,37 @@ internal sealed class SquadStore(AppDbContext db) : ISquadStore
             .OrderByDescending(s => s.CreatedAt)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<SquadRef>> GetRefsByCoachAsync(Guid coachId, DateOnly today, CancellationToken cancellationToken = default) =>
+        await db.Squads.AsNoTracking()
+            .Where(s => s.Staff.Any(m => m.CoachId == coachId && m.LeftAt == null && (m.ValidUntil == null || m.ValidUntil >= today)))
+            .OrderByDescending(s => s.CreatedAt)
+            .Select(s => new SquadRef(s.Id, s.TeamId, s.SeasonId, s.Visibility))
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<SquadRef>> GetRefsBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
+        await db.Squads.AsNoTracking()
+            .Where(s => s.SeasonId == seasonId)
+            .Select(s => new SquadRef(s.Id, s.TeamId, s.SeasonId, s.Visibility))
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<SquadRef>> GetRefsAsync(IEnumerable<Guid> teamIds, IEnumerable<Guid> seasonIds, CancellationToken cancellationToken = default)
+    {
+        var teams = teamIds.Distinct().ToList();
+        var seasons = seasonIds.Distinct().ToList();
+        if (teams.Count == 0 || seasons.Count == 0) return [];
+        return await db.Squads.AsNoTracking()
+            .Where(s => teams.Contains(s.TeamId) && seasons.Contains(s.SeasonId))
+            .Select(s => new SquadRef(s.Id, s.TeamId, s.SeasonId, s.Visibility))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Squad>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default)
+    {
+        var list = ids.Distinct().ToList();
+        if (list.Count == 0) return [];
+        return await db.Squads.Where(s => list.Contains(s.Id)).ToListAsync(cancellationToken);
+    }
+
     public Task<Squad?> GetByPlayerAsync(Guid playerId, CancellationToken cancellationToken = default) =>
         db.Squads.FirstOrDefaultAsync(
             s => s.Players.Any(p => p.PlayerId == playerId && p.Status == SquadPlayerStatus.Active),

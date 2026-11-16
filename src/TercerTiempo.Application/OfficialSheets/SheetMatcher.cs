@@ -8,6 +8,7 @@ namespace TercerTiempo.Application.OfficialSheets;
 internal static class SheetMatcher
 {
     private const double MinScore = 0.6;
+    private const double OtherSurnameScore = 0.62;
 
     public sealed record Candidate(Guid Id, string NormalizedName, int? ShirtNumber);
 
@@ -58,7 +59,40 @@ internal static class SheetMatcher
             usedLines.Add(line.Id);
         }
 
+        // Y al revés: hay equipos que publican la plantilla con una sola palabra por jugador ("Guzmán", "Ogbogbodu").
+        // La ficha vale si solo una línea libre lleva esa palabra y ninguna otra ficha suelta apunta a esa línea; si
+        // apuntan dos (el mismo jugador publicado como "Desmond" y como "Ogbogbodu"), la que lleva el apellido.
+        var freeLines = lineTokens.Where(l => !usedLines.Contains(l.Line.Id)).ToList();
+        var lone = playerTokens
+            .Where(p => p.Tokens.Count == 1 && p.Tokens.First().Length >= 3 && !result.ContainsKey(p.Player.Id))
+            .Select(p => (p.Player, Lines: freeLines
+                .Select(l => (l.Line, Named: Names(p.Tokens.First(), l.Line.FullName, l.Tokens)))
+                .Where(l => l.Named != NamedBy.Nothing)
+                .ToList()))
+            .Where(p => p.Lines.Count == 1)
+            .Select(p => (p.Player, p.Lines[0].Line, p.Lines[0].Named))
+            .GroupBy(p => p.Line.Id);
+        foreach (var claims in lone)
+        {
+            var winner = claims.Count() == 1 ? claims.ToList() : claims.Where(c => c.Named == NamedBy.Surname).ToList();
+            if (winner.Count == 1)
+                result[winner[0].Player.Id] = winner[0].Line;
+        }
+
         return result;
+    }
+
+    private enum NamedBy { Nothing, GivenName, Surname }
+
+    // La palabra es uno de los apellidos de la línea o su nombre de pila (con diminutivos y apodos); sin la coma de la
+    // federación no se sabe cuál es cuál y tiene que estar tal cual.
+    private static NamedBy Names(string token, string lineFullName, HashSet<string> lineTokens)
+    {
+        var comma = lineFullName.IndexOf(',');
+        if (comma <= 0) return lineTokens.Contains(token) ? NamedBy.GivenName : NamedBy.Nothing;
+
+        if (Tokens(NameNormalizer.Normalize(lineFullName[..comma])).Contains(token)) return NamedBy.Surname;
+        return Tokens(NameNormalizer.Normalize(lineFullName[(comma + 1)..])).Any(g => SameGiven(token, g)) ? NamedBy.GivenName : NamedBy.Nothing;
     }
 
     public static IReadOnlyDictionary<Guid, SquadPlayer> MatchPlayers(IEnumerable<Candidate> entries, IEnumerable<SquadPlayer> players)
@@ -113,8 +147,12 @@ internal static class SheetMatcher
     // Las actas de la federación escriben "APELLIDOS, NOMBRE" y los apellidos son lo que no cambia: las plantillas ponen
     // apodos o diminutivos ("Nacho Cabal" por "CABAL GONZALEZ, IGNACIO", "Berto Arias" por "ARIAS SANZ, ALBERTO JESUS"),
     // a veces un solo apellido y alguna errata ("Liñera" por "LIÑEIRA"). Hace falta el primer apellido y que lo demás
-    // del nombre sea el otro apellido o encaje con el nombre de pila; un nombre distinto ("Pablo Cabal") solo vale si
-    // además coincide el dorsal.
+    // del nombre sea el otro apellido o encaje con el nombre de pila. Con una palabra que no cuadra hay dos salidas:
+    // que coincida el dorsal (un nombre distinto, "Pablo Cabal", no vale sin él: puede ser su hermano) o que la línea
+    // lleve su nombre de pila entero y su primer apellido tal cual, y entonces lo que baila es el segundo apellido
+    // ("Bastida González" por "BASTIDA CORRALES, ROBERTO", "Iglesias Menéndez" por "IGLESIAS MENDEZ, ALEJANDRO"): vale,
+    // por debajo de cualquier cruce limpio. Ahí el primer apellido no admite erratas: "Pablo Fernández Flórez" no es
+    // "FLORES RASTRERO, PABLO".
     internal static double SurnameScore(HashSet<string> player, string lineFullName, int? playerShirt, int? lineShirt)
     {
         var comma = lineFullName.IndexOf(',');
@@ -129,45 +167,18 @@ internal static class SheetMatcher
         var unexplained = player.Count(p => !surnames.Any(s => SameSurname(p, s)) && !given.Any(g => SameGiven(p, g)));
 
         var shirtBonus = playerShirt is { } ps && lineShirt is { } ls && ps == ls ? 0.3 : 0;
-        if (unexplained > 0) return unexplained == 1 && shirtBonus > 0 ? 0.5 + shirtBonus : 0;
+        if (unexplained > 1) return 0;
+        if (unexplained == 1)
+        {
+            if (shirtBonus > 0) return 0.5 + shirtBonus;
+            return player.Contains(surnames[0]) && given.Count > 0 && given.All(g => player.Any(p => SameGiven(p, g))) ? OtherSurnameScore : 0;
+        }
         return 0.5 + (secondSurname ? 0.25 : 0) + (givenName ? 0.2 : 0) + shirtBonus;
     }
 
-    private static bool SameSurname(string token, string surname) =>
-        token == surname || token.Length >= 5 && surname.Length >= 5 && Math.Abs(token.Length - surname.Length) <= 1 && EditDistance(token, surname) <= 1;
+    private static bool SameSurname(string token, string surname) => PersonName.SameSurname(token, surname);
 
-    // Nombre de pila, inicial, diminutivo que empieza o acaba igual ("Guille", "Ivanchu", "Berto") o apodo conocido.
-    private static bool SameGiven(string token, string name) =>
-        token == name
-        || token.Length == 1 && name[0] == token[0]
-        || token.Length >= 4 && (name.StartsWith(token, StringComparison.Ordinal) || name.EndsWith(token, StringComparison.Ordinal))
-        || name.Length >= 4 && token.StartsWith(name, StringComparison.Ordinal)
-        || Nicknames.TryGetValue(token, out var names) && names.Contains(name);
-
-    private static readonly Dictionary<string, string[]> Nicknames = new()
-    {
-        ["nacho"] = ["ignacio"], ["inaki"] = ["ignacio"], ["pepe"] = ["jose"], ["pepin"] = ["jose"], ["chema"] = ["jose", "maria"],
-        ["josema"] = ["jose", "maria"], ["juanjo"] = ["juan", "jose"], ["juanma"] = ["juan", "manuel"], ["paco"] = ["francisco"],
-        ["curro"] = ["francisco"], ["pancho"] = ["francisco"], ["quique"] = ["enrique"], ["kike"] = ["enrique"], ["lolo"] = ["manuel"],
-        ["manolo"] = ["manuel"], ["chus"] = ["jesus"], ["suso"] = ["jesus"], ["chuchi"] = ["jesus"], ["toni"] = ["antonio"],
-        ["tony"] = ["antonio"], ["tono"] = ["antonio"], ["lucho"] = ["luis"], ["alex"] = ["alejandro", "alexander", "alexis"],
-        ["edu"] = ["eduardo"], ["willy"] = ["guillermo"], ["moi"] = ["moises"], ["charly"] = ["carlos"], ["kiko"] = ["francisco", "enrique"],
-        ["fito"] = ["adolfo", "rodolfo"], ["tete"] = ["jose"], ["pachi"] = ["francisco"], ["rulo"] = ["raul"],
-    };
-
-    private static int EditDistance(string a, string b)
-    {
-        var previous = Enumerable.Range(0, b.Length + 1).ToArray();
-        for (var i = 1; i <= a.Length; i++)
-        {
-            var current = new int[b.Length + 1];
-            current[0] = i;
-            for (var j = 1; j <= b.Length; j++)
-                current[j] = Math.Min(Math.Min(current[j - 1] + 1, previous[j] + 1), previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
-            previous = current;
-        }
-        return previous[b.Length];
-    }
+    private static bool SameGiven(string token, string name) => PersonName.SameGiven(token, name);
 
     private static bool Covers(string token, string other) =>
         token == other

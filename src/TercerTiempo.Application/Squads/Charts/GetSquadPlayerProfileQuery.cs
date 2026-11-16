@@ -105,6 +105,13 @@ internal sealed class GetSquadPlayerProfileHandler(
             })
             .ToList();
 
+        // El dorsal de cada partido: el que apuntó el cuerpo técnico en su acta y, si no, el del acta oficial. El
+        // habitual de la ficha no cuenta: es lo que se espera que lleve, no lo que llevó.
+        var shirtNumbers = Teams.Roster.ShirtNumberUsage.From(teamMatches
+            .Select(m => (Number: mineByMatch.GetValueOrDefault(m.Id)?.ShirtNumber ?? officialMap.GetValueOrDefault(m.Id)?.ShirtNumber, m.KickoffAt))
+            .Where(w => w.Number is not null)
+            .Select(w => (w.Number!.Value, w.KickoffAt)));
+
         var photos = await SquadMapper.PhotoLinksAsync(squad, teams, cancellationToken);
         return new SquadPlayerProfileDto(
             summary,
@@ -114,6 +121,7 @@ internal sealed class GetSquadPlayerProfileHandler(
             PlayerAxes.From(stats, impact),
             PlayerAxes.Average(reference),
             PlayerAxes.Max(reference),
-            points);
+            points,
+            shirtNumbers);
     }
 }

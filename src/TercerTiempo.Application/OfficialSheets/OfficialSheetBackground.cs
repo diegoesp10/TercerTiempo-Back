@@ -24,19 +24,51 @@ public interface IOfficialSheetQueue
     DateTimeOffset? PausedUntil { get; }
 }
 
-// Las actas completas son definitivas para la descarga automática. Solo se buscan datos que aún falten.
+// Las actas cerradas son definitivas para la descarga automática. Solo se buscan datos que aún falten.
 internal static class OfficialSheetRefresh
 {
     private static readonly TimeSpan PendingRecheck = TimeSpan.FromHours(24);
+
+    // Un acta provisional (alineaciones sin goles, cambios ni tarjetas) se vuelve a mirar cada pocas horas: el árbitro
+    // suele cerrarla el mismo día o al siguiente.
+    public static readonly TimeSpan ProvisionalRecheck = TimeSpan.FromHours(6);
+
+    // Pasado este tiempo desde el inicio se da por buena tal como esté (un 0-0 sin cambios ni tarjetas existe).
+    public static readonly TimeSpan ProvisionalLimit = TimeSpan.FromDays(7);
 
     public static bool IsPlayed(Match match, DateTimeOffset now) =>
         match.Status == MatchStatus.Played
         || (match.Status is MatchStatus.Scheduled or MatchStatus.InProgress && match.KickoffAt + TimeSpan.FromHours(2) <= now);
 
     // Un acta oculta (de una web desactivada) se busca de nuevo en las activas, como mucho una vez al día.
-    public static bool IsDue(OfficialMatchSheet sheet, Match match, DateTimeOffset now, bool hidden = false)
+    public static bool IsDue(OfficialMatchSheet sheet, Match match, DateTimeOffset now, bool hidden = false) =>
+        IsDue(OfficialSheetState.From(sheet), now, hidden);
+
+    public static bool IsDue(OfficialSheetState sheet, DateTimeOffset now, bool hidden = false)
     {
-        return (hidden || !sheet.IsAvailable) && now - sheet.CheckedAt >= PendingRecheck;
+        if (hidden) return now - sheet.CheckedAt >= PendingRecheck;
+        return sheet.Status switch
+        {
+            OfficialSheetStatus.Available => false,
+            OfficialSheetStatus.Provisional => now - sheet.CheckedAt >= ProvisionalRecheck,
+            _ => now - sheet.CheckedAt >= PendingRecheck,
+        };
+    }
+
+    // La federación publica las alineaciones antes de que el árbitro cierre el acta: hasta entonces la página no trae
+    // goles, cambios ni tarjetas (ni sus apartados) aunque el marcador ya diga 1-0. Un acta está cerrada cuando trae algún
+    // suceso y, si el partido tuvo goles según el resultado, al menos un gol. No se exige que los goles cuadren con el
+    // resultado: los resultados de despacho (3-0 por alineación indebida) no coinciden con lo jugado.
+    public static bool IsClosed(OfficialSheetData data, Match match, DateTimeOffset now)
+    {
+        if (data.Lines.Count == 0) return false;
+        if (now - match.KickoffAt >= ProvisionalLimit) return true;
+
+        var goals = data.Events.Count(e => e.Type is OfficialEventType.Goal or OfficialEventType.PenaltyGoal or OfficialEventType.OwnGoal);
+        // Las tarjetas sin minuto (999') no entran en la cronología, pero también son sucesos del acta.
+        var anything = data.Events.Count > 0 || data.Lines.Any(l => l.YellowCards > 0 || l.RedCard);
+        var scored = match.Score is { } score && score.Home + score.Away > 0;
+        return anything && (goals > 0 || !scored);
     }
 }
 
@@ -68,6 +100,7 @@ internal sealed class GetOfficialSheetHandler(
     IOfficialSheetStore sheets,
     IOfficialSheetQueue queue,
     OfficialSheetSyncMemory memory,
+    TercerTiempo.Application.Abstractions.Identity.ICurrentUser currentUser,
     TimeProvider clock) : IQueryHandler<GetOfficialSheetQuery, OfficialSheetDto>
 {
     public async Task<OfficialSheetDto> Handle(GetOfficialSheetQuery query, CancellationToken cancellationToken)
@@ -90,19 +123,22 @@ internal sealed class GetOfficialSheetHandler(
                 return OfficialSheetMapper.Empty(match.Id, OfficialSheetAvailability.Unavailable, provider.ProviderName,
                     "No se ha encontrado este partido en ninguna web de actas.");
 
-            queue.Enqueue(match.Id);
+            // Solo una cuenta adelanta la descarga: la cola con prioridad gasta las peticiones que la federación permite y
+            // una visita sin sesión recorriendo ids de partidos no puede dejar sin ellas a los equipos de la app. Para
+            // el resto se encarga la planificación periódica.
+            if (currentUser.IsAuthenticated) queue.Enqueue(match.Id);
             var message = queue.PausedUntil is { } until && until > now
-                ? $"Las webs de actas están limitando las consultas; el acta se descargará en cuanto lo permitan (hacia las {until.ToLocalTime():HH:mm})."
+                ? $"Las webs de actas están limitando las consultas; el acta se descargará en cuanto lo permitan (hacia las {SpainTime.Local(until):HH:mm})."
                 : "El acta aún no está guardada. Se descargará en segundo plano respetando los límites de cada web.";
             return OfficialSheetMapper.Empty(match.Id, OfficialSheetAvailability.Fetching, provider.ProviderName, message);
         }
 
-        if (OfficialSheetRefresh.IsDue(sheet, match, now))
+        if (currentUser.IsAuthenticated && OfficialSheetRefresh.IsDue(sheet, match, now))
             queue.Enqueue(match.Id);
 
-        return sheet.IsAvailable
-            ? Result(sheet, match, OfficialSheetAvailability.Available, null)
-            : Result(sheet, match, OfficialSheetAvailability.Pending, "El acta guardada aún está pendiente. La descarga de datos nuevos se comprueba como máximo una vez al día.");
+        if (sheet.IsAvailable) return Result(sheet, match, OfficialSheetAvailability.Available, null);
+        if (sheet.IsProvisional) return Result(sheet, match, OfficialSheetAvailability.Provisional, OfficialSheetMapper.ProvisionalMessage);
+        return Result(sheet, match, OfficialSheetAvailability.Pending, "El acta guardada aún está pendiente. La descarga de datos nuevos se comprueba como máximo una vez al día.");
     }
 
     private static OfficialSheetDto Result(OfficialMatchSheet? sheet, Match match, OfficialSheetAvailability status, string? message) =>
@@ -139,25 +175,26 @@ internal sealed class PlanOfficialSheetSyncHandler(
         // Sin ninguna web activa aparte de la federación, los partidos de equipos sin plantilla no tienen dónde buscarse.
         var othersReachable = sources.Any(s => !s.IsFederation && settings.Allows(s.Name));
 
-        foreach (var competition in await competitions.GetAllAsync(cancellationToken))
+        // Los partidos de todas las temporadas en curso y el estado de sus actas, de una vez y sin cargar las actas enteras.
+        var seasons = (await competitions.GetAllAsync(cancellationToken))
+            .Where(c => c.CurrentSeason is not null)
+            .Select(c => c.CurrentSeason!.Id)
+            .ToList();
+        var playedBySeason = (await matches.GetBySeasonsAsync(seasons, cancellationToken))
+            .Where(m => OfficialSheetRefresh.IsPlayed(m, now) && m.Status != MatchStatus.Cancelled && !memory.SkipMatch(m.Id, now))
+            .ToLookup(m => m.SeasonId);
+        var stored = (await sheets.GetStoredStatesAsync(playedBySeason.SelectMany(g => g).Select(m => m.Id), cancellationToken))
+            .ToDictionary(s => s.MatchId);
+
+        foreach (var seasonId in seasons)
         {
-            if (competition.CurrentSeason is not { } season)
-                continue;
-
-            var played = (await matches.GetBySeasonAsync(season.Id, cancellationToken))
-                .Where(m => OfficialSheetRefresh.IsPlayed(m, now) && m.Status != MatchStatus.Cancelled && !memory.SkipMatch(m.Id, now))
-                .ToList();
-            if (played.Count == 0)
-                continue;
-
-            var stored = (await sheets.GetStoredByMatchIdsAsync(played.Select(m => m.Id), cancellationToken)).ToDictionary(s => s.MatchId);
-            var pending = played
-                .Where(m => !stored.TryGetValue(m.Id, out var sheet) || OfficialSheetRefresh.IsDue(sheet, m, now, !settings.Allows(sheet.Provider)))
+            var pending = playedBySeason[seasonId]
+                .Where(m => !stored.TryGetValue(m.Id, out var sheet) || OfficialSheetRefresh.IsDue(sheet, now, !settings.Allows(sheet.Provider)))
                 .ToList();
             if (pending.Count == 0)
                 continue;
 
-            var teamsWithSquad = await environment.TeamsWithSquadAsync(season.Id, cancellationToken);
+            var teamsWithSquad = await environment.TeamsWithSquadAsync(seasonId, cancellationToken);
             due.AddRange(pending
                 .Select(m => (m, teamsWithSquad.Contains(m.HomeTeamId) || teamsWithSquad.Contains(m.AwayTeamId)))
                 .Where(d => d.Item2 || othersReachable));

@@ -38,12 +38,15 @@ internal sealed class GetTeamHandler(
 
         var (competition, season) = await Resolvers.SeasonOfTeamAsync(competitions, seasons, team.Id, cancellationToken);
 
-        var standing = (await standings.GetBySeasonAsync(season.Id, cancellationToken))
-            .FirstOrDefault(s => s.TeamId == team.Id);
+        var standing = await standings.GetByTeamAsync(season.Id, team.Id, cancellationToken);
 
         var roster = await RosterSummary.ListAsync(team.Id, season.Id, teams, matches, sheets, cancellationToken);
 
         var squad = await squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
+
+        // La ficha del equipo es pública, las fotos de los jugadores no: el enlace solo va a quien puede abrirlo.
+        if (!await PhotoAccess.CanSeeTeamPhotosAsync(team.Id, squad, currentUser, clubs, clock, cancellationToken))
+            roster = roster.Select(r => r with { PhotoUrl = null }).ToList();
         var squadDto = squad is null
             ? null
             : new TeamSquadDto(

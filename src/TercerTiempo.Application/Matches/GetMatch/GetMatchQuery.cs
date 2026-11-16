@@ -71,10 +71,19 @@ internal sealed class GetMatchHandler(
             {
                 var playerMap = squad.Players.ToDictionary(p => p.Id);
                 var photos = await SquadMapper.PhotoLinksAsync(squad, teams, cancellationToken);
+                // Las notas del técnico son para el cuerpo técnico y el club; con un pase del acta o siendo jugador solo
+                // se ve la propia (como en el acta interna).
+                var seesAllNotes = currentUser.IsAdmin || (insider && await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken));
                 entries = (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken))
-                    .Select(p => PerformanceMapper.ToDto(p, playerMap.GetValueOrDefault(p.SquadPlayerId)) with
+                    .Select(p =>
                     {
-                        PlayerPhotoUrl = playerMap.GetValueOrDefault(p.SquadPlayerId)?.RosterEntryId is { } rosterId ? photos.GetValueOrDefault(rosterId) : null,
+                        var player = playerMap.GetValueOrDefault(p.SquadPlayerId);
+                        var own = currentUser.PlayerId is { } me && player?.PlayerId == me;
+                        return PerformanceMapper.ToDto(p, player) with
+                        {
+                            PlayerPhotoUrl = player?.RosterEntryId is { } rosterId ? photos.GetValueOrDefault(rosterId) : null,
+                            Notes = seesAllNotes || own ? p.Notes : null,
+                        };
                     })
                     .OrderByDescending(p => p.Started)
                     .ThenByDescending(p => p.MinutesPlayed)

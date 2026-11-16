@@ -102,6 +102,17 @@ internal static class InjuryAccess
 
     public static async Task<IReadOnlyList<InjuryDto>> ListAsync(Squad squad, IInjuryStore injuries, TimeProvider clock, CancellationToken cancellationToken) =>
         InjuryMapper.ToList(await injuries.GetBySquadAsync(squad.Id, cancellationToken), squad, SquadAccess.Today(clock));
+
+    // Son datos de salud, muchas veces de menores: el club, el cuerpo técnico y el administrador las ven todas; un jugador,
+    // solo las suyas, nunca las de sus compañeros.
+    public static async Task<Func<Guid, bool>> VisibleSquadPlayersAsync(Squad squad, ICurrentUser currentUser, TimeProvider clock, IClubStore clubs, CancellationToken cancellationToken)
+    {
+        if (currentUser.IsAdmin || await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken))
+            return _ => true;
+
+        var own = squad.Players.Where(p => currentUser.PlayerId is { } playerId && p.PlayerId == playerId).Select(p => p.Id).ToHashSet();
+        return own.Contains;
+    }
 }
 
 internal sealed class ListSquadInjuriesHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, TimeProvider clock)
@@ -110,7 +121,8 @@ internal sealed class ListSquadInjuriesHandler(ICurrentUser currentUser, ISquadS
     public async Task<IReadOnlyList<InjuryDto>> Handle(ListSquadInjuriesQuery query, CancellationToken cancellationToken)
     {
         var squad = await InjuryAccess.SquadForViewerAsync(squads, clubs, currentUser, query.SquadId, clock, cancellationToken);
-        return await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken);
+        var visible = await InjuryAccess.VisibleSquadPlayersAsync(squad, currentUser, clock, clubs, cancellationToken);
+        return (await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken)).Where(i => visible(i.SquadPlayerId)).ToList();
     }
 }
 

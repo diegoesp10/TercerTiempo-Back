@@ -1,5 +1,11 @@
 namespace TercerTiempo.Domain.OfficialSheets;
 
+// Lo que hace falta de un acta guardada para decidir si toca buscarla otra vez, sin cargar sus líneas ni sus sucesos.
+public sealed record OfficialSheetState(Guid MatchId, OfficialSheetStatus Status, DateTimeOffset CheckedAt, string Provider)
+{
+    public static OfficialSheetState From(OfficialMatchSheet sheet) => new(sheet.MatchId, sheet.Status, sheet.CheckedAt, sheet.Provider);
+}
+
 public interface IOfficialSheetStore
 {
     Task<OfficialMatchSheet?> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default);
@@ -9,5 +15,8 @@ public interface IOfficialSheetStore
     // no se borran). Estas sí, para que la descarga pueda sustituirlas por la de una web activa.
     Task<OfficialMatchSheet?> GetStoredByMatchAsync(Guid matchId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OfficialMatchSheet>> GetStoredByMatchIdsAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default);
+    // Las actas disponibles (de webs activas) de esos partidos con sus líneas pero sin sucesos, solo para leer.
+    Task<IReadOnlyList<OfficialMatchSheet>> GetAvailableLinesByMatchIdsAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OfficialSheetState>> GetStoredStatesAsync(IEnumerable<Guid> matchIds, CancellationToken cancellationToken = default);
     void Add(OfficialMatchSheet sheet);
 }

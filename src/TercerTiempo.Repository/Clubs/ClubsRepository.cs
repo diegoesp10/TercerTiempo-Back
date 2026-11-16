@@ -49,10 +49,10 @@ internal sealed class ClubsRepository(
         setPitch.Handle(new SetTeamPitchCommand(teamId, request.LengthM, request.WidthM), cancellationToken);
 
     public Task<IReadOnlyList<RosterEntryDto>> AddRosterEntryAsync(Guid teamId, RosterEntryRequest request, CancellationToken cancellationToken = default) =>
-        addRosterEntry.Handle(new AddClubRosterEntryCommand(teamId, request.FullName, request.Position, request.ShirtNumber), cancellationToken);
+        addRosterEntry.Handle(new AddClubRosterEntryCommand(teamId, request.FullName, request.Position), cancellationToken);
 
     public Task<IReadOnlyList<RosterEntryDto>> UpdateRosterEntryAsync(Guid teamId, Guid entryId, RosterEntryRequest request, CancellationToken cancellationToken = default) =>
-        updateRosterEntry.Handle(new UpdateClubRosterEntryCommand(teamId, entryId, request.FullName, request.Position, request.ShirtNumber), cancellationToken);
+        updateRosterEntry.Handle(new UpdateClubRosterEntryCommand(teamId, entryId, request.FullName, request.Position), cancellationToken);
 
     public Task<IReadOnlyList<RosterEntryDto>> RemoveRosterEntryAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default) =>
         removeRosterEntry.Handle(new RemoveClubRosterEntryCommand(teamId, entryId), cancellationToken);

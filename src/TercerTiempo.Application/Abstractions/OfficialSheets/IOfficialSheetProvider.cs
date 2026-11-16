@@ -13,7 +13,8 @@ public interface IOfficialSheetProvider
 
     Task<IReadOnlyList<OfficialFixture>> GetMatchdayAsync(OfficialCompetitionRef competition, int matchday, CancellationToken cancellationToken);
 
-    Task<OfficialSheetData?> GetSheetAsync(string sheetCode, CancellationToken cancellationToken);
+    // refresh: no vale la copia guardada de la página (el acta estaba sin cerrar); se pide de nuevo respetando los límites.
+    Task<OfficialSheetData?> GetSheetAsync(string sheetCode, bool refresh, CancellationToken cancellationToken);
 
     // El acta tal como se descargó la última vez, sin pedir nada a la web (null si no está guardada).
     Task<OfficialSheetData?> GetCachedSheetAsync(string sheetCode, CancellationToken cancellationToken);
