@@ -48,7 +48,7 @@ class Configuracion:
     video: Path
     salida: Path
     modelos: Path = Path("modelos")
-    # Usar los pesos afinados con partidos propios (modelos/afinados/*.pt) si existen.
+    # Usar el lector de dorsales afinado con partidos propios (modelos/afinados/dorsales.pt) si existe.
     afinados: bool = True
     # Medidas del campo en metros (largo, ancho); si no se dan, las del modelo del campo de Roboflow (120 × 70). Se miden
     # desde el vídeo con `tt-analisis medir-campo`.
@@ -59,25 +59,17 @@ class Configuracion:
     segmento: Segmento = field(default_factory=Segmento)
     # Minuto del vídeo en el que empieza la segunda parte; si no se da, se detecta por el parón más largo.
     descanso: float | None = None
-    # Tamaño de inferencia de los detectores (los jugadores lejanos son pequeños: 1280 mejor que 640).
-    imgsz: int = 1280
-    # El detector de puntos del campo se entrenó a 640 px y a 1280 se inventa puntos (medido con el vídeo del
-    # Vallobín: 78 % de fotogramas calibrables y 13 px de error a 640, frente a 46 % y 351 px a 1280).
-    imgsz_campo: int = 640
+    # Puntuación mínima de una persona detectada; las que no llegan a la del seguidor (`rastreador.py`) solo
+    # continúan a alguien que ya se seguía.
     confianza: float = 0.3
     # "movil" (alguien graba con paneo y zoom: se calibra en cada fotograma y se sigue con BoT-SORT) o "fija" (trípode o
     # cámara tipo Veo: una sola homografía para todo el partido y ByteTrack).
     camara: str = "movil"
-    # Seguidor de Ultralytics: si no se da, el del paquete según la cámara (botsort-tt.yaml o bytetrack-tt.yaml).
-    tracker: str | None = None
+    # Seguidor de las personas ("botsort" o "bytetrack", ver `rastreador.py`); si no se da, el que toca a la cámara.
+    seguidor: str | None = None
 
-    def tracker_yaml(self) -> str:
-        if self.tracker:
-            return self.tracker
-        nombre = "botsort-tt.yaml" if self.camara == "movil" else "bytetrack-tt.yaml"
-        return str(Path(__file__).with_name("trackers") / nombre)
-    # Buscar el balón también por teselas cuando se pierde (más lento, más fiable).
-    balon_fino: bool = True
+    def seguidor_efectivo(self) -> str:
+        return self.seguidor or ("botsort" if self.camara == "movil" else "bytetrack")
     # Cada cuántos segundos se recalcula la homografía con cámara móvil (0 = en cada fotograma analizado).
     calibrar_cada_s: float = 0.0
     # Recortes de jugadores con los que se ajusta el clasificador de equipos.
@@ -102,9 +94,19 @@ class Configuracion:
     exigir_gpu: bool = False
     # Semilla para medir la estabilidad: fija los generadores y desplaza qué fotogramas se muestrean dentro del paso.
     semilla: int | None = None
+    # Leer el dorsal de cada jugador (PARSeq) y juntar los tracklets en un jugador por dorsal.
+    dorsales: bool = True
+    # Las plantillas del acta oficial (JSON con los dorsales y los minutos de cada uno): solo cuentan esos dorsales.
+    plantillas: Path | None = None
+    # Segundo del vídeo en que empieza el partido (para pasar los minutos del acta al vídeo).
+    saque: float = 0.0
+    # Carpeta donde dejar las zonas del dorsal y sus etiquetas (las de los jugadores identificados) para afinar el lector
+    # (`entrenar-dorsales`); None: no se guardan.
+    guardar_dorsales: Path | None = None
 
 
-# Clases del detector de jugadores de Roboflow (football-player-detection).
+# Clases de las personas y del balón: las del detector de jugadores de Roboflow, que siguen en los datasets de
+# `etiquetar` y que el detector RF-DETR de jugadores devuelve igual (`detector_jugadores.py`).
 CLASE_BALON = 0
 CLASE_PORTERO = 1
 CLASE_JUGADOR = 2

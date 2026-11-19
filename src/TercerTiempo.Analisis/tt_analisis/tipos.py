@@ -77,6 +77,8 @@ class Evento:
     t_fin: float | None = None
     veredicto_llm: str | None = None
     clip: str | None = None
+    # El otro jugador de la jugada: en una falta, el que la recibe (`tracklet` es el que la comete).
+    tracklet_rival: int | None = None
 
     def a_dict(self) -> dict:
         return {
@@ -86,6 +88,7 @@ class Evento:
             "minuto": formato_minuto(self.t),
             "equipo": self.equipo,
             "tracklet": self.tracklet,
+            "tracklet_rival": self.tracklet_rival,
             "confianza": round(self.confianza, 2),
             "detalle": self.detalle,
             "veredicto_llm": self.veredicto_llm,

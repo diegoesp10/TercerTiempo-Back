@@ -16,11 +16,14 @@ from sports.annotators.soccer import draw_pitch
 
 from .campo import CONFIG_CAMPO
 from .estadisticas import COLUMNAS, FILAS, ResumenTracklet, mapa_equipo
+from .oficial import ActaOficial, lados_completos
 from .posesion import AccionesJugador, ResumenPosesion
 from .tipos import Evento, Instante, formato_minuto
 from .video import extraer_clip
 
-TIPOS_CON_CLIP = ("gol", "tiro", "parada", "corner")
+TIPOS_CON_CLIP = ("gol", "tiro", "parada", "corner", "falta", "fuera_de_juego")
+# Faltas y fueras de juego con al menos esta confianza cuentan en la propuesta del acta (los demás quedan como eventos).
+CONFIANZA_PARADAS_ACTA = 0.4
 ESCALA_MAPA = 0.1
 
 
@@ -106,19 +109,29 @@ def contar_eventos(eventos: list[Evento], tipo: str, equipo: int | None = None, 
     return sum(1 for e in eventos if e.tipo == tipo and (equipo is None or e.equipo == equipo) and e.confianza >= confianza_minima)
 
 
-def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: dict[int, ResumenTracklet], acciones: dict[int, AccionesJugador], dorsales: dict[int, dict], recortes: dict[int, str], nombres: tuple[str, str], colores: list[str]) -> dict:
-    """Lo mismo que pide la API del acta interna (TeamMatchStatsInput y las líneas por jugador), desde los dos lados:
-    la app decide cuál es «nuestro» equipo y qué tracklet es cada ficha."""
+def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: dict[int, ResumenTracklet], acciones: dict[int, AccionesJugador], dorsales: dict[int, dict], recortes: dict[int, str], nombres: tuple[str, str], colores: list[str], resolucion=None, acta: ActaOficial | None = None) -> dict:
+    """Lo mismo que pide la API del acta interna (TeamMatchStatsInput y las líneas por jugador), desde los dos lados.
+    Con los dorsales leídos, una línea por jugador identificado (con su dorsal y, si se pasó el acta oficial, su nombre
+    en ella); sin ellos, una por tracklet de más de 30 s, y la app decide qué tracklet es cada ficha. Con el acta oficial,
+    los minutos y los goles salen de ella (por descarte: sin cambio, el partido entero) y en `actaOficial` van todos los
+    que jugaron, se les viera o no."""
+    identidades = {x.id: x for x in resolucion.identidades} if resolucion is not None else {}
+    lados = lados_completos(resolucion.lado_de_equipo) if resolucion is not None else {}
+    faltas = [x for x in eventos if x.tipo == "falta" and x.confianza >= CONFIANZA_PARADAS_ACTA]
+    fueras_de_juego = [x for x in eventos if x.tipo == "fuera_de_juego" and x.confianza >= CONFIANZA_PARADAS_ACTA]
     equipos = []
     for e in (0, 1):
         rival = 1 - e
         tiros = [x for x in eventos if x.tipo == "tiro" and x.equipo == e]
         tiros_rival = [x for x in eventos if x.tipo == "tiro" and x.equipo == rival]
+        goles_acta = acta.goles if acta is not None and acta.goles is not None and lados.get(e) in acta.goles else None
         equipos.append(
             {
                 "id": e,
                 "nombre": nombres[e],
                 "color": colores[e] if e < len(colores) else None,
+                # Lado del acta oficial («local» o «visitante») que tiene este equipo según los dorsales; null si no se sabe.
+                "lado": lados.get(e),
                 "teamStats": {
                     "possessionPct": None if posesion.porcentaje(e) is None else int(round(posesion.porcentaje(e))),
                     # La posesión solo se mide sobre el tiempo con balón visto o interpolado: `possessionBallPct` dice qué
@@ -135,22 +148,33 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                     "throwInsFor": contar_eventos(eventos, "saque_banda", e),
                     "throwInsAgainst": contar_eventos(eventos, "saque_banda", rival),
                     "goalKicksFor": contar_eventos(eventos, "saque_puerta", e),
-                    "goalsFor": contar_eventos(eventos, "gol", e, 0.8),
-                    "goalsAgainst": contar_eventos(eventos, "gol", rival, 0.8),
+                    # Con el acta oficial cerrada, los goles son los suyos; si no, los candidatos confirmados por el saque de centro.
+                    "goalsFor": goles_acta[lados[e]] if goles_acta else contar_eventos(eventos, "gol", e, 0.8),
+                    "goalsAgainst": goles_acta[lados[rival]] if goles_acta and lados.get(rival) in goles_acta else contar_eventos(eventos, "gol", rival, 0.8),
+                    "goalsFromSheet": goles_acta is not None,
                     "goalsCandidatesFor": contar_eventos(eventos, "gol", e),
-                    "offsidesFor": None,
-                    "foulsCommitted": None,
-                    "notes": "Propuesta automática del vídeo: posesión, tiros, córners y saques de banda; faltas, fueras de juego y tarjetas no salen del vídeo.",
+                    # Fueras de juego en los que cayó este equipo (a favor del rival) y en los que cayó el rival.
+                    "offsidesFor": sum(1 for x in fueras_de_juego if x.equipo == e),
+                    "offsidesAgainst": sum(1 for x in fueras_de_juego if x.equipo == rival),
+                    "foulsCommitted": sum(1 for x in faltas if x.equipo == e),
+                    "foulsReceived": sum(1 for x in faltas if x.equipo == rival),
+                    "notes": "Propuesta automática del vídeo: posesión, tiros, córners, saques de banda, faltas y fueras de juego (paradas del juego con el balón dentro del campo); las tarjetas no salen del vídeo.",
                 },
             }
         )
 
     jugadores = []
-    for r in sorted(resumenes.values(), key=lambda r: (r.equipo if r.equipo is not None else 9, -r.segundos)):
-        if r.arbitro or r.equipo is None or r.segundos < 30:
+    for r in sorted(resumenes.values(), key=lambda r: (r.equipo if r.equipo is not None else 9, identidades[r.tracklet].dorsal if r.tracklet in identidades else 0, -r.segundos)):
+        if r.arbitro or r.equipo is None:
+            continue
+        ident = identidades.get(r.tracklet)
+        if resolucion is not None and ident is None:
+            continue
+        if resolucion is None and r.segundos < 30:
             continue
         acc = acciones.get(r.tracklet, AccionesJugador())
         tiros = [x for x in eventos if x.tipo == "tiro" and x.tracklet == r.tracklet]
+        oficial = acta.jugador(lados.get(r.equipo), ident.dorsal) if acta is not None and ident is not None else None
         jugadores.append(
             {
                 "tracklet": r.tracklet,
@@ -158,14 +182,25 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                 "portero": r.portero,
                 "recorte": recortes.get(r.tracklet),
                 "dorsal_llm": dorsales.get(r.tracklet, {}).get("dorsal"),
+                "dorsal": ident.dorsal if ident else None,
+                "nombreActa": ident.nombre if ident else None,
+                "confianzaDorsal": ident.confianza if ident else None,
+                "tramos": len(ident.tracklets) if ident else 1,
                 "minutosALaVista": int(round(r.segundos / 60)),
+                # Del acta oficial cerrada, por descarte (sin cambio, el partido entero); None si no está en ella o
+                # el acta es provisional (le pueden faltar los cambios).
+                "minutos": acta.minutos(oficial) if oficial is not None and acta.cerrada else None,
+                "titular": oficial.titular if oficial is not None else None,
                 "desde": formato_minuto(r.primera_t or 0),
                 "hasta": formato_minuto(r.ultima_t or 0),
                 "distanciaM": int(r.distancia_m),
                 "propuesta": {
                     "shots": len(tiros),
                     "shotsOnTarget": sum(1 for x in tiros if x.detalle.startswith("A puerta") or "entra" in x.detalle),
-                    "goals": contar_eventos([x for x in eventos if x.tracklet == r.tracklet], "gol", None, 0.8),
+                    "goals": oficial.goles if oficial is not None and acta.cerrada else contar_eventos([x for x in eventos if x.tracklet == r.tracklet], "gol", None, 0.8),
+                    "fouls": sum(1 for x in faltas if x.tracklet == r.tracklet),
+                    "foulsReceived": sum(1 for x in faltas if x.tracklet_rival == r.tracklet),
+                    "offsides": sum(1 for x in fueras_de_juego if x.tracklet == r.tracklet),
                     "saves": contar_eventos([x for x in eventos if x.tracklet == r.tracklet], "parada"),
                     "recoveries": acc.recuperaciones,
                     "ballLosses": acc.perdidas,
@@ -181,7 +216,19 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
         "segundosConBalon": round(posesion.segundos_con_balon, 1),
         "segundosAtribuidos": round(posesion.segundos_atribuidos, 1),
     }
-    return {"version": 1, "equipos": equipos, "jugadores": jugadores, "nuestroEquipo": None, "calidad": calidad}
+    if resolucion is not None:
+        calidad["sinIdentificarS"] = {str(e): s for e, s in resolucion.segundos_sin_identificar.items()}
+    vistos = {(lados.get(j["equipo"]), j["dorsal"]) for j in jugadores if j["dorsal"] is not None}
+    acta_oficial = None if acta is None else {
+        "minutosParte": acta.minutos_parte,
+        "resultado": acta.goles,
+        "cerrada": acta.cerrada,
+        "jugadores": [
+            {"lado": j.lado, "dorsal": j.dorsal, "nombre": j.nombre, "titular": j.titular, "minutos": acta.minutos(j) if acta.cerrada else None, "goles": j.goles, "visto": (j.lado, j.dorsal) in vistos}
+            for j in acta.jugadores
+        ],
+    }
+    return {"version": 2 if resolucion is not None else 1, "equipos": equipos, "jugadores": jugadores, "nuestroEquipo": None, "calidad": calidad, "identificados": resolucion is not None, "actaOficial": acta_oficial}
 
 
 def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str:
@@ -220,7 +267,7 @@ def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str
             + (" **Con confianza baja la posesión no se vuelca al acta.**" if confianza == "baja" else ""),
         ]
     lineas += ["", "## Datos de equipo propuestos para el acta", "", "| | " + " | ".join(nombres) + " |", "|---|---|---|"]
-    claves = [("possessionPct", "Posesión %"), ("shotsFor", "Tiros"), ("shotsOnTargetFor", "Tiros a puerta"), ("goalsFor", "Goles (confirmados)"), ("goalsCandidatesFor", "Goles candidatos"), ("cornersFor", "Córners"), ("throwInsFor", "Saques de banda"), ("goalKicksFor", "Saques de puerta")]
+    claves = [("possessionPct", "Posesión %"), ("shotsFor", "Tiros"), ("shotsOnTargetFor", "Tiros a puerta"), ("goalsFor", "Goles (confirmados)"), ("goalsCandidatesFor", "Goles candidatos"), ("cornersFor", "Córners"), ("throwInsFor", "Saques de banda"), ("goalKicksFor", "Saques de puerta"), ("foulsCommitted", "Faltas cometidas"), ("offsidesFor", "Fueras de juego")]
     for clave, etiqueta in claves:
         lineas.append(f"| {etiqueta} | " + " | ".join(str(e["teamStats"].get(clave, "—")) for e in acta["equipos"]) + " |")
 
@@ -251,10 +298,10 @@ def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str
     balon = f"- Fotogramas analizados: {recuento['fotogramas']}; con balón visto: {recuento['con_balon']} ({recuento['pct_con_balon']} %)"
     if "pct_con_balon_total" in recuento:
         balon += (f"; con los huecos cortos rellenados por la trayectoria: {recuento['pct_con_balon_total']} % ({recuento.get('con_balon_interpolado', 0)} interpolados, "
-                  f"{relleno.get('huecos_largos', 0)} huecos largos sin rellenar, {relleno.get('aislados_descartados', 0)} avistamientos sueltos descartados)")
+                  f"{relleno.get('huecos_largos', 0)} huecos largos sin rellenar, {relleno.get('aislados_descartados', 0)} avistamientos sueltos y {relleno.get('fijos_descartados', 0)} de objetos fijos descartados)")
     balon += f"; con campo calibrado: {recuento['pct_calibrados']} %."
     lineas += ["", "## Calidad del análisis", "", f"- Calibración del campo: {analisis['calibracion']}", balon,
-               f"- Muestras para separar los equipos: {analisis['recuento']['muestras_equipos']}.", "- Los eventos son candidatos: tiros, goles y córners hay que confirmarlos con el clip; faltas, fueras de juego y tarjetas no se deducen del vídeo."]
+               f"- Muestras para separar los equipos: {analisis['recuento']['muestras_equipos']}.", "- Los eventos son candidatos: tiros, goles, córners, faltas y fueras de juego hay que confirmarlos con el clip; las tarjetas no se deducen del vídeo."]
     if resumen_llm:
         lineas += ["", f"## Resumen ({analisis.get('llm') or 'modelo de lenguaje'})", "", resumen_llm.strip()]
     return "\n".join(lineas) + "\n"

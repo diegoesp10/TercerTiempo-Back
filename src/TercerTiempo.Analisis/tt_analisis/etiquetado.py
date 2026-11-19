@@ -7,7 +7,9 @@ en condiciones mucho más favorables que las del análisis, y se guarda solo lo 
 - **Campo**: primero se miden el largo y el ancho reales del campo (no todos miden 105 × 68; las áreas y el círculo sí
   son siempre iguales) buscando las medidas que hacen coherentes los puntos detectados en muchos fotogramas. Luego, con
   6 o más puntos coherentes se ajusta la homografía y se reproyectan los 32 vértices: así quedan etiquetados también
-  los que el detector no vio, que es justo lo que queremos que aprenda.
+  los que el detector no vio, que es justo lo que queremos que aprenda. (Si no se conocen las medidas, solo quedan los
+  puntos vistos y coherentes, y eso no sirve para entrenar el detector de puntos: aprende a callarse. Para él está
+  `preparar-campo`, en `dataset_campo.py`.)
 - **Balón**: se busca por teselas (el balón pequeño del fondo) y a fotograma entero en el fotograma y en cuatro
   vecinos (±0,2 y ±0,4 s). Lo que distingue un balón de una marca de la línea o un reflejo es que **se mueve respecto
   al césped**: se estima el movimiento de la cámara entre el fotograma y cada vecino (flujo óptico sobre el fondo) y se
@@ -80,9 +82,6 @@ MIN_PUNTOS_CAMPO = 6
 ERROR_MAX_CAMPO_PX = 10.0
 BLOQUE_S = 120.0
 BLOQUES_POR_CICLO = 5
-TESELA = 640
-SOLAPE = 64
-IMGSZ_CAMPO = 640
 RECORTE_JUEZ_PX = 160
 # Negativos difíciles (candidatos que el juez rechaza) como mucho esta fracción de los positivos.
 FRACCION_NEGATIVOS = 0.5
@@ -116,14 +115,8 @@ class ConfiguracionEtiquetado:
     # Segundos entre fotogramas etiquetados.
     cada_s: float = 2.0
     segmento: Segmento = field(default_factory=Segmento)
-    imgsz: int = 1280
     # Medidas del campo en metros; si no se dan, se miden desde el vídeo.
     campo: tuple[float, float] | None = None
-    # Usar como maestro los pesos afinados (modelos/afinados) si existen: segunda ronda de autoentrenamiento.
-    afinados: bool = False
-    # Quién propone los candidatos a balón: "publico", "afinado" o "ambos" (la unión de los dos: más candidatos, que
-    # la regla de movimiento filtra igual; el afinado solo mejora la precisión, el público ve más balones pequeños).
-    maestro_balon: str = "publico"
     # Juez de los candidatos a balón: "claude", "ollama" o "none" (solo la regla rápida).
     juez: str = "none"
     modelo_juez: str | None = None
@@ -358,7 +351,8 @@ class EtiquetaCampo:
 def etiqueta_campo(xy: np.ndarray, conf: np.ndarray, ancho: int, alto: int, reproyectar: bool = True) -> EtiquetaCampo | None:
     """De los puntos que ve el detector, los coherentes entre sí → homografía → los 32 vértices reproyectados.
     Sin `reproyectar` (medidas del campo desconocidas) se etiquetan solo los puntos vistos y coherentes; el resto queda
-    sin etiqueta (visibilidad 0), que el entrenamiento ignora en vez de aprender que «no están»."""
+    sin etiqueta (visibilidad 0). Así sirve para medir el detector, no para entrenarlo: el RF-DETR de puntos aprende que
+    un punto sin etiqueta «no está» (para entrenar, `dataset_campo.py`)."""
     vistos = (conf >= CONF_PUNTO) & (xy[:, 0] > 1) & (xy[:, 1] > 1) & (xy[:, 0] < ancho - 1) & (xy[:, 1] < alto - 1)
     if vistos.sum() < MIN_PUNTOS_CAMPO:
         return None
@@ -415,18 +409,6 @@ def linea_yolo(clase: int, caja, ancho: int, alto: int, puntos: np.ndarray | Non
     return " ".join(partes)
 
 
-def teselas(ancho: int, alto: int, lado: int = TESELA, solape: int = SOLAPE) -> list[tuple[int, int]]:
-    """Esquinas superiores izquierdas de las teselas que cubren la imagen (la última se pega al borde)."""
-    paso = lado - solape
-
-    def ejes(total: int) -> list[int]:
-        if total <= lado:
-            return [0]
-        posiciones = list(range(0, total - lado, paso))
-        posiciones.append(total - lado)
-        return sorted(set(posiciones))
-
-    return [(x, y) for y in ejes(alto) for x in ejes(ancho)]
 
 
 def recorte_juez(imagen: np.ndarray, caja: Caja, lado: int = RECORTE_JUEZ_PX) -> bytes:
@@ -503,74 +485,36 @@ def _gris_medio(imagen: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(cv2.resize(imagen, (imagen.shape[1] // 2, imagen.shape[0] // 2), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
 
 
-def _a_cajas(detecciones: sv.Detections) -> list[Caja]:
-    return [(float(x1), float(y1), float(x2), float(y2), float(c)) for (x1, y1, x2, y2), c in zip(detecciones.xyxy, detecciones.confidence)]
-
-
 class Maestro:
-    """Los tres detectores usados con calma: por teselas y en lote. `detectores_balon` permite proponer candidatos
-    con más de un detector de balón (el público y el afinado): la unión de los dos, sin duplicados."""
+    """Los tres detectores usados con calma. El balón lo propone el detector RF-DETR por teselas
+    (`detector_balon.py`), con un umbral bajo: lo que sobra lo quitan el movimiento y el juez. Las personas, el
+    RF-DETR de jugadores (`detector_jugadores.py`), que no tiene clase balón."""
 
-    def __init__(self, modelos: Modelos, imgsz: int, detectores_balon: list | None = None) -> None:
+    def __init__(self, modelos: Modelos) -> None:
         self.modelos = modelos
-        self.imgsz = imgsz
-        self.detectores_balon = detectores_balon or [modelos.balon]
-
-    def _predecir(self, modelo, imagenes: list[np.ndarray], imgsz: int, conf: float) -> list[sv.Detections]:
-        resultados = modelo(imagenes, imgsz=imgsz, conf=conf, device=self.modelos.device, **self.modelos.precision, verbose=False)
-        return [sv.Detections.from_ultralytics(r) for r in resultados]
 
     def candidatos_balon(self, imagenes: list[np.ndarray]) -> list[list[Caja]]:
-        """Por cada imagen, los candidatos a balón (teselas + fotograma entero, de cada detector, sin duplicados)."""
-        alto, ancho = imagenes[0].shape[:2]
-        posiciones = teselas(ancho, alto)
-        trozos = [img[y:y + TESELA, x:x + TESELA] for img in imagenes for (x, y) in posiciones]
-        cajas_por_imagen: list[list[np.ndarray]] = [[] for _ in imagenes]
-        confianzas_por_imagen: list[list[np.ndarray]] = [[] for _ in imagenes]
-        for detector in self.detectores_balon:
-            por_tesela = []
-            for i in range(0, len(trozos), 16):
-                por_tesela += self._predecir(detector, trozos[i:i + 16], TESELA, CONF_CANDIDATO)
-            enteros = self._predecir(detector, imagenes, self.imgsz, CONF_CANDIDATO)
-            for i in range(len(imagenes)):
-                if len(enteros[i]):
-                    cajas_por_imagen[i].append(enteros[i].xyxy.reshape(-1, 4))
-                    confianzas_por_imagen[i].append(enteros[i].confidence)
-                for j, (x, y) in enumerate(posiciones):
-                    d = por_tesela[i * len(posiciones) + j]
-                    if len(d):
-                        cajas_por_imagen[i].append(d.xyxy + np.array([x, y, x, y], dtype=np.float32))
-                        confianzas_por_imagen[i].append(d.confidence)
+        """Por cada imagen, los candidatos a balón (x1, y1, x2, y2, confianza)."""
         salida = []
-        for cajas, confianzas in zip(cajas_por_imagen, confianzas_por_imagen):
-            if not cajas:
-                salida.append([])
-                continue
-            xyxy = np.concatenate(cajas).astype(np.float32)
-            todas = sv.Detections(xyxy=xyxy, confidence=np.concatenate(confianzas).astype(np.float32), class_id=np.zeros(len(xyxy), dtype=int))
-            salida.append(_a_cajas(todas.with_nms(threshold=0.3)))
+        for imagen in imagenes:
+            cajas, puntuaciones = self.modelos.balon.detectar(imagen, CONF_CANDIDATO)
+            salida.append([(float(x1), float(y1), float(x2), float(y2), float(c)) for (x1, y1, x2, y2), c in zip(cajas, puntuaciones)])
         return salida
 
     def personas(self, imagen: np.ndarray) -> sv.Detections:
-        return self._predecir(self.modelos.jugadores, [imagen], self.imgsz, CONF_PERSONA)[0]
+        return self.modelos.jugadores.detectar(imagen, CONF_PERSONA)
 
     def personas_en(self, imagenes: list[np.ndarray]) -> list[np.ndarray]:
-        """Solo las cajas de las personas (sin balón) de cada imagen."""
+        """Solo las cajas de las personas de cada imagen."""
         salida = []
-        for d in self._predecir(self.modelos.jugadores, imagenes, self.imgsz, CONF_PERSONA):
-            salida.append(d.xyxy[d.class_id != CLASE_BALON] if len(d) else np.zeros((0, 4)))
+        for imagen in imagenes:
+            d = self.personas(imagen)
+            salida.append(d.xyxy if len(d) else np.zeros((0, 4)))
         return salida
 
     def puntos_campo(self, imagen: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Los 32 vértices con su confianza, a la escala nativa del detector (a 1280 se inventa puntos)."""
-        xy = np.zeros((len(VERTICES), 2), dtype=np.float32)
-        conf = np.zeros(len(VERTICES), dtype=np.float32)
-        resultado = self.modelos.campo(imagen, imgsz=IMGSZ_CAMPO, device=self.modelos.device, **self.modelos.precision, verbose=False)[0]
-        puntos = sv.KeyPoints.from_ultralytics(resultado)
-        if len(puntos) and puntos.confidence is not None:
-            xy[:] = puntos.xy[0]
-            conf[:] = puntos.confidence[0]
-        return xy, conf
+        """Los 32 vértices con su confianza."""
+        return self.modelos.campo.puntos(imagen)
 
 
 def medir_campo_video(maestro: Maestro, info: InfoVideo, segmento: Segmento, fotogramas: int = 300, informar=print, guardar_puntos: Path | None = None) -> dict:
@@ -682,27 +626,6 @@ def juzgar(pendientes: list[Pendiente], juez, hilos: int, avance=None) -> int:
     return hechos
 
 
-def _detectores_balon(modelos: Modelos, config: ConfiguracionEtiquetado) -> list:
-    """El detector (o los dos) que proponen candidatos a balón según `maestro_balon`. Si no hay pesos afinados,
-    «afinado» y «ambos» se quedan con el público."""
-    from ultralytics import YOLO
-
-    from .modelos import ruta_pesos
-
-    cargado = ruta_pesos(config.modelos, "balon", afinados=config.afinados)
-    publico, afinado = ruta_pesos(config.modelos, "balon", afinados=False), ruta_pesos(config.modelos, "balon", afinados=True)
-    rutas = {"publico": [publico], "afinado": [afinado], "ambos": [publico, afinado]}[config.maestro_balon]
-    detectores = []
-    for ruta in dict.fromkeys(rutas):
-        if ruta == cargado:
-            detectores.append(modelos.balon)
-        else:
-            otro = YOLO(str(ruta))
-            otro.to(modelos.device)
-            detectores.append(otro)
-    return detectores
-
-
 def etiquetar(config: ConfiguracionEtiquetado, informar=print) -> dict:
     from tqdm import tqdm
 
@@ -711,11 +634,11 @@ def etiquetar(config: ConfiguracionEtiquetado, informar=print) -> dict:
 
     info = info_video(config.video)
     config.salida.mkdir(parents=True, exist_ok=True)
-    modelos = cargar_modelos(config.modelos, config.device, afinados=config.afinados)
-    maestro = Maestro(modelos, config.imgsz, _detectores_balon(modelos, config))
+    modelos = cargar_modelos(config.modelos, config.device)
+    maestro = Maestro(modelos)
     juez = crear_modelo(config.juez, config.modelo_juez)
     fin_s = min(config.segmento.fin, info.duracion_s) if config.segmento.fin is not None else info.duracion_s
-    informar(f"Vídeo: {info.ancho}×{info.alto} a {info.fps:.0f} fps, {info.duracion_s / 60:.1f} min. Maestros: {', '.join(f'{n} ({r})' for n, r in modelos.rutas.items())} (balón: {config.maestro_balon}). Juez: {juez.nombre if juez else 'ninguno (regla de movimiento)'}.")
+    informar(f"Vídeo: {info.ancho}×{info.alto} a {info.fps:.0f} fps, {info.duracion_s / 60:.1f} min. Maestros: {', '.join(f'{n} ({r})' for n, r in modelos.rutas.items())}. Juez: {juez.nombre if juez else 'ninguno (regla de movimiento)'}.")
 
     # 0. Las medidas del campo. Si se conocen, los puntos del campo se etiquetan reproyectando los 32 vértices; si la
     # medida automática no es fiable (el detector público ve pocos puntos coherentes de noche), se etiquetan solo los
@@ -750,9 +673,10 @@ def etiquetar(config: ConfiguracionEtiquetado, informar=print) -> dict:
     for muestra in tqdm(_muestras(info, config), total=total, desc="Etiquetando", unit="muestra"):
         recuento["muestras"] += 1
         candidatos_brutos = maestro.candidatos_balon([muestra.imagen] + muestra.vecinos)
-        personas = maestro.personas(muestra.imagen)
-        no_balon = personas[personas.class_id != CLASE_BALON] if len(personas) else personas
-        otros = _a_cajas(personas[personas.class_id == CLASE_BALON]) if len(personas) else []
+        no_balon = maestro.personas(muestra.imagen)
+        # El segundo detector que confirmaba el balón sobre una persona era la clase balón del YOLO de jugadores; el
+        # RF-DETR de jugadores no la tiene, así que hasta revisar la regla con RF-DETR no hay balón sobre una persona.
+        otros: list[Caja] = []
         afines = None
         personas_vecinos = None
         if candidatos_brutos[0]:
@@ -839,7 +763,7 @@ def etiquetar(config: ConfiguracionEtiquetado, informar=print) -> dict:
     yamls = {"balon": balon_w.cerrar(), "personas": personas_w.cerrar(), "campo": campo_w.cerrar()}
     recuento.update({"balon": positivos, "balon_negativos": len(elegidos), "estados": estados, "personas": personas_w.recuento["train"] + personas_w.recuento["val"]})
     resumen = {
-        "video": str(config.video), "cada_s": config.cada_s, "imgsz": config.imgsz, "maestros": modelos.rutas, "juez": juez.nombre if juez else None, "campo": medida,
+        "video": str(config.video), "cada_s": config.cada_s, "maestros": modelos.rutas, "juez": juez.nombre if juez else None, "campo": medida,
         "recuento": recuento,
         "conjuntos": {k: {"train": w.recuento["train"], "val": w.recuento["val"], "data": str(y)} for k, w, y in (("balon", balon_w, yamls["balon"]), ("personas", personas_w, yamls["personas"]), ("campo", campo_w, yamls["campo"]))},
     }

@@ -11,7 +11,17 @@ import supervision as sv
 from .colores import ClasificadorColor, rasgos_camiseta
 from .config import CLASE_JUGADOR, CLASE_PORTERO, Configuracion
 from .modelos import Modelos
-from .video import InfoVideo, fotogramas, recortar
+from .video import InfoVideo, fotogramas, fotogramas_en, recortar
+
+# Con muestras más separadas que esto se salta a cada una (cada salto descomprime desde el fotograma clave anterior, unos
+# segundos de vídeo) en vez de descomprimir el tramo entero: en un partido de 96 min, ~50 saltos frente a 289.000
+# fotogramas, que eran 5-6 min de CPU con la GPU parada.
+HUECO_PARA_SALTAR_S = 20.0
+
+
+def instantes_muestra(inicio: float, duracion: float, n: int) -> list[float]:
+    """`n` instantes repartidos por el tramo, cada uno en el centro de su trozo."""
+    return [inicio + (k + 0.5) * duracion / n for k in range(n)]
 
 
 @dataclass
@@ -33,18 +43,22 @@ class ClasificadorEquipos:
     def ajustar(self, info: InfoVideo, avance=None, por_fotograma=None) -> int:
         """Primera pasada rápida: recortes de jugadores repartidos por el tramo. `por_fotograma(imagen)` deja que otro
         (la calibración de cámara fija) aproveche los mismos fotogramas."""
-        duracion = (self.config.segmento.fin or info.duracion_s) - self.config.segmento.inicio
+        inicio, fin = self.config.segmento.inicio, self.config.segmento.fin
+        duracion = (info.duracion_s if fin is None else min(fin, info.duracion_s)) - inicio
         objetivo = self.config.muestras_equipos
         # Unos 12 recortes por fotograma: fotogramas separados para cubrir luz y posiciones distintas.
         fotogramas_necesarios = max(8, objetivo // 12)
-        paso = max(1, int(duracion * info.fps / fotogramas_necesarios))
-        for fotograma in fotogramas(self.config, info, paso=paso):
+        if duracion / fotogramas_necesarios >= HUECO_PARA_SALTAR_S:
+            imagenes = (imagen for _, imagen in fotogramas_en(info.ruta, instantes_muestra(inicio, duracion, fotogramas_necesarios)))
+        else:
+            paso = max(1, int(duracion * info.fps / fotogramas_necesarios))
+            imagenes = (f.imagen for f in fotogramas(self.config, info, paso=paso))
+        for imagen in imagenes:
             if por_fotograma:
-                por_fotograma(fotograma.imagen)
-            resultado = self.modelos.jugadores(fotograma.imagen, imgsz=self.config.imgsz, conf=0.4, device=self.modelos.device, **self.modelos.precision, verbose=False)[0]
-            detecciones = sv.Detections.from_ultralytics(resultado)
+                por_fotograma(imagen)
+            detecciones = self.modelos.jugadores.detectar(imagen, 0.4)
             for caja in detecciones[detecciones.class_id == CLASE_JUGADOR].xyxy:
-                recorte = recortar(fotograma.imagen, caja)
+                recorte = recortar(imagen, caja)
                 if recorte.size and recorte.shape[0] >= 24 and recorte.shape[1] >= 12:
                     rasgos = rasgos_camiseta(recorte)
                     if rasgos is not None:

@@ -12,11 +12,9 @@ from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
-import supervision as sv
 from sports.configs.soccer import SoccerPitchConfiguration
 
 from . import geometria
-from .modelos import precision
 from .tipos import Punto
 
 CONFIG_CAMPO = SoccerPitchConfiguration()
@@ -130,11 +128,11 @@ class Calibracion:
 
 @dataclass
 class Calibrador:
+    # El detector de los puntos del campo (`detector_campo.py`): `puntos(imagen)` → (xy (32, 2), confianza (32,)).
     modelo: object
     device: str
     modo: str = "movil"
     cada_s: float = 0.0
-    imgsz: int = 1280
     # Sin puntos a la vista, la homografía anterior vale como mucho este tiempo (cámara móvil).
     max_antiguedad_s: float = 1.0
     actual: Calibracion = field(default_factory=Calibracion)
@@ -147,12 +145,9 @@ class Calibrador:
     _acumulado: dict[int, list[tuple[float, float]]] = field(default_factory=lambda: defaultdict(list))
 
     def _detectar(self, imagen: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
-        resultado = self.modelo(imagen, imgsz=self.imgsz, device=self.device, **precision(self.device), verbose=False)[0]
-        puntos = sv.KeyPoints.from_ultralytics(resultado)
-        if len(puntos) == 0 or puntos.confidence is None:
+        xy, conf = self.modelo.puntos(imagen)
+        if not conf.any():
             return None
-        xy = puntos.xy[0]
-        conf = puntos.confidence[0]
         mascara = (conf > CONFIANZA_PUNTO) & (xy[:, 0] > 1) & (xy[:, 1] > 1)
         return xy, mascara
 

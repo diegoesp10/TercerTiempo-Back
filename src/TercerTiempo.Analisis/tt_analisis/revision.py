@@ -9,6 +9,8 @@ import zipfile
 from pathlib import Path
 
 CARPETA_CVAT = "obj_train_data"
+# Subcarpeta del dataset de `etiquetar` donde está cada tipo de etiqueta.
+CARPETAS = {"balon": "balon", "jugadores": "personas", "campo": "campo"}
 
 
 def leer_nombres(data_yaml: Path) -> list[str]:

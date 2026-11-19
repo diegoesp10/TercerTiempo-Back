@@ -117,10 +117,17 @@ try {
         Pop-Location
     }
 
-    $missing = @('football-player-detection.pt', 'football-ball-detection.pt', 'football-pitch-detection.pt') |
-        Where-Object { -not (Test-Path -LiteralPath (Join-Path $analyzer "modelos\$_")) }
-    if ($missing) {
-        throw "Faltan pesos en $analyzer\modelos: $($missing -join ', '). Descárgalos con «uv run --frozen tt-analisis descargar-modelos» desde esa carpeta."
+    # Los tres detectores son RF-DETR entrenados aquí: el motor TensorRT (compilado para esta GPU) o, si no, los pesos de
+    # PyTorch.
+    foreach ($detector in @(@{ Que = 'balon'; Nombre = 'del balón' }, @{ Que = 'jugadores'; Nombre = 'de jugadores' }, @{ Que = 'campo'; Nombre = 'del campo' })) {
+        $engine = Join-Path $analyzer "modelos\rfdetr\$($detector.Que).trt"
+        $weights = Join-Path $analyzer "modelos\rfdetr\$($detector.Que).pth"
+        if (-not (Test-Path -LiteralPath $engine) -and -not (Test-Path -LiteralPath $weights)) {
+            throw "Falta el detector $($detector.Nombre) en $analyzer\modelos\rfdetr ($($detector.Que).trt o $($detector.Que).pth). Entrénalo con «tt-analisis entrenar-$($detector.Que)» y compílalo con «tt-analisis exportar-$($detector.Que)»."
+        }
+        if (-not (Test-Path -LiteralPath $engine)) {
+            Write-Warning "Sin motor TensorRT $($detector.Nombre) (modelos\rfdetr\$($detector.Que).trt): se usará PyTorch, más lento. Compílalo con «tt-analisis exportar-$($detector.Que)»."
+        }
     }
 
     # Development: la base que usa la API de Docker (la de Visual Studio o la del contenedor).

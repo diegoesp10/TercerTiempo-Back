@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 
 from tt_analisis.campo import VERTICES
-from tt_analisis.entrenamiento import _emparejar, leer_etiquetas
-from tt_analisis.etiquetado import Candidato, confirmar_balon, etiqueta_campo, indices_espejo, linea_yolo, particion_de, recorte_juez, resolver_con_juez, teselas
+from tt_analisis.metricas import emparejar, leer_etiquetas
+from tt_analisis.etiquetado import Candidato, confirmar_balon, etiqueta_campo, indices_espejo, linea_yolo, particion_de, recorte_juez, resolver_con_juez
 
 
 def _caja(x, y, lado=12.0, conf=0.5):
@@ -255,21 +255,13 @@ def test_las_muestras_llevan_sus_seis_vecinos(tmp_path):
     assert valores == sorted(valores) and valores[0] < int(muestras[0].imagen[0, 0, 0]) < valores[-1]
 
 
-def test_teselas_cubren_la_imagen_y_se_pegan_al_borde():
-    posiciones = teselas(1920, 1080)
-    assert len(posiciones) == 8
-    assert (0, 0) in posiciones and (1280, 440) in posiciones
-    assert all(x + 640 <= 1920 and y + 640 <= 1080 for x, y in posiciones)
-    assert teselas(640, 480) == [(0, 0)]
-
-
 def test_emparejar_por_centro_y_por_iou():
     verdad = np.array([[100, 100, 112, 112], [500, 500, 512, 512]], dtype=float)
     pred = np.array([[104, 103, 116, 115], [900, 900, 912, 912]], dtype=float)
-    assert _emparejar(pred, verdad, 0.0, por_centro=True) == (1, 1, 1)
+    assert emparejar(pred, verdad, 0.0, por_centro=True) == (1, 1, 1)
     grandes_v = np.array([[0, 0, 100, 200]], dtype=float)
     grandes_p = np.array([[5, 5, 105, 205], [300, 300, 400, 500]], dtype=float)
-    assert _emparejar(grandes_p, grandes_v, 0.5, por_centro=False) == (1, 1, 0)
+    assert emparejar(grandes_p, grandes_v, 0.5, por_centro=False) == (1, 1, 0)
 
 
 def test_leer_etiquetas_yolo(tmp_path):

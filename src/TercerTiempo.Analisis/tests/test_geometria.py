@@ -27,3 +27,11 @@ def test_hacia_y_corte_con_la_linea_de_fondo():
     assert not hacia((9000, 3500), (0, 1500), porteria)
     assert corte_con_linea_de_fondo((9000, 3000), (1500, 250), 12000) == 3500
     assert corte_con_linea_de_fondo((9000, 3000), (-1500, 250), 12000) is None
+
+
+def test_puntos_de_saque():
+    campo = Campo()
+    for punto in [(6000, 3500), (1100, 3500), (10900, 3600), (300, 3000), (11800, 4300), (100, 6900), (11900, 50)]:
+        assert campo.en_punto_de_saque(punto), punto
+    for punto in [(6900, 4100), (3000, 2000), (1500, 1000), (6000, 200)]:
+        assert not campo.en_punto_de_saque(punto), punto

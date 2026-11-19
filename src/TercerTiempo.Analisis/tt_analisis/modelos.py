@@ -1,20 +1,13 @@
-"""Los tres detectores (jugadores, balón y puntos del campo): descarga y carga en la GPU.
+"""Los tres detectores (jugadores, balón y puntos del campo) y el lector de dorsales: descarga y carga en la GPU.
 
-Son los pesos YOLOv8 que publica Roboflow con su ejemplo de fútbol (entrenados con vídeo de televisión); el plan es
-afinarlos con partidos asturianos. Ultralytics es AGPL-3.0: antes de publicar hay licencia comercial o cambio a RF-DETR."""
+Los tres detectores son RF-DETR (Apache 2.0) entrenados con nuestros partidos (`detector_balon.py`,
+`detector_jugadores.py`, `detector_campo.py`) y no se descargan: están en `modelos/rfdetr/`. Lo que se descarga es el
+lector de dorsales (PARSeq) y los clips de muestra."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-
-PESOS = {
-    "jugadores": ("football-player-detection.pt", "17PXFNlx-jI7VjVo_vQnB1sONjRyvoB-q"),
-    "balon": ("football-ball-detection.pt", "1isw4wx-MK9h9LMr36VvIWlJD6ppUvw7V"),
-    "campo": ("football-pitch-detection.pt", "1Ma5Kt86tgpdjCTKfum79YMgNnSjcoOyf"),
-}
-# Pesos afinados con partidos propios (`tt-analisis entrenar`): si existen, se usan en vez de los públicos.
-CARPETA_AFINADOS = "afinados"
 
 VIDEOS_MUESTRA = {
     "0bfacc_0.mp4": "12TqauVZ9tLAv8kWxTTBFWtgt2hNQ4_ZF",
@@ -26,13 +19,7 @@ def descargar_modelos(carpeta: Path, con_videos: bool = False) -> list[Path]:
     import gdown
 
     carpeta.mkdir(parents=True, exist_ok=True)
-    rutas = []
-    for nombre, (archivo, id_drive) in PESOS.items():
-        destino = carpeta / archivo
-        if not destino.exists():
-            print(f"Descargando el detector de {nombre}…")
-            gdown.download(id=id_drive, output=str(destino), quiet=False)
-        rutas.append(destino)
+    rutas = [descargar_lector_dorsales(carpeta)]
     if con_videos:
         for archivo, id_drive in VIDEOS_MUESTRA.items():
             destino = carpeta / archivo
@@ -42,54 +29,49 @@ def descargar_modelos(carpeta: Path, con_videos: bool = False) -> list[Path]:
     return rutas
 
 
+def descargar_lector_dorsales(carpeta: Path) -> Path:
+    """El lector de dorsales (PARSeq, Apache-2.0) desde las versiones publicadas de su repositorio. Su nombre lleva el
+    principio del SHA-256 del archivo (como hace torch.hub): si no cuadra, se borra y falla."""
+    import hashlib
+    import urllib.request
+
+    from .dorsales import PESOS_PARSEQ, URL_PARSEQ
+
+    destino = carpeta / PESOS_PARSEQ
+    if destino.exists():
+        return destino
+    print("Descargando el lector de dorsales (PARSeq)…")
+    temporal = destino.with_suffix(".part")
+    urllib.request.urlretrieve(URL_PARSEQ, temporal)
+    esperado = PESOS_PARSEQ.rsplit("-", 1)[1].split(".")[0]
+    if not hashlib.sha256(temporal.read_bytes()).hexdigest().startswith(esperado):
+        temporal.unlink(missing_ok=True)
+        raise RuntimeError(f"El lector de dorsales descargado no es el esperado (SHA-256 sin {esperado} al principio).")
+    temporal.replace(destino)
+    return destino
+
+
 @dataclass
 class Modelos:
     jugadores: object
     balon: object
     campo: object
     device: str
-    # Media precisión (FP16) en GPU: casi el doble de rápido sin perder detecciones apreciables.
-    half: bool = False
     # Qué archivo de pesos se ha cargado para cada detector (relativo a la carpeta de modelos).
     rutas: dict[str, str] = field(default_factory=dict)
 
-    @property
-    def precision(self) -> dict:
-        return precision(self.device if self.half else "cpu")
 
+def cargar_modelos(carpeta: Path, device: str) -> Modelos:
+    from .detector_balon import DetectorBalon
+    from .detector_campo import DetectorCampo
+    from .detector_jugadores import DetectorJugadores
 
-def precision(device: str) -> dict:
-    """Argumentos de precisión para Ultralytics: FP16 (`quantize=16`) en GPU, nada en CPU. (`half=` quedó obsoleto en
-    Ultralytics 8.4 y escribía un aviso por cada llamada: unos 20.000 por pasada de cinco minutos.)"""
-    return {"quantize": 16} if device.startswith("cuda") else {}
-
-
-def ruta_pesos(carpeta: Path, nombre: str, afinados: bool = True) -> Path:
-    afinado = carpeta / CARPETA_AFINADOS / f"{nombre}.pt"
-    if afinados and afinado.exists():
-        return afinado
-    return carpeta / PESOS[nombre][0]
-
-
-def cargar_modelos(carpeta: Path, device: str, afinados: bool = True) -> Modelos:
-    from ultralytics import YOLO
-
-    rutas = {nombre: ruta_pesos(carpeta, nombre, afinados) for nombre in PESOS}
-    faltan = [ruta.name for ruta in rutas.values() if not ruta.exists()]
-    if faltan:
-        raise FileNotFoundError(f"Faltan pesos en {carpeta}: {', '.join(faltan)}. Ejecuta `tt-analisis descargar-modelos`.")
     device = resolver_device(device)
-    modelos = Modelos(
-        YOLO(str(rutas["jugadores"])),
-        YOLO(str(rutas["balon"])),
-        YOLO(str(rutas["campo"])),
-        device,
-        half=device.startswith("cuda"),
-        rutas={nombre: ruta.relative_to(carpeta).as_posix() for nombre, ruta in rutas.items()},
-    )
-    for m in (modelos.jugadores, modelos.balon, modelos.campo):
-        m.to(device)
-    return modelos
+    jugadores = DetectorJugadores.cargar(carpeta, device)
+    balon = DetectorBalon.cargar(carpeta, device)
+    campo = DetectorCampo.cargar(carpeta, device)
+    rutas = {"jugadores": jugadores.ruta, "balon": balon.ruta, "campo": campo.ruta}
+    return Modelos(jugadores, balon, campo, device, rutas={nombre: ruta.relative_to(carpeta).as_posix() for nombre, ruta in rutas.items()})
 
 
 def resolver_device(device: str) -> str:

@@ -1,5 +1,5 @@
 """Recuentos sobre las posiciones en el campo: distancia y velocidad por jugador seguido, tiempo a la vista, mapas de
-calor por jugador y por equipo, y hacia dónde ataca cada equipo en cada mitad."""
+calor por jugador y por equipo. Hacia dónde ataca cada equipo en cada parte está en `mitades`."""
 
 from __future__ import annotations
 
@@ -115,46 +115,3 @@ def mapa_equipo(resumenes: dict[int, ResumenTracklet], equipo: int) -> np.ndarra
         if r.equipo == equipo and not r.arbitro:
             mapa += r.mapa
     return mapa
-
-
-def direcciones_de_ataque(instantes: list[Instante], mitad_de: list[int], resumenes: dict[int, ResumenTracklet], campo: Campo | None = None) -> dict[tuple[int, int], int]:
-    """Para cada (equipo, mitad): +1 si ataca hacia x = largo, -1 si hacia x = 0. Se decide por dónde están sus
-    porteros (y si no hay porteros fiables, por dónde está el grueso del equipo)."""
-    campo = campo or Campo()
-    x_porteros: dict[tuple[int, int], list[float]] = defaultdict(list)
-    x_equipo: dict[tuple[int, int], list[float]] = defaultdict(list)
-    for inst, mitad in zip(instantes, mitad_de):
-        for persona in inst.personas:
-            if persona.xy_campo is None:
-                continue
-            r = resumenes.get(persona.tracklet)
-            equipo = r.equipo if r else persona.equipo
-            if equipo is None or (r and r.arbitro):
-                continue
-            x_equipo[(equipo, mitad)].append(persona.xy_campo[0])
-            if r and r.portero:
-                x_porteros[(equipo, mitad)].append(persona.xy_campo[0])
-
-    direcciones: dict[tuple[int, int], int] = {}
-    mitades = {m for m in mitad_de}
-    for mitad in mitades:
-        por_equipo = {}
-        for equipo in (0, 1):
-            xs = x_porteros.get((equipo, mitad)) or []
-            if len(xs) >= 10:
-                por_equipo[equipo] = float(np.median(xs))
-            elif x_equipo.get((equipo, mitad)):
-                por_equipo[equipo] = float(np.mean(x_equipo[(equipo, mitad)]))
-        if len(por_equipo) == 2:
-            izquierda = min(por_equipo, key=por_equipo.get)
-            direcciones[(izquierda, mitad)] = 1
-            direcciones[(1 - izquierda, mitad)] = -1
-        elif len(por_equipo) == 1:
-            (equipo, x), = por_equipo.items()
-            direcciones[(equipo, mitad)] = 1 if x < campo.largo / 2 else -1
-            direcciones[(1 - equipo, mitad)] = -direcciones[(equipo, mitad)]
-    return direcciones
-
-
-def mitades(instantes: list[Instante], descanso_t: float | None) -> list[int]:
-    return [1 if descanso_t is None or inst.t < descanso_t else 2 for inst in instantes]
