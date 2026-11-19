@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.FootballData;
 using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Application.Abstractions.Medical;
 using TercerTiempo.Application.Abstractions.OfficialSheets;
 using TercerTiempo.Application.Abstractions.Teams;
 using TercerTiempo.Domain.Common.Errors;
@@ -32,6 +33,7 @@ using TercerTiempo.Infrastructure.FootballData.FutbolAsturiano;
 using TercerTiempo.Infrastructure.FootballData.JsonFiles;
 using TercerTiempo.Infrastructure.Identity;
 using TercerTiempo.Infrastructure.Jobs;
+using TercerTiempo.Infrastructure.Medical;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Security;
@@ -66,8 +68,25 @@ public static class DependencyInjection
         AddFootballData(services, configuration);
         AddOfficialSheets(services, configuration);
         AddVideos(services, configuration);
+        AddGrounds(services, configuration);
 
         return services;
+    }
+
+    // Campos de fútbol: su ubicación se busca en OpenStreetMap (Nominatim) y la llamada queda apuntada como las demás webs.
+    private static void AddGrounds(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<TercerTiempo.Infrastructure.Grounds.GroundOptions>().Bind(configuration.GetSection(TercerTiempo.Infrastructure.Grounds.GroundOptions.SectionName));
+        services.AddScoped<TercerTiempo.Domain.Grounds.IGroundStore, TercerTiempo.Infrastructure.Grounds.GroundStore>();
+        services.AddHttpClient<TercerTiempo.Application.Grounds.IGroundLocator, TercerTiempo.Infrastructure.Grounds.NominatimGroundLocator>((sp, client) =>
+        {
+            var settings = sp.GetRequiredService<IOptions<TercerTiempo.Infrastructure.Grounds.GroundOptions>>().Value;
+            client.BaseAddress = new Uri(settings.BaseUrl.EndsWith('/') ? settings.BaseUrl : settings.BaseUrl + "/");
+            client.Timeout = TimeSpan.FromSeconds(20);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(settings.UserAgent);
+            client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("es");
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        }).LogScrapes("openstreetmap");
     }
 
     private static void AddBackgroundWork(IServiceCollection services)
@@ -86,6 +105,7 @@ public static class DependencyInjection
         services.AddHostedService<TercerTiempo.Infrastructure.Alerts.LicenseAlertsWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.Referees.MatchOfficialsWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.FootballData.LeagueZonesWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Grounds.GroundsWorker>();
 
         // Cola de avisos de la pasarela (webhooks de Stripe o eventos de la simulada) y el proceso que los aplica.
         services.AddHostedService<PaymentEventWorker>();
@@ -129,6 +149,7 @@ public static class DependencyInjection
         services.AddScoped<ICoachStore, CoachStore>();
         services.AddScoped<ISquadStore, SquadStore>();
         services.AddScoped<IInjuryStore, InjuryStore>();
+        services.AddScoped<IInjuryDocumentStore, InjuryDocumentStore>();
         services.AddScoped<ITeamMatchStatsStore, TeamMatchStatsStore>();
         services.AddScoped<ITeamStore, TeamStore>();
         services.AddScoped<ICompetitionStore, CompetitionStore>();
@@ -280,6 +301,9 @@ public static class DependencyInjection
             ? ActivatorUtilities.CreateInstance<RealDataCrestStorage>(sp)
             : sp.GetRequiredService<FileSystemCrestStorage>());
         services.AddSingleton<IPlayerPhotoStorage, FileSystemPlayerPhotoStorage>();
+        services.AddOptions<InjuryDocumentOptions>()
+            .Bind(configuration.GetSection(InjuryDocumentOptions.SectionName));
+        services.AddSingleton<IInjuryDocumentStorage, FileSystemInjuryDocumentStorage>();
         services.AddScoped<IErrorMessageStore, ErrorMessageStore>();
 
         // Límite de llamadas por IP y por endpoint con bloqueos crecientes (el middleware vive en Hosting).

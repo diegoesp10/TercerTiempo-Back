@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
@@ -21,14 +22,16 @@ public sealed record AlertDto(
     [property: Description("Día al que se refiere: el último con acceso en los de caducidad; el del partido o del entrenamiento en los suyos.")]
     DateOnly? DueOn,
     DateTimeOffset CreatedAt,
+    [property: Description("Ya se vio en la campanita: deja de contar y pasa a «Anteriores».")]
+    bool Seen,
     bool Read,
     [property: Description("true si ya no aplica (por ejemplo, el club reactivó la renovación o el jugador cambió su respuesta).")]
     bool Resolved);
 
 public sealed record ClubAlertsDto(
-    [property: Description("Avisos sin leer que siguen vigentes: el número de la campanita.")]
+    [property: Description("Avisos nuevos (sin ver y vigentes): el número de la campanita.")]
     int Unread,
-    [property: Description("Los últimos avisos de la cuenta, del más reciente al más antiguo.")]
+    [property: Description("Los avisos nuevos y los últimos anteriores (vistos o resueltos), del más reciente al más antiguo.")]
     IReadOnlyList<AlertDto> Alerts);
 
 public sealed record GetClubAlertsQuery : IQuery<ClubAlertsDto>;
@@ -37,35 +40,36 @@ public sealed record MarkAlertReadCommand(Guid AlertId) : ICommand<ClubAlertsDto
 
 public sealed record MarkAllAlertsReadCommand : ICommand<ClubAlertsDto>;
 
+public sealed record MarkAlertsSeenCommand(IReadOnlyList<Guid> AlertIds) : ICommand<ClubAlertsDto>;
+
 public sealed record SyncLicenseAlertsCommand : ICommand<LicenseAlertsSynced>;
 
 public sealed record LicenseAlertsSynced(int Raised, int Resolved, int Purged = 0);
 
 internal static class ClubAlerts
 {
-    public const int Shown = 30;
+    // Los nuevos salen todos (hasta este tope); de los anteriores, solo los últimos.
+    public const int NewShown = 50;
+    public const int EarlierShown = 20;
 
     public static ClubAlertsDto ToDto(IEnumerable<Alert> alerts)
     {
         var list = alerts.OrderByDescending(a => a.CreatedAt).ToList();
-        return new ClubAlertsDto(
-            list.Count(a => !a.IsRead && !a.IsResolved),
-            list.Take(Shown)
-                .Select(a => new AlertDto(a.Id, a.Kind, a.Title, a.Message, a.Link, a.DueOn, a.CreatedAt, a.IsRead, a.IsResolved))
-                .ToList());
+        var shown = list.Where(a => a.IsNew).Take(NewShown).Concat(list.Where(a => !a.IsNew).Take(EarlierShown));
+        return new ClubAlertsDto(list.Count(a => a.IsNew), shown.OrderByDescending(a => a.CreatedAt).Select(Dto).ToList());
     }
 
-    public static ClubAlertsDto ToDto(AlertPage page) =>
-        new(page.Unread, page.Latest
-            .Select(a => new AlertDto(a.Id, a.Kind, a.Title, a.Message, a.Link, a.DueOn, a.CreatedAt, a.IsRead, a.IsResolved))
-            .ToList());
+    public static ClubAlertsDto ToDto(AlertPage page) => new(page.Unseen, page.Latest.Select(Dto).ToList());
+
+    private static AlertDto Dto(Alert a) =>
+        new(a.Id, a.Kind, a.Title, a.Message, a.Link, a.DueOn, a.CreatedAt, a.IsSeen, a.IsRead, a.IsResolved);
 
     // La campanita de la cuenta que mira: el club, el jugador o el técnico que lleva en el token. El administrador no
-    // tiene. Se cuentan los sin leer en SQL y solo se leen los últimos que se enseñan.
+    // tiene. Se cuentan los nuevos en SQL y solo se leen los que se enseñan.
     public static async Task<ClubAlertsDto> MineAsync(ICurrentUser user, IAlertStore alerts, CancellationToken cancellationToken)
     {
         if (!user.IsAuthenticated) throw new UnauthenticatedException();
-        return ToDto(await alerts.GetPageForAsync(user.ClubId, user.PlayerId, user.CoachId, Shown, cancellationToken));
+        return ToDto(await alerts.GetPageForAsync(user.ClubId, user.PlayerId, user.CoachId, NewShown, EarlierShown, cancellationToken));
     }
 }
 
@@ -87,6 +91,31 @@ internal sealed class MarkAlertReadHandler(ICurrentUser currentUser, IAlertStore
 
         alert.MarkRead(clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
+        return await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken);
+    }
+}
+
+internal sealed class MarkAlertsSeenValidator : AbstractValidator<MarkAlertsSeenCommand>
+{
+    public MarkAlertsSeenValidator()
+    {
+        RuleFor(x => x.AlertIds).NotNull();
+        // Los que enseña la campanita al abrirse: nunca más que los nuevos que devuelve.
+        RuleFor(x => x.AlertIds.Count).InclusiveBetween(1, ClubAlerts.NewShown).When(x => x.AlertIds is not null)
+            .WithCatalogMessage(ErrorCode.CommonOutOfRange, "Avisos", 1, ClubAlerts.NewShown);
+    }
+}
+
+// Al abrir la campanita, los avisos nuevos que se han enseñado quedan vistos: el número se va y, la próxima vez, salen en
+// «Anteriores». Solo los que se enseñaron (los que lleguen mientras tanto siguen siendo nuevos) y solo los de la cuenta.
+internal sealed class MarkAlertsSeenHandler(ICurrentUser currentUser, IAlertStore alerts, TimeProvider clock)
+    : ICommandHandler<MarkAlertsSeenCommand, ClubAlertsDto>
+{
+    public async Task<ClubAlertsDto> Handle(MarkAlertsSeenCommand command, CancellationToken cancellationToken)
+    {
+        if (!currentUser.IsAuthenticated) throw new UnauthenticatedException();
+        await alerts.MarkSeenAsync(
+            currentUser.ClubId, currentUser.PlayerId, currentUser.CoachId, command.AlertIds.Distinct().ToList(), clock.GetUtcNow(), cancellationToken);
         return await ClubAlerts.MineAsync(currentUser, alerts, cancellationToken);
     }
 }

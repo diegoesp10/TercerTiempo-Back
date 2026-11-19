@@ -5,6 +5,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Performances;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
@@ -26,7 +27,7 @@ internal sealed class UpdateSquadPlayerValidator : AbstractValidator<UpdateSquad
         RuleFor(x => x.SquadId).NotEmpty();
         RuleFor(x => x.SquadPlayerId).NotEmpty();
         RuleFor(x => x.FullName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.Position).IsInEnum().When(x => x.Position.HasValue);
+        RuleFor(x => x.Position).NotNull().WithCatalogMessage(ErrorCode.PlayerPositionRequired).IsInEnum();
         RuleFor(x => x.ShirtNumber).InclusiveBetween(1, 99).When(x => x.ShirtNumber.HasValue);
     }
 }
@@ -46,7 +47,7 @@ internal sealed class UpdateSquadPlayerHandler(
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
 
         var previousPosition = squad.GetPlayer(command.SquadPlayerId).Position;
-        squad.UpdatePlayer(command.SquadPlayerId, command.FullName, command.Position, command.ShirtNumber);
+        squad.UpdatePlayer(command.SquadPlayerId, command.FullName, command.Position!.Value, command.ShirtNumber);
 
         // La nota depende de la posición: si cambia, se recalculan sus actas.
         if (previousPosition != command.Position)

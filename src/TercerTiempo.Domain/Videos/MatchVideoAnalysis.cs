@@ -1,11 +1,12 @@
+using System.Text.Json;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Domain.Videos;
 
-// En cola, analizándose, con la propuesta lista, fallido (sin GPU, sin analizador, vídeo ilegible...) o cancelado por
-// el cuerpo técnico. El análisis nunca toca el vídeo ni el acta: solo deja una propuesta que el cuerpo técnico revisa y
-// vuelca.
+// En cola, analizándose, con la propuesta lista, fallido (sin GPU, sin analizador, vídeo ilegible...), cancelado o en
+// pausa por el cuerpo técnico. El análisis nunca toca el vídeo ni el acta: solo deja una propuesta que el cuerpo técnico
+// revisa y vuelca.
 public enum VideoAnalysisStatus
 {
     Pending = 1,
@@ -13,7 +14,13 @@ public enum VideoAnalysisStatus
     Ready = 3,
     Failed = 4,
     Cancelled = 5,
+    // Parado por el cuerpo técnico. Si estaba analizándose, el analizador lo sigue teniendo (con su latido) y el proceso
+    // espera sin perder lo hecho; si estaba en cola, no se empieza hasta que se reanude.
+    Paused = 6,
 }
+
+// Una línea del registro del análisis: cada cosa que el analizador va sabiendo («Equipos separados…», «En pausa…»).
+public sealed record VideoAnalysisLogEntry(DateTimeOffset At, string Text);
 
 // Lo que deja el analizador al terminar: dónde está su carpeta de salida, con qué versión y pesos trabajó, la propuesta
 // (acta-propuesta.json tal cual) y cuánto se fía uno de ella (fotogramas con balón y con el campo calibrado).
@@ -35,6 +42,10 @@ public sealed class MatchVideoAnalysis : AggregateRoot
     public const int MaxErrorLength = 1000;
     public const int MaxAssignments = 400;
     public const int MaxWorkerIdLength = 100;
+    public const int MaxStageLength = 20;
+    public const int MaxLiveLength = 4000;
+    public const int MaxLogEntries = 40;
+    public const int MaxLogTextLength = 300;
 
     // Por debajo de esto la propuesta se enseña con un aviso: sin balón a la vista la posesión baila, y sin el campo
     // calibrado no salen ni los tercios ni los eventos de geometría (fueras, tiros, córners).
@@ -66,6 +77,17 @@ public sealed class MatchVideoAnalysis : AggregateRoot
     public string? WorkerId { get; private set; }
     public DateTimeOffset? HeartbeatAt { get; private set; }
 
+    // Lo que está haciendo ahora mismo el analizador: la etapa y el último estado que contó (JSON del servicio de vídeo
+    // con el minuto del vídeo, jugadores seguidos, velocidad…), y el registro de lo que ha ido sabiendo.
+    public string? Stage { get; private set; }
+    public string? LiveJson { get; private set; }
+    public DateTimeOffset? LiveAt { get; private set; }
+    public string? LogJson { get; private set; }
+
+    // Desde cuándo está en pausa y cuánto ha estado parado en total (no cuenta en lo que tarda).
+    public DateTimeOffset? PausedAt { get; private set; }
+    public int PausedSeconds { get; private set; }
+
     public string? OutputPath { get; private set; }
     public string? AnalyzerVersion { get; private set; }
     public string? Weights { get; private set; }
@@ -84,7 +106,10 @@ public sealed class MatchVideoAnalysis : AggregateRoot
     public string? AssignmentsJson { get; private set; }
     public DateTimeOffset? AppliedAt { get; private set; }
 
-    public bool IsActive => Status is VideoAnalysisStatus.Pending or VideoAnalysisStatus.Running;
+    public bool IsActive => Status is VideoAnalysisStatus.Pending or VideoAnalysisStatus.Running or VideoAnalysisStatus.Paused;
+
+    // Lo tiene un analizador: analizándose o en pausa a medias (con su proceso esperando).
+    public bool IsWorking => Status == VideoAnalysisStatus.Running || (Status == VideoAnalysisStatus.Paused && WorkerId is not null);
 
     public bool GenericPitch => PitchLengthM == GenericPitchLengthM && PitchWidthM == GenericPitchWidthM;
 
@@ -127,6 +152,10 @@ public sealed class MatchVideoAnalysis : AggregateRoot
         RequestedAt = now;
         StartedAt = null;
         FinishedAt = null;
+        PausedAt = null;
+        PausedSeconds = 0;
+        ClearLive();
+        LogJson = null;
         ClearResult();
     }
 
@@ -143,27 +172,90 @@ public sealed class MatchVideoAnalysis : AggregateRoot
         FinishedAt = null;
         WorkerId = string.IsNullOrWhiteSpace(workerId) ? null : workerId.Length > MaxWorkerIdLength ? workerId[..MaxWorkerIdLength] : workerId;
         HeartbeatAt = now;
+        PausedAt = null;
+        PausedSeconds = 0;
+        ClearLive();
+        LogJson = null;
     }
 
     public void ReportProgress(int percent)
     {
-        EnsureRunning();
+        EnsureWorking();
         Progress = Math.Clamp(percent, 0, 99);
     }
 
+    // El último estado que contó el analizador (etapa y detalle) y su avance.
+    public void ReportLive(int percent, string? stage, string? liveJson, DateTimeOffset now)
+    {
+        EnsureWorking();
+        Progress = Math.Clamp(Math.Max(Progress, percent), 0, 99);
+        if (!string.IsNullOrWhiteSpace(stage)) Stage = stage.Length > MaxStageLength ? stage[..MaxStageLength] : stage;
+        LiveJson = liveJson is { Length: > 0 and <= MaxLiveLength } ? liveJson : LiveJson;
+        LiveAt = now;
+    }
+
+    // Una cosa más que se sabe del análisis; se guardan las últimas MaxLogEntries.
+    public void AddLog(string text, DateTimeOffset now)
+    {
+        EnsureWorking();
+        var clean = string.Join(' ', (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (clean.Length == 0) return;
+        var entries = Log.ToList();
+        entries.Add(new VideoAnalysisLogEntry(now, clean.Length > MaxLogTextLength ? clean[..MaxLogTextLength] : clean));
+        LogJson = JsonSerializer.Serialize(entries.TakeLast(MaxLogEntries).ToList(), LogJsonOptions);
+    }
+
+    public IReadOnlyList<VideoAnalysisLogEntry> Log
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(LogJson)) return [];
+            try
+            {
+                return JsonSerializer.Deserialize<List<VideoAnalysisLogEntry>>(LogJson, LogJsonOptions) ?? [];
+            }
+            catch (JsonException)
+            {
+                return [];
+            }
+        }
+    }
+
+    private static readonly JsonSerializerOptions LogJsonOptions = new(JsonSerializerDefaults.Web);
+
     public void Beat(DateTimeOffset now)
     {
-        EnsureRunning();
+        EnsureWorking();
         HeartbeatAt = now;
+    }
+
+    // Parar sin perder nada: lo que está en cola no se empieza y lo que se está analizando espera donde va.
+    public void Pause(DateTimeOffset now)
+    {
+        if (Status is not (VideoAnalysisStatus.Pending or VideoAnalysisStatus.Running))
+            throw new DomainException(ErrorCode.VideoAnalysisNotPausable);
+        Status = VideoAnalysisStatus.Paused;
+        PausedAt = now;
+    }
+
+    // Sigue donde se quedó: si lo tenía un analizador, vuelve a analizarse; si no, vuelve a la cola.
+    public void Resume(DateTimeOffset now)
+    {
+        if (Status != VideoAnalysisStatus.Paused)
+            throw new DomainException(ErrorCode.VideoAnalysisNotPaused);
+        if (PausedAt is { } since && now > since)
+            PausedSeconds += (int)Math.Round((now - since).TotalSeconds);
+        PausedAt = null;
+        Status = WorkerId is null ? VideoAnalysisStatus.Pending : VideoAnalysisStatus.Running;
     }
 
     // Lleva más de `lease` sin dar señales: el proceso que lo analizaba se cerró, se colgó o perdió la base.
     public bool LeaseExpired(DateTimeOffset now, TimeSpan lease) =>
-        Status == VideoAnalysisStatus.Running && (HeartbeatAt ?? StartedAt ?? RequestedAt) < now - lease;
+        IsWorking && (HeartbeatAt ?? StartedAt ?? RequestedAt) < now - lease;
 
     public void Complete(VideoAnalysisOutcome outcome, DateTimeOffset now)
     {
-        EnsureRunning();
+        EnsureWorking();
         if (string.IsNullOrWhiteSpace(outcome.ProposalJson))
             throw new DomainException(ErrorCode.VideoAnalysisEmptyProposal);
 
@@ -187,30 +279,34 @@ public sealed class MatchVideoAnalysis : AggregateRoot
         Error = null;
         FinishedAt = now;
         HeartbeatAt = null;
+        EndPause(now);
+        ClearLive();
     }
 
     public void Fail(string error, DateTimeOffset now)
     {
-        EnsureRunning();
+        EnsureWorking();
         Status = VideoAnalysisStatus.Failed;
         Error = ErrorText(error);
         FinishedAt = now;
         HeartbeatAt = null;
+        EndPause(now);
         ClearResult();
     }
 
     // Un fallo pasajero (la base, el disco, la red): vuelve a la cola con el intento contado y el motivo a la vista.
     public void RetryLater(string error)
     {
-        EnsureRunning();
+        EnsureWorking();
         BackToQueue();
         Error = ErrorText(error);
     }
 
-    // El proceso que lo analizaba se paró a medias (apagado, reinicio): vuelve a la cola sin contar el intento.
+    // El proceso que lo analizaba se paró a medias (apagado, reinicio): vuelve a la cola sin contar el intento. Si
+    // estaba en pausa, sigue en pausa (empezará de nuevo cuando se reanude).
     public void Requeue()
     {
-        if (Status != VideoAnalysisStatus.Running) return;
+        if (!IsWorking) return;
         BackToQueue();
         Attempts = Math.Max(0, Attempts - 1);
     }
@@ -219,7 +315,7 @@ public sealed class MatchVideoAnalysis : AggregateRoot
     // es el propio vídeo el que lo tumba, y agotados los intentos queda fallido.
     public void Recover(int maxAttempts, DateTimeOffset now)
     {
-        if (Status != VideoAnalysisStatus.Running) return;
+        if (!IsWorking) return;
         if (Attempts >= maxAttempts)
         {
             Fail("El analizador se paró a medias (se cerró o dejó de responder) y ya no quedan reintentos: vuelve a pedir el análisis.", now);
@@ -240,6 +336,8 @@ public sealed class MatchVideoAnalysis : AggregateRoot
         FinishedAt = now;
         WorkerId = null;
         HeartbeatAt = null;
+        EndPause(now);
+        ClearLive();
     }
 
     public void MarkApplied(int ourTeam, string assignmentsJson, DateTimeOffset now)
@@ -256,11 +354,26 @@ public sealed class MatchVideoAnalysis : AggregateRoot
 
     private void BackToQueue()
     {
-        Status = VideoAnalysisStatus.Pending;
+        Status = Status == VideoAnalysisStatus.Paused ? VideoAnalysisStatus.Paused : VideoAnalysisStatus.Pending;
         Progress = 0;
         StartedAt = null;
         WorkerId = null;
         HeartbeatAt = null;
+        ClearLive();
+    }
+
+    private void EndPause(DateTimeOffset now)
+    {
+        if (PausedAt is { } since && now > since)
+            PausedSeconds += (int)Math.Round((now - since).TotalSeconds);
+        PausedAt = null;
+    }
+
+    private void ClearLive()
+    {
+        Stage = null;
+        LiveJson = null;
+        LiveAt = null;
     }
 
     private static string ErrorText(string error) =>
@@ -284,9 +397,9 @@ public sealed class MatchVideoAnalysis : AggregateRoot
         AppliedAt = null;
     }
 
-    private void EnsureRunning()
+    private void EnsureWorking()
     {
-        if (Status != VideoAnalysisStatus.Running)
+        if (!IsWorking)
             throw new DomainException(ErrorCode.VideoAnalysisNotRunning);
     }
 
@@ -326,7 +439,12 @@ public interface IMatchVideoAnalysisStore
 
     // Cola de análisis: el pedido hace más tiempo que siga esperando, de un vídeo que no se haya eliminado.
     Task<MatchVideoAnalysis?> GetNextPendingAsync(int maxAttempts, CancellationToken cancellationToken = default);
+    // Los que tiene algún analizador: analizándose o en pausa a medias.
     Task<IReadOnlyList<MatchVideoAnalysis>> GetRunningAsync(CancellationToken cancellationToken = default);
+
+    // Cómo está la fila en la base ahora mismo (sin seguirla): el analizador lo mira cada pocos segundos para enterarse
+    // de una pausa, una reanudación o una cancelación. null si ya no existe.
+    Task<VideoAnalysisControlState?> GetControlAsync(Guid analysisId, CancellationToken cancellationToken = default);
 
     // Guarda el análisis terminado con sus recortes en una sola transacción (los de la pasada anterior se van a la vez).
     Task SaveResultAsync(Guid analysisId, IReadOnlyCollection<VideoAnalysisCrop> crops, CancellationToken cancellationToken = default);
@@ -336,6 +454,8 @@ public interface IMatchVideoAnalysisStore
     Task<byte[]?> GetCropAsync(Guid analysisId, int tracklet, CancellationToken cancellationToken = default);
     Task<IReadOnlySet<int>> GetCropTrackletsAsync(Guid analysisId, CancellationToken cancellationToken = default);
 }
+
+public sealed record VideoAnalysisControlState(VideoAnalysisStatus Status, string? WorkerId);
 
 // Latido de cada analizador en marcha (el servicio de vídeo con Analysis:RunWorker): así la app sabe si hay alguien que
 // atienda la cola o si un análisis se va a quedar «en cola» para siempre.

@@ -39,9 +39,9 @@ internal sealed class TrainingStore(AppDbContext db) : ITrainingStore
             .Take(take)
             .ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<TrainingSession>> GetSeriesAsync(Guid seriesId, DateTimeOffset from, CancellationToken cancellationToken = default) =>
+    public async Task<IReadOnlyList<TrainingSession>> GetBySquadPlayerAsync(Guid squadPlayerId, CancellationToken cancellationToken = default) =>
         await db.TrainingSessions
-            .Where(s => s.SeriesId == seriesId && s.StartsAt >= from)
+            .Where(s => s.Attendance.Any(a => a.SquadPlayerId == squadPlayerId))
             .OrderBy(s => s.StartsAt)
             .ToListAsync(cancellationToken);
 
@@ -51,16 +51,41 @@ internal sealed class TrainingStore(AppDbContext db) : ITrainingStore
             .OrderBy(s => s.StartsAt)
             .ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyDictionary<Guid, TrialAttendanceCounts>> CountTrialAttendanceAsync(Guid squadId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyDictionary<Guid, TrialAttendanceCounts>> CountTrialAttendanceAsync(Guid squadId, DateTimeOffset now, CancellationToken cancellationToken = default)
     {
         var rows = await db.TrainingSessions
             .Where(s => s.SquadId == squadId)
-            .SelectMany(s => s.Attendance)
+            .SelectMany(s => s.Attendance.Select(a => new { a.TrialPlayerId, a.Status, Done = s.StartsAt.AddMinutes(s.DurationMinutes) <= now }))
             .Where(a => a.TrialPlayerId != null)
             .GroupBy(a => a.TrialPlayerId!.Value)
-            .Select(g => new { TrialPlayerId = g.Key, Sessions = g.Count(), Attended = g.Count(a => a.Status == AttendanceStatus.Attended) })
+            .Select(g => new
+            {
+                TrialPlayerId = g.Key,
+                Sessions = g.Count(),
+                Attended = g.Count(a => a.Status == AttendanceStatus.Attended || (a.Done && a.Status == AttendanceStatus.Expected)),
+            })
             .ToListAsync(cancellationToken);
         return rows.ToDictionary(r => r.TrialPlayerId, r => new TrialAttendanceCounts(r.Sessions, r.Attended));
+    }
+
+    public async Task<TrainingHistory> GetHistoryAsync(
+        IReadOnlyCollection<Guid> squadIds, DateTimeOffset from, DateTimeOffset to, IReadOnlyCollection<Guid>? squadPlayerIds, CancellationToken cancellationToken = default)
+    {
+        if (squadIds.Count == 0 || from >= to) return new TrainingHistory([], []);
+        // IgnoreAutoIncludes: aquí solo hacen falta la hora, la duración, el tipo y el estado de cada línea, no las sesiones enteras.
+        var sessions = db.TrainingSessions.AsNoTracking().IgnoreAutoIncludes()
+            .Where(s => squadIds.Contains(s.SquadId) && s.StartsAt >= from && s.StartsAt < to);
+        var slots = await sessions
+            .Select(s => new TrainingSlot(s.Id, s.SquadId, s.StartsAt, s.DurationMinutes, s.Kind, s.Title))
+            .ToListAsync(cancellationToken);
+        if (slots.Count == 0) return new TrainingHistory([], []);
+
+        var lines = sessions.SelectMany(s => s.Attendance).Where(a => a.SquadPlayerId != null);
+        if (squadPlayerIds is not null) lines = lines.Where(a => squadPlayerIds.Contains(a.SquadPlayerId!.Value));
+        var marks = await lines
+            .Select(a => new AttendanceMark(a.SessionId, a.SquadPlayerId!.Value, a.Status, a.Reason))
+            .ToListAsync(cancellationToken);
+        return new TrainingHistory(slots, marks);
     }
 
     public void Add(TrainingSession session) => db.TrainingSessions.Add(session);

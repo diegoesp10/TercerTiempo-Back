@@ -109,7 +109,8 @@ public sealed class Squad : AggregateRoot
         _players.FirstOrDefault(p => p.Id == squadPlayerId)
             ?? throw new DomainException(ErrorCode.SquadPlayerNotMember);
 
-    public void UpdatePlayer(Guid squadPlayerId, string fullName, Position? position, int? shirtNumber)
+    // Quien edita la ficha elige siempre la posición; solo la importación de la federación puede dejarla sin ella.
+    public void UpdatePlayer(Guid squadPlayerId, string fullName, Position position, int? shirtNumber)
     {
         var player = GetPlayer(squadPlayerId);
         var normalized = NameNormalizer.Normalize(fullName);
@@ -118,6 +119,26 @@ public sealed class Squad : AggregateRoot
             throw new DomainException(ErrorCode.SquadPlayerDuplicate, fullName.Trim());
 
         player.Update(fullName, position, shirtNumber);
+    }
+
+    public bool CompletePlayerPosition(Guid squadPlayerId, Position position) => GetPlayer(squadPlayerId).CompletePosition(position);
+
+    // Dos fichas de la misma persona: la repetida se quita y la que se queda toma su posición y su dorsal si no tenía. Lo
+    // que colgaba de la repetida (actas, convocatorias, asistencia…) lo pasa a la otra quien llama. Devuelve la cuenta que
+    // tenía la repetida, para vincularla a la que se queda si esta no tenía ninguna.
+    public Guid? MergePlayer(Guid keepId, Guid duplicateId)
+    {
+        if (keepId == duplicateId)
+            throw new ArgumentException("Hay que juntar dos fichas distintas.", nameof(duplicateId));
+
+        var keep = GetPlayer(keepId);
+        var duplicate = GetPlayer(duplicateId);
+        if (!keep.IsActive || !duplicate.IsActive)
+            throw new DomainException(ErrorCode.SquadEntryInactive);
+
+        keep.Update(keep.FullName, keep.Position ?? duplicate.Position, keep.ShirtNumber ?? duplicate.ShirtNumber);
+        _players.Remove(duplicate);
+        return duplicate.PlayerId;
     }
 
     public void RemovePlayer(Guid squadPlayerId, DateTimeOffset now)

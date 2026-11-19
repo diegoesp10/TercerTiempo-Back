@@ -1,4 +1,5 @@
 using TercerTiempo.Domain.Competitions;
+using TercerTiempo.Domain.Grounds;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Referees;
@@ -21,9 +22,9 @@ internal static class RealDataModel
     // En orden de dependencias: cada tabla después de aquellas a las que apunta.
     public static readonly Type[] Copied =
     [
-        typeof(SeasonYear), typeof(Competition), typeof(Season), typeof(Team), typeof(RosterEntry), typeof(Match),
+        typeof(SeasonYear), typeof(Competition), typeof(Season), typeof(Team), typeof(RosterEntry), typeof(Match), typeof(Ground),
         typeof(Standing), typeof(SeasonZone), typeof(Referee), typeof(MatchOfficial), typeof(OfficialMatchSheet),
-        typeof(OfficialSheetLine), typeof(OfficialSheetEvent),
+        typeof(OfficialSheetLine), typeof(OfficialSheetEvent), typeof(OfficialSheetStaff),
     ];
 
     public static readonly Type[] SharedOnly =

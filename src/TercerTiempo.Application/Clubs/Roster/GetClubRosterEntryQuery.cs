@@ -7,6 +7,7 @@ using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Performances;
 using TercerTiempo.Application.Teams;
 using TercerTiempo.Application.Teams.Roster;
+using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
@@ -23,7 +24,9 @@ public sealed record RosterEntryDetailDto(
     IReadOnlyList<RosterInternalAppearanceDto> Internal,
     [property: Description("Resumen de las actas de Tercer Tiempo; null si el cuerpo técnico no ha registrado ninguna.")]
     RosterInternalStatsDto? InternalStats,
-    bool HasSquad);
+    bool HasSquad,
+    [property: Description("Partidos que ha jugado ya el equipo en la temporada, para comparar con los suyos.")]
+    int TeamMatchesPlayed = 0);
 
 public sealed record RosterOfficialAppearanceDto(MatchDto Match, bool Home, OfficialLineDto Line);
 
@@ -43,7 +46,12 @@ public sealed record RosterInternalStatsDto(
     int Saves,
     int YellowCards,
     int RedCards,
-    double? AverageRating);
+    double? AverageRating,
+    int Fouls = 0,
+    int Recoveries = 0,
+    int Clearances = 0,
+    int PassesCompleted = 0,
+    int PassesAttempted = 0);
 
 internal sealed class GetClubRosterEntryHandler(
     ICurrentUser currentUser,
@@ -57,7 +65,8 @@ internal sealed class GetClubRosterEntryHandler(
         var entry = await ClubRoster.EntryAsync(query.TeamId, seasonId, query.EntryId, stores.Teams, cancellationToken);
         var details = await RosterEntryDetails.BuildAsync(query.TeamId, seasonId, entry, roster, stores.Squads, performances, cancellationToken);
 
-        return new RosterEntryDetailDto(details.Entry, details.Official, details.Internal, RosterEntryDetails.InternalStats(details.Internal), details.Player is not null);
+        return new RosterEntryDetailDto(
+            details.Entry, details.Official, details.Internal, RosterEntryDetails.InternalStats(details.Internal), details.Player is not null, details.TeamMatchesPlayed);
     }
 }
 
@@ -70,7 +79,8 @@ internal static class RosterEntryDetails
         IReadOnlyList<RosterOfficialAppearanceDto> Official,
         IReadOnlyList<RosterInternalAppearanceDto> Internal,
         Squad? Squad,
-        SquadPlayer? Player);
+        SquadPlayer? Player,
+        int TeamMatchesPlayed);
 
     public static async Task<Details> BuildAsync(
         Guid teamId, Guid seasonId, RosterEntry entry, RosterStores roster, ISquadStore squads, IPerformanceStore performances, CancellationToken cancellationToken)
@@ -107,7 +117,7 @@ internal static class RosterEntryDetails
 
         return new Details(
             RosterEntryDto.From(mine.Person, RosterSummary.Stats(mine.Appearances), RosterSummary.ShirtNumbers(mine.Appearances)),
-            official, internalRows, squad, player);
+            official, internalRows, squad, player, matches.Count(m => m.Status == MatchStatus.Played));
     }
 
     // La persona enlaza con el jugador de la plantilla interna por la ficha de la que se importó (la principal antes
@@ -146,6 +156,11 @@ internal static class RosterEntryDetails
             played.Sum(p => p.Saves),
             played.Sum(p => p.YellowCards),
             played.Count(p => p.RedCard),
-            ratings.Count == 0 ? null : Math.Round(ratings.Average(), 1));
+            ratings.Count == 0 ? null : Math.Round(ratings.Average(), 1),
+            played.Sum(p => p.Fouls),
+            played.Sum(p => p.Recoveries),
+            played.Sum(p => p.Clearances),
+            played.Sum(p => p.PassesCompleted),
+            played.Sum(p => p.PassesAttempted));
     }
 }

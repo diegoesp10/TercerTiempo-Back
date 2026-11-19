@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Search;
 
@@ -13,6 +14,7 @@ public static class SearchTypes
     public const string Match = "match";
     public const string Squad = "squad";
     public const string Referee = "referee";
+    public const string Coach = "coach";
 
     public static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
     {
@@ -21,6 +23,7 @@ public static class SearchTypes
         [Team] = "Equipos",
         [Club] = "Clubes",
         [Player] = "Jugadores",
+        [Coach] = "Cuerpo técnico",
         [Match] = "Partidos",
         [Referee] = "Árbitros",
     };
@@ -157,6 +160,31 @@ internal sealed class SearchIndex
                 Subtitle = string.Join(" · ", new[] { r.Assistant ? "Asistente" : "Árbitro", r.Category, r.Matches == 1 ? "1 partido" : $"{r.Matches} partidos" }.OfType<string>()),
                 Link = $"/arbitros/{r.Id}", ImageKind = "referee", Prior = 0.6,
                 Fields = [SearchText.Tokens(r.Name), [], []],
+            });
+        }
+
+        foreach (var c in corpus.Coaches ?? [])
+        {
+            // Los equipos de ahora primero; si ya no está en ninguno, el último en que estuvo.
+            var stints = c.Teams.Where(t => teams.ContainsKey(t.TeamId))
+                .OrderByDescending(t => t.Current).ThenByDescending(t => t.ValidUntil).ToList();
+            var current = stints.Where(t => t.Current).ToList();
+            var shown = current.Count > 0 ? current : stints.Take(1).ToList();
+            var main = shown.FirstOrDefault();
+            var mainTeam = main is null ? null : teams[main.TeamId];
+            var roles = string.Join(" · ", shown.Select(t => $"{RoleLabel(t.Role)} de {teams[t.TeamId].Name}"));
+            docs.Add(new SearchDoc
+            {
+                Type = SearchTypes.Coach, Id = c.Id, Title = c.Name, NormalizedTitle = SearchText.Normalize(c.Name),
+                Subtitle = shown.Count == 0 ? "Cuerpo técnico" : current.Count > 0 ? roles : $"Antes: {roles}",
+                Link = $"/tecnicos/{c.Id}", ImageUrl = c.PhotoUrl, ImageKind = "photo", SecondaryImageUrl = mainTeam?.CrestUrl,
+                Prior = current.Count > 0 ? 0.5 : 0.3,
+                Fields = [
+                    SearchText.Tokens(c.Name),
+                    SearchText.Tokens(string.Join(' ', stints.Select(t => teams[t.TeamId].Name).Distinct())),
+                    SearchText.Tokens(string.Join(' ', stints.Select(t => RoleLabel(t.Role)).Distinct()) + " cuerpo tecnico"),
+                ],
+                TeamId = current.Count > 0 ? mainTeam?.Id : null,
             });
         }
 
@@ -308,7 +336,7 @@ internal sealed class SearchIndex
         if (doc.TeamId is { } team && viewer.OwnTeamIds.Contains(team) || doc.AwayTeamId is { } away && viewer.OwnTeamIds.Contains(away))
         {
             score += 1.5;
-            badges.Insert(0, doc.Type == SearchTypes.Player ? "De tu equipo" : doc.Type == SearchTypes.Match ? "Partido tuyo" : "Tu equipo");
+            badges.Insert(0, doc.Type is SearchTypes.Player or SearchTypes.Coach ? "De tu equipo" : doc.Type == SearchTypes.Match ? "Partido tuyo" : "Tu equipo");
         }
         if (doc.RestrictedToSquadId is not null && doc.Type == SearchTypes.Player) badges.Insert(0, "Tu plantilla");
 
@@ -322,6 +350,16 @@ internal sealed class SearchIndex
 
         return new SearchHit(doc, Math.Round(score, 3), link, badges);
     }
+
+    private static string RoleLabel(StaffRole role) => role switch
+    {
+        StaffRole.HeadCoach => "Entrenador",
+        StaffRole.AssistantCoach => "Segundo entrenador",
+        StaffRole.Delegate => "Delegado",
+        StaffRole.Physio => "Fisio",
+        StaffRole.Analyst => "Analista",
+        _ => "Cuerpo técnico",
+    };
 
     private static string? PositionLabel(Position? position) => position switch
     {

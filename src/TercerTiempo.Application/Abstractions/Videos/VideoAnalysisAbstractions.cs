@@ -1,3 +1,7 @@
+using System.ComponentModel;
+using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Videos;
+
 namespace TercerTiempo.Application.Abstractions.Videos;
 
 // Análisis del vídeo de un partido con TercerTiempo.Analisis (Python + GPU), como proceso externo del servicio de
@@ -47,15 +51,35 @@ public sealed class VideoAnalysisOptions
     public int LeaseMinutes { get; set; } = 10;
 }
 
-// Los nombres van en el orden «el nuestro, el rival», pero el analizador no sabe cuál es cuál: separa dos equipaciones
-// y es el cuerpo técnico quien dice cuál es la suya.
+// Los nombres van en el orden «el nuestro, el rival». Con el acta oficial (Roster) el analizador lee los dorsales y
+// sabe qué equipación es de cada lado; sin ella separa dos equipaciones y es el cuerpo técnico quien dice cuál es la suya.
 public sealed record VideoAnalysisRequest(
     Guid VideoId,
     string StorageKey,
     string OurTeam,
     string RivalTeam,
     decimal? PitchLengthM,
-    decimal? PitchWidthM);
+    decimal? PitchWidthM,
+    VideoAnalysisRoster? Roster = null);
+
+// Los que jugaron según el acta oficial, por lado, con sus minutos: de qué parte es el vídeo y cuánto dura cada parte
+// para pasar los minutos del acta al tiempo del vídeo. Con el acta cerrada, también el resultado y el minuto de cada gol:
+// el vídeo no puede dar más goles que el acta.
+public sealed record VideoAnalysisRoster(
+    VideoPart Part,
+    int HalfMinutes,
+    IReadOnlyList<VideoAnalysisRosterTeam> Teams,
+    VideoAnalysisScore? Score = null,
+    IReadOnlyList<VideoAnalysisGoal>? Goals = null);
+
+public sealed record VideoAnalysisRosterTeam(MatchSide Side, string Name, IReadOnlyList<VideoAnalysisRosterPlayer> Players);
+
+public sealed record VideoAnalysisRosterPlayer(int ShirtNumber, string Name, bool Started, int? MinuteIn, int? MinuteOut, int Goals = 0);
+
+public sealed record VideoAnalysisScore(int Home, int Away);
+
+// ScoringSide es el lado al que sube el gol (el contrario del que lo marca en propia puerta).
+public sealed record VideoAnalysisGoal(MatchSide ScoringSide, int Minute, int ExtraMinute = 0);
 
 public sealed record VideoAnalysisRun(
     string OutputPath,
@@ -71,12 +95,70 @@ public sealed record VideoAnalysisRun(
     IReadOnlyDictionary<int, byte[]> Crops,
     decimal? ReadFramesPct = null);
 
+// Lo que va contando el analizador mientras trabaja: el avance en %, su estado detallado o una línea para el registro.
+public sealed record VideoAnalysisUpdate(int? Percent = null, VideoAnalysisLive? Live = null, string? Log = null);
+
+// El estado detallado que cuenta el analizador cada pocos segundos (lo que se enseña mientras analiza). Todo es opcional:
+// cada etapa cuenta lo suyo.
+public sealed record VideoAnalysisLive(
+    [property: Description("models (cargando los detectores), teams (separando las equipaciones), tracking (siguiendo jugadores y balón fotograma a fotograma), plays (posesión y jugadas), review (revisión con el modelo de lenguaje) o outputs (escribiendo la propuesta).")]
+    string Stage,
+    [property: Description("El proceso está parado de verdad (ha llegado al punto de control tras pedir la pausa).")]
+    bool Paused,
+    [property: Description("Segundo del vídeo por el que va.")]
+    int? VideoSecond = null,
+    int? FromSecond = null,
+    int? ToSecond = null,
+    int? Frames = null,
+    int? FramesTotal = null,
+    [property: Description("Jugadores de campo en el fotograma actual.")]
+    int? PlayersOnScreen = null,
+    [property: Description("Jugadores seguidos hasta ahora (un jugador que se pierde de vista y vuelve puede contar dos veces).")]
+    int? PlayersTracked = null,
+    [property: Description("% de los fotogramas analizados con el balón a la vista.")]
+    decimal? BallSeenPct = null,
+    [property: Description("% de los fotogramas analizados con el campo calibrado.")]
+    decimal? CalibratedPct = null,
+    [property: Description("Fotogramas analizados por segundo.")]
+    decimal? Fps = null,
+    [property: Description("Segundos de vídeo analizados por segundo de reloj (1 = tiempo real).")]
+    decimal? Speed = null,
+    [property: Description("Lo que calcula el analizador que le queda de esta etapa, en segundos, sin contar las pausas.")]
+    int? RemainingSeconds = null,
+    int? TeamSamples = null,
+    int? TeamSamplesTarget = null,
+    [property: Description("Colores medios de las dos equipaciones (#rrggbb), en cuanto se separan.")]
+    IReadOnlyList<string>? Colors = null,
+    int? Touches = null,
+    int? Events = null,
+    [property: Description("Segundos que ha estado en pausa en total.")]
+    int? PausedSeconds = null);
+
+// Pausar y reanudar el análisis en marcha: el procesador lo cambia cuando lo pide la app y el analizador se lo dice al
+// proceso.
+public sealed class VideoAnalysisControl
+{
+    private volatile bool _paused;
+
+    public bool Paused => _paused;
+
+    public event Action<bool>? Changed;
+
+    public void Set(bool paused)
+    {
+        if (_paused == paused) return;
+        _paused = paused;
+        Changed?.Invoke(paused);
+    }
+}
+
 public interface IVideoAnalyzer
 {
     // Lanza el analizador sobre el archivo del vídeo y devuelve lo que deja (acta-propuesta.json, analisis.json y los
-    // recortes). El avance (en %) se comunica esperando a cada aviso. Lanza VideoAnalysisException con un mensaje
-    // para el cuerpo técnico si no se puede analizar (sin uv, sin GPU, sin la carpeta del analizador...).
-    Task<VideoAnalysisRun> AnalyzeAsync(VideoAnalysisRequest request, Func<int, CancellationToken, Task> progress, CancellationToken cancellationToken);
+    // recortes). Lo que va contando (avance, estado, registro) se comunica esperando a cada aviso, y obedece a `control`
+    // (pausa y reanudación) sin perder lo hecho. Lanza VideoAnalysisException con un mensaje para el cuerpo técnico si no
+    // se puede analizar (sin uv, sin GPU, sin la carpeta del analizador...).
+    Task<VideoAnalysisRun> AnalyzeAsync(VideoAnalysisRequest request, Func<VideoAnalysisUpdate, CancellationToken, Task> report, VideoAnalysisControl control, CancellationToken cancellationToken);
 
     // Borra la carpeta de salida de un vídeo (al eliminarlo).
     Task DeleteOutputAsync(Guid videoId, CancellationToken cancellationToken);

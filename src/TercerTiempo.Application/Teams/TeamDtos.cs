@@ -29,7 +29,11 @@ public sealed record TeamDetailDto(
     IReadOnlyList<RosterEntryDto> Roster,
     TeamSquadDto? Squad,
     TeamProfileDto? Profile,
-    string? OfficialUrl);
+    string? OfficialUrl,
+    [property: System.ComponentModel.Description("Cuerpo técnico de la temporada según las actas oficiales (público); null si el equipo no tiene temporada.")]
+    GetTeam.TeamStaffDto? Staff = null,
+    [property: System.ComponentModel.Description("Página del equipo en la web que facilita calendario, resultados y plantilla (futbolasturiano.es); null si no viene de ella.")]
+    string? SourceUrl = null);
 
 public sealed record TeamProfileDto(
     string? OfficialName,

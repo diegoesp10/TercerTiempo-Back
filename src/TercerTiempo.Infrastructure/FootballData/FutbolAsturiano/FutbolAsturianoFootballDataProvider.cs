@@ -42,6 +42,7 @@ internal sealed class FutbolAsturianoFootballDataProvider(
     private MatchWindow? _window;
 
     private (int Id, string Label)? _season;
+    private string? _seasonOverride;
     private TimeZoneInfo? _timeZone;
     private Dictionary<int, string>? _venues;
     private Dictionary<int, Position?>? _positions;
@@ -623,6 +624,12 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         return result;
     }
 
+    public void UseSeason(string seasonLabel)
+    {
+        if (_season is not null) throw new InvalidOperationException("La temporada se elige antes de la primera llamada.");
+        _seasonOverride = seasonLabel.Trim();
+    }
+
     private async Task<(int Id, string Label)> ResolveSeasonAsync(CancellationToken cancellationToken)
     {
         if (_season is { } cached) return cached;
@@ -636,13 +643,15 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         if (candidates.Count == 0)
             throw new InvalidOperationException("futbolasturiano.es no publica ninguna temporada (sp_season).");
 
-        var chosen = string.IsNullOrWhiteSpace(_settings.Season)
+        // «2025/2026», «2025-2026» y «2025/26» son la misma temporada.
+        var wanted = _seasonOverride ?? _settings.Season;
+        var chosen = string.IsNullOrWhiteSpace(wanted)
             ? candidates.OrderByDescending(s => s.Label, StringComparer.Ordinal).First()
-            : candidates.FirstOrDefault(s => s.Label.Equals(_settings.Season.Trim(), StringComparison.OrdinalIgnoreCase));
+            : candidates.FirstOrDefault(s => SeasonKey(s.Label) == SeasonKey(wanted));
 
         if (chosen.Id == 0)
             throw new InvalidOperationException(
-                $"La temporada '{_settings.Season}' no existe en futbolasturiano.es. Disponibles: {string.Join(", ", candidates.Select(c => c.Label))}");
+                $"La temporada '{wanted}' no existe en futbolasturiano.es. Disponibles: {string.Join(", ", candidates.Select(c => c.Label))}");
 
         _season = chosen;
         return chosen;
@@ -702,6 +711,12 @@ internal sealed class FutbolAsturianoFootballDataProvider(
             CompetitionLevel.Youth => _settings.IncludeYouth,
             _ => false,
         };
+    }
+
+    private static string SeasonKey(string label)
+    {
+        var digits = new string(label.Where(char.IsDigit).ToArray());
+        return digits.Length == 6 ? digits[..4] + digits[..2] + digits[4..] : digits;
     }
 
     private (DateOnly StartsOn, DateOnly EndsOn) SeasonDates(string label)

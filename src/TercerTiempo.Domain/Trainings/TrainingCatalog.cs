@@ -58,7 +58,7 @@ public enum CallUpResponse
 
 public sealed record TrainingKindInfo(TrainingKind Kind, string Label, string Description);
 
-public sealed record ExerciseTypeInfo(ExerciseType Type, string Label);
+public sealed record ExerciseTypeInfo(ExerciseType Type, string Label, string Description);
 
 public static class TrainingCatalog
 {
@@ -79,15 +79,15 @@ public static class TrainingCatalog
 
     public static readonly IReadOnlyList<ExerciseTypeInfo> ExerciseTypes =
     [
-        new(ExerciseType.Warmup, "Calentamiento"),
-        new(ExerciseType.Technical, "Técnico"),
-        new(ExerciseType.Tactical, "Táctico"),
-        new(ExerciseType.Physical, "Físico"),
-        new(ExerciseType.Goalkeeping, "Porteros"),
-        new(ExerciseType.SetPieces, "Balón parado"),
-        new(ExerciseType.Game, "Partidillo"),
-        new(ExerciseType.Cooldown, "Vuelta a la calma"),
-        new(ExerciseType.Other, "Otro"),
+        new(ExerciseType.Warmup, "Calentamiento", "Activación, movilidad y rondos para empezar."),
+        new(ExerciseType.Technical, "Técnico", "Control, pase, conducción, regate o remate."),
+        new(ExerciseType.Tactical, "Táctico", "Posiciones, presión, salida de balón y movimientos colectivos."),
+        new(ExerciseType.Physical, "Físico", "Resistencia, fuerza, velocidad o prevención de lesiones."),
+        new(ExerciseType.Goalkeeping, "Porteros", "Trabajo específico del portero: blocajes, salidas, juego con el pie."),
+        new(ExerciseType.SetPieces, "Balón parado", "Córners, faltas, saques de banda y penaltis."),
+        new(ExerciseType.Game, "Partidillo", "Juego real o reducido: posesiones, partidos condicionados."),
+        new(ExerciseType.Cooldown, "Vuelta a la calma", "Carrera suave y estiramientos para acabar."),
+        new(ExerciseType.Other, "Otro", "Cualquier otro trabajo: charla, vídeo, gimnasio…"),
     ];
 
     public static TrainingKindInfo Info(TrainingKind kind) => Kinds.FirstOrDefault(k => k.Kind == kind) ?? Kinds[^1];

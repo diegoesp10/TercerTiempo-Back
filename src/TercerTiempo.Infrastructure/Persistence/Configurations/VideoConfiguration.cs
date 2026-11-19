@@ -67,6 +67,9 @@ internal sealed class MatchVideoAnalysisConfiguration : IEntityTypeConfiguration
         builder.Property(a => a.PitchWidthM).HasPrecision(5, 1);
         builder.Property(a => a.ReadFramesPct).HasPrecision(5, 1);
         builder.Property(a => a.WorkerId).HasMaxLength(MatchVideoAnalysis.MaxWorkerIdLength);
+        builder.Property(a => a.Stage).HasMaxLength(MatchVideoAnalysis.MaxStageLength);
+        builder.Property(a => a.LiveJson).HasMaxLength(MatchVideoAnalysis.MaxLiveLength);
+        builder.Ignore(a => a.Log);
         // El analizador (servicio de vídeo) y las peticiones de la API (volver a analizar, volcar) pueden tocar la misma
         // fila: quien llega tarde se entera.
         builder.Property<byte[]>("Version").IsRowVersion();

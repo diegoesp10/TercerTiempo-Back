@@ -14,9 +14,10 @@ internal sealed class AdminRepository(
     IQueryHandler<GetJobsOverviewQuery, JobsOverviewDto> jobs,
     ICommandHandler<RunJobCommand, JobDto> runJob,
     IQueryHandler<TercerTiempo.Application.Privacy.GetAnalyticsReportQuery, TercerTiempo.Application.Privacy.AnalyticsReportDto> analytics,
-    ICommandHandler<TercerTiempo.Application.Privacy.UpsertCookieCommand, TercerTiempo.Application.Privacy.CookiePolicyDto> upsertCookie,
-    ICommandHandler<TercerTiempo.Application.Privacy.DeleteCookieCommand, TercerTiempo.Application.Privacy.CookiePolicyDto> deleteCookie,
-    ICommandHandler<TercerTiempo.Application.Privacy.PublishCookiePolicyCommand, TercerTiempo.Application.Privacy.CookiePolicyDto> publishCookies,
+    IQueryHandler<TercerTiempo.Application.Privacy.GetAdminCookiePolicyQuery, TercerTiempo.Application.Privacy.AdminCookiePolicyDto> cookiePolicy,
+    ICommandHandler<TercerTiempo.Application.Privacy.UpsertCookieCommand, TercerTiempo.Application.Privacy.AdminCookiePolicyDto> upsertCookie,
+    ICommandHandler<TercerTiempo.Application.Privacy.DeleteCookieCommand, TercerTiempo.Application.Privacy.AdminCookiePolicyDto> deleteCookie,
+    ICommandHandler<TercerTiempo.Application.Privacy.PublishCookiePolicyCommand, TercerTiempo.Application.Privacy.AdminCookiePolicyDto> publishCookies,
     IRealData realData,
     IQueryHandler<TercerTiempo.Application.Presence.GetPresenceQuery, TercerTiempo.Application.Presence.PresenceOverviewDto> presence,
     IQueryHandler<TercerTiempo.Application.Licensing.ListPaymentEventsQuery, IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> paymentEvents,
@@ -78,13 +79,16 @@ internal sealed class AdminRepository(
     public Task<TercerTiempo.Application.Privacy.AnalyticsReportDto> GetAnalyticsAsync(TercerTiempo.Application.Privacy.GetAnalyticsReportQuery query, CancellationToken cancellationToken = default) =>
         analytics.Handle(query, cancellationToken);
 
-    public Task<TercerTiempo.Application.Privacy.CookiePolicyDto> UpsertCookieAsync(TercerTiempo.Application.Privacy.UpsertCookieCommand command, CancellationToken cancellationToken = default) =>
+    public Task<TercerTiempo.Application.Privacy.AdminCookiePolicyDto> GetCookiePolicyAsync(CancellationToken cancellationToken = default) =>
+        cookiePolicy.Handle(new TercerTiempo.Application.Privacy.GetAdminCookiePolicyQuery(), cancellationToken);
+
+    public Task<TercerTiempo.Application.Privacy.AdminCookiePolicyDto> UpsertCookieAsync(TercerTiempo.Application.Privacy.UpsertCookieCommand command, CancellationToken cancellationToken = default) =>
         upsertCookie.Handle(command, cancellationToken);
 
-    public Task<TercerTiempo.Application.Privacy.CookiePolicyDto> DeleteCookieAsync(Guid id, CancellationToken cancellationToken = default) =>
+    public Task<TercerTiempo.Application.Privacy.AdminCookiePolicyDto> DeleteCookieAsync(Guid id, CancellationToken cancellationToken = default) =>
         deleteCookie.Handle(new TercerTiempo.Application.Privacy.DeleteCookieCommand(id), cancellationToken);
 
-    public Task<TercerTiempo.Application.Privacy.CookiePolicyDto> PublishCookiePolicyAsync(TercerTiempo.Application.Privacy.PublishCookiePolicyCommand command, CancellationToken cancellationToken = default) =>
+    public Task<TercerTiempo.Application.Privacy.AdminCookiePolicyDto> PublishCookiePolicyAsync(TercerTiempo.Application.Privacy.PublishCookiePolicyCommand command, CancellationToken cancellationToken = default) =>
         publishCookies.Handle(command, cancellationToken);
 
     public Task<IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> GetPaymentEventsAsync(Guid? licenseId, int? max, CancellationToken cancellationToken = default) =>

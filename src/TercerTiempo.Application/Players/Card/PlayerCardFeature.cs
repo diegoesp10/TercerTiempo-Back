@@ -37,7 +37,9 @@ public sealed record PlayerCardDto(
     [property: Description("Perfil interno en la plantilla (gráficos, comparador) para quien es de su club o su plantilla.")]
     string? InternalProfileLink,
     [property: Description("true si quien mira es el propio jugador (puede cambiar si su perfil es público).")]
-    bool IsMe);
+    bool IsMe,
+    [property: Description("Partidos que ha jugado ya el equipo en la temporada, para comparar con los suyos.")]
+    int TeamMatchesPlayed = 0);
 
 public sealed record GetPlayerCardQuery(Guid TeamId, Guid EntryId) : IQuery<PlayerCardDto>;
 
@@ -84,7 +86,8 @@ internal sealed class GetPlayerCardHandler(
             extended ? Visible(details.Internal, insider) : [],
             extended ? RosterEntryDetails.InternalStats(details.Internal) : null,
             insider && details.Squad is not null && details.Player is not null ? $"/plantillas/{details.Squad.Id}/jugadores/{details.Player.Id}" : null,
-            isMe);
+            isMe,
+            details.TeamMatchesPlayed);
     }
 
     // Las observaciones del técnico son del cuerpo técnico: no salen en el perfil público.

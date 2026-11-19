@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Grounds;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Trainings;
 using TercerTiempo.Domain.Players;
@@ -68,6 +69,9 @@ public sealed record CallUpRequest(
     IReadOnlyList<Guid> CalledSquadPlayerIds,
     [property: Description("Hora de la cita (quedada), opcional.")]
     DateTimeOffset? MeetAt,
+    [property: Description("Campo de la liga donde se cita (de GET /api/squads/{squadId}/grounds). Con él se ignora meetPlace.")]
+    Guid? MeetGroundId,
+    [property: Description("Otro sitio escrito a mano (obras, campo alternativo…), si no es un campo de la liga.")]
     string? MeetPlace,
     string? Notes,
     [property: Description("true publica y avisa a la plantilla; false deja el borrador (si ya estaba publicada, se vuelve a publicar igualmente).")]
@@ -92,7 +96,7 @@ public interface ITrainingsRepository
     Task<TrainingSessionDto> UpdateTrainingAsync(Guid squadId, Guid sessionId, TrainingRequest request, CancellationToken cancellationToken = default);
     Task<TrainingSessionDto> SetTrainingItemsAsync(Guid squadId, Guid sessionId, TrainingItemsRequest request, CancellationToken cancellationToken = default);
     Task<TrainingSessionDto> SetAttendanceAsync(Guid squadId, Guid sessionId, AttendanceRequest request, CancellationToken cancellationToken = default);
-    Task<bool> DeleteTrainingAsync(Guid squadId, Guid sessionId, bool series, CancellationToken cancellationToken = default);
+    Task<bool> DeleteTrainingAsync(Guid squadId, Guid sessionId, CancellationToken cancellationToken = default);
     Task<TrainingSessionDto> AddTrialPlayerToTrainingAsync(Guid squadId, Guid sessionId, TrainingTrialPlayerRequest request, CancellationToken cancellationToken = default);
     Task<TrainingSessionDto> RemoveTrialPlayerFromTrainingAsync(Guid squadId, Guid sessionId, Guid trialPlayerId, CancellationToken cancellationToken = default);
 
@@ -106,6 +110,10 @@ public interface ITrainingsRepository
     Task<IReadOnlyList<CallUpSummaryDto>> ListCallUpsAsync(Guid squadId, CancellationToken cancellationToken = default);
     Task<MatchCallUpDto> GetCallUpAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
     Task<MatchCallUpDto> SaveCallUpAsync(Guid squadId, Guid matchId, CallUpRequest request, CancellationToken cancellationToken = default);
+    Task<SquadGroundsDto> GroundsAsync(Guid squadId, CancellationToken cancellationToken = default);
+
+    Task<SquadTrainingAttendanceDto> SquadAttendanceAsync(Guid squadId, DateOnly? from, DateOnly? to, Guid? squadPlayerId, CancellationToken cancellationToken = default);
+    Task<MyTrainingAttendanceDto> MyAttendanceAsync(Guid? squadId, DateOnly? from, DateOnly? to, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<MyTrainingDto>> MyTrainingsAsync(CancellationToken cancellationToken = default);
     Task<TrainingSessionDto> ReportAbsenceAsync(Guid sessionId, AbsenceRequest request, CancellationToken cancellationToken = default);
@@ -137,6 +145,7 @@ internal sealed class TrainingsRepository(
     ICommandHandler<PromoteTrialPlayerCommand, SquadPlayerDto> promoteTrialPlayer,
     IQueryHandler<GetSquadAgendaQuery, IReadOnlyList<SquadAgendaItemDto>> agenda,
     IQueryHandler<ListSquadCallUpsQuery, IReadOnlyList<CallUpSummaryDto>> listCallUps,
+    IQueryHandler<GetSquadGroundsQuery, SquadGroundsDto> grounds,
     IQueryHandler<GetMatchCallUpQuery, MatchCallUpDto> getCallUp,
     ICommandHandler<SaveMatchCallUpCommand, MatchCallUpDto> saveCallUp,
     IQueryHandler<ListMyTrainingsQuery, IReadOnlyList<MyTrainingDto>> myTrainings,
@@ -144,7 +153,9 @@ internal sealed class TrainingsRepository(
     IQueryHandler<ListMyCallUpsQuery, IReadOnlyList<MyCallUpDto>> myCallUps,
     ICommandHandler<RespondCallUpCommand, MyCallUpDto> respondCallUp,
     ICommandHandler<MarkCallUpSeenCommand, MyCallUpDto> markCallUpSeen,
-    ICommandHandler<ResendCallUpCommand, MatchCallUpDto> resendCallUp) : ITrainingsRepository
+    ICommandHandler<ResendCallUpCommand, MatchCallUpDto> resendCallUp,
+    IQueryHandler<GetSquadTrainingAttendanceQuery, SquadTrainingAttendanceDto> squadAttendance,
+    IQueryHandler<GetMyTrainingAttendanceQuery, MyTrainingAttendanceDto> myAttendance) : ITrainingsRepository
 {
     public Task<TrainingCatalogDto> CatalogAsync(CancellationToken cancellationToken = default) =>
         catalog.Handle(new GetTrainingCatalogQuery(), cancellationToken);
@@ -179,8 +190,8 @@ internal sealed class TrainingsRepository(
     public Task<TrainingSessionDto> SetAttendanceAsync(Guid squadId, Guid sessionId, AttendanceRequest request, CancellationToken cancellationToken = default) =>
         setAttendance.Handle(new SetAttendanceCommand(squadId, sessionId, request.Entries), cancellationToken);
 
-    public Task<bool> DeleteTrainingAsync(Guid squadId, Guid sessionId, bool series, CancellationToken cancellationToken = default) =>
-        deleteTraining.Handle(new DeleteTrainingCommand(squadId, sessionId, series), cancellationToken);
+    public Task<bool> DeleteTrainingAsync(Guid squadId, Guid sessionId, CancellationToken cancellationToken = default) =>
+        deleteTraining.Handle(new DeleteTrainingCommand(squadId, sessionId), cancellationToken);
 
     public Task<TrainingSessionDto> AddTrialPlayerToTrainingAsync(Guid squadId, Guid sessionId, TrainingTrialPlayerRequest request, CancellationToken cancellationToken = default) =>
         addTrialToTraining.Handle(new AddTrialPlayerToTrainingCommand(squadId, sessionId, request.TrialPlayerId, request.FullName, request.Notes), cancellationToken);
@@ -213,7 +224,16 @@ internal sealed class TrainingsRepository(
         getCallUp.Handle(new GetMatchCallUpQuery(squadId, matchId), cancellationToken);
 
     public Task<MatchCallUpDto> SaveCallUpAsync(Guid squadId, Guid matchId, CallUpRequest request, CancellationToken cancellationToken = default) =>
-        saveCallUp.Handle(new SaveMatchCallUpCommand(squadId, matchId, request.CalledSquadPlayerIds, request.MeetAt, request.MeetPlace, request.Notes, request.Publish), cancellationToken);
+        saveCallUp.Handle(new SaveMatchCallUpCommand(squadId, matchId, request.CalledSquadPlayerIds, request.MeetAt, request.MeetGroundId, request.MeetPlace, request.Notes, request.Publish), cancellationToken);
+
+    public Task<SquadGroundsDto> GroundsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        grounds.Handle(new GetSquadGroundsQuery(squadId), cancellationToken);
+
+    public Task<SquadTrainingAttendanceDto> SquadAttendanceAsync(Guid squadId, DateOnly? from, DateOnly? to, Guid? squadPlayerId, CancellationToken cancellationToken = default) =>
+        squadAttendance.Handle(new GetSquadTrainingAttendanceQuery(squadId, from, to, squadPlayerId), cancellationToken);
+
+    public Task<MyTrainingAttendanceDto> MyAttendanceAsync(Guid? squadId, DateOnly? from, DateOnly? to, CancellationToken cancellationToken = default) =>
+        myAttendance.Handle(new GetMyTrainingAttendanceQuery(squadId, from, to), cancellationToken);
 
     public Task<IReadOnlyList<MyTrainingDto>> MyTrainingsAsync(CancellationToken cancellationToken = default) =>
         myTrainings.Handle(new ListMyTrainingsQuery(), cancellationToken);

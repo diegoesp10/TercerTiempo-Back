@@ -5,7 +5,9 @@ using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Clubs.ManageTeams;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Passes;
+using TercerTiempo.Application.Performances;
 using TercerTiempo.Application.Squads.MatchSheet;
+using TercerTiempo.Application.Squads.Suspensions;
 using TercerTiempo.Application.Videos;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
@@ -13,10 +15,12 @@ using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Trainings;
 using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Application.Tests;
@@ -63,6 +67,46 @@ public class ClubAsStaffTests
     }
 
     [Fact]
+    public async Task A_player_suspended_for_the_match_cannot_go_in_its_sheet_as_played()
+    {
+        var f = new Fixture();
+        var player = f.Squad.ActivePlayers.Single();
+        // Le expulsaron en el partido anterior: le toca cumplir en el que ya se jugó.
+        var before = Match.Schedule(f.Played.SeasonId, 1, f.Team.Id, f.Rival.Id, Now.AddDays(-9), null, null);
+        before.RecordResult(0, 1, Now.AddDays(-9).AddHours(2));
+        f.Earlier.Add(before);
+        f.Performances.Add(PlayerMatchPerformance.Record(f.Squad, player, before, SquadEditor.Club(f.Club), Stats(redCard: true), Now));
+
+        var error = await Assert.ThrowsAsync<DomainException>(() => f.Record(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id, [Line(player.Id)]), default));
+
+        Assert.Equal(ErrorCode.SheetPlayerSuspended, error.Code);
+        Assert.Equal(["Pelayo Fernández", "roja directa en la jornada 1"], error.Args.OfType<string>());
+        Assert.DoesNotContain(f.Performances, p => p.MatchId == f.Played.Id);
+        Assert.Equal(0, f.Saves);
+    }
+
+    [Fact]
+    public async Task The_line_a_suspended_player_already_had_is_kept_so_the_sheet_can_still_be_edited()
+    {
+        var f = new Fixture();
+        var player = f.Squad.ActivePlayers.Single();
+        // Su línea se guardó antes de saberse la sanción (la roja llegó luego con el acta del partido anterior).
+        f.Performances.Add(PlayerMatchPerformance.Record(f.Squad, player, f.Played, SquadEditor.Club(f.Club), Stats(), Now));
+        var before = Match.Schedule(f.Played.SeasonId, 1, f.Team.Id, f.Rival.Id, Now.AddDays(-9), null, null);
+        before.RecordResult(0, 1, Now.AddDays(-9).AddHours(2));
+        f.Earlier.Add(before);
+        f.Performances.Add(PlayerMatchPerformance.Record(f.Squad, player, before, SquadEditor.Club(f.Club), Stats(redCard: true), Now));
+
+        var sheet = await f.Record(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id, [Line(player.Id)]), default);
+
+        var entry = sheet.Entries.Single();
+        Assert.Equal((true, "Roja directa en la jornada 1"), (entry.Suspended, entry.Suspension?.Reason));
+        Assert.NotNull(entry.Performance);
+    }
+
+    private static PerformanceStats Stats(bool redCard = false) => new(true, 60, 0, 0, 0, 0, 0, 0, 0, 0, 0, redCard, null);
+
+    [Fact]
     public async Task The_club_records_the_internal_sheet_of_its_team_in_its_own_name()
     {
         var f = new Fixture();
@@ -75,6 +119,27 @@ public class ClubAsStaffTests
         Assert.Equal(f.Club.Id, line.RecordedByClubId);
         Assert.Null(line.RecordedByCoachId);
         Assert.Equal(1, f.Saves);
+    }
+
+    [Fact]
+    public async Task The_internal_sheet_says_who_was_called_up_for_the_match()
+    {
+        var withoutCallUp = new Fixture();
+        var player = withoutCallUp.Squad.ActivePlayers.Single();
+        var plain = await withoutCallUp.Record(withoutCallUp.ClubUser).Handle(new(withoutCallUp.Squad.Id, withoutCallUp.Played.Id, [Line(player.Id)]), default);
+
+        var f = new Fixture();
+        var called = f.Squad.ActivePlayers.Single();
+        var before = f.Played.KickoffAt.AddDays(-1);
+        var callUp = MatchCallUp.Draft(f.Squad, f.Played, SquadEditor.Club(f.Club), before);
+        callUp.Arrange(f.Squad, new HashSet<Guid> { called.Id }, null, null, null, null, before);
+        f.CallUps.Add(callUp);
+        var sheet = await f.Record(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id, [Line(called.Id)]), default);
+
+        Assert.False(plain.HasCallUp);
+        Assert.False(Assert.Single(plain.Entries).CalledUp);
+        Assert.True(sheet.HasCallUp);
+        Assert.True(Assert.Single(sheet.Entries).CalledUp);
     }
 
     [Fact]
@@ -161,6 +226,8 @@ public class ClubAsStaffTests
         public List<Squad> Squads { get; } = [];
         public Squad Squad => Squads.Single();
         public List<PlayerMatchPerformance> Performances { get; } = [];
+        public List<MatchCallUp> CallUps { get; } = [];
+        public List<Match> Earlier { get; } = [];
         public User ClubUser => new(ClubId: Club.Id, UserId: Club.UserId);
         public int Saves { get; private set; }
         private readonly Season _season;
@@ -200,7 +267,8 @@ public class ClubAsStaffTests
         private ICoachStore Coaches => Stub<ICoachStore>((method, _) => throw new NotSupportedException(method));
         private IMatchStore Matches => Stub<IMatchStore>((method, args) => method switch
         {
-            nameof(IMatchStore.GetByIdAsync) => Task.FromResult(new[] { Played, Upcoming }.FirstOrDefault(m => m.Id == (Guid)args![0]!)),
+            nameof(IMatchStore.GetByIdAsync) => Task.FromResult(new[] { Played, Upcoming }.Concat(Earlier).FirstOrDefault(m => m.Id == (Guid)args![0]!)),
+            nameof(IMatchStore.GetTeamMatchesAsync) => Task.FromResult<IReadOnlyList<Match>>([.. Earlier, Played, Upcoming]),
             _ => throw new NotSupportedException(method),
         });
         private ITeamStore Teams => Stub<ITeamStore>((method, args) => method switch
@@ -215,12 +283,25 @@ public class ClubAsStaffTests
         {
             nameof(IPerformanceStore.GetBySquadAndMatchAsync) => Task.FromResult<IReadOnlyList<PlayerMatchPerformance>>(
                 Performances.Where(p => p.SquadId == (Guid)args![0]! && p.MatchId == (Guid)args[1]!).ToList()),
+            nameof(IPerformanceStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<PlayerMatchPerformance>>(Performances.Where(p => p.SquadId == (Guid)args![0]!).ToList()),
             nameof(IPerformanceStore.Add) => Run(() => Performances.Add((PlayerMatchPerformance)args![0]!)),
             _ => throw new NotSupportedException(method),
         });
         private IPlayerStore Players => Stub<IPlayerStore>((_, _) => Task.FromResult<IReadOnlyList<Player>>([]));
         private ITeamMatchStatsStore TeamStats => Stub<ITeamMatchStatsStore>((_, _) => Task.FromResult<TeamMatchStats?>(null));
         private IUnitOfWork Unit => Stub<IUnitOfWork>((_, _) => Task.FromResult(++Saves));
+        private ICallUpStore CallUpStore => Stub<ICallUpStore>((method, args) => method switch
+        {
+            nameof(ICallUpStore.GetByMatchAsync) => Task.FromResult(CallUps.FirstOrDefault(c => c.SquadId == (Guid)args![0]! && c.MatchId == (Guid)args[1]!)),
+            _ => throw new NotSupportedException(method),
+        });
+        private IOfficialSheetStore NoSheets => Stub<IOfficialSheetStore>((method, _) => method switch
+        {
+            nameof(IOfficialSheetStore.GetByMatchAsync) => Task.FromResult<OfficialMatchSheet?>(null),
+            nameof(IOfficialSheetStore.GetAvailableLinesByMatchIdsAsync) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([]),
+            _ => throw new NotSupportedException(method),
+        });
+        private SuspensionReader Suspensions => new(Matches, PerformanceStore, NoSheets, TimeProvider.System);
         private static object? Run(Action action) { action(); return null; }
 
         public OpenClubSquadHandler Open()
@@ -233,7 +314,8 @@ public class ClubAsStaffTests
 
         public RecordMatchSheetHandler Record(ICurrentUser user) =>
             new(user, Coaches, Clubs, SquadStore, Matches, Teams, Competitions, Players, PerformanceStore, TeamStats,
-                new MatchSheetWriter(PerformanceStore, TeamStats), Unit, TimeProvider.System);
+                new MatchSheetWriter(PerformanceStore, TeamStats, new OfficialSheetRatings(SquadStore, Matches, NoSheets, PerformanceStore), Suspensions), Unit, CallUpStore,
+                Suspensions, TimeProvider.System);
 
         public BeginVideoUploadHandler BeginUpload() =>
             new(ClubUser, Coaches, Clubs, SquadStore, Matches,

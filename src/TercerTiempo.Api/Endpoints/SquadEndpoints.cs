@@ -1,4 +1,8 @@
-﻿using TercerTiempo.Hosting;
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
+using TercerTiempo.Application.Clubs.ManageTeams;
+using TercerTiempo.Domain.Squads;
+using TercerTiempo.Hosting;
 using TercerTiempo.Application.Squads.TeamStats;
 using TercerTiempo.Repository.Squads;
 using TercerTiempo.Repository.Videos;
@@ -124,10 +128,26 @@ internal static class SquadEndpoints
         group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis/cancel", (Guid squadId, Guid matchId, CancelVideoAnalysisRequest? request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.CancelAsync(squadId, matchId, request, ct))
             .WithName("CancelMatchVideoAnalysis")
             .WithSummary("Cancelar el análisis del vídeo del partido")
-            .WithDescription("Club propietario o cuerpo técnico vigente. Para lo que está en cola o analizándose del vídeo indicado (o de todos los de la plantilla en el partido): queda como Cancelled y se puede volver a pedir. El analizador lo nota al renovar su latido (en unos segundos), para el proceso de Python y no guarda nada. 409 (video_analysis.not_active) si no hay nada en cola ni analizándose. El cuerpo es opcional.")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Para lo que está en cola o analizándose del vídeo indicado (o de todos los de la plantilla en el partido): queda como Cancelled y se puede volver a pedir. También lo que está en pausa. El analizador lo nota en unos segundos, para el proceso de Python y no guarda nada. 409 (video_analysis.not_active) si no hay nada en cola, analizándose ni en pausa. El cuerpo es opcional.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis/pause", (Guid squadId, Guid matchId, CancelVideoAnalysisRequest? request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.PauseAsync(squadId, matchId, request, true, ct))
+            .WithName("PauseMatchVideoAnalysis")
+            .WithSummary("Pausar el análisis del vídeo del partido")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Lo que está en cola no se empieza y lo que se está analizando espera donde va, sin perder nada (el analizador lo nota en unos segundos y para en el siguiente fotograma; la GPU deja de trabajar, pero la cola espera detrás). Queda como Paused. 422 (video_analysis.not_pausable) si no hay nada en cola ni analizándose. El cuerpo es opcional.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis/resume", (Guid squadId, Guid matchId, CancelVideoAnalysisRequest? request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.PauseAsync(squadId, matchId, request, false, ct))
+            .WithName("ResumeMatchVideoAnalysis")
+            .WithSummary("Reanudar el análisis del vídeo del partido")
+            .WithDescription("Club propietario o cuerpo técnico vigente. Sigue donde se quedó: lo que se estaba analizando continúa desde el mismo fotograma y lo que se pausó en cola vuelve a la cola. 422 (video_analysis.not_paused) si no hay nada en pausa. El cuerpo es opcional.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis/apply", (Guid squadId, Guid matchId, ApplyVideoAnalysisRequest request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.ApplyAsync(squadId, matchId, request, ct))
             .WithName("ApplyMatchVideoAnalysis")
@@ -206,6 +226,47 @@ internal static class SquadEndpoints
         group.MapDelete("/{squadId:guid}/injuries/{injuryId:guid}", (Guid squadId, Guid injuryId, ISquadsRepository squads, CancellationToken ct) => squads.DeleteInjuryAsync(squadId, injuryId, ct))
             .WithName("DeleteInjury")
             .WithSummary("Borrar una lesión registrada por error")
+            .WithDescription("Solo cuerpo técnico. Se borran también sus pruebas e informes.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{squadId:guid}/injuries/{injuryId:guid}/documents", async (
+                Guid squadId, Guid injuryId, IFormFile file, [FromForm] InjuryDocumentKind kind, [FromForm] string? note,
+                ISquadsRepository squads, CancellationToken ct) =>
+            {
+                await using var content = file.OpenReadStream();
+                return await squads.UploadInjuryDocumentAsync(squadId, injuryId, kind, note, new CrestUpload(file.FileName, file.ContentType, file.Length, content), ct);
+            })
+            .DisableAntiforgery()
+            .WithName("UploadInjuryDocument")
+            .WithSummary("Adjuntar una prueba o un informe a una lesión")
+            .WithDescription("Club o cuerpo técnico vigente. multipart/form-data con file (PDF, JPG, PNG o WebP, hasta 15 MB), kind (Imaging, MedicalReport u Other) y note opcional (hasta 200 caracteres). Como mucho 10 por lesión. Devuelve todas las lesiones de la plantilla.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapGet("/{squadId:guid}/injuries/{injuryId:guid}/documents/{documentId:guid}", async (
+                Guid squadId, Guid injuryId, Guid documentId, HttpContext context, ISquadsRepository squads, CancellationToken ct) =>
+            {
+                var document = await squads.OpenInjuryDocumentAsync(squadId, injuryId, documentId, ct);
+                context.Response.Headers.CacheControl = "private, no-store";
+                context.Response.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline") { FileNameStar = document.FileName }.ToString();
+                return Results.Stream(document.Content, document.ContentType);
+            })
+            .WithName("GetInjuryDocument")
+            .WithSummary("Abrir una prueba o un informe de una lesión")
+            .WithDescription("El club, el cuerpo técnico vigente y el propio jugador; nadie más, tampoco el administrador (403 injury_document.private). No se guarda en caché.")
+            .Produces(StatusCodes.Status200OK, contentType: "application/pdf")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapDelete("/{squadId:guid}/injuries/{injuryId:guid}/documents/{documentId:guid}", (Guid squadId, Guid injuryId, Guid documentId, ISquadsRepository squads, CancellationToken ct) =>
+                squads.DeleteInjuryDocumentAsync(squadId, injuryId, documentId, ct))
+            .WithName("DeleteInjuryDocument")
+            .WithSummary("Quitar una prueba o un informe de una lesión")
+            .WithDescription("Club o cuerpo técnico vigente. Borra también el fichero. Devuelve todas las lesiones de la plantilla.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 

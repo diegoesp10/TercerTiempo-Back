@@ -53,7 +53,7 @@ internal sealed class GetSquadStatsHandler(
             })
             .OrderByDescending(r => r.Stats.Minutes)
             .ThenByDescending(r => r.Stats.GoalContributions)
-            .ThenBy(r => r.Player.ShirtNumber ?? int.MaxValue)
+            .ThenBy(r => r.Player.FullName)
             .ToList();
 
         return new SquadStatsDto(

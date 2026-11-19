@@ -30,6 +30,28 @@ internal sealed class OfficialSheetConfiguration : IEntityTypeConfiguration<Offi
 
         builder.HasMany(s => s.Events).WithOne().HasForeignKey(e => e.SheetId).OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(s => s.Events).UsePropertyAccessMode(PropertyAccessMode.Field).AutoInclude();
+
+        builder.HasMany(s => s.Staff).WithOne().HasForeignKey(e => e.SheetId).OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(s => s.Staff).UsePropertyAccessMode(PropertyAccessMode.Field).AutoInclude();
+    }
+}
+
+internal sealed class OfficialSheetStaffConfiguration : IEntityTypeConfiguration<OfficialSheetStaff>
+{
+    public void Configure(EntityTypeBuilder<OfficialSheetStaff> builder)
+    {
+        builder.ToTable("OfficialSheetStaff");
+        builder.HasKey(s => s.Id);
+        builder.Property(s => s.Id).ValueGeneratedNever();
+
+        builder.Property(s => s.Side).HasConversion<string>().HasMaxLength(10);
+        builder.Property(s => s.Role).HasConversion<string>().HasMaxLength(20);
+        builder.Property(s => s.RoleLabel).HasMaxLength(60).IsRequired();
+        builder.Property(s => s.FullName).HasMaxLength(150).IsRequired();
+        builder.Property(s => s.NormalizedName).HasMaxLength(150).IsRequired();
+
+        builder.HasIndex(s => s.SheetId);
+        builder.HasIndex(s => s.NormalizedName);
     }
 }
 

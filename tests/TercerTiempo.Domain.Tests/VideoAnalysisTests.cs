@@ -132,6 +132,95 @@ public class VideoAnalysisTests
     }
 
     [Fact]
+    public void A_running_analysis_paused_waits_with_its_analyzer_and_the_paused_time_is_counted()
+    {
+        var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);
+        analysis.Start(TestData.Now, "EQUIPO-GPU:4242");
+        analysis.ReportLive(40, "tracking", "{\"stage\":\"tracking\"}", TestData.Now.AddMinutes(9));
+
+        analysis.Pause(TestData.Now.AddMinutes(10));
+        Assert.Equal((VideoAnalysisStatus.Paused, true, true, 40), (analysis.Status, analysis.IsActive, analysis.IsWorking, analysis.Progress));
+
+        // En pausa sigue latiendo y contando su estado; la cola no lo da por muerto.
+        analysis.Beat(TestData.Now.AddMinutes(14));
+        analysis.ReportLive(40, "tracking", "{\"stage\":\"tracking\",\"paused\":true}", TestData.Now.AddMinutes(14));
+        Assert.False(analysis.LeaseExpired(TestData.Now.AddMinutes(20), TimeSpan.FromMinutes(10)));
+
+        analysis.Resume(TestData.Now.AddMinutes(25));
+        Assert.Equal((VideoAnalysisStatus.Running, 900, null), (analysis.Status, analysis.PausedSeconds, analysis.PausedAt));
+
+        analysis.Pause(TestData.Now.AddMinutes(30));
+        analysis.Complete(Outcome(), TestData.Now.AddMinutes(31));
+        Assert.Equal((VideoAnalysisStatus.Ready, 960, null, null), (analysis.Status, analysis.PausedSeconds, analysis.PausedAt, analysis.LiveJson));
+    }
+
+    [Fact]
+    public void A_queued_analysis_paused_is_not_started_and_goes_back_to_the_queue_when_resumed()
+    {
+        var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);
+
+        analysis.Pause(TestData.Now.AddMinutes(1));
+        Assert.Equal((VideoAnalysisStatus.Paused, true, false), (analysis.Status, analysis.IsActive, analysis.IsWorking));
+        Assert.False(analysis.LeaseExpired(TestData.Now.AddDays(1), TimeSpan.FromMinutes(10)));
+        Assert.Equal(ErrorCode.VideoAnalysisNotRunning, Assert.Throws<DomainException>(() => analysis.Beat(TestData.Now)).Code);
+
+        analysis.Resume(TestData.Now.AddMinutes(2));
+        Assert.Equal((VideoAnalysisStatus.Pending, 60), (analysis.Status, analysis.PausedSeconds));
+    }
+
+    [Fact]
+    public void If_the_analyzer_goes_away_while_paused_it_stays_paused_and_starts_again_when_resumed()
+    {
+        var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);
+        analysis.Start(TestData.Now, "EQUIPO-GPU:4242");
+        analysis.ReportProgress(40);
+        analysis.Pause(TestData.Now.AddMinutes(5));
+
+        analysis.Requeue();
+
+        Assert.Equal((VideoAnalysisStatus.Paused, null, 0, false), (analysis.Status, analysis.WorkerId, analysis.Progress, analysis.IsWorking));
+        analysis.Resume(TestData.Now.AddMinutes(8));
+        Assert.Equal(VideoAnalysisStatus.Pending, analysis.Status);
+    }
+
+    [Fact]
+    public void Only_what_is_queued_or_running_can_be_paused_and_only_what_is_paused_resumed()
+    {
+        var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);
+        Assert.Equal(ErrorCode.VideoAnalysisNotPaused, Assert.Throws<DomainException>(() => analysis.Resume(TestData.Now)).Code);
+
+        analysis.Pause(TestData.Now);
+        Assert.Equal(ErrorCode.VideoAnalysisNotPausable, Assert.Throws<DomainException>(() => analysis.Pause(TestData.Now)).Code);
+
+        analysis.Cancel(TestData.Now.AddMinutes(1));
+        Assert.Equal(ErrorCode.VideoAnalysisNotPausable, Assert.Throws<DomainException>(() => analysis.Pause(TestData.Now)).Code);
+        Assert.Null(analysis.PausedAt);
+    }
+
+    [Fact]
+    public void The_log_keeps_the_last_lines_in_one_line_each()
+    {
+        var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);
+        analysis.Start(TestData.Now, "EQUIPO-GPU:4242");
+
+        for (var i = 1; i <= MatchVideoAnalysis.MaxLogEntries + 5; i++)
+            analysis.AddLog($"  Línea\n{i}  ", TestData.Now.AddSeconds(i));
+        analysis.AddLog("   ", TestData.Now);
+        analysis.AddLog(new string('x', 500), TestData.Now.AddMinutes(5));
+
+        var log = analysis.Log;
+        Assert.Equal(MatchVideoAnalysis.MaxLogEntries, log.Count);
+        Assert.Equal("Línea 7", log[0].Text);
+        Assert.Equal(MatchVideoAnalysis.MaxLogTextLength, log[^1].Text.Length);
+        Assert.Equal(TestData.Now.AddSeconds(7), log[0].At);
+
+        // Al volver a analizar se empieza de cero.
+        analysis.Requeue();
+        analysis.Start(TestData.Now.AddHours(1), "EQUIPO-GPU:4242");
+        Assert.Empty(analysis.Log);
+    }
+
+    [Fact]
     public void The_running_analysis_keeps_a_lease_that_expires_without_heartbeat()
     {
         var analysis = MatchVideoAnalysis.Queue(ReadyVideo(), TestData.Now);

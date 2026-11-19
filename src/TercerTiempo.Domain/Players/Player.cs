@@ -26,7 +26,8 @@ public sealed class Player : AggregateRoot
         if (!Enum.IsDefined(position))
             throw new DomainException(ErrorCode.PlayerInvalidPosition);
 
-        if (birthDate is { } date && date > SpainTime.Today(now).AddYears(-14))
+        // Por ahora Tercer Tiempo es solo para equipos de categoría absoluta: todas las cuentas son de mayores de edad.
+        if (birthDate is { } date && date > SpainTime.Today(now).AddYears(-18))
             throw new DomainException(ErrorCode.PlayerMinAge);
 
         var player = new Player

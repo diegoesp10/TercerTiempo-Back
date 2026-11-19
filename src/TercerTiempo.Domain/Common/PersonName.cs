@@ -7,6 +7,17 @@ public static class PersonName
     public static string[] Words(string normalizedName) =>
         normalizedName.Replace(",", " ").Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
+    // Un nombre de acta oficial («APELLIDOS, NOMBRE») en el orden de una plantilla («NOMBRE APELLIDOS»); sin coma, igual.
+    public static string FromSheet(string fullName)
+    {
+        var comma = fullName.IndexOf(',');
+        return comma <= 0 ? fullName.Trim() : $"{fullName[(comma + 1)..].Trim()} {fullName[..comma].Trim()}".Trim();
+    }
+
+    // ¿Es la misma persona un nombre de acta oficial y uno de la app (ya normalizado)?
+    public static bool SameAsSheet(string sheetFullName, string normalizedName) =>
+        SamePerson(NameNormalizer.Normalize(FromSheet(sheetFullName)), normalizedName);
+
     // Dos nombres escritos como en una plantilla ("Nombre Apellido Apellido") son de la misma persona si el nombre de
     // pila es el mismo (o su diminutivo o apodo) y lo demás del más corto está, en el mismo orden, en el más largo, que
     // solo añade un segundo nombre o un segundo apellido: "Lucas Paredes" y "Lucas Paredes Rivera", "Álex Cueva" y

@@ -182,7 +182,14 @@ internal sealed class CookieDefinitionConfiguration : IEntityTypeConfiguration<C
             Seed(7, "tt.my-club-first", CookieCategory.Preferences, CookieStorage.LocalStorage, us, "Si tu club sale primero en los listados.", "Permanente, hasta que la borres", 30),
             Seed(8, "tt.home-competition", CookieCategory.Preferences, CookieStorage.LocalStorage, us, "Última liga que has consultado en la portada.", "Permanente, hasta que la borres", 40),
             Seed(9, "tt.aid", CookieCategory.Analytics, CookieStorage.LocalStorage, us, "Identificador anónimo de tu navegador para contar visitantes, páginas vistas, búsquedas y clics. Los datos se quedan en Tercer Tiempo: no se envían a terceros.", "13 meses", 10),
-            Seed(10, "tt.sid", CookieCategory.Analytics, CookieStorage.SessionStorage, us, "Identificador anónimo de cada visita, para contar sesiones.", "Hasta cerrar la pestaña", 20));
+            Seed(10, "tt.sid", CookieCategory.Analytics, CookieStorage.SessionStorage, us, "Identificador anónimo de cada visita, para contar sesiones.", "Hasta cerrar la pestaña", 20),
+            Seed(11, "tt.active-session", CookieCategory.Necessary, CookieStorage.LocalStorage, us, "Deja una sola sesión abierta en el navegador (la de tu cuenta o la del administrador) en todas tus pestañas.", "Hasta cerrar sesión", 50),
+            Seed(12, "tt.reloaded-for", CookieCategory.Necessary, CookieStorage.SessionStorage, us, "Evita recargar la página más de una vez cuando se publica una versión nueva de la web.", "Hasta cerrar la pestaña", 60),
+            Seed(13, "tt.video-upload.*", CookieCategory.Necessary, CookieStorage.LocalStorage, us, "Permite reanudar la subida de un vídeo de partido si se corta: nombre y tamaño del fichero y hasta dónde se envió.", "Hasta terminar o cancelar la subida", 70),
+            Seed(14, "tt.search-recent", CookieCategory.Preferences, CookieStorage.LocalStorage, us, "Tus últimas búsquedas, para repetirlas con un clic.", "Permanente, hasta que la borres", 50),
+            Seed(15, "tt.calendar.view", CookieCategory.Preferences, CookieStorage.LocalStorage, us, "Vista del calendario de la plantilla que prefieres (mes, semana, día o lista).", "Permanente, hasta que la borres", 60),
+            Seed(16, "tt.attendance.view", CookieCategory.Preferences, CookieStorage.LocalStorage, us, "Vista de la asistencia a los entrenamientos que prefieres.", "Permanente, hasta que la borres", 70),
+            Seed(17, "tt.group.*", CookieCategory.Preferences, CookieStorage.LocalStorage, us, "Si quieres cada lista de jugadores agrupada por posición.", "Permanente, hasta que la borres", 80));
     }
 
     private static object Seed(int n, string name, CookieCategory category, CookieStorage storage, string provider, string purpose, string duration, int order) => new

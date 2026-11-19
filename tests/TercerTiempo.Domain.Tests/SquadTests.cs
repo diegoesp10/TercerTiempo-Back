@@ -353,7 +353,7 @@ public class SquadTests
         var (squad, _) = TestData.NewSquad();
         var entry = squad.AddPlayer("Pelayo", null, null, null, TestData.Now);
         squad.GeneratePlayerInviteCode(entry.Id);
-        squad.UpdatePlayer(entry.Id, "Nel", null, null);
+        squad.UpdatePlayer(entry.Id, "Nel", Position.Defender, null);
         Assert.Null(entry.InviteCode);
     }
 

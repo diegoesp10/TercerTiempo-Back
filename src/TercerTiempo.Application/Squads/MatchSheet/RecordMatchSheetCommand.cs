@@ -3,6 +3,7 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Squads.Suspensions;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
@@ -12,6 +13,7 @@ using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Trainings;
 using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.MatchSheet;
@@ -48,17 +50,19 @@ public sealed record MatchSheetEntryInput(
     [property: Description("Pases completados; no pueden superar los intentados.")]
     int PassesCompleted = 0,
     [property: Description("Pases intentados.")]
-    int PassesAttempted = 0)
+    int PassesAttempted = 0,
+    [property: Description("Despejes: balones que aleja de su área o de su campo sin buscar a un compañero.")]
+    int Clearances = 0)
 {
     public PerformanceStats ToStats() => new(
         Started, MinutesPlayed, Goals, Assists, Shots, ShotsOnTarget, KeyPasses,
         Tackles, Interceptions, Saves, YellowCards, RedCard, Notes, Fouls,
-        BallLosses, Recoveries, PassesCompleted, PassesAttempted);
+        BallLosses, Recoveries, PassesCompleted, PassesAttempted, Clearances);
 
     public static MatchSheetEntryInput From(PlayerMatchPerformance p) => new(
         p.SquadPlayerId, true, p.Started, p.MinutesPlayed, p.Goals, p.Assists, p.Shots, p.ShotsOnTarget, p.KeyPasses,
         p.Tackles, p.Interceptions, p.Saves, p.YellowCards, p.RedCard, p.Notes, p.ShirtNumber, p.Fouls,
-        p.BallLosses, p.Recoveries, p.PassesCompleted, p.PassesAttempted);
+        p.BallLosses, p.Recoveries, p.PassesCompleted, p.PassesAttempted, p.Clearances);
 }
 
 public sealed record RecordMatchSheetCommand(Guid SquadId, Guid MatchId, IReadOnlyList<MatchSheetEntryInput> Entries) : ICommand<MatchSheetDto>;
@@ -93,6 +97,7 @@ internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchS
                 entry.RuleFor(e => e.Fouls).InclusiveBetween(0, 30);
                 entry.RuleFor(e => e.BallLosses).InclusiveBetween(0, 200);
                 entry.RuleFor(e => e.Recoveries).InclusiveBetween(0, 200);
+                entry.RuleFor(e => e.Clearances).InclusiveBetween(0, 200);
                 entry.RuleFor(e => e.PassesAttempted).InclusiveBetween(0, 300);
                 entry.RuleFor(e => e.PassesCompleted).GreaterThanOrEqualTo(0).LessThanOrEqualTo(e => e.PassesAttempted)
                     .WithCatalogMessage(ErrorCode.SheetPassesCompleted);
@@ -116,6 +121,8 @@ internal sealed class RecordMatchSheetHandler(
     ITeamMatchStatsStore teamStats,
     MatchSheetWriter writer,
     IUnitOfWork unitOfWork,
+    ICallUpStore callUps,
+    SuspensionReader suspensions,
     TimeProvider clock) : ICommandHandler<RecordMatchSheetCommand, MatchSheetDto>
 {
     public async Task<MatchSheetDto> Handle(RecordMatchSheetCommand command, CancellationToken cancellationToken)
@@ -129,6 +136,7 @@ internal sealed class RecordMatchSheetHandler(
         await writer.WriteLinesAsync(squad, match, editor, command.Entries, clock.GetUtcNow(), cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, cancellationToken);
+        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, callUps,
+            await suspensions.LoadAsync(squad, cancellationToken), cancellationToken);
     }
 }

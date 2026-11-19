@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
+using TercerTiempo.Application.Abstractions.Videos;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Videos;
 
@@ -20,6 +22,10 @@ public enum VideoAnalysisState
 
     // El cuerpo técnico lo paró mientras esperaba o se analizaba; se puede volver a pedir.
     Cancelled,
+
+    // En pausa: si se estaba analizando, el analizador espera donde iba sin perder nada; si estaba en cola, no se
+    // empieza. Se reanuda cuando se pida.
+    Paused,
 }
 
 public sealed record MatchVideoAnalysisDto(
@@ -32,7 +38,11 @@ public sealed record MatchVideoAnalysisDto(
     [property: Description("Algún analizador (Start-Analyzer.ps1 o el servicio de vídeo con Analysis:RunWorker) ha dado señales en los últimos 2 minutos. Si no, lo que esté en cola no avanza.")]
     bool AnalyzerOnline = false,
     [property: Description("Última señal de un analizador; null si nunca ha habido ninguno.")]
-    DateTimeOffset? AnalyzerSeenAt = null);
+    DateTimeOffset? AnalyzerSeenAt = null)
+{
+    [Description("El acta oficial del partido está cerrada: al volcar, los minutos (por descarte), la titularidad, los goles y las tarjetas salen de ella.")]
+    public bool OfficialSheetClosed { get; init; }
+}
 
 public sealed record VideoAnalysisPartDto(
     Guid VideoId,
@@ -62,7 +72,25 @@ public sealed record VideoAnalysisPartDto(
     int? OurTeam,
     DateTimeOffset? AppliedAt,
     [property: Description("Jugadores seguidos de los dos equipos, cada uno con su recorte y lo que propone el vídeo para su línea.")]
-    IReadOnlyList<VideoAnalysisPlayerDto> Players);
+    IReadOnlyList<VideoAnalysisPlayerDto> Players,
+    [property: Description("Lo que está haciendo ahora el analizador (etapa, minuto del vídeo, jugadores seguidos, balón visto, velocidad, lo que le queda…), mientras está en Running o Paused; null si aún no ha contado nada.")]
+    VideoAnalysisLive? Live = null,
+    [property: Description("Cuándo contó el analizador ese estado por última vez.")]
+    DateTimeOffset? LiveAt = null,
+    [property: Description("Lo que ha ido sabiendo el analizador en esta pasada (las últimas 40 líneas, de la más antigua a la más reciente).")]
+    IReadOnlyList<VideoAnalysisLogEntry>? Log = null,
+    [property: Description("Desde cuándo está en pausa (Paused).")]
+    DateTimeOffset? PausedAt = null,
+    [property: Description("Segundos que ha estado en pausa en total en esta pasada (no cuentan en lo que tarda).")]
+    int PausedSeconds = 0,
+    [property: Description("En pausa a medias: el analizador lo tiene y espera donde iba. false si se pausó en cola (o el analizador se reinició): al reanudarlo, empieza desde el principio.")]
+    bool PausedMidway = false,
+    [property: Description("Cada jugador de la propuesta es una persona identificada por el dorsal leído en el vídeo y cruzado con el acta oficial (como mucho los que jugaron). false en análisis sin acta o anteriores: cada línea es un tramo seguido.")]
+    bool Identified = false,
+    [property: Description("El equipo (0 o 1) que por los dorsales es el de la plantilla según el acta oficial; null si no se sabe.")]
+    int? SuggestedOurTeam = null,
+    [property: Description("Segundos del vídeo con jugadores de la plantilla a la vista sin identificar, por equipo.")]
+    IReadOnlyDictionary<int, int>? UnidentifiedSeconds = null);
 
 public sealed record VideoAnalysisQualityDto(
     int Frames,
@@ -86,6 +114,8 @@ public sealed record VideoAnalysisQualityDto(
 
 public sealed record VideoAnalysisTeamDto(
     int Index,
+    [property: Description("Lado del acta oficial (Home, Away) que tiene este equipo según los dorsales; null si no se sabe.")]
+    MatchSide? Side,
     [property: Description("Color medio de la equipación (#rrggbb).")]
     string? Color,
     int Players,
@@ -99,8 +129,12 @@ public sealed record VideoAnalysisTeamDto(
     int Corners,
     int ThrowIns,
     int GoalKicks,
-    [property: Description("Goles que el analizador da por confirmados: orientativo, el resultado es el del acta oficial.")]
-    int Goals);
+    [property: Description("Goles que el analizador da por confirmados: con el acta oficial cerrada, como mucho los suyos.")]
+    int Goals,
+    [property: Description("Faltas que comete: el juego se para con el balón en el campo, el que lo tenía es del otro equipo y un jugador de este estaba a menos de 5 m. Las que recibe son las que comete el otro equipo.")]
+    int Fouls = 0,
+    [property: Description("Fueras de juego que le pitan. Los del rival son los que le pitan al otro equipo.")]
+    int Offsides = 0);
 
 public sealed record VideoAnalysisPlayerDto(
     [property: Description("Número con el que el analizador sigue a esta persona; se corta al perderla de vista, así que un jugador puede tener varios.")]
@@ -113,11 +147,29 @@ public sealed record VideoAnalysisPlayerDto(
     string From,
     string To,
     int DistanceM,
-    [property: Description("Dorsal leído por el modelo de lenguaje, si se usó.")]
+    [property: Description("Dorsal: el leído en el vídeo (Identified) o, en análisis anteriores, el del modelo de lenguaje si se usó.")]
     int? ShirtNumber,
     VideoPlayerActions Proposal,
     [property: Description("Ficha a la que se asignó la última vez que se volcó; null si no se ha asignado.")]
-    Guid? SquadPlayerId);
+    Guid? SquadPlayerId,
+    [property: Description("Nombre del jugador con ese dorsal en el acta oficial.")]
+    string? SheetName = null,
+    [property: Description("Parte de las lecturas que dicen ese dorsal (0-1).")]
+    decimal? ShirtConfidence = null,
+    [property: Description("Ficha de la plantilla que por el dorsal y el acta oficial es este jugador; null si no se sabe o es del rival.")]
+    Guid? SuggestedSquadPlayerId = null,
+    [property: Description("Minutos que jugó según el acta oficial cerrada (por descarte: sin cambio, el partido entero), aunque el vídeo no lo viera todo el rato; null sin acta cerrada o sin identificar.")]
+    int? SheetMinutes = null);
+
+// Lo que se sabe del acta oficial para proponer la ficha de cada jugador identificado: el lado de la plantilla y, por
+// dorsal, la ficha cruzada con la línea del acta que lo lleva.
+internal sealed record VideoSheetHints(MatchSide OurSide, IReadOnlyDictionary<int, Guid> SquadPlayerByShirt)
+{
+    public static readonly VideoSheetHints None = new(MatchSide.Home, new Dictionary<int, Guid>());
+
+    // Con el acta cerrada, los minutos de cada dorsal de cada lado (sin los dorsales repetidos).
+    public IReadOnlyDictionary<(MatchSide Side, int Shirt), int> SheetMinutes { get; init; } = new Dictionary<(MatchSide, int), int>();
+}
 
 public sealed record ApplyVideoAnalysisResultDto(
     Squads.MatchSheetDto Sheet,
@@ -127,7 +179,9 @@ public sealed record ApplyVideoAnalysisResultDto(
     [property: Description("Líneas de jugador creadas o cambiadas.")]
     int LinesWritten,
     [property: Description("Jugadores asignados para los que el vídeo no propone nada que cambiar.")]
-    int PlayersWithoutChanges);
+    int PlayersWithoutChanges,
+    [property: Description("Líneas creadas o cambiadas solo con el acta oficial cerrada: jugaron, pero el vídeo no los identificó o no se asignaron.")]
+    int LinesFromOfficialSheet = 0);
 
 public sealed record VideoAnalysisCropDto(byte[] Content, string ContentType);
 
@@ -138,8 +192,9 @@ internal static class VideoAnalysisMapper
     public static string CropRoute(Guid squadId, Guid matchId, Guid videoId, int tracklet, DateTimeOffset? version) =>
         $"/api/squads/{squadId}/matches/{matchId}/video-analysis/crops/{tracklet}?videoId={videoId}&v={version?.ToUnixTimeSeconds() ?? 0}";
 
-    public static VideoAnalysisPartDto ToDto(Squad squad, MatchVideo video, MatchVideoAnalysis? analysis, IReadOnlySet<int> crops)
+    public static VideoAnalysisPartDto ToDto(Squad squad, MatchVideo video, MatchVideoAnalysis? analysis, IReadOnlySet<int> crops, VideoSheetHints? hints = null)
     {
+        hints ??= VideoSheetHints.None;
         var state = analysis?.Status switch
         {
             VideoAnalysisStatus.Pending => VideoAnalysisState.Pending,
@@ -147,6 +202,7 @@ internal static class VideoAnalysisMapper
             VideoAnalysisStatus.Ready => VideoAnalysisState.Ready,
             VideoAnalysisStatus.Failed => VideoAnalysisState.Failed,
             VideoAnalysisStatus.Cancelled => VideoAnalysisState.Cancelled,
+            VideoAnalysisStatus.Paused => VideoAnalysisState.Paused,
             _ => MatchVideoAnalysis.CanAnalyze(video) ? VideoAnalysisState.NotRequested : VideoAnalysisState.WaitingForVideo,
         };
 
@@ -154,19 +210,34 @@ internal static class VideoAnalysisMapper
         var assignments = Assignments(analysis?.AssignmentsJson);
         var squadPlayers = squad.Players.Select(p => p.Id).ToHashSet();
 
+        var identified = proposal is { Identified: true };
+        var suggestedTeam = proposal?.TeamOn(hints.OurSide);
+
         var teams = proposal?.Teams
             .Select(t => new VideoAnalysisTeamDto(
-                t.Index, t.Color, proposal.Players.Count(p => p.Team == t.Index), t.PossessionPct, t.PossessionConfidence, t.PossessionBallPct, t.Shots, t.ShotsOnTarget,
-                t.Corners, t.ThrowIns, t.GoalKicks, t.Goals))
+                t.Index, t.Side, t.Color, proposal.Players.Count(p => p.Team == t.Index), t.PossessionPct, t.PossessionConfidence, t.PossessionBallPct, t.Shots, t.ShotsOnTarget,
+                t.Corners, t.ThrowIns, t.GoalKicks, t.Goals, t.Fouls, t.Offsides))
             .ToList() ?? [];
 
         var players = proposal?.Players
-            .OrderBy(p => p.Team).ThenByDescending(p => p.MinutesVisible).ThenBy(p => p.Tracklet)
+            .OrderBy(p => p.Team)
+            .ThenBy(p => identified ? p.ShirtNumber ?? 100 : 0)
+            .ThenByDescending(p => p.MinutesVisible).ThenBy(p => p.Tracklet)
             .Select(p => new VideoAnalysisPlayerDto(
                 p.Tracklet, p.Team, p.Goalkeeper,
                 crops.Contains(p.Tracklet) ? CropRoute(squad.Id, video.MatchId, video.Id, p.Tracklet, analysis!.FinishedAt) : null,
                 p.MinutesVisible, p.From, p.To, p.DistanceM, p.ShirtNumber, p.Actions,
-                assignments.TryGetValue(p.Tracklet, out var assigned) && squadPlayers.Contains(assigned) ? assigned : null))
+                assignments.TryGetValue(p.Tracklet, out var assigned) && squadPlayers.Contains(assigned) ? assigned : null,
+                p.SheetName,
+                p.ShirtConfidence,
+                identified && p.ShirtFromVideo && p.Team == suggestedTeam && p.ShirtNumber is { } shirt
+                    && hints.SquadPlayerByShirt.TryGetValue(shirt, out var suggested) && squadPlayers.Contains(suggested)
+                    ? suggested
+                    : null,
+                identified && p.ShirtFromVideo && p.ShirtNumber is { } number && proposal.Team(p.Team)?.Side is { } teamSide
+                    && hints.SheetMinutes.TryGetValue((teamSide, number), out var sheetMinutes)
+                    ? sheetMinutes
+                    : null))
             .ToList() ?? [];
 
         var quality = analysis is { Status: VideoAnalysisStatus.Ready, Frames: { } frames, BallFramesPct: { } ball, CalibratedFramesPct: { } calibrated }
@@ -180,7 +251,16 @@ internal static class VideoAnalysisMapper
         return new VideoAnalysisPartDto(
             video.Id, video.Part, video.Title, video.Status, video.ProcessingProgress, video.DurationSeconds, state,
             analysis?.Progress ?? 0, analysis?.Error, analysis?.RequestedAt, analysis?.StartedAt, analysis?.FinishedAt,
-            analysis?.AnalyzerVersion, analysis?.Weights, quality, teams, analysis?.OurTeam, analysis?.AppliedAt, players);
+            analysis?.AnalyzerVersion, analysis?.Weights, quality, teams, analysis?.OurTeam, analysis?.AppliedAt, players,
+            analysis is { IsActive: true } ? VideoAnalysisProcessor.ReadLive(analysis.LiveJson) : null,
+            analysis is { IsActive: true } ? analysis.LiveAt : null,
+            analysis is null ? [] : analysis.Log,
+            analysis?.PausedAt,
+            analysis?.PausedSeconds ?? 0,
+            analysis is { Status: VideoAnalysisStatus.Paused, IsWorking: true },
+            identified,
+            suggestedTeam,
+            identified ? proposal!.UnidentifiedSeconds : null);
     }
 
     public static IReadOnlyDictionary<int, Guid> Assignments(string? json)

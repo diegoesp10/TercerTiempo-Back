@@ -26,6 +26,7 @@ public class PlayerCardTests
     private readonly Squad _squad;
     private readonly Player _account = Player.Register(Guid.NewGuid(), "Mateo García Martínez", Position.Forward, null, Now);
     private readonly Guid _coachId = Guid.NewGuid();
+    private readonly List<Match> _matches = [];
 
     public PlayerCardTests()
     {
@@ -72,6 +73,22 @@ public class PlayerCardTests
     }
 
     [Fact]
+    public async Task The_card_says_how_many_matches_the_team_has_played_to_compare_with_his()
+    {
+        var rival = Guid.NewGuid();
+        for (var day = 1; day <= 3; day++)
+        {
+            var match = Match.Schedule(_season.Id, day, _team.Id, rival, Now.AddDays(day - 10), null, null);
+            if (day < 3) match.RecordResult(1, 0, Now.AddDays(day - 10).AddHours(2));
+            _matches.Add(match);
+        }
+
+        var card = await Card(User(coachId: Guid.NewGuid()));
+
+        Assert.Equal(2, card.TeamMatchesPlayed);
+    }
+
+    [Fact]
     public async Task A_card_of_another_team_is_not_found()
     {
         var handler = Handler(User(coachId: Guid.NewGuid()));
@@ -91,7 +108,7 @@ public class PlayerCardTests
                 nameof(ITeamStore.GetByIdsAsync) => Task.FromResult<IReadOnlyList<Team>>([_team]),
                 _ => throw new NotSupportedException(method),
             }),
-            Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>([])),
+            Stub<IMatchStore>((_, _) => Task.FromResult<IReadOnlyList<Match>>(_matches)),
             Stub<IOfficialSheetStore>((_, _) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([]))),
         Stub<ISquadStore>((method, _) => method == nameof(ISquadStore.GetByTeamAndSeasonAsync) ? Task.FromResult<Squad?>(_squad) : throw new NotSupportedException(method)),
         Stub<IPerformanceStore>((_, _) => Task.FromResult<IReadOnlyList<PlayerMatchPerformance>>([])),

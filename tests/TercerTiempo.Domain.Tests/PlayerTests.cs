@@ -17,12 +17,22 @@ public class PlayerTests
     }
 
     [Fact]
-    public void Register_rejects_players_under_14()
+    public void Register_rejects_minors()
     {
-        var birthDate = DateOnly.FromDateTime(TestData.Now.UtcDateTime).AddYears(-10);
+        var birthDate = DateOnly.FromDateTime(TestData.Now.UtcDateTime).AddYears(-17);
 
         Assert.Throws<DomainException>(() =>
-            Player.Register(Guid.NewGuid(), "Niño", Position.Forward, birthDate, TestData.Now));
+            Player.Register(Guid.NewGuid(), "Menor", Position.Forward, birthDate, TestData.Now));
+    }
+
+    [Fact]
+    public void Register_accepts_adults()
+    {
+        var birthDate = DateOnly.FromDateTime(TestData.Now.UtcDateTime).AddYears(-18).AddDays(-1);
+
+        var player = Player.Register(Guid.NewGuid(), "Mayor", Position.Forward, birthDate, TestData.Now);
+
+        Assert.Equal(birthDate, player.BirthDate);
     }
 
     [Fact]

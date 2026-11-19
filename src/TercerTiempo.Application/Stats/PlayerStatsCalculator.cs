@@ -46,7 +46,8 @@ internal static class PlayerStatsCalculator
             PassesCompleted: passesCompleted,
             PassesAttempted: passesAttempted,
             PassAccuracyPct: passesAttempted > 0 ? Round(passesCompleted * 100.0 / passesAttempted) : null,
-            RecoveriesPer90: Per90(recoveries, minutes));
+            RecoveriesPer90: Per90(recoveries, minutes),
+            Clearances: performances.Sum(p => p.Clearances));
     }
 
     public static TeamImpactDto TeamImpact(

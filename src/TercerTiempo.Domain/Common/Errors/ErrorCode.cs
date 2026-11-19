@@ -164,6 +164,12 @@ public static class ErrorCode
     public const string InjuryDatesInvalid = "injury.dates_invalid";
     public const string InjuryReturnInvalid = "injury.return_invalid";
     public const string InjuryInvalidType = "injury.invalid_type";
+    public const string InjuryDocumentNotFound = "injury_document.not_found";
+    public const string InjuryDocumentFormat = "injury_document.format";
+    public const string InjuryDocumentTooLarge = "injury_document.too_large";
+    public const string InjuryDocumentLimit = "injury_document.limit";
+    public const string InjuryDocumentInvalidKind = "injury_document.invalid_kind";
+    public const string InjuryDocumentPrivate = "injury_document.private";
 
     public const string TrainingNotFound = "training.not_found";
     public const string TrainingInvalidKind = "training.invalid_kind";
@@ -173,6 +179,9 @@ public static class ErrorCode
     public const string TrainingItemsTooMany = "training.items_too_many";
     public const string TrainingAttendanceInvalid = "training.attendance_invalid";
     public const string TrainingAbsencePast = "training.absence_past";
+    public const string TrainingPastLocked = "training.past_locked";
+    public const string TrainingAttendanceSettled = "training.attendance_settled";
+    public const string TrainingPlayerInjured = "training.player_injured";
     public const string TrainingAttendanceTarget = "training.attendance_target";
     public const string TrialPlayerNotFound = "trial_player.not_found";
     public const string TrialPlayerDuplicate = "trial_player.duplicate";
@@ -187,11 +196,15 @@ public static class ErrorCode
     public const string CallUpNotPublished = "callup.not_published";
     public const string CallUpNoPlayers = "callup.no_players";
     public const string CallUpNotCalled = "callup.not_called";
+    public const string CallUpPlayerInjured = "callup.player_injured";
+    public const string CallUpPlayerSuspended = "callup.player_suspended";
     public const string CallUpInvalidResponse = "callup.invalid_response";
     public const string CallUpMatchNotOfSquad = "callup.match_not_of_squad";
+    public const string GroundNotFound = "ground.not_found";
 
     // Jugadores
     public const string PlayerInvalidPosition = "player.invalid_position";
+    public const string PlayerPositionRequired = "player.position_required";
     public const string PlayerMinAge = "player.min_age";
     public const string PlayerShirtNumberRange = "player.shirt_number_range";
     public const string PlayerAlreadyInSquad = "player.already_in_squad";
@@ -213,6 +226,7 @@ public static class ErrorCode
     public const string TeamStatsSetPieceGoals = "team_stats.set_piece_goals";
     public const string TeamStatsPenaltyGoals = "team_stats.penalty_goals";
     public const string SheetTwoYellows = "sheet.two_yellows";
+    public const string SheetPlayerSuspended = "sheet.player_suspended";
     public const string SheetNoMinutes = "sheet.no_minutes";
     public const string SheetNotesTooLong = "sheet.notes_too_long";
     public const string SheetLineMismatch = "sheet.line_mismatch";
@@ -301,6 +315,8 @@ public static class ErrorCode
     public const string VideoAnalysisOverwrite = "video_analysis.overwrite";
     public const string VideoAnalysisCropNotFound = "video_analysis.crop_not_found";
     public const string VideoAnalysisNotActive = "video_analysis.not_active";
+    public const string VideoAnalysisNotPausable = "video_analysis.not_pausable";
+    public const string VideoAnalysisNotPaused = "video_analysis.not_paused";
     public const string TeamPitchOwnTeamsOnly = "team.pitch_own_teams_only";
     public const string TeamPitchIncomplete = "team.pitch_incomplete";
     public const string PassNotFound = "pass.not_found";

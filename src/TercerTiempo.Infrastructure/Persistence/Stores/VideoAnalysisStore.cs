@@ -27,7 +27,15 @@ internal sealed class MatchVideoAnalysisStore(AppDbContext db) : IMatchVideoAnal
             .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<IReadOnlyList<MatchVideoAnalysis>> GetRunningAsync(CancellationToken cancellationToken = default) =>
-        await db.MatchVideoAnalyses.Where(a => a.Status == VideoAnalysisStatus.Running).ToListAsync(cancellationToken);
+        await db.MatchVideoAnalyses
+            .Where(a => a.Status == VideoAnalysisStatus.Running || (a.Status == VideoAnalysisStatus.Paused && a.WorkerId != null))
+            .ToListAsync(cancellationToken);
+
+    public Task<VideoAnalysisControlState?> GetControlAsync(Guid analysisId, CancellationToken cancellationToken = default) =>
+        db.MatchVideoAnalyses.AsNoTracking()
+            .Where(a => a.Id == analysisId)
+            .Select(a => new VideoAnalysisControlState(a.Status, a.WorkerId))
+            .FirstOrDefaultAsync(cancellationToken);
 
     // El borrado de los recortes anteriores va con SQL directo: dentro de la misma transacción que el guardado, para que
     // un fallo a medias no deje el análisis sin recortes (o con los de otra pasada).

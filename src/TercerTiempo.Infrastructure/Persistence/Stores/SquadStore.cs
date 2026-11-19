@@ -56,8 +56,22 @@ internal sealed class SquadStore(AppDbContext db) : ISquadStore
             s => s.Players.Any(p => p.PlayerId == playerId && p.Status == SquadPlayerStatus.Active),
             cancellationToken);
 
+    public async Task<IReadOnlyList<Squad>> GetAllByPlayerAsync(Guid playerId, CancellationToken cancellationToken = default) =>
+        await db.Squads.Where(s => s.Players.Any(p => p.PlayerId == playerId)).ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<Squad>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
         await db.Squads.Where(s => s.SeasonId == seasonId).ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<SquadPlayerName>> GetActivePlayerNamesAsync(CancellationToken cancellationToken = default) =>
+        await db.Set<SquadPlayer>().AsNoTracking()
+            .Where(p => p.Status == SquadPlayerStatus.Active)
+            .Select(p => new SquadPlayerName(p.SquadId, p.Id, p.NormalizedName))
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Squad>> GetWithPlayersMissingPositionAsync(CancellationToken cancellationToken = default) =>
+        await db.Squads
+            .Where(s => s.Players.Any(p => p.Status == SquadPlayerStatus.Active && p.Position == null))
+            .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<Squad>> GetByTeamIdsAsync(IEnumerable<Guid> teamIds, Guid seasonId, CancellationToken cancellationToken = default)
     {

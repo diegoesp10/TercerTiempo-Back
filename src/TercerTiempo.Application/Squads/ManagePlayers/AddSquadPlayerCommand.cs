@@ -5,6 +5,7 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 
@@ -14,7 +15,7 @@ public sealed record AddSquadPlayerCommand(
     Guid SquadId,
     [property: Description("Nombre y apellidos del jugador.")]
     string FullName,
-    [property: Description("Opcional: Goalkeeper, Defender, Midfielder o Forward.")]
+    [property: Description("Obligatoria: Goalkeeper, Defender, Midfielder o Forward.")]
     Position? Position,
     [property: Description("Opcional, 1-99.")]
     int? ShirtNumber) : ICommand<SquadPlayerDto>;
@@ -25,7 +26,7 @@ internal sealed class AddSquadPlayerValidator : AbstractValidator<AddSquadPlayer
     {
         RuleFor(x => x.SquadId).NotEmpty();
         RuleFor(x => x.FullName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.Position).IsInEnum().When(x => x.Position.HasValue);
+        RuleFor(x => x.Position).NotNull().WithCatalogMessage(ErrorCode.PlayerPositionRequired).IsInEnum();
         RuleFor(x => x.ShirtNumber).InclusiveBetween(1, 99).When(x => x.ShirtNumber.HasValue);
     }
 }

@@ -2,7 +2,9 @@ using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Performances;
 using TercerTiempo.Application.Squads.MatchSheet;
+using TercerTiempo.Application.Squads.Suspensions;
 using TercerTiempo.Application.Videos.Analysis;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
@@ -10,10 +12,12 @@ using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Trainings;
 using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Application.Tests;
@@ -43,6 +47,55 @@ public class VideoAnalysisApplyTests
         Assert.Null(ready.Players[2].CropUrl);
         Assert.All(ready.Players, p => Assert.Null(p.SquadPlayerId));
     }
+
+    [Fact]
+    public async Task With_the_official_sheet_each_player_comes_by_shirt_number_with_our_team_and_squad_player_proposed()
+    {
+        var f = new Fixture();
+        f.Sheet = OfficialMatchSheet.Create(f.Played.Id, "test", "1", null, Now);
+        f.Sheet.Apply(new OfficialSheetData(null, "CD Vallobín", "Real Titánico", 2, 1,
+        [
+            Line(MatchSide.Home, 9, "FERNANDEZ, PELAYO"),
+            Line(MatchSide.Home, 1, "SUAREZ, NEL"),
+            Line(MatchSide.Away, 9, "GARCIA, JUAN"),
+        ], []), Now);
+        // El analizador dejó a cada jugador por su dorsal: el equipo 1 lleva los dorsales del local (el Vallobín).
+        f.Analyzed("""
+            {"version": 2, "identificados": true,
+             "equipos": [{"id": 0, "lado": "visitante", "color": "#c03030"}, {"id": 1, "lado": "local", "color": "#20304a"}],
+             "jugadores": [
+               {"tracklet": 901009, "equipo": 1, "dorsal": 9, "nombreActa": "FERNANDEZ, PELAYO", "confianzaDorsal": 0.71, "tramos": 12, "minutosALaVista": 30},
+               {"tracklet": 901001, "equipo": 1, "portero": true, "dorsal": 1, "nombreActa": "SUAREZ, NEL", "confianzaDorsal": 0.6, "tramos": 3, "minutosALaVista": 40},
+               {"tracklet": 900009, "equipo": 0, "dorsal": 9, "nombreActa": "GARCIA, JUAN", "confianzaDorsal": 0.5, "tramos": 8, "minutosALaVista": 25}],
+             "calidad": {"sinIdentificarS": {"0": 300.4, "1": 120}}}
+            """);
+
+        var ready = Assert.Single((await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default)).Videos);
+
+        Assert.True(ready.Identified);
+        Assert.Equal(1, ready.SuggestedOurTeam);
+        Assert.Equal([MatchSide.Away, MatchSide.Home], ready.Teams.Select(t => t.Side!.Value));
+        Assert.Equal(new Dictionary<int, int> { [0] = 300, [1] = 120 }, ready.UnidentifiedSeconds);
+        // Por equipo y dorsal; los nuestros con la ficha que el acta cruza con ese dorsal, el rival sin ninguna.
+        Assert.Equal([(0, 9), (1, 1), (1, 9)], ready.Players.Select(p => (p.Team, p.ShirtNumber!.Value)));
+        var pelayo = ready.Players.Single(p => p.Tracklet == 901009);
+        Assert.Equal((f.Pelayo.Id, "FERNANDEZ, PELAYO", 0.71m), (pelayo.SuggestedSquadPlayerId!.Value, pelayo.SheetName, pelayo.ShirtConfidence!.Value));
+        Assert.NotNull(ready.Players.Single(p => p.Tracklet == 901001).SuggestedSquadPlayerId);
+        Assert.Null(ready.Players.Single(p => p.Tracklet == 900009).SuggestedSquadPlayerId);
+    }
+
+    [Fact]
+    public async Task Without_the_official_sheet_nothing_is_proposed()
+    {
+        var f = new Fixture();
+        f.Analyzed();
+        var ready = Assert.Single((await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default)).Videos);
+        Assert.False(ready.Identified);
+        Assert.Null(ready.SuggestedOurTeam);
+        Assert.All(ready.Players, p => Assert.Null(p.SuggestedSquadPlayerId));
+    }
+
+    private static OfficialLineData Line(MatchSide side, int shirt, string name) => new(side, shirt, name, true, 0, null, 90, 0, 0, 0, 0, false);
 
     [Fact]
     public async Task The_staff_is_told_when_no_analyzer_is_running()
@@ -205,6 +258,69 @@ public class VideoAnalysisApplyTests
     }
 
     [Fact]
+    public async Task With_the_closed_official_sheet_minutes_come_from_it_also_for_who_the_video_did_not_see()
+    {
+        var f = new Fixture();
+        f.Sheet = ClosedSheet(f, closed: true);
+        f.Analyzed();
+        Assert.True((await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default)).OfficialSheetClosed);
+
+        var result = await f.Apply(f.ClubUser).Handle(f.Everything(), default);
+
+        // Pelayo: sus acciones son las del vídeo, pero los minutos (salió en el 70), la titularidad, el gol y la amarilla
+        // son los del acta, aunque el vídeo solo lo viera 20 minutos.
+        var pelayo = f.Performances.Single(p => p.SquadPlayerId == f.Pelayo.Id);
+        Assert.Equal((70, true, 1, 1), (pelayo.MinutesPlayed, pelayo.Started, pelayo.Goals, pelayo.YellowCards));
+        Assert.Equal((4, 2, 31), (pelayo.Shots, pelayo.ShotsOnTarget, pelayo.PassesAttempted));
+        // Nel no salió en el vídeo, pero jugó el partido entero: su línea sale del acta.
+        var nel = f.Performances.Single(p => p.SquadPlayerId != f.Pelayo.Id);
+        Assert.Equal((90, true, 0), (nel.MinutesPlayed, nel.Started, nel.Shots));
+        Assert.Equal((2, 0, 1), (result.LinesWritten, result.PlayersWithoutChanges, result.LinesFromOfficialSheet));
+
+        // En la nota, los goles encajados son los de mientras estaba en el campo (el del rival, en el 80: Pelayo ya se había
+        // ido) y las acciones del vídeo no cuentan hasta que el cuerpo técnico guarda el acta.
+        Assert.Equal((true, 0), (pelayo.ActionsFromVideo, pelayo.GoalsConcededOnPitch));
+        Assert.Equal((false, 1), (nel.ActionsFromVideo, nel.GoalsConcededOnPitch));
+        Assert.True(result.Sheet.Entries.Single(e => e.Player.Id == f.Pelayo.Id).Performance!.ActionsFromVideo);
+        var withoutActions = pelayo.Rating;
+
+        await f.Record(f.ClubUser).Handle(new RecordMatchSheetCommand(f.Squad.Id, f.Played.Id, [MatchSheetEntryInput.From(pelayo), MatchSheetEntryInput.From(nel)]), default);
+
+        Assert.False(pelayo.ActionsFromVideo);
+        Assert.True(pelayo.Rating > withoutActions);
+        Assert.Equal(0, pelayo.GoalsConcededOnPitch);
+    }
+
+    [Fact]
+    public async Task A_provisional_sheet_or_unticking_it_leaves_the_minutes_to_the_video()
+    {
+        foreach (var (closed, fill) in new[] { (false, true), (true, false) })
+        {
+            var f = new Fixture();
+            f.Sheet = ClosedSheet(f, closed);
+            f.Analyzed();
+
+            var result = await f.Apply(f.ClubUser).Handle(f.Everything() with { FillFromOfficialSheet = fill }, default);
+
+            var line = Assert.Single(f.Performances);
+            Assert.Equal((20, false, 1), (line.MinutesPlayed, line.Started, line.Goals));
+            Assert.Equal(0, result.LinesFromOfficialSheet);
+        }
+    }
+
+    private static OfficialMatchSheet ClosedSheet(Fixture f, bool closed)
+    {
+        var sheet = OfficialMatchSheet.Create(f.Played.Id, "test", "1", null, Now);
+        sheet.Apply(new OfficialSheetData(null, "CD Vallobín", "Real Titánico", 2, 1,
+        [
+            new(MatchSide.Home, 9, "FERNANDEZ, PELAYO", true, 0, 70, 70, 1, 0, 0, 1, false),
+            new(MatchSide.Home, 1, "SUAREZ, NEL", true, 0, null, 90, 0, 0, 0, 0, false),
+            new(MatchSide.Away, 9, "GARCIA, JUAN", true, 0, null, 90, 1, 0, 0, 0, false),
+        ], [new(MatchSide.Away, OfficialEventType.Goal, 80, null, "GARCIA, JUAN", null)]), Now, closed);
+        return sheet;
+    }
+
+    [Fact]
     public async Task Only_what_is_ticked_is_written()
     {
         var f = new Fixture();
@@ -238,6 +354,37 @@ public class VideoAnalysisApplyTests
             (await Assert.ThrowsAsync<DomainException>(() => f.Apply(f.ClubUser).Handle(With(), default))).Code);
         Assert.Equal(0, f.Saves);
         Assert.Empty(f.Performances);
+    }
+
+    [Fact]
+    public async Task With_the_official_sheet_our_team_is_the_one_on_our_side_and_rival_players_never_go_to_our_squad()
+    {
+        var f = new Fixture();
+        f.Sheet = OfficialMatchSheet.Create(f.Played.Id, "test", "1", null, Now);
+        f.Sheet.Apply(new OfficialSheetData(null, "CD Vallobín", "Real Titánico", 2, 1,
+            [Line(MatchSide.Home, 9, "FERNANDEZ, PELAYO"), Line(MatchSide.Away, 9, "GARCIA, JUAN")], []), Now);
+        // Por los dorsales, el equipo 1 es el local (el Vallobín) y el 0 el rival.
+        f.Analyzed("""
+            {"version": 2, "identificados": true,
+             "equipos": [{"id": 0, "lado": "visitante", "teamStats": {"possessionPct": 35, "possessionConfidence": "alta", "shotsFor": 2}},
+                         {"id": 1, "lado": "local", "teamStats": {"possessionPct": 65, "possessionConfidence": "alta", "shotsFor": 7}}],
+             "jugadores": [
+               {"tracklet": 901009, "equipo": 1, "dorsal": 9, "nombreActa": "FERNANDEZ, PELAYO", "minutosALaVista": 30},
+               {"tracklet": 900009, "equipo": 0, "dorsal": 9, "nombreActa": "GARCIA, JUAN", "minutosALaVista": 25}]}
+            """);
+        ApplyVideoAnalysisCommand Saying(int ourTeam, VideoTrackletAssignment[] players, VideoTeamField[] fields) =>
+            new(f.Squad.Id, f.Played.Id, [new ApplyVideoPart(f.Video.Id, ourTeam, players)], fields, false);
+
+        // Aunque la petición diga que el nuestro es el rival, sus jugadores no van a nuestras fichas...
+        Assert.Equal(ErrorCode.VideoAnalysisTrackletOtherTeam,
+            (await Assert.ThrowsAsync<DomainException>(() => f.Apply(f.ClubUser).Handle(Saying(0, [new(900009, f.Pelayo.Id)], []), default))).Code);
+        Assert.Equal(0, f.Saves);
+
+        // ...y los datos de equipo se cuentan desde nuestro lado, que es lo que queda guardado.
+        var result = await f.Apply(f.ClubUser).Handle(Saying(0, [], [VideoTeamField.Possession, VideoTeamField.Shots]), default);
+        var team = f.TeamStats.Single();
+        Assert.Equal((65, 7, 2), (team.PossessionPct, team.ShotsFor, team.ShotsAgainst));
+        Assert.Equal(1, Assert.Single(result.Analysis.Videos).OurTeam);
     }
 
     [Fact]
@@ -286,6 +433,7 @@ public class VideoAnalysisApplyTests
         public List<PlayerMatchPerformance> Performances { get; } = [];
         public List<TeamMatchStats> TeamStats { get; } = [];
         public User ClubUser => new(ClubId: Club.Id, UserId: Club.UserId);
+        public OfficialMatchSheet? Sheet { get; set; }
         public int Saves { get; private set; }
         private readonly bool _enabled;
 
@@ -310,12 +458,12 @@ public class VideoAnalysisApplyTests
         }
 
         // El analizador ya ha pasado por el vídeo: propuesta lista y los recortes de dos de los tres jugadores.
-        public void Analyzed()
+        public void Analyzed(string? proposalJson = null)
         {
             var analysis = MatchVideoAnalysis.Queue(Video, Now.AddHours(-2));
             analysis.Start(Now.AddHours(-2));
             var run = VideoAnalysisSamples.Run();
-            analysis.Complete(new VideoAnalysisOutcome(run.OutputPath, run.AnalyzerVersion, run.Weights, run.ProposalJson, run.Frames,
+            analysis.Complete(new VideoAnalysisOutcome(run.OutputPath, run.AnalyzerVersion, run.Weights, proposalJson ?? run.ProposalJson, run.Frames,
                 run.BallFramesPct, run.CalibratedFramesPct, run.AnalyzedSeconds, run.PitchLengthM, run.PitchWidthM), Now.AddHours(-1));
             Analyses.Items.Add(analysis);
             Analyses.Crops[analysis.Id] = run.Crops.Select(c => new VideoAnalysisCrop(analysis.Id, c.Key, c.Value)).ToList();
@@ -334,10 +482,18 @@ public class VideoAnalysisApplyTests
         });
         private IClubStore Clubs => TestStub.Of<IClubStore>((_, args) =>
             Task.FromResult(OtherClubs.Append(Club).FirstOrDefault(c => c.Id == (Guid)args![0]! || c.UserId == (Guid)args[0]!)));
+        private IOfficialSheetStore Sheets => TestStub.Of<IOfficialSheetStore>((method, _) => method switch
+        {
+            nameof(IOfficialSheetStore.GetByMatchAsync) => Task.FromResult(Sheet),
+            nameof(IOfficialSheetStore.GetAvailableLinesByMatchIdsAsync) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>(new[] { Sheet }.OfType<OfficialMatchSheet>().ToList()),
+            _ => throw new NotSupportedException(method),
+        });
+        private SuspensionReader Suspensions => new(Matches, PerformanceStore, Sheets, TimeProvider.System);
         private ICoachStore Coaches => TestStub.Of<ICoachStore>((method, _) => throw new NotSupportedException(method));
         private IMatchStore Matches => TestStub.Of<IMatchStore>((method, args) => method switch
         {
             nameof(IMatchStore.GetByIdAsync) => Task.FromResult((Guid)args![0]! == Played.Id ? Played : null),
+            nameof(IMatchStore.GetTeamMatchesAsync) => Task.FromResult<IReadOnlyList<Match>>([Played]),
             _ => throw new NotSupportedException(method),
         });
         private ITeamStore Teams => TestStub.Of<ITeamStore>((method, args) => method switch
@@ -351,6 +507,7 @@ public class VideoAnalysisApplyTests
         {
             nameof(IPerformanceStore.GetBySquadAndMatchAsync) => Task.FromResult<IReadOnlyList<PlayerMatchPerformance>>(
                 Performances.Where(p => p.SquadId == (Guid)args![0]! && p.MatchId == (Guid)args[1]!).ToList()),
+            nameof(IPerformanceStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<PlayerMatchPerformance>>(Performances.Where(p => p.SquadId == (Guid)args![0]!).ToList()),
             nameof(IPerformanceStore.Add) => Run(() => Performances.Add((PlayerMatchPerformance)args![0]!)),
             _ => throw new NotSupportedException(method),
         });
@@ -362,10 +519,15 @@ public class VideoAnalysisApplyTests
             _ => throw new NotSupportedException(method),
         });
         private IUnitOfWork Unit => TestStub.Of<IUnitOfWork>((_, _) => Task.FromResult(++Saves));
+        private static ICallUpStore NoCallUps => TestStub.Of<ICallUpStore>((method, _) => method switch
+        {
+            nameof(ICallUpStore.GetByMatchAsync) => Task.FromResult<MatchCallUp?>(null),
+            _ => throw new NotSupportedException(method),
+        });
         private static object? Run(Action action) { action(); return null; }
 
         private VideoAnalysisReader Reader(ICurrentUser user) =>
-            new(user, SquadStore, Clubs, Matches, Videos, Analyses, Heartbeats, Options.Create(new VideoAnalysisOptions { Enabled = _enabled }), TimeProvider.System);
+            new(user, SquadStore, Clubs, Matches, Videos, Analyses, Heartbeats, Sheets, Options.Create(new VideoAnalysisOptions { Enabled = _enabled }), TimeProvider.System);
 
         public GetVideoAnalysisHandler Get(ICurrentUser user) => new(Reader(user));
 
@@ -375,8 +537,14 @@ public class VideoAnalysisApplyTests
 
         public CancelVideoAnalysisHandler Cancel(ICurrentUser user) => new(Reader(user), Unit, TimeProvider.System);
 
+        public RecordMatchSheetHandler Record(ICurrentUser user) =>
+            new(user, Coaches, Clubs, SquadStore, Matches, Teams, Competitions, Players, PerformanceStore, TeamStatsStore,
+                new MatchSheetWriter(PerformanceStore, TeamStatsStore, new OfficialSheetRatings(SquadStore, Matches, Sheets, PerformanceStore), Suspensions), Unit, NoCallUps,
+                Suspensions, TimeProvider.System);
+
         public ApplyVideoAnalysisHandler Apply(ICurrentUser user) =>
             new(Reader(user), user, Coaches, Clubs, Teams, Competitions, Players, PerformanceStore, TeamStatsStore,
-                new MatchSheetWriter(PerformanceStore, TeamStatsStore), Unit, TimeProvider.System);
+                new MatchSheetWriter(PerformanceStore, TeamStatsStore, new OfficialSheetRatings(SquadStore, Matches, Sheets, PerformanceStore), Suspensions), Unit, NoCallUps,
+                Suspensions, TimeProvider.System);
     }
 }

@@ -53,6 +53,7 @@ internal sealed class RealDataCopier(
         ["Teams"] = "equipos",
         ["RosterEntries"] = "fichas de plantilla",
         ["Matches"] = "partidos",
+        ["Grounds"] = "campos",
         ["Standings"] = "filas de clasificación",
         ["SeasonZones"] = "plazas de liga",
         ["Referees"] = "árbitros",
@@ -60,10 +61,11 @@ internal sealed class RealDataCopier(
         ["OfficialSheets"] = "actas",
         ["OfficialSheetLines"] = "líneas de acta",
         ["OfficialSheetEvents"] = "sucesos de acta",
+        ["OfficialSheetStaff"] = "cuerpos técnicos de acta",
     };
 
     private static readonly string[] IngestJobs =
-        [JobNames.FootballData, JobNames.OfficialSheets, JobNames.WeeklySheets, JobNames.MatchOfficials, JobNames.LeagueZones];
+        [JobNames.FootballData, JobNames.OfficialSheets, JobNames.WeeklySheets, JobNames.MatchOfficials, JobNames.LeagueZones, JobNames.Grounds];
 
     // La copia de cada pocos minutos: si la base real no ha cambiado desde la última copia (misma marca), no se copia.
     // force: se ha pedido (a mano, tras una descarga o un cambio de la administración en este proceso) y se copia siempre.
@@ -140,9 +142,15 @@ internal sealed class RealDataCopier(
         lock (_markLock) _lastCopy = mark is null ? null : (mark, startedAt);
 
         var crests = await CopyCrestFilesAsync(cancellationToken);
+        var squads = await ReconcileSquadsAsync(cancellationToken);
         var changed = changes.Where(c => c.Total > 0).ToList();
         if (changed.Count == 0)
-            return new JobOutcome(crests > 0 ? $"{crests} escudos copiados" : "Sin cambios", [], Quiet: crests == 0);
+        {
+            var extra = new List<string>();
+            if (crests > 0) extra.Add($"{crests} escudos copiados");
+            extra.AddRange(SquadLabels(squads));
+            return new JobOutcome(extra.Count > 0 ? Join(extra) : "Sin cambios", [], Quiet: extra.Count == 0);
+        }
 
         using (var scope = scopes.CreateScope())
         {
@@ -153,7 +161,35 @@ internal sealed class RealDataCopier(
 
         var parts = changed.Select(c => $"{c.Total} {Labels.GetValueOrDefault(c.Table, c.Table)}").ToList();
         if (crests > 0) parts.Add($"{crests} escudos");
+        parts.AddRange(SquadLabels(squads));
         return new JobOutcome($"Nuevo o cambiado: {Join(parts)}", []);
+    }
+
+    // Lo que la plantilla publicada dice ahora llega también a las plantillas de este entorno: las fichas repetidas de una
+    // misma persona se juntan y quien no tenía posición toma la que publique la federación. Si falla, la copia ya está
+    // hecha: se vuelve a intentar en la siguiente.
+    private async Task<TercerTiempo.Application.Squads.SquadReconciliationResult> ReconcileSquadsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = scopes.CreateEnvironmentScope();
+            return await scope.ServiceProvider.GetRequiredService<TercerTiempo.Application.Squads.SquadRosterReconciliation>().ReconcileAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "No se pudieron conciliar las plantillas con la federación");
+            return new(0, 0);
+        }
+    }
+
+    private static IEnumerable<string> SquadLabels(TercerTiempo.Application.Squads.SquadReconciliationResult result)
+    {
+        if (result.MergedPlayers > 0)
+            yield return result.MergedPlayers == 1 ? "1 jugador repetido juntado" : $"{result.MergedPlayers} jugadores repetidos juntados";
+        if (result.CompletedPositions > 0)
+            yield return result.CompletedPositions == 1 ? "1 jugador con posición de la federación" : $"{result.CompletedPositions} jugadores con posición de la federación";
+        if (result.OfficialRatings > 0)
+            yield return result.OfficialRatings == 1 ? "1 nota con los goles encajados en el campo" : $"{result.OfficialRatings} notas con los goles encajados en el campo";
     }
 
     // Una sola vez, al crear la base real: si está vacía, se llena con los datos reales de la base de este entorno (sin lo

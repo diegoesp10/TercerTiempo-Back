@@ -48,6 +48,19 @@ public class PerformanceRatingTests
     }
 
     [Fact]
+    public void Clearances_count_in_defense_and_weigh_more_for_a_defender()
+    {
+        // 0-0 sin nada más: 5 despejes suman 0,40 a un defensa y 0,15 a un delantero.
+        var plain = PerformanceRating.Calculate(Line(), Position.Defender, 0, 0)!;
+        var defender = PerformanceRating.Calculate(Line() with { Clearances = 5 }, Position.Defender, 0, 0)!;
+        var forward = PerformanceRating.Calculate(Line() with { Clearances = 5 }, Position.Forward, 0, 0)!;
+
+        Assert.Equal(0.4, Math.Round(defender.Defense - plain.Defense, 2));
+        Assert.Equal(0.15, forward.Defense);
+        Assert.Throws<DomainException>(() => (Line(minutes: 0) with { Started = false, Clearances = 1 }).EnsureValid());
+    }
+
+    [Fact]
     public void Pass_accuracy_needs_a_minimum_of_passes()
     {
         var few = PerformanceRating.Calculate(Line() with { PassesCompleted = 1, PassesAttempted = 5 }, Position.Midfielder, 0, 0)!;
@@ -85,6 +98,51 @@ public class PerformanceRatingTests
 
         Assert.Equal(0, short_.Defense);
         Assert.Equal(0.6, full.Defense);
+    }
+
+    [Fact]
+    public void With_the_official_sheet_only_the_goals_conceded_on_the_pitch_count()
+    {
+        // Defensa que se fue en el 24 con 0-0: el gol del rival llegó después.
+        var gone = PerformanceRating.Calculate(Line(minutes: 24), Position.Defender, 0, 1, goalsConcededOnPitch: 0)!;
+        // Sin acta oficial no se sabe: la parte de los del partido que le toca por minutos (−0,2 × 24/90).
+        var unknown = PerformanceRating.Calculate(Line(minutes: 24), Position.Defender, 0, 1)!;
+
+        Assert.Equal(0, gone.Defense);
+        Assert.Equal(-0.05, unknown.Defense);
+    }
+
+    [Fact]
+    public void With_the_official_sheet_the_clean_sheet_and_the_goals_conceded_are_each_players_own()
+    {
+        // El portero titular jugó 70' sin encajar; el gol del 0-1 se lo marcaron al suplente, que lo carga entero.
+        var starter = PerformanceRating.Calculate(Line(minutes: 70), Position.Goalkeeper, 0, 1, goalsConcededOnPitch: 0)!;
+        var sub = PerformanceRating.Calculate(Line(minutes: 20), Position.Goalkeeper, 0, 1, goalsConcededOnPitch: 1)!;
+
+        Assert.Equal(1.0, starter.Goalkeeping);
+        Assert.Equal(-0.3, sub.Goalkeeping);
+    }
+
+    [Fact]
+    public void The_actions_put_by_the_video_do_not_count_until_the_staff_saves_the_sheet()
+    {
+        // El vídeo solo cuenta lo que hace un jugador mientras lo identifica: si entrara en la nota, puntuaría cuánto se le ve.
+        var (squad, coachId) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Nacho", Position.Midfielder, null, null, TestData.Now);
+        var match = TestData.PlayedMatch(0, 1);
+        var stats = Line() with { Shots = 2, ShotsOnTarget = 1, Recoveries = 13, BallLosses = 2, PassesCompleted = 30, PassesAttempted = 35 };
+        var line = PlayerMatchPerformance.Record(squad, entry, match, SquadEditor.Coach(coachId), stats, TestData.Now);
+        var counted = line.Rating;
+
+        line.MarkActionsFromVideo(true, entry, match);
+
+        Assert.Equal(PerformanceRating.Calculate(Line(), Position.Midfielder, 0, 1)!.Total, line.Rating);
+        Assert.Equal(13, line.Recoveries);
+
+        line.MarkActionsFromVideo(false, entry, match);
+
+        Assert.Equal(counted, line.Rating);
+        Assert.True(counted > PerformanceRating.Calculate(Line(), Position.Midfielder, 0, 1)!.Total);
     }
 
     [Fact]

@@ -206,6 +206,56 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.ToTable("SeasonZones", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Grounds.Ground", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<string>("Locality")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<int>("LocateAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("LocatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Grounds", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Matches.Match", b =>
                 {
                     b.Property<Guid>("Id")
@@ -309,6 +359,9 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.Property<string>("SourceUrl")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("StaffReadAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -426,6 +479,51 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.HasIndex("SheetId");
 
                     b.ToTable("OfficialSheetLines", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.OfficialSheets.OfficialSheetStaff", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("RoleLabel")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<Guid>("SheetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Side")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedName");
+
+                    b.HasIndex("SheetId");
+
+                    b.ToTable("OfficialSheetStaff", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Referees.MatchOfficial", b =>
@@ -1136,6 +1234,15 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.OfficialSheets.OfficialSheetStaff", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.OfficialSheets.OfficialMatchSheet", null)
+                        .WithMany("Staff")
+                        .HasForeignKey("SheetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Referees.MatchOfficial", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Matches.Match", null)
@@ -1390,6 +1497,8 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.Navigation("Events");
 
                     b.Navigation("Lines");
+
+                    b.Navigation("Staff");
                 });
 #pragma warning restore 612, 618
         }

@@ -13,12 +13,12 @@ public static class PerformanceRating
     private sealed record Weights(
         double Goal, double Assist, double KeyPass, double ShotOnTarget,
         double Tackle, double Interception, double Save,
-        double CleanSheet, double GoalConceded, double Recovery);
+        double CleanSheet, double GoalConceded, double Recovery, double Clearance);
 
-    private static readonly Weights Goalkeeper = new(1.5, 0.8, 0.25, 0.10, 0.10, 0.10, 0.35, 1.0, -0.30, 0.04);
-    private static readonly Weights Defender = new(1.2, 0.8, 0.20, 0.10, 0.15, 0.15, 0.30, 0.6, -0.20, 0.08);
-    private static readonly Weights Midfielder = new(1.0, 0.7, 0.20, 0.12, 0.12, 0.12, 0.30, 0.2, -0.05, 0.07);
-    private static readonly Weights Forward = new(0.9, 0.7, 0.15, 0.15, 0.10, 0.08, 0.30, 0.0, 0.00, 0.05);
+    private static readonly Weights Goalkeeper = new(1.5, 0.8, 0.25, 0.10, 0.10, 0.10, 0.35, 1.0, -0.30, 0.04, 0.04);
+    private static readonly Weights Defender = new(1.2, 0.8, 0.20, 0.10, 0.15, 0.15, 0.30, 0.6, -0.20, 0.08, 0.08);
+    private static readonly Weights Midfielder = new(1.0, 0.7, 0.20, 0.12, 0.12, 0.12, 0.30, 0.2, -0.05, 0.07, 0.05);
+    private static readonly Weights Forward = new(0.9, 0.7, 0.15, 0.15, 0.10, 0.08, 0.30, 0.0, 0.00, 0.05, 0.03);
 
     private const double BallLoss = -0.05;
 
@@ -33,13 +33,17 @@ public static class PerformanceRating
     private const double Draw = 0.1;
     private const double Loss = -0.3;
 
-    public static RatingBreakdown? Calculate(PerformanceStats stats, Position? position, int goalsFor, int goalsAgainst)
+    // goalsConcededOnPitch: los que encajó el equipo mientras él estaba en el campo (del acta oficial). Sin ese dato, la
+    // parte de los del partido que le toca por minutos, y la portería a cero solo si el equipo no encajó ninguno.
+    public static RatingBreakdown? Calculate(PerformanceStats stats, Position? position, int goalsFor, int goalsAgainst, int? goalsConcededOnPitch = null)
     {
         if (stats.MinutesPlayed <= 0) return null;
 
         var w = WeightsFor(position);
         var isGoalkeeper = position == Position.Goalkeeper;
         var share = Math.Min(stats.MinutesPlayed, 90) / 90.0;
+        var conceded = goalsConcededOnPitch ?? goalsAgainst;
+        var concededWeight = goalsConcededOnPitch is null ? share : 1.0;
 
         var attack = stats.Goals * w.Goal + stats.ShotsOnTarget * w.ShotOnTarget;
         var passing = stats.PassesAttempted >= MinPassesForAccuracy
@@ -47,10 +51,11 @@ public static class PerformanceRating
             : 0;
         var creation = stats.Assists * w.Assist + stats.KeyPasses * w.KeyPass + passing + stats.BallLosses * BallLoss;
 
-        var resistance = (goalsAgainst == 0 && stats.MinutesPlayed >= CleanSheetMinutes ? w.CleanSheet : 0)
-                         + goalsAgainst * w.GoalConceded * share;
+        var resistance = (conceded == 0 && stats.MinutesPlayed >= CleanSheetMinutes ? w.CleanSheet : 0)
+                         + conceded * w.GoalConceded * concededWeight;
 
-        var defense = stats.Tackles * w.Tackle + stats.Interceptions * w.Interception + stats.Recoveries * w.Recovery + (isGoalkeeper ? 0 : resistance);
+        var defense = stats.Tackles * w.Tackle + stats.Interceptions * w.Interception + stats.Recoveries * w.Recovery + stats.Clearances * w.Clearance
+                      + (isGoalkeeper ? 0 : resistance);
         var goalkeeping = stats.Saves * w.Save + (isGoalkeeper ? resistance : 0);
 
         var discipline = stats.RedCard ? RedCard : stats.YellowCards * YellowCard;

@@ -4,6 +4,7 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Squads.MatchSheet;
 using TercerTiempo.Application.Squads.TeamStats;
@@ -13,10 +14,12 @@ using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Trainings;
 using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Application.Videos.Analysis;
@@ -31,6 +34,7 @@ internal sealed class VideoAnalysisReader(
     IMatchVideoStore videos,
     IMatchVideoAnalysisStore analyses,
     IVideoAnalyzerHeartbeatStore analyzers,
+    IOfficialSheetStore sheets,
     IOptions<VideoAnalysisOptions> options,
     TimeProvider clock)
 {
@@ -63,19 +67,59 @@ internal sealed class VideoAnalysisReader(
     public async Task<MatchVideoAnalysisDto> BuildAsync(VideoAnalysisScope scope, CancellationToken cancellationToken)
     {
         var parts = new List<VideoAnalysisPartDto>();
+        var sheet = await sheets.GetByMatchAsync(scope.Match.Id, cancellationToken);
+        var hints = scope.Analyses.Values.Any(a => a.Status == VideoAnalysisStatus.Ready) ? Hints(scope, sheet) : null;
         foreach (var video in scope.Videos)
         {
             var analysis = scope.Analyses.GetValueOrDefault(video.Id);
             IReadOnlySet<int> crops = analysis is { Status: VideoAnalysisStatus.Ready }
                 ? await analyses.GetCropTrackletsAsync(analysis.Id, cancellationToken)
                 : new HashSet<int>();
-            parts.Add(VideoAnalysisMapper.ToDto(scope.Squad, video, analysis, crops));
+            parts.Add(VideoAnalysisMapper.ToDto(scope.Squad, video, analysis, crops, hints));
         }
 
         // Si nadie atiende la cola (no hay ningún analizador encendido) lo pendiente se quedaría «en cola» sin más: la
         // app lo avisa.
         var seen = await analyzers.LastSeenAsync(cancellationToken);
-        return new MatchVideoAnalysisDto(Enabled, scope.CanManage, parts, VideoAnalyzerHeartbeat.IsOnline(seen, clock.GetUtcNow()), seen);
+        return new MatchVideoAnalysisDto(Enabled, scope.CanManage, parts, VideoAnalyzerHeartbeat.IsOnline(seen, clock.GetUtcNow()), seen)
+        {
+            OfficialSheetClosed = sheet is { IsAvailable: true },
+        };
+    }
+
+    // Con el acta oficial cerrada, la línea de nuestro lado de cada uno de estos jugadores de la plantilla (cruzados por
+    // nombre); vacío si no la hay o es provisional (le pueden faltar los cambios y los goles).
+    public async Task<IReadOnlyDictionary<Guid, OfficialSheetLine>> OfficialLinesAsync(
+        VideoAnalysisScope scope, IEnumerable<SquadPlayer> candidates, CancellationToken cancellationToken)
+    {
+        var sheet = await sheets.GetByMatchAsync(scope.Match.Id, cancellationToken);
+        if (sheet is not { IsAvailable: true }) return new Dictionary<Guid, OfficialSheetLine>();
+        return SheetMatcher.Match(candidates, sheet.LinesOf(OurSide(scope)));
+    }
+
+    public static MatchSide OurSide(VideoAnalysisScope scope) => scope.Match.IsHome(scope.Squad.TeamId) ? MatchSide.Home : MatchSide.Away;
+
+    // El jugador del vídeo lleva el dorsal del acta oficial; su ficha es la que se cruza (por nombre) con la línea del
+    // acta de nuestro lado que lleva ese dorsal. Un dorsal repetido en el acta no propone a nadie. Con el acta cerrada,
+    // también los minutos de cada dorsal de los dos lados.
+    private static VideoSheetHints Hints(VideoAnalysisScope scope, OfficialMatchSheet? sheet)
+    {
+        var side = OurSide(scope);
+        if (sheet is null || !sheet.HasLineups) return new VideoSheetHints(side, new Dictionary<int, Guid>());
+
+        var lines = sheet.LinesOf(side).Where(l => l.ShirtNumber is not null).ToList();
+        var repeated = lines.GroupBy(l => l.ShirtNumber!.Value).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        var byShirt = SheetMatcher.Match(scope.Squad.Players, lines)
+            .Where(m => !repeated.Contains(m.Value.ShirtNumber!.Value))
+            .ToDictionary(m => m.Value.ShirtNumber!.Value, m => m.Key);
+        var minutes = !sheet.IsAvailable
+            ? new Dictionary<(MatchSide, int), int>()
+            : sheet.Lines
+                .Where(l => l.ShirtNumber is not null)
+                .GroupBy(l => (l.Side, l.ShirtNumber!.Value))
+                .Where(g => g.Count() == 1)
+                .ToDictionary(g => g.Key, g => g.Single().MinutesPlayed);
+        return new VideoSheetHints(side, byShirt) { SheetMinutes = minutes };
     }
 }
 
@@ -194,6 +238,68 @@ internal sealed class CancelVideoAnalysisHandler(
     }
 }
 
+// Pausar (lo que está en cola no se empieza; lo que se está analizando espera donde va, sin perder nada) o reanudar el
+// análisis del vídeo indicado o de todos los de la plantilla en el partido. El analizador lo nota en unos segundos.
+public sealed record PauseVideoAnalysisCommand(Guid SquadId, Guid MatchId, Guid? VideoId, bool Paused) : ICommand<MatchVideoAnalysisDto>;
+
+internal sealed class PauseVideoAnalysisValidator : AbstractValidator<PauseVideoAnalysisCommand>
+{
+    public PauseVideoAnalysisValidator()
+    {
+        RuleFor(x => x.SquadId).NotEmpty();
+        RuleFor(x => x.MatchId).NotEmpty();
+    }
+}
+
+internal sealed class PauseVideoAnalysisHandler(
+    VideoAnalysisReader reader,
+    IMatchVideoAnalysisStore analyses,
+    IVideoAnalysisSignal signal,
+    IUnitOfWork unitOfWork,
+    TimeProvider clock) : ICommandHandler<PauseVideoAnalysisCommand, MatchVideoAnalysisDto>
+{
+    // El analizador guarda su avance cada pocos segundos en la misma fila: si coincide, se relee y se vuelve a intentar.
+    private const int MaxRetries = 3;
+
+    public async Task<MatchVideoAnalysisDto> Handle(PauseVideoAnalysisCommand command, CancellationToken cancellationToken)
+    {
+        var scope = await reader.ScopeAsync(command.SquadId, command.MatchId, managersOnly: true, cancellationToken);
+        if (command.VideoId is { } videoId && scope.Videos.All(v => v.Id != videoId))
+            throw new NotFoundException(ErrorCode.VideoNotFound, videoId);
+
+        var targets = scope.Analyses.Values
+            .Where(a => command.VideoId is null || a.VideoId == command.VideoId)
+            .ToList();
+        for (var attempt = 0; ; attempt++)
+        {
+            var now = clock.GetUtcNow();
+            var changed = targets
+                .Where(a => command.Paused ? a.Status is VideoAnalysisStatus.Pending or VideoAnalysisStatus.Running : a.Status == VideoAnalysisStatus.Paused)
+                .ToList();
+            if (changed.Count == 0)
+                throw new DomainException(command.Paused ? ErrorCode.VideoAnalysisNotPausable : ErrorCode.VideoAnalysisNotPaused);
+
+            foreach (var analysis in changed)
+            {
+                if (command.Paused) analysis.Pause(now);
+                else analysis.Resume(now);
+            }
+            try
+            {
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+                break;
+            }
+            catch (ConcurrentChangeException) when (attempt < MaxRetries)
+            {
+                foreach (var analysis in targets) await analyses.DiscardChangesAsync(analysis, cancellationToken);
+            }
+        }
+
+        if (!command.Paused) signal.Wake();
+        return await reader.BuildAsync(scope, cancellationToken);
+    }
+}
+
 public sealed record VideoTrackletAssignment(int Tracklet, Guid SquadPlayerId);
 
 public sealed record ApplyVideoPart(Guid VideoId, int OurTeam, IReadOnlyList<VideoTrackletAssignment> Players);
@@ -203,7 +309,8 @@ public sealed record ApplyVideoAnalysisCommand(
     Guid MatchId,
     IReadOnlyList<ApplyVideoPart> Videos,
     IReadOnlyList<VideoTeamField> TeamFields,
-    bool Overwrite) : ICommand<ApplyVideoAnalysisResultDto>;
+    bool Overwrite,
+    bool FillFromOfficialSheet = true) : ICommand<ApplyVideoAnalysisResultDto>;
 
 internal sealed class ApplyVideoAnalysisValidator : AbstractValidator<ApplyVideoAnalysisCommand>
 {
@@ -234,7 +341,9 @@ internal sealed class ApplyVideoAnalysisValidator : AbstractValidator<ApplyVideo
 
 // Vuelca al acta interna lo que el cuerpo técnico ha aceptado de la propuesta: los datos de equipo marcados y, por cada
 // jugador seguido que ha asignado a una ficha, sus acciones (sumando los tramos de un mismo jugador y las dos partes
-// del partido). Escribe por el mismo camino que el PUT del acta, en nombre de quien lo vuelca.
+// del partido). Con el acta oficial cerrada, los minutos, la titularidad, los goles y las tarjetas de cada uno son los
+// suyos, y los que jugaron sin que el vídeo los identificara también tienen su línea: no salir en el vídeo no es no
+// jugar. Escribe por el mismo camino que el PUT del acta, en nombre de quien lo vuelca.
 internal sealed class ApplyVideoAnalysisHandler(
     VideoAnalysisReader reader,
     ICurrentUser currentUser,
@@ -247,6 +356,8 @@ internal sealed class ApplyVideoAnalysisHandler(
     ITeamMatchStatsStore teamStats,
     MatchSheetWriter writer,
     IUnitOfWork unitOfWork,
+    ICallUpStore callUps,
+    Squads.Suspensions.SuspensionReader suspensions,
     TimeProvider clock) : ICommandHandler<ApplyVideoAnalysisCommand, ApplyVideoAnalysisResultDto>
 {
     public async Task<ApplyVideoAnalysisResultDto> Handle(ApplyVideoAnalysisCommand command, CancellationToken cancellationToken)
@@ -259,7 +370,8 @@ internal sealed class ApplyVideoAnalysisHandler(
 
         var selections = new List<VideoPartSelection>();
         var perPlayer = new Dictionary<Guid, (VideoPlayerActions Actions, int Minutes)>();
-        var applied = new List<(MatchVideoAnalysis Analysis, ApplyVideoPart Part)>();
+        var applied = new List<(MatchVideoAnalysis Analysis, ApplyVideoPart Part, int OurTeam)>();
+        var ourSide = VideoAnalysisReader.OurSide(scope);
 
         foreach (var part in command.Videos)
         {
@@ -271,13 +383,16 @@ internal sealed class ApplyVideoAnalysisHandler(
                 throw new ConflictException(ErrorCode.VideoAnalysisNotReady);
 
             var proposal = VideoProposal.Parse(json);
+            // Con el acta oficial, nuestro equipo es el de nuestro lado diga lo que diga la petición: los datos de equipo
+            // se cuentan desde él y los jugadores del rival nunca van a una ficha de la plantilla.
+            var ourTeam = proposal.TeamOn(ourSide) ?? part.OurTeam;
             var byTracklet = proposal.Players.ToDictionary(p => p.Tracklet);
             var seen = new HashSet<int>();
             foreach (var assignment in part.Players)
             {
                 if (!byTracklet.TryGetValue(assignment.Tracklet, out var tracked))
                     throw new DomainException(ErrorCode.VideoAnalysisTrackletUnknown, assignment.Tracklet);
-                if (tracked.Team != part.OurTeam)
+                if (tracked.Team != ourTeam)
                     throw new DomainException(ErrorCode.VideoAnalysisTrackletOtherTeam, assignment.Tracklet);
                 if (!seen.Add(assignment.Tracklet))
                     throw new DomainException(ErrorCode.VideoAnalysisTrackletRepeated, assignment.Tracklet);
@@ -287,8 +402,8 @@ internal sealed class ApplyVideoAnalysisHandler(
                 perPlayer[player.Id] = (sum.Item1.Plus(tracked.Actions), sum.Item2 + tracked.MinutesVisible);
             }
 
-            selections.Add(new VideoPartSelection(proposal, part.OurTeam, analysis.AnalyzedSeconds ?? 0));
-            applied.Add((analysis, part));
+            selections.Add(new VideoPartSelection(proposal, ourTeam, analysis.AnalyzedSeconds ?? 0));
+            applied.Add((analysis, part, ourTeam));
         }
 
         var fields = command.TeamFields.Distinct().ToList();
@@ -307,13 +422,31 @@ internal sealed class ApplyVideoAnalysisHandler(
         }
 
         var existing = (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken)).ToDictionary(p => p.SquadPlayerId);
+        var official = command.FillFromOfficialSheet
+            ? await reader.OfficialLinesAsync(scope, squad.Players.Where(p => p.IsActive || existing.ContainsKey(p.Id) || perPlayer.ContainsKey(p.Id)), cancellationToken)
+            : new Dictionary<Guid, OfficialSheetLine>();
         var lines = new List<MatchSheetEntryInput>();
+        var videoLines = 0;
         foreach (var (squadPlayerId, (actions, minutes)) in perPlayer)
         {
             var player = squad.GetPlayer(squadPlayerId);
             var current = existing.TryGetValue(squadPlayerId, out var performance) ? MatchSheetEntryInput.From(performance) : null;
-            if (VideoSheetMerge.MergeLine(squadPlayerId, player.FullName, current, actions, minutes, overwritten) is { } line)
+            if (VideoSheetMerge.MergeLine(squadPlayerId, player.FullName, current, actions, minutes, overwritten, official.GetValueOrDefault(squadPlayerId)) is { } line)
+            {
                 lines.Add(line);
+                videoLines++;
+            }
+        }
+        var sheetLines = 0;
+        foreach (var (squadPlayerId, officialLine) in official.Where(o => !perPlayer.ContainsKey(o.Key) && o.Value.Played))
+        {
+            var player = squad.GetPlayer(squadPlayerId);
+            var current = existing.TryGetValue(squadPlayerId, out var performance) ? MatchSheetEntryInput.From(performance) : null;
+            if (VideoSheetMerge.MergeLine(squadPlayerId, player.FullName, current, VideoPlayerActions.None, 0, overwritten, officialLine) is { } line)
+            {
+                lines.Add(line);
+                sheetLines++;
+            }
         }
 
         if (overwritten.Count > 0 && !command.Overwrite)
@@ -322,21 +455,23 @@ internal sealed class ApplyVideoAnalysisHandler(
         if (teamInput is not null)
             await writer.WriteTeamStatsAsync(squad, match, editor, teamInput.ToData(), now, cancellationToken);
         if (lines.Count > 0)
-            await writer.WriteLinesAsync(squad, match, editor, lines, now, cancellationToken);
+            await writer.WriteLinesAsync(squad, match, editor, lines, now, cancellationToken,
+                perPlayer.Where(p => p.Value.Actions.HasSheetData).Select(p => p.Key).ToHashSet());
         else
             PerformancePolicy.EnsureCanRecord(squad, editor, match, Squad.Today(now));
 
-        foreach (var (analysis, part) in applied)
+        foreach (var (analysis, part, ourTeam) in applied)
             analysis.MarkApplied(
-                part.OurTeam,
+                ourTeam,
                 VideoAnalysisMapper.AssignmentsJson(part.Players.Select(a => KeyValuePair.Create(a.Tracklet, a.SquadPlayerId))),
                 now);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var sheet = await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, cancellationToken);
+        var sheet = await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, callUps,
+            await suspensions.LoadAsync(squad, cancellationToken), cancellationToken);
         return new ApplyVideoAnalysisResultDto(
-            sheet, await reader.BuildAsync(scope, cancellationToken), teamInput is null ? 0 : teamWritten, lines.Count, perPlayer.Count - lines.Count);
+            sheet, await reader.BuildAsync(scope, cancellationToken), teamInput is null ? 0 : teamWritten, lines.Count, perPlayer.Count - videoLines, sheetLines);
     }
 }
 

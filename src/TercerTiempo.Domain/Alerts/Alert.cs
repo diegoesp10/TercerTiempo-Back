@@ -27,8 +27,9 @@ public enum AlertKind
 }
 
 // Aviso dentro de la app: la campanita del panel. Cada aviso tiene un solo destinatario: una cuenta de club, un jugador
-// o un técnico. La clave dice qué aviso es y de qué va, para no crearlo dos veces; se marca como leído al verlo y se da
-// por resuelto cuando deja de tener sentido (por ejemplo, si el club reactiva la renovación).
+// o un técnico. La clave dice qué aviso es y de qué va, para no crearlo dos veces. Como en las redes sociales, al abrir la
+// campanita los nuevos quedan vistos (dejan de contar y pasan a «Anteriores»); al pulsarlo además queda leído. Se da por
+// resuelto cuando deja de tener sentido (por ejemplo, si el club reactiva la renovación).
 public sealed class Alert : AggregateRoot
 {
     public Guid? ClubId { get; private set; }
@@ -43,10 +44,14 @@ public sealed class Alert : AggregateRoot
     // Día al que se refiere (el último con acceso, en los de caducidad; el del partido o del entrenamiento, en los suyos).
     public DateOnly? DueOn { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
+    public DateTimeOffset? SeenAt { get; private set; }
     public DateTimeOffset? ReadAt { get; private set; }
     public DateTimeOffset? ResolvedAt { get; private set; }
 
+    public bool IsSeen => SeenAt is not null;
     public bool IsRead => ReadAt is not null;
+    // Lo que cuenta la campanita y sale arriba: ni visto ni resuelto.
+    public bool IsNew => !IsSeen && !IsResolved;
     public bool IsResolved => ResolvedAt is not null;
 
     private Alert() { }
@@ -78,7 +83,13 @@ public sealed class Alert : AggregateRoot
     public bool IsFor(Guid? clubId, Guid? playerId, Guid? coachId) =>
         (ClubId is { } c && c == clubId) || (PlayerId is { } p && p == playerId) || (CoachId is { } k && k == coachId);
 
-    public void MarkRead(DateTimeOffset now) => ReadAt ??= now;
+    public void MarkSeen(DateTimeOffset now) => SeenAt ??= now;
+
+    public void MarkRead(DateTimeOffset now)
+    {
+        ReadAt ??= now;
+        SeenAt ??= now;
+    }
 
     public void Resolve(DateTimeOffset now) => ResolvedAt ??= now;
 
@@ -96,8 +107,9 @@ public sealed class Alert : AggregateRoot
         };
 }
 
-// La campanita de una cuenta: cuántos avisos siguen sin leer y vigentes, y los últimos (solo para leer).
-public sealed record AlertPage(int Unread, IReadOnlyList<Alert> Latest);
+// La campanita de una cuenta: cuántos avisos son nuevos (sin ver y vigentes), y los nuevos más los últimos anteriores, del
+// más reciente al más antiguo (solo para leer).
+public sealed record AlertPage(int Unseen, IReadOnlyList<Alert> Latest);
 
 public interface IAlertStore
 {
@@ -107,13 +119,16 @@ public interface IAlertStore
     // Los de una cuenta: el club, el jugador o el técnico que haya detrás (solo uno de los tres).
     Task<IReadOnlyList<Alert>> GetForAsync(Guid? clubId, Guid? playerId, Guid? coachId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Alert>> GetByKindAsync(AlertKind kind, CancellationToken cancellationToken = default);
-    Task<AlertPage> GetPageForAsync(Guid? clubId, Guid? playerId, Guid? coachId, int take, CancellationToken cancellationToken = default);
+    Task<AlertPage> GetPageForAsync(Guid? clubId, Guid? playerId, Guid? coachId, int newTake, int earlierTake, CancellationToken cancellationToken = default);
 
     // Sin resolver y cuya clave empieza por keyPrefix, de cualquiera de esos destinatarios (con seguimiento, para resolverlos).
     Task<IReadOnlyList<Alert>> GetOpenByKeyPrefixAsync(
         string keyPrefix, IReadOnlyCollection<Guid> playerIds, IReadOnlyCollection<Guid> coachIds, Guid? clubId, CancellationToken cancellationToken = default);
 
-    // Marca como leídos de una vez (sin cargarlos) los avisos sin leer de la cuenta.
+    // Marca como vistos de una vez (sin cargarlos) esos avisos de la cuenta; los de otra cuenta se ignoran.
+    Task<int> MarkSeenAsync(Guid? clubId, Guid? playerId, Guid? coachId, IReadOnlyCollection<Guid> alertIds, DateTimeOffset now, CancellationToken cancellationToken = default);
+
+    // Marca como leídos (y vistos) de una vez, sin cargarlos, los avisos sin leer de la cuenta.
     Task<int> MarkAllReadAsync(Guid? clubId, Guid? playerId, Guid? coachId, DateTimeOffset now, CancellationToken cancellationToken = default);
     Task<int> DeleteResolvedBeforeAsync(DateTimeOffset before, CancellationToken cancellationToken = default);
     void Add(Alert alert);

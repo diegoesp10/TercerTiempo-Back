@@ -45,6 +45,12 @@ internal sealed class PerformanceStore(AppDbContext db) : IPerformanceStore
             .Where(p => p.Rating == null && p.MinutesPlayed > 0)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<PlayerMatchPerformance>> GetWithOfficialSheetDataAsync(CancellationToken cancellationToken = default) =>
+        await db.Performances
+            .Where(p => p.GoalsConcededOnPitch != null
+                || db.OfficialSheets.Any(s => s.MatchId == p.MatchId && s.Status == Domain.OfficialSheets.OfficialSheetStatus.Available))
+            .ToListAsync(cancellationToken);
+
     public void Add(PlayerMatchPerformance performance) => db.Performances.Add(performance);
 
     public void Remove(PlayerMatchPerformance performance) => db.Performances.Remove(performance);

@@ -53,6 +53,14 @@ public sealed class SquadPlayer : Entity
         ShirtNumber = shirtNumber;
     }
 
+    // La que publica la federación para quien entró sin ninguna: nunca pisa la que ha puesto el club.
+    internal bool CompletePosition(Position position)
+    {
+        if (Position is not null || !Enum.IsDefined(position)) return false;
+        Position = position;
+        return true;
+    }
+
     internal void GenerateInviteCode()
     {
         if (!IsActive) throw new DomainException(ErrorCode.SquadEntryInactive);

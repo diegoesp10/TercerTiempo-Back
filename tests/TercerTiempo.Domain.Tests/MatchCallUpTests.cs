@@ -21,7 +21,7 @@ public class MatchCallUpTests
     private static MatchCallUp Published(Squad squad, SquadEditor editor, Match match, params Guid[] called)
     {
         var callUp = MatchCallUp.Draft(squad, match, editor, TestData.Now);
-        callUp.Arrange(squad, called.ToHashSet(), match.KickoffAt.AddHours(-2), "Puerta del campo", null, TestData.Now);
+        callUp.Arrange(squad, called.ToHashSet(), match.KickoffAt.AddHours(-2), null, "Puerta del campo", null, TestData.Now);
         callUp.Publish(TestData.Now);
         return callUp;
     }
@@ -64,7 +64,7 @@ public class MatchCallUpTests
         callUp.Respond(xuan.Id, CallUpResponse.Acknowledged, match, TestData.Now);
 
         // Nel se cae y Xuan entra; Pelayo sigue igual.
-        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, xuan.Id }, match.KickoffAt.AddHours(-2), "Puerta del campo", "Llevad las dos equipaciones", TestData.Now.AddHours(1));
+        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, xuan.Id }, match.KickoffAt.AddHours(-2), null, "Puerta del campo", "Llevad las dos equipaciones", TestData.Now.AddHours(1));
 
         Assert.Equal([nel.Id, xuan.Id], changed.Select(e => e.SquadPlayerId).OrderBy(id => Array.IndexOf([nel.Id, xuan.Id], id)));
         Assert.Equal(CallUpResponse.Confirmed, callUp.EntryOf(pelayo.Id)!.Response);
@@ -83,7 +83,7 @@ public class MatchCallUpTests
         callUp.Respond(pelayo.Id, CallUpResponse.Confirmed, match, TestData.Now);
         callUp.MarkSeen(nel.Id, TestData.Now);
 
-        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-1), "Puerta del campo", null, TestData.Now.AddHours(1));
+        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-1), null, "Puerta del campo", null, TestData.Now.AddHours(1));
 
         Assert.Equal(new[] { pelayo.Id, nel.Id }.Order(), changed.Select(e => e.SquadPlayerId).Order());
         Assert.DoesNotContain(changed, e => e.SquadPlayerId == xuan.Id);
@@ -99,9 +99,31 @@ public class MatchCallUpTests
         var match = TestData.ScheduledMatch();
         var callUp = Published(squad, editor, match, pelayo.Id, nel.Id);
 
-        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), "Puerta del campo", "Notas nuevas", TestData.Now.AddHours(1));
+        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), null, "Puerta del campo", "Notas nuevas", TestData.Now.AddHours(1));
 
         Assert.Empty(changed);
+    }
+
+    [Fact]
+    public void A_league_ground_replaces_the_written_place_and_changing_it_warns_the_called_players_again()
+    {
+        var (squad, editor, pelayo, nel, _) = SquadWithThreePlayers();
+        var match = TestData.ScheduledMatch();
+        var callUp = Published(squad, editor, match, pelayo.Id, nel.Id);
+        callUp.MarkSeen(pelayo.Id, TestData.Now);
+        callUp.MarkSeen(nel.Id, TestData.Now);
+        var ground = Guid.NewGuid();
+
+        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), ground, "Puerta del campo", null, TestData.Now.AddHours(1));
+
+        Assert.Equal((ground, (string?)null), (callUp.MeetGroundId, callUp.MeetPlace));
+        Assert.Equal(new[] { pelayo.Id, nel.Id }.Order(), changed.Select(e => e.SquadPlayerId).Order());
+
+        // Mismo campo otra vez: nadie vuelve a enterarse. Volver a un sitio escrito (obras en el campo) sí avisa.
+        Assert.Empty(callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), ground, null, null, TestData.Now.AddHours(2)));
+        var moved = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), null, "Campo de hierba artificial de al lado", null, TestData.Now.AddHours(3));
+        Assert.Equal(2, moved.Count);
+        Assert.Equal(((Guid?)null, "Campo de hierba artificial de al lado"), (callUp.MeetGroundId, callUp.MeetPlace));
     }
 
     [Fact]
@@ -112,7 +134,7 @@ public class MatchCallUpTests
 
         Assert.Equal(ErrorCode.CallUpNoPlayers, Assert.Throws<DomainException>(() => callUp.Publish(TestData.Now)).Code);
 
-        callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id }, null, null, null, TestData.Now);
+        callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id }, null, null, null, null, TestData.Now);
         callUp.Publish(TestData.Now);
         callUp.Publish(TestData.Now.AddDays(1));
 
@@ -147,7 +169,7 @@ public class MatchCallUpTests
         var (squad, editor, pelayo, _, _) = SquadWithThreePlayers();
         var match = TestData.ScheduledMatch();
         var draft = MatchCallUp.Draft(squad, match, editor, TestData.Now);
-        draft.Arrange(squad, new HashSet<Guid> { pelayo.Id }, null, null, null, TestData.Now);
+        draft.Arrange(squad, new HashSet<Guid> { pelayo.Id }, null, null, null, null, TestData.Now);
 
         Assert.Equal(ErrorCode.CallUpNotPublished, Assert.Throws<DomainException>(() => draft.Respond(pelayo.Id, CallUpResponse.Confirmed, match, TestData.Now)).Code);
 

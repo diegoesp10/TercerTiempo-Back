@@ -12,7 +12,10 @@ public sealed record SyncScope(
     DateOnly? To,
     IReadOnlyList<Guid> CompetitionIds,
     bool IncludeRosters,
-    bool IncludeSheets = false)
+    bool IncludeSheets = false,
+    // Temporada de la web que se descarga («2025/2026»); null = la actual. Una pasada guarda solo partidos y
+    // clasificaciones (para los precedentes de la previa): ni plantillas ni actas, y no pasa a ser la temporada en curso.
+    string? SeasonLabel = null)
 {
     private static readonly CultureInfo Spanish = CultureInfo.GetCultureInfo("es-ES");
 
@@ -40,6 +43,7 @@ public sealed record SyncScope(
         if (Kind == SyncScopeKind.FullSeason && !IncludeRosters) text += " · sin plantillas";
         if (Kind != SyncScopeKind.FullSeason && IncludeRosters) text += " · con plantillas";
         if (IncludeSheets) text += " · con actas";
+        if (SeasonLabel is not null) text += $" · temporada {SeasonLabel}";
         return text;
     }
 

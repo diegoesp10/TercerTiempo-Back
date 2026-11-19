@@ -9,6 +9,7 @@ using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Trainings;
 
@@ -28,7 +29,7 @@ public sealed record DeleteTrialPlayerCommand(Guid SquadId, Guid TrialPlayerId) 
 public sealed record PromoteTrialPlayerCommand(
     Guid SquadId,
     Guid TrialPlayerId,
-    [property: Description("Opcional: Goalkeeper, Defender, Midfielder o Forward.")]
+    [property: Description("Obligatoria: Goalkeeper, Defender, Midfielder o Forward.")]
     Position? Position,
     [property: Description("Opcional, 1-99.")]
     int? ShirtNumber) : ICommand<SquadPlayerDto>;
@@ -66,7 +67,7 @@ internal sealed class PromoteTrialPlayerValidator : AbstractValidator<PromoteTri
     {
         RuleFor(x => x.SquadId).NotEmpty();
         RuleFor(x => x.TrialPlayerId).NotEmpty();
-        RuleFor(x => x.Position).IsInEnum().When(x => x.Position.HasValue);
+        RuleFor(x => x.Position).NotNull().WithCatalogMessage(ErrorCode.PlayerPositionRequired).IsInEnum();
         RuleFor(x => x.ShirtNumber).InclusiveBetween(1, 99).When(x => x.ShirtNumber.HasValue);
     }
 }
@@ -92,9 +93,9 @@ internal static class TrialPlayers
         return trial;
     }
 
-    public static async Task<IReadOnlyList<TrialPlayerDto>> ListAsync(Squad squad, ITrialPlayerStore trials, ITrainingStore trainings, CancellationToken cancellationToken)
+    public static async Task<IReadOnlyList<TrialPlayerDto>> ListAsync(Squad squad, ITrialPlayerStore trials, ITrainingStore trainings, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var counts = await trainings.CountTrialAttendanceAsync(squad.Id, cancellationToken);
+        var counts = await trainings.CountTrialAttendanceAsync(squad.Id, now, cancellationToken);
         return (await trials.GetBySquadAsync(squad.Id, cancellationToken))
             .Select(t => TrainingMapper.ToDto(t, counts.GetValueOrDefault(t.Id)))
             .ToList();
@@ -107,7 +108,7 @@ internal sealed class ListTrialPlayersHandler(ICurrentUser currentUser, ISquadSt
     public async Task<IReadOnlyList<TrialPlayerDto>> Handle(ListTrialPlayersQuery query, CancellationToken cancellationToken)
     {
         var squad = await TrainingAccess.SquadForViewerAsync(squads, clubs, currentUser, query.SquadId, clock, cancellationToken);
-        var list = await TrialPlayers.ListAsync(squad, trials, trainings, cancellationToken);
+        var list = await TrialPlayers.ListAsync(squad, trials, trainings, clock.GetUtcNow(), cancellationToken);
 
         // Las notas del cuerpo técnico sobre quien está a prueba no son para los jugadores de la plantilla.
         return currentUser.IsAdmin || await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken)
@@ -149,7 +150,7 @@ internal sealed class UpdateTrialPlayerHandler(
 
         trial.Update(command.FullName, command.Notes, clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        var counts = await trainings.CountTrialAttendanceAsync(squad.Id, cancellationToken);
+        var counts = await trainings.CountTrialAttendanceAsync(squad.Id, clock.GetUtcNow(), cancellationToken);
         return TrainingMapper.ToDto(trial, counts.GetValueOrDefault(trial.Id));
     }
 }
@@ -185,7 +186,7 @@ internal sealed class PromoteTrialPlayerHandler(
         var trial = await TrialPlayers.OfSquadAsync(squad, command.TrialPlayerId, trials, cancellationToken);
         var now = clock.GetUtcNow();
 
-        var player = trial.Promote(squad, command.Position, command.ShirtNumber, now);
+        var player = trial.Promote(squad, command.Position!.Value, command.ShirtNumber, now);
         // Lo que ya se le había anotado en los entrenamientos pasa a su ficha.
         foreach (var session in await trainings.GetByTrialPlayerAsync(trial.Id, cancellationToken))
             session.PromoteTrialPlayer(trial.Id, player.Id, now);
@@ -196,7 +197,7 @@ internal sealed class PromoteTrialPlayerHandler(
 }
 
 internal sealed class AddTrialPlayerToTrainingHandler(
-    ICurrentUser currentUser, ISquadStore squads, ICoachStore coaches, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IUnitOfWork unitOfWork, TimeProvider clock)
+    ICurrentUser currentUser, ISquadStore squads, ICoachStore coaches, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IUnitOfWork unitOfWork, IInjuryStore injuries, TimeProvider clock)
     : ICommandHandler<AddTrialPlayerToTrainingCommand, TrainingSessionDto>
 {
     public async Task<TrainingSessionDto> Handle(AddTrialPlayerToTrainingCommand command, CancellationToken cancellationToken)
@@ -227,12 +228,12 @@ internal sealed class AddTrialPlayerToTrainingHandler(
 
         session.AddTrialPlayer(trial, now);
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, cancellationToken);
+        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, injuries, cancellationToken);
     }
 }
 
 internal sealed class RemoveTrialPlayerFromTrainingHandler(
-    ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IUnitOfWork unitOfWork, TimeProvider clock)
+    ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, ITrialPlayerStore trials, IUnitOfWork unitOfWork, IInjuryStore injuries, TimeProvider clock)
     : ICommandHandler<RemoveTrialPlayerFromTrainingCommand, TrainingSessionDto>
 {
     public async Task<TrainingSessionDto> Handle(RemoveTrialPlayerFromTrainingCommand command, CancellationToken cancellationToken)
@@ -241,6 +242,6 @@ internal sealed class RemoveTrialPlayerFromTrainingHandler(
         var session = await TrainingAccess.SessionOfAsync(squad, command.SessionId, trainings, cancellationToken);
         session.RemoveTrialPlayer(command.TrialPlayerId, clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, cancellationToken);
+        return await TrainingAccess.DetailAsync(session, squad, currentUser, clock, clubs, trials, injuries, cancellationToken);
     }
 }

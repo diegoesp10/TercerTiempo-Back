@@ -56,9 +56,18 @@ public sealed record MatchSheetDto(
     bool CanEdit,
     IReadOnlyList<MatchSheetEntryDto> Entries,
     [property: System.ComponentModel.Description("Datos del equipo en el partido (córners, posesión, tiros…); null si el cuerpo técnico no los ha apuntado.")]
-    global::TercerTiempo.Application.Squads.TeamStats.TeamMatchStatsDto? TeamStats = null);
+    global::TercerTiempo.Application.Squads.TeamStats.TeamMatchStatsDto? TeamStats = null,
+    [property: System.ComponentModel.Description("El partido tiene convocatoria con algún convocado (solo para el club y el cuerpo técnico): el acta se prepara con esos jugadores.")]
+    bool HasCallUp = false);
 
-public sealed record MatchSheetEntryDto(SquadPlayerDto Player, PerformanceDto? Performance);
+public sealed record MatchSheetEntryDto(
+    SquadPlayerDto Player,
+    PerformanceDto? Performance,
+    [property: System.ComponentModel.Description("Va en la convocatoria del partido (solo para el club y el cuerpo técnico).")]
+    bool CalledUp = false,
+    [property: System.ComponentModel.Description("Estaba sancionado para este partido: no puede salir como que jugó (la línea que ya tuviera se conserva).")]
+    bool Suspended = false,
+    global::TercerTiempo.Application.Squads.Suspensions.SuspensionBriefDto? Suspension = null);
 
 public sealed record SquadStatsDto(
     SquadSummaryDto Squad,

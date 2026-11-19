@@ -1,6 +1,7 @@
 using TercerTiempo.Application.Search;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Tests;
 
@@ -39,9 +40,46 @@ public class SearchIndexTests
             new CorpusSquadPlayer(PepeInSquad, "José Fernández Álvarez", Position.Forward, 10, PepeEntry, null),
             new CorpusSquadPlayer(ManualPlayer, "Marcos Juvenil Prueba", Position.Defender, 22, null, null),
         ])],
-        [new CorpusReferee(Sara, "Sara Ovies García", 7)]), Now);
+        [new CorpusReferee(Sara, "Sara Ovies García", 7)],
+        [
+            new CorpusCoach(Xurde, "Xurde Menéndez Cueto", "/coach/x", [new CorpusCoachTeam(Vallobin, StaffRole.HeadCoach, true, new DateOnly(2027, 6, 30))]),
+            new CorpusCoach(Laura, "Laura Prieto Suárez", null, [new CorpusCoachTeam(Roces, StaffRole.AssistantCoach, true, new DateOnly(2027, 6, 30))]),
+            new CorpusCoach(Inigo, "Íñigo Antuña Rato", null, [
+                new CorpusCoachTeam(Caudal, StaffRole.AssistantCoach, false, new DateOnly(2024, 6, 30)),
+                new CorpusCoachTeam(Nalon, StaffRole.HeadCoach, false, new DateOnly(2026, 6, 30)),
+            ]),
+        ]), Now);
 
     private static readonly Guid Sara = Guid.NewGuid();
+    private static readonly Guid Xurde = Guid.NewGuid();
+    private static readonly Guid Laura = Guid.NewGuid();
+    private static readonly Guid Inigo = Guid.NewGuid();
+
+    [Fact]
+    public void Coaches_are_found_by_name_with_their_role_and_current_team()
+    {
+        var hit = Assert.Single(Index().Search("menendez", Stranger, null).Hits);
+        Assert.Equal((SearchTypes.Coach, $"/tecnicos/{Xurde}", "Entrenador de CD Vallobín"), (hit.Doc.Type, hit.Link, hit.Doc.Subtitle));
+        Assert.Equal(("photo", "/coach/x", "/crest/v"), (hit.Doc.ImageKind, hit.Doc.ImageUrl, hit.Doc.SecondaryImageUrl));
+    }
+
+    [Fact]
+    public void The_staff_of_a_team_is_found_by_the_team_and_marked_as_yours()
+    {
+        var hit = Assert.Single(Index().Search("roces", RocesStaff, SearchTypes.Coach).Hits);
+        Assert.Equal((Laura, "Segundo entrenador de TSK Roces"), (hit.Doc.Id, hit.Doc.Subtitle));
+        Assert.Contains("De tu equipo", hit.Badges);
+        Assert.DoesNotContain("De tu equipo", Index().Search("roces", Stranger, SearchTypes.Coach).Hits[0].Badges);
+    }
+
+    [Fact]
+    public void A_coach_without_a_team_now_shows_the_last_one_he_had()
+    {
+        var hit = Assert.Single(Index().Search("antuna", Stranger, null).Hits);
+        Assert.Equal("Antes: Entrenador de Nalón CF", hit.Doc.Subtitle);
+        // Los equipos de antes también lo encuentran.
+        Assert.Contains(Index().Search("caudal", Stranger, SearchTypes.Coach).Hits, h => h.Doc.Id == Inigo);
+    }
 
     [Fact]
     public void Referees_show_up_for_anyone_who_searches()

@@ -2,6 +2,7 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Application.Performances;
+using TercerTiempo.Application.Squads.Suspensions;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
@@ -9,6 +10,7 @@ using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Trainings;
 
 namespace TercerTiempo.Application.Squads.MatchSheet;
 
@@ -25,6 +27,8 @@ internal static class MatchSheetBuilder
         IPerformanceStore performances,
         ITeamMatchStatsStore teamStats,
         IClubStore clubs,
+        ICallUpStore callUps,
+        SuspensionCalendar suspensions,
         CancellationToken cancellationToken)
     {
         var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
@@ -42,17 +46,25 @@ internal static class MatchSheetBuilder
         var isManager = await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken);
         var seesAllNotes = isManager || currentUser.IsAdmin;
 
+        // El acta se prepara con los convocados del partido; quién va convocado solo lo ven quienes la preparan.
+        var callUp = seesAllNotes ? await callUps.GetByMatchAsync(squad.Id, match.Id, cancellationToken) : null;
+        var called = callUp?.Called.Select(e => e.SquadPlayerId).ToHashSet() ?? [];
+
         var entries = SquadMapper.Ordered(squad.Players.Where(p => p.IsActive || recorded.ContainsKey(p.Id)))
-            .Select(p => new MatchSheetEntryDto(
-                SquadMapper.ToPlayerDto(p, linkedMap),
-                recorded.TryGetValue(p.Id, out var performance)
-                    ? PerformanceMapper.ToDto(performance, p) is var dto && (seesAllNotes || (currentUser.PlayerId is { } me && p.PlayerId == me)) ? dto : dto with { Notes = null }
-                    : null))
+            .Select(p => (Player: p, Suspension: suspensions.On(p.Id, match.Id)))
+            .Select(x => new MatchSheetEntryDto(
+                SquadMapper.ToPlayerDto(x.Player, linkedMap),
+                recorded.TryGetValue(x.Player.Id, out var performance)
+                    ? PerformanceMapper.ToDto(performance, x.Player) is var dto && (seesAllNotes || (currentUser.PlayerId is { } me && x.Player.PlayerId == me)) ? dto : dto with { Notes = null }
+                    : null,
+                called.Contains(x.Player.Id),
+                x.Suspension is not null,
+                x.Suspension is null ? null : SuspensionReader.Brief(x.Suspension)))
             .ToList();
 
         var canEdit = match.Status == MatchStatus.Played && isManager;
         var team = await teamStats.GetAsync(squad.Id, match.Id, cancellationToken);
 
-        return new MatchSheetDto(summary, matchDto, canEdit, entries, team is null ? null : TeamStats.TeamMatchStatsMapper.ToDto(team));
+        return new MatchSheetDto(summary, matchDto, canEdit, entries, team is null ? null : TeamStats.TeamMatchStatsMapper.ToDto(team), called.Count > 0);
     }
 }

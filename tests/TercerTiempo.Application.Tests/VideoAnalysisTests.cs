@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Videos;
@@ -8,6 +9,7 @@ using TercerTiempo.Application.Squads.TeamStats;
 using TercerTiempo.Application.Videos.Analysis;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Domain.Videos;
 using TercerTiempo.Infrastructure.Videos;
@@ -136,6 +138,64 @@ public class VideoSheetMergeTests
     }
 
     [Fact]
+    public void Fouls_and_offsides_are_read_from_both_sides()
+    {
+        var proposal = VideoProposal.Parse("""
+            {"equipos": [{"id": 0, "teamStats": {"foulsCommitted": 3, "offsidesFor": 1}}, {"id": 1, "teamStats": {"foulsCommitted": 5, "offsidesFor": 2}}],
+             "jugadores": [{"tracklet": 7, "equipo": 0, "propuesta": {"fouls": 2, "foulsReceived": 1, "offsides": 1}}]}
+            """);
+
+        // Las faltas que recibimos son las que comete el rival, y sus fueras de juego, los que le pitan a él.
+        var totals = VideoSheetMerge.Totals([new VideoPartSelection(proposal, 0, 300)]);
+        Assert.Equal((3, 5, 1, 2), (totals.FoulsCommitted, totals.FoulsReceived, totals.OffsidesFor, totals.OffsidesAgainst));
+        var actions = proposal.Players.Single().Actions;
+        Assert.Equal((2, 1, 1, true), (actions.Fouls, actions.FoulsReceived, actions.Offsides, actions.HasSheetData));
+
+        var overwritten = new List<string>();
+        var written = 0;
+        var merged = VideoSheetMerge.MergeTeam(Empty with { FoulsCommitted = 4 }, totals, [VideoTeamField.Fouls, VideoTeamField.Offsides], overwritten, ref written);
+        Assert.Equal((3, 5, 1, 2), (merged.FoulsCommitted, merged.FoulsReceived, merged.OffsidesFor, merged.OffsidesAgainst));
+        Assert.Equal(["faltas cometidas (4 → 3)"], overwritten);
+        Assert.Equal(4, written);
+    }
+
+    [Fact]
+    public void With_the_closed_official_sheet_minutes_start_goals_and_cards_are_its_own()
+    {
+        var id = Guid.NewGuid();
+        var overwritten = new List<string>();
+
+        // Titular sin cambio: el partido entero aunque el vídeo solo lo viera 20 minutos; los goles, los del acta (uno de
+        // penalti), no los que cuenta el vídeo. Las acciones y las faltas sí son del vídeo.
+        var video = new VideoPlayerActions(3, 2, 3, 0, 4, 1, 10, 12, 30, Fouls: 2);
+        var line = VideoSheetMerge.MergeLine(id, "Pelayo", null, video, 20, overwritten, OfficialLine(true, 0, null, 90, goals: 1, penaltyGoals: 1, yellow: 1))!;
+        Assert.Equal((true, 90, 2, 1, false), (line.Started, line.MinutesPlayed, line.Goals, line.YellowCards, line.RedCard));
+        Assert.Equal((3, 2, 4, 2), (line.Shots, line.ShotsOnTarget, line.Recoveries, line.Fouls));
+        Assert.Empty(overwritten);
+
+        // Sin nada del vídeo la línea sale igual del acta: no salir en el vídeo no es no jugar.
+        var unseen = VideoSheetMerge.MergeLine(id, "Pelayo", null, VideoPlayerActions.None, 0, overwritten, OfficialLine(false, 60, null, 30))!;
+        Assert.Equal((false, 30, 0), (unseen.Started, unseen.MinutesPlayed, unseen.Shots));
+
+        // Lo que ya estaba apuntado distinto se avisa antes de cambiarlo.
+        VideoSheetMerge.MergeLine(id, "Pelayo", unseen with { MinutesPlayed = 35, Started = true, Goals = 1 }, VideoPlayerActions.None, 0, overwritten, OfficialLine(false, 60, null, 30));
+        Assert.Equal(["minutos de Pelayo (35 → 30)", "titular de Pelayo (sí → no)", "goles de Pelayo (1 → 0)"], overwritten);
+
+        // Con dos amarillas, la roja (el acta interna la exige).
+        Assert.True(VideoSheetMerge.MergeLine(id, "Pelayo", null, VideoPlayerActions.None, 0, [], OfficialLine(true, 0, 70, 70, yellow: 2))!.RedCard);
+        // Convocado sin jugar: sin vídeo no hay línea.
+        Assert.Null(VideoSheetMerge.MergeLine(id, "Pelayo", null, VideoPlayerActions.None, 0, overwritten, OfficialLine(false, null, null, 0)));
+    }
+
+    private static OfficialSheetLine OfficialLine(bool started, int? minuteIn, int? minuteOut, int minutes, int goals = 0, int penaltyGoals = 0, int yellow = 0)
+    {
+        var sheet = OfficialMatchSheet.Create(Guid.NewGuid(), "test", "1", null, DateTimeOffset.UtcNow);
+        sheet.Apply(new OfficialSheetData(null, "CD Vallobín", "Real Titánico", 2, 0,
+            [new(MatchSide.Home, 9, "FERNANDEZ, PELAYO", started, minuteIn, minuteOut, minutes, goals, penaltyGoals, 0, yellow, yellow >= 2)], []), DateTimeOffset.UtcNow);
+        return sheet.Lines.Single();
+    }
+
+    [Fact]
     public void A_player_without_line_gets_one_with_the_minutes_he_was_seen()
     {
         var id = Guid.NewGuid();
@@ -224,6 +284,79 @@ public class UvVideoAnalyzerTests
         Assert.DoesNotContain("--exigir-gpu", args);
         Assert.Equal("20:00-25:00", args[args.IndexOf("--segmento") + 1]);
         Assert.Equal("fija", args[args.IndexOf("--camara") + 1]);
+        Assert.DoesNotContain("--plantillas", args);
+    }
+
+    [Fact]
+    public void With_the_official_sheet_the_analyzer_gets_who_played_with_their_shirt_numbers_and_minutes()
+    {
+        var sheet = OfficialMatchSheet.Create(Guid.NewGuid(), "test", "1", null, DateTimeOffset.UtcNow);
+        sheet.Apply(new OfficialSheetData(null, "CD Vallobín", "Real Titánico", 0, 1,
+        [
+            new(MatchSide.Home, 18, "PÉREZ, ÁLVARO", true, 0, 24, 24, 0, 0, 0, 0, false),
+            new(MatchSide.Home, 15, "NÚÑEZ, LUIS", false, 24, null, 66, 0, 0, 0, 0, false),
+            new(MatchSide.Home, 16, "SIN JUGAR", false, null, null, 0, 0, 0, 0, 0, false),
+            new(MatchSide.Home, null, "SIN DORSAL", true, 0, null, 90, 0, 0, 0, 0, false),
+            new(MatchSide.Away, 9, "GARCÍA, JUAN", true, 0, null, 90, 0, 0, 0, 0, false),
+        ], []), DateTimeOffset.UtcNow);
+
+        var roster = VideoAnalysisProcessor.Roster(sheet, VideoPart.SecondHalf)!;
+        Assert.Equal((VideoPart.SecondHalf, 45), (roster.Part, roster.HalfMinutes));
+        Assert.Equal([(MatchSide.Home, 15, false, (int?)24, (int?)null), (MatchSide.Home, 18, true, null, 24), (MatchSide.Away, 9, true, null, null)],
+            roster.Teams.SelectMany(t => t.Players.Select(p => (t.Side, p.ShirtNumber, p.Started, p.MinuteIn, p.MinuteOut))));
+        Assert.Null(VideoAnalysisProcessor.Roster(null, VideoPart.Full));
+
+        var request = new VideoAnalysisRequest(Guid.NewGuid(), "clave.mp4", "A", "B", null, null, roster);
+        var args = UvVideoAnalyzer.Arguments("v.mp4", "out", request, new VideoAnalysisOptions()).ToList();
+        Assert.Equal(Path.Combine("out", UvVideoAnalyzer.RosterFile), args[args.IndexOf("--plantillas") + 1]);
+
+        using var json = JsonDocument.Parse(UvVideoAnalyzer.RosterJson(roster));
+        Assert.Equal("segunda", json.RootElement.GetProperty("parte").GetString());
+        var home = json.RootElement.GetProperty("equipos")[0];
+        Assert.Equal(("local", "CD Vallobín"), (home.GetProperty("lado").GetString(), home.GetProperty("nombre").GetString()));
+        var sub = home.GetProperty("jugadores")[0];
+        Assert.Equal((15, "NÚÑEZ, LUIS", false, 24), (sub.GetProperty("dorsal").GetInt32(), sub.GetProperty("nombre").GetString(), sub.GetProperty("titular").GetBoolean(), sub.GetProperty("entra").GetInt32()));
+    }
+
+    [Fact]
+    public void With_the_closed_sheet_the_analyzer_also_gets_the_score_and_the_minute_of_each_goal()
+    {
+        static OfficialMatchSheet Sheet(bool closed)
+        {
+            var sheet = OfficialMatchSheet.Create(Guid.NewGuid(), "test", "1", null, DateTimeOffset.UtcNow);
+            sheet.Apply(new OfficialSheetData(null, "CD Vallobín", "Real Titánico", 1, 2,
+            [
+                new(MatchSide.Home, 9, "FERNÁNDEZ, PELAYO", true, 0, null, 90, 1, 0, 1, 0, false),
+                new(MatchSide.Away, 7, "GARCÍA, JUAN", true, 0, null, 90, 0, 1, 0, 0, false),
+            ],
+            [
+                new(MatchSide.Home, OfficialEventType.Goal, 30, null, "FERNÁNDEZ, PELAYO", null),
+                new(MatchSide.Home, OfficialEventType.OwnGoal, 45, 2, "FERNÁNDEZ, PELAYO", null),
+                new(MatchSide.Away, OfficialEventType.YellowCard, 60, null, "GARCÍA, JUAN", null),
+                new(MatchSide.Away, OfficialEventType.PenaltyGoal, 88, null, "GARCÍA, JUAN", null),
+            ]), DateTimeOffset.UtcNow, closed);
+            return sheet;
+        }
+
+        var roster = VideoAnalysisProcessor.Roster(Sheet(closed: true), VideoPart.Full)!;
+        Assert.Equal(new VideoAnalysisScore(1, 2), roster.Score);
+        // El de propia puerta sube al otro lado, y el descuento va aparte para que el 45+2 siga en la primera parte.
+        Assert.Equal([new VideoAnalysisGoal(MatchSide.Home, 30), new VideoAnalysisGoal(MatchSide.Away, 45, 2), new VideoAnalysisGoal(MatchSide.Away, 88)], roster.Goals!);
+        Assert.Equal([1, 1], roster.Teams.Select(t => t.Players.Single().Goals));
+
+        using var json = JsonDocument.Parse(UvVideoAnalyzer.RosterJson(roster));
+        var score = json.RootElement.GetProperty("resultado");
+        Assert.Equal((1, 2), (score.GetProperty("local").GetInt32(), score.GetProperty("visitante").GetInt32()));
+        var own = json.RootElement.GetProperty("goles")[1];
+        Assert.Equal(("visitante", 45, 2), (own.GetProperty("lado").GetString(), own.GetProperty("minuto").GetInt32(), own.GetProperty("descuento").GetInt32()));
+        Assert.Equal(1, json.RootElement.GetProperty("equipos")[0].GetProperty("jugadores")[0].GetProperty("goles").GetInt32());
+
+        // La provisional (sin cerrar) ya trae las alineaciones, pero no el marcador: ni resultado ni goles.
+        var provisional = VideoAnalysisProcessor.Roster(Sheet(closed: false), VideoPart.Full)!;
+        Assert.Null(provisional.Score);
+        using var withoutScore = JsonDocument.Parse(UvVideoAnalyzer.RosterJson(provisional));
+        Assert.Equal(JsonValueKind.Null, withoutScore.RootElement.GetProperty("resultado").ValueKind);
+        Assert.Equal(0, withoutScore.RootElement.GetProperty("goles").GetArrayLength());
     }
 
     [Theory]
@@ -284,7 +417,7 @@ public class UvVideoAnalyzerTests
 public class UvVideoAnalyzerOutputTests
 {
     [Theory]
-    [InlineData("\"version\": 2,")]
+    [InlineData("\"version\": 3,")]
     [InlineData("")]
     public void A_proposal_of_an_unknown_version_is_rejected_with_a_clear_message(string version) =>
         WithOutput(VideoAnalysisSamples.Proposal.Replace("\"version\": 1,", version), VideoAnalysisSamples.Analysis, folder =>
@@ -323,7 +456,7 @@ public class UvVideoAnalyzerOutputTests
             var progress = new List<int>();
 
             var result = await UvVideoAnalyzer.RunAsync("cmd.exe", ["/c", "echo ##progreso 40& echo Traceback: CUDA out of memory 1>&2& exit /b 7"], folder, stderr,
-                TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1), (p, _) => { progress.Add(p); return Task.CompletedTask; }, default);
+                TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1), (u, _) => { if (u.Percent is { } p) progress.Add(p); return Task.CompletedTask; }, default);
 
             Assert.Equal(7, result.ExitCode);
             Assert.Equal([40], progress);
@@ -352,6 +485,64 @@ public class UvVideoAnalyzerOutputTests
 
             Assert.Contains("sin dar señales", error.Message);
             Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30), $"Tardó {clock.Elapsed}");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void The_detailed_state_of_the_analyzer_is_read_with_the_names_of_the_app()
+    {
+        var live = UvVideoAnalyzer.LiveState("""##estado {"etapa":"pasada","porcentaje":54,"pausado":false,"pausa_s":0,"t_video":1834.6,"tramo_inicio_s":1200,"tramo_fin_s":2700,"fotogramas":3170,"fotogramas_total":7500,"jugadores_en_imagen":17,"jugadores_seguidos":42,"balon_pct":61.27,"calibrado_pct":88.04,"fps":9.47,"velocidad":1.89,"resta_s":3355,"colores":["#1E3A8A","#f5f5f5","rojo"]}""");
+
+        Assert.NotNull(live);
+        Assert.Equal(("tracking", false, 1835, 1200, 2700), (live.Stage, live.Paused, live.VideoSecond, live.FromSecond, live.ToSecond));
+        Assert.Equal((3170, 7500, 17, 42), (live.Frames, live.FramesTotal, live.PlayersOnScreen, live.PlayersTracked));
+        Assert.Equal((61.3m, 88m, 9.47m, 1.89m, 3355), (live.BallSeenPct, live.CalibratedPct, live.Fps, live.Speed, live.RemainingSeconds));
+        Assert.Equal(["#1E3A8A", "#f5f5f5"], live.Colors);
+
+        var paused = UvVideoAnalyzer.LiveState("""##estado {"etapa":"equipos","pausado":true,"pausa_s":42,"muestras":120,"objetivo":400}""");
+        Assert.Equal(("teams", true, 42, 120, 400), (paused!.Stage, paused.Paused, paused.PausedSeconds, paused.TeamSamples, paused.TeamSamplesTarget));
+
+        Assert.Null(UvVideoAnalyzer.LiveState("##estado {roto"));
+        Assert.Null(UvVideoAnalyzer.LiveState("##progreso 40"));
+        Assert.Equal("Equipos separados: CD Vallobín de azul", UvVideoAnalyzer.LogLine("##hito Equipos separados: CD Vallobín de azul "));
+        Assert.Null(UvVideoAnalyzer.LogLine("##hito   "));
+        Assert.Null(UvVideoAnalyzer.LogLine("Traceback"));
+    }
+
+    [Fact]
+    public async Task The_analyzer_receives_pause_and_resume_orders_and_its_state_and_log_are_read()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var folder = Directory.CreateTempSubdirectory("tt-analisis-").FullName;
+        try
+        {
+            // Un «analizador» que cuenta su estado, espera una orden por la entrada y la repite como hito.
+            var script = Path.Combine(folder, "ordenes.cmd");
+            await File.WriteAllTextAsync(script, string.Join("\r\n",
+                "@echo off",
+                "echo ##estado {\"etapa\":\"pasada\",\"pausado\":false,\"jugadores_seguidos\":12}",
+                "set /p orden=",
+                "echo ##hito orden %orden%",
+                "echo ##progreso 60"));
+            var updates = new List<VideoAnalysisUpdate>();
+            var control = new VideoAnalysisControl();
+
+            var result = await UvVideoAnalyzer.RunAsync("cmd.exe", ["/c", script], folder, Path.Combine(folder, UvVideoAnalyzer.StderrFile),
+                TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1), (u, _) =>
+                {
+                    updates.Add(u);
+                    if (u.Live is not null) control.Set(true);
+                    return Task.CompletedTask;
+                }, default, control: control);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal(12, updates.Single(u => u.Live is not null).Live!.PlayersTracked);
+            Assert.Equal("orden ##pausa", updates.Single(u => u.Log is not null).Log);
+            Assert.Equal(60, updates.Single(u => u.Percent is not null).Percent);
         }
         finally
         {
@@ -598,6 +789,130 @@ public class VideoAnalysisProcessorTests
     }
 
     [Fact]
+    public async Task What_the_analyzer_is_doing_and_what_it_learns_is_saved_on_the_row()
+    {
+        var world = new AnalysisWorld();
+        await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
+        world.Analyzer.Run = VideoAnalysisSamples.Run();
+        world.Analyzer.Updates =
+        [
+            new(Live: new VideoAnalysisLive("teams", false, TeamSamples: 120, TeamSamplesTarget: 400)),
+            new(Log: "Equipos separados: CD Vallobín de gris"),
+            new(Percent: 30, Live: new VideoAnalysisLive("tracking", false, VideoSecond: 1500, PlayersTracked: 20, BallSeenPct: 55.5m)),
+            new(Percent: 31, Live: new VideoAnalysisLive("tracking", false, VideoSecond: 1510, PlayersTracked: 21, BallSeenPct: 56m)),
+        ];
+        string? seen = null;
+        world.Analyzer.AfterUpdates = () => seen = world.Analyses.Items.Single().LiveJson;
+        var states = new List<(string? Stage, int Progress, int Log)>();
+        world.Analyzer.AfterEach = () => { var a = world.Analyses.Items.Single(); states.Add((a.Stage, a.Progress, a.Log.Count)); };
+
+        var analysis = (await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!;
+        await world.Processor.ProcessAsync(analysis, default);
+
+        // El cambio de etapa y la línea del registro se guardan enseguida; el minuto 1510 espera a los 5 s.
+        Assert.Equal([("teams", 0, 0), ("teams", 0, 1), ("tracking", 30, 1), ("tracking", 30, 1)], states);
+        var live = VideoAnalysisProcessor.ReadLive(seen);
+        Assert.Equal((1500, 20, 55.5m), (live!.VideoSecond, live.PlayersTracked, live.BallSeenPct));
+        Assert.Equal("Equipos separados: CD Vallobín de gris", analysis.Log.Single().Text);
+
+        // Al terminar, lo de en directo se olvida.
+        Assert.Equal((VideoAnalysisStatus.Ready, null), (analysis.Status, analysis.LiveJson));
+    }
+
+    [Fact]
+    public async Task A_pause_asked_from_the_app_reaches_the_analyzer_and_the_paused_time_does_not_count()
+    {
+        var world = new AnalysisWorld();
+        await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
+        world.Analyzer.Run = VideoAnalysisSamples.Run();
+        var analysis = (await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!;
+
+        // El cuerpo técnico lo pausa a los 10 minutos y lo reanuda a la media hora; el analizador lo nota por su cuenta.
+        var timeline = new List<bool>();
+        world.Analyzer.WhileRunning = async (control, token) =>
+        {
+            world.Clock.Now += TimeSpan.FromMinutes(10);
+            analysis.Pause(world.Clock.Now);
+            await WaitForAsync(() => control.Paused, token);
+            timeline.Add(control.Paused);
+            world.Clock.Now += TimeSpan.FromMinutes(20);
+            analysis.Resume(world.Clock.Now);
+            await WaitForAsync(() => !control.Paused, token);
+            timeline.Add(control.Paused);
+            world.Clock.Now += TimeSpan.FromMinutes(5);
+        };
+        await world.Processor.ProcessAsync(analysis, default);
+
+        Assert.Equal([true, false], timeline);
+        Assert.Equal((VideoAnalysisStatus.Ready, 1200), (analysis.Status, analysis.PausedSeconds));
+        Assert.Contains("en 15 min", world.Jobs.Finished!.Value.Summary);
+    }
+
+    [Fact]
+    public async Task A_paused_analysis_that_is_cancelled_stops_without_saving_anything()
+    {
+        var world = new AnalysisWorld();
+        await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
+        world.Analyzer.Run = VideoAnalysisSamples.Run();
+        var analysis = (await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!;
+
+        world.Analyzer.WhileRunning = async (control, token) =>
+        {
+            analysis.Pause(world.Clock.Now);
+            await WaitForAsync(() => control.Paused, token);
+            analysis.Cancel(world.Clock.Now);
+            await Task.Delay(TimeSpan.FromSeconds(30), token);
+        };
+        await world.Processor.ProcessAsync(analysis, default);
+
+        Assert.Equal(VideoAnalysisStatus.Cancelled, analysis.Status);
+        Assert.Empty(world.Analyses.Crops);
+        Assert.Contains("detenido", world.Jobs.Finished!.Value.Summary);
+    }
+
+    [Fact]
+    public async Task What_was_paused_in_the_queue_is_not_started_until_it_is_resumed()
+    {
+        var world = new AnalysisWorld();
+        await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
+        var analysis = world.Analyses.Items.Single();
+
+        analysis.Pause(world.Clock.Now);
+        Assert.Null(await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default));
+
+        analysis.Resume(world.Clock.Now.AddMinutes(3));
+        Assert.Equal((VideoAnalysisStatus.Pending, 180), (analysis.Status, analysis.PausedSeconds));
+        Assert.Same(analysis, await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default));
+        Assert.Equal(VideoAnalysisStatus.Running, analysis.Status);
+    }
+
+    [Fact]
+    public async Task An_analyzer_that_dies_while_paused_leaves_it_paused_to_start_again_when_resumed()
+    {
+        var world = new AnalysisWorld();
+        await world.Queue.EnqueueAsync(world.ReadyVideo(), default);
+        var analysis = (await world.Processor.ClaimNextAsync(AnalysisWorld.Worker, default))!;
+        analysis.Pause(world.Clock.Now);
+
+        world.Clock.Now += TimeSpan.FromMinutes(11);
+        Assert.Equal(1, await world.Processor.RecoverAbandonedAsync(_ => false, default));
+        Assert.Equal((VideoAnalysisStatus.Paused, null, false), (analysis.Status, analysis.WorkerId, analysis.IsWorking));
+
+        analysis.Resume(world.Clock.Now);
+        Assert.Equal(VideoAnalysisStatus.Pending, analysis.Status);
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)
+    {
+        var limit = DateTime.UtcNow.AddSeconds(15);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > limit) throw new TimeoutException("El analizador no notó la orden");
+            await Task.Delay(50, cancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task What_could_not_be_read_from_the_file_is_kept_and_lowers_the_quality()
     {
         var world = new AnalysisWorld();
@@ -671,6 +986,8 @@ internal sealed class AnalysisWorld
     public readonly FakeAnalysisStore Analyses = new();
     public readonly FakeAnalysisSignal Signal = new();
     public readonly FakeAnalyzer Analyzer = new();
+    public OfficialMatchSheet? Sheet { get; set; }
+    public readonly IOfficialSheetStore Sheets;
     public readonly FakeVideoJobs Jobs = new();
     public readonly CountingUnitOfWork UnitOfWork = new();
     public readonly Team Home = Team.Create("CD Vallobín", "VAL", null);
@@ -687,8 +1004,9 @@ internal sealed class AnalysisWorld
         var options = Options.Create(new VideoAnalysisOptions { Enabled = enabled, MaxAttempts = 2, LeaseMinutes = 10 });
         var matches = TestStub.Of<IMatchStore>((name, _) => name == nameof(IMatchStore.GetByIdAsync) ? Task.FromResult<Match?>(Match) : throw new NotSupportedException(name));
         var teams = TestStub.Of<ITeamStore>((name, _) => name == nameof(ITeamStore.GetByIdsAsync) ? Task.FromResult<IReadOnlyList<Team>>([Home, Away]) : throw new NotSupportedException(name));
+        Sheets = TestStub.Of<IOfficialSheetStore>((name, _) => name == nameof(IOfficialSheetStore.GetByMatchAsync) ? Task.FromResult(Sheet) : throw new NotSupportedException(name));
         Queue = new VideoAnalysisQueue(Analyses, options, Signal, UnitOfWork, Clock);
-        Processor = new VideoAnalysisProcessor(Analyses, Videos, matches, teams, Analyzer, Jobs, options, UnitOfWork, Clock, NullLogger<VideoAnalysisProcessor>.Instance);
+        Processor = new VideoAnalysisProcessor(Analyses, Videos, matches, teams, Sheets, Analyzer, Jobs, options, UnitOfWork, Clock, NullLogger<VideoAnalysisProcessor>.Instance);
         Analyses.Videos = Videos;
     }
 
@@ -761,7 +1079,9 @@ internal sealed class FakeAnalysisStore : IMatchVideoAnalysisStore
             .Where(a => a.Status == VideoAnalysisStatus.Pending && a.Attempts < maxAttempts && Videos?.Items.Any(v => v.Id == a.VideoId && !v.IsDeleted) != false)
             .OrderBy(a => a.RequestedAt).FirstOrDefault());
     public Task<IReadOnlyList<MatchVideoAnalysis>> GetRunningAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<MatchVideoAnalysis>>(Items.Where(a => a.Status == VideoAnalysisStatus.Running).ToList());
+        Task.FromResult<IReadOnlyList<MatchVideoAnalysis>>(Items.Where(a => a.IsWorking).ToList());
+    public Task<VideoAnalysisControlState?> GetControlAsync(Guid analysisId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Items.FirstOrDefault(a => a.Id == analysisId) is { } a ? new VideoAnalysisControlState(a.Status, a.WorkerId) : null);
     public Task SaveResultAsync(Guid analysisId, IReadOnlyCollection<VideoAnalysisCrop> crops, CancellationToken cancellationToken = default)
     {
         Crops[analysisId] = crops.ToList();
@@ -790,22 +1110,30 @@ internal sealed class FakeAnalyzer : IVideoAnalyzer
     public VideoAnalysisRun? Run;
     public Exception? Failure;
     public int[] ProgressSteps = [];
+    public VideoAnalysisUpdate[] Updates = [];
     public Action? BeforeProgress;
+    public Action? AfterEach;
+    public Action? AfterUpdates;
     public Action? OnAnalyze;
+    public Func<VideoAnalysisControl, CancellationToken, Task>? WhileRunning;
     public VideoAnalysisRequest? Request;
     public readonly List<Guid> DeletedOutputs = [];
 
-    public async Task<VideoAnalysisRun> AnalyzeAsync(VideoAnalysisRequest request, Func<int, CancellationToken, Task> progress, CancellationToken cancellationToken)
+    public async Task<VideoAnalysisRun> AnalyzeAsync(VideoAnalysisRequest request, Func<VideoAnalysisUpdate, CancellationToken, Task> report,
+        VideoAnalysisControl control, CancellationToken cancellationToken)
     {
         Request = request;
         OnAnalyze?.Invoke();
         cancellationToken.ThrowIfCancellationRequested();
         if (Failure is not null) throw Failure;
-        foreach (var step in ProgressSteps)
+        foreach (var update in ProgressSteps.Select(step => new VideoAnalysisUpdate(Percent: step)).Concat(Updates))
         {
             BeforeProgress?.Invoke();
-            await progress(step, cancellationToken);
+            await report(update, cancellationToken);
+            AfterEach?.Invoke();
         }
+        AfterUpdates?.Invoke();
+        if (WhileRunning is not null) await WhileRunning(control, cancellationToken);
         return Run ?? throw new InvalidOperationException("Sin resultado");
     }
 
