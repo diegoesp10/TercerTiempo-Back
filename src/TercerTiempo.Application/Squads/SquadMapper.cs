@@ -80,7 +80,7 @@ internal static class SquadMapper
     }
 
     public static IEnumerable<SquadPlayer> Ordered(IEnumerable<SquadPlayer> players) =>
-        players.OrderBy(p => p.ShirtNumber ?? int.MaxValue).ThenBy(p => p.FullName);
+        players.OrderBy(p => p.FullName, StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("es-ES"), true));
 
     public static async Task<SquadDetailDto> ToDetailAsync(
         Squad squad,

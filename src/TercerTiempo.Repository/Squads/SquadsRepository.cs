@@ -1,4 +1,6 @@
 using TercerTiempo.Application.Abstractions.Messaging;
+using TercerTiempo.Application.Clubs.ManageTeams;
+using TercerTiempo.Domain.Squads;
 using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Squads.Charts;
@@ -41,6 +43,9 @@ internal sealed class SquadsRepository(
     ICommandHandler<CloseInjuryCommand, IReadOnlyList<InjuryDto>> closeInjury,
     ICommandHandler<ReopenInjuryCommand, IReadOnlyList<InjuryDto>> reopenInjury,
     ICommandHandler<DeleteInjuryCommand, IReadOnlyList<InjuryDto>> deleteInjury,
+    ICommandHandler<UploadInjuryDocumentCommand, IReadOnlyList<InjuryDto>> uploadInjuryDocument,
+    ICommandHandler<DeleteInjuryDocumentCommand, IReadOnlyList<InjuryDto>> deleteInjuryDocument,
+    IQueryHandler<OpenInjuryDocumentQuery, InjuryDocumentFile> openInjuryDocument,
     ICommandHandler<RecordTeamMatchStatsCommand, TeamMatchStatsDto> recordTeamStats,
     IQueryHandler<GetSquadTeamStatsQuery, SquadTeamStatsDto> getTeamStats) : ISquadsRepository
 {
@@ -124,4 +129,14 @@ internal sealed class SquadsRepository(
 
     public Task<IReadOnlyList<InjuryDto>> DeleteInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default) =>
         deleteInjury.Handle(new DeleteInjuryCommand(squadId, injuryId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryDto>> UploadInjuryDocumentAsync(
+        Guid squadId, Guid injuryId, InjuryDocumentKind kind, string? note, CrestUpload file, CancellationToken cancellationToken = default) =>
+        uploadInjuryDocument.Handle(new UploadInjuryDocumentCommand(squadId, injuryId, kind, note, file), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryDto>> DeleteInjuryDocumentAsync(Guid squadId, Guid injuryId, Guid documentId, CancellationToken cancellationToken = default) =>
+        deleteInjuryDocument.Handle(new DeleteInjuryDocumentCommand(squadId, injuryId, documentId), cancellationToken);
+
+    public Task<InjuryDocumentFile> OpenInjuryDocumentAsync(Guid squadId, Guid injuryId, Guid documentId, CancellationToken cancellationToken = default) =>
+        openInjuryDocument.Handle(new OpenInjuryDocumentQuery(squadId, injuryId, documentId), cancellationToken);
 }

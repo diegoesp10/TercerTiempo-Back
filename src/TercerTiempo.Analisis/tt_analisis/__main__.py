@@ -20,21 +20,18 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("video", type=Path)
     a.add_argument("--salida", type=Path, default=None, help="Carpeta de salida (por defecto salidas/<nombre del vídeo>).")
     a.add_argument("--modelos", type=Path, default=Path("modelos"))
-    a.add_argument("--sin-afinados", action="store_true", help="Usar los pesos públicos aunque haya pesos afinados en modelos/afinados.")
-    a.add_argument("--campo", default=None, help="Medidas del campo en metros, p. ej. 100x62 (ver `medir-campo`); por defecto 120x70, las del modelo del campo.")
+    a.add_argument("--sin-afinados", action="store_true", help="Usar el lector de dorsales publicado aunque haya uno afinado en modelos/afinados.")
+    a.add_argument("--campo", default=None, help="Medidas del campo en metros, p. ej. 100x62 (ver `medir-campo`); por defecto 120x70.")
     a.add_argument("--device", default="cuda", help="cuda (por defecto), cuda:0 o cpu.")
     a.add_argument("--fps", type=float, default=5.0, help="Fotogramas por segundo que se analizan (5 por defecto).")
     a.add_argument("--segmento", default=None, help="Tramo a analizar, p. ej. 10:00-15:00 o 0:45:00-1:35:00.")
     a.add_argument("--descanso", default=None, help="Minuto del vídeo en que empieza la segunda parte (p. ej. 52:30); si no, se detecta.")
-    a.add_argument("--imgsz", type=int, default=1280)
-    a.add_argument("--imgsz-campo", type=int, default=640, help="Tamaño de inferencia del detector de puntos del campo (640, el de su entrenamiento).")
-    a.add_argument("--confianza", type=float, default=0.3)
+    a.add_argument("--confianza", type=float, default=0.3, help="Puntuación mínima de una persona detectada (las flojas solo continúan a alguien ya seguido).")
     a.add_argument("--camara", choices=["movil", "fija"], default="movil", help="movil: alguien graba con paneo y zoom (por defecto); fija: trípode o cámara tipo Veo (una sola calibración).")
-    a.add_argument("--tracker", default=None, help="Seguidor de Ultralytics: bytetrack.yaml, botsort.yaml o un yaml propio (por defecto el del paquete según la cámara).")
+    a.add_argument("--seguidor", choices=["botsort", "bytetrack"], default=None, help="Seguidor de las personas (por defecto BoT-SORT con cámara móvil y ByteTrack con cámara fija).")
     a.add_argument("--llm", choices=["none", "claude", "ollama"], default="none", help="Modelo de lenguaje para confirmar eventos, leer dorsales y redactar.")
     a.add_argument("--modelo-llm", default=None, help="Modelo concreto (claude-opus-5-5, gemma4:12b, qwen3-vl:8b…).")
     a.add_argument("--sin-clips", action="store_true")
-    a.add_argument("--sin-balon-fino", action="store_true", help="No buscar el balón por teselas cuando se pierde (más rápido).")
     a.add_argument("--video-anotado", action="store_true", help="Escribe anotado.mp4 con cajas, tracklets, balón y radar (lento).")
     a.add_argument("--max-fotogramas", type=int, default=None, help="Para probar: solo los primeros N fotogramas muestreados.")
     a.add_argument("--equipos", default=None, help="Nombres de los equipos separados por coma, en el orden que salgan (p. ej. 'Vallobín,Pumarín').")
@@ -42,6 +39,19 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--progreso", action="store_true", help="Escribe el avance como líneas «##progreso N» (0-100) en la salida estándar, sin barras: para quien lo lanza como proceso.")
     a.add_argument("--exigir-gpu", action="store_true", help="Sin GPU CUDA, termina con el código de salida 3 en vez de analizar en CPU.")
     a.add_argument("--semilla", type=int, default=None, help="Para medir la estabilidad: fija los generadores y muestrea otros fotogramas del mismo tramo.")
+    a.add_argument("--plantillas", type=Path, default=None, help="JSON con las plantillas del acta oficial (dorsales y minutos de cada uno): el dorsal leído se cruza con ellas.")
+    a.add_argument("--saque", default="0", help="Minuto del vídeo en que empieza el partido (p. ej. 1:30), para pasar los minutos del acta al vídeo.")
+    a.add_argument("--sin-dorsales", action="store_true", help="No leer los dorsales: cada tracklet queda suelto, como antes.")
+    a.add_argument("--guardar-dorsales", type=Path, default=None, help="Carpeta donde dejar las zonas del dorsal y sus etiquetas (los jugadores identificados) para `entrenar-dorsales`.")
+
+    ed = sub.add_parser("entrenar-dorsales", help="Afina el lector de dorsales con las zonas guardadas (--guardar-dorsales) y deja los pesos en modelos/afinados/dorsales.pt.")
+    ed.add_argument("carpetas", type=Path, nargs="+", help="Carpetas de --guardar-dorsales (de uno o varios partidos).")
+    ed.add_argument("--modelos", type=Path, default=Path("modelos"))
+    ed.add_argument("--epocas", type=int, default=4)
+    ed.add_argument("--lote", type=int, default=128)
+    ed.add_argument("--lr", type=float, default=3e-5)
+    ed.add_argument("--maximo-por-dorsal", type=int, default=2500, help="Como mucho tantas zonas de cada dorsal (para que no manden los que más se ven).")
+    ed.add_argument("--device", default="cuda")
 
     c = sub.add_parser("comparar", help="Compara varias pasadas (carpetas con analisis.json): balón, calibración, posesión y su estabilidad.")
     c.add_argument("salidas", type=Path, nargs="+")
@@ -59,7 +69,7 @@ def construir_parser() -> argparse.ArgumentParser:
     r.add_argument("zip", type=Path)
     r.add_argument("--dataset", type=Path, required=True)
 
-    d = sub.add_parser("descargar-modelos", help="Descarga los tres detectores (y, si se pide, dos vídeos de muestra).")
+    d = sub.add_parser("descargar-modelos", help="Descarga el lector de dorsales (y, si se pide, dos vídeos de muestra); los tres detectores son RF-DETR propios, en modelos/rfdetr.")
     d.add_argument("--modelos", type=Path, default=Path("modelos"))
     d.add_argument("--con-videos", action="store_true")
 
@@ -73,10 +83,7 @@ def construir_parser() -> argparse.ArgumentParser:
     e.add_argument("--device", default="cuda")
     e.add_argument("--cada", type=float, default=2.0, help="Segundos entre fotogramas etiquetados (2 por defecto).")
     e.add_argument("--segmento", default=None, help="Tramo del vídeo, p. ej. 0:00-45:00.")
-    e.add_argument("--imgsz", type=int, default=1280)
     e.add_argument("--campo", default=None, help="Medidas del campo en metros, p. ej. 100x62; si no, se miden desde el vídeo.")
-    e.add_argument("--afinados", action="store_true", help="Etiquetar con los pesos ya afinados como maestro (segunda ronda de autoentrenamiento).")
-    e.add_argument("--maestro-balon", choices=["publico", "afinado", "ambos"], default="publico", help="Qué detector propone los candidatos a balón; «ambos» junta los del público y los del afinado.")
     e.add_argument("--juez", choices=["none", "claude", "ollama"], default="none", help="Quién confirma cada candidato a balón mirando un recorte: claude (API), ollama (local) o nadie.")
     e.add_argument("--modelo-juez", default=None, help="Modelo del juez (claude-opus-5-5, gemma4:12b…).")
     e.add_argument("--vista-previa-cada", type=int, default=10, help="Una imagen anotada en revision/ de cada N muestras (0 = ninguna).")
@@ -88,28 +95,89 @@ def construir_parser() -> argparse.ArgumentParser:
     mc.add_argument("--device", default="cuda")
     mc.add_argument("--segmento", default=None)
     mc.add_argument("--fotogramas", type=int, default=300)
-    mc.add_argument("--imgsz", type=int, default=1280)
 
-    t = sub.add_parser("entrenar", help="Afina un detector con el dataset etiquetado y deja los pesos en modelos/afinados.")
-    t.add_argument("que", choices=["balon", "jugadores", "campo", "todos"])
-    t.add_argument("--dataset", type=Path, required=True, help="Carpeta que dejó `etiquetar`.")
-    t.add_argument("--modelos", type=Path, default=Path("modelos"))
-    t.add_argument("--salida", type=Path, default=Path("entrenamientos"), help="Carpeta de los entrenamientos de Ultralytics.")
-    t.add_argument("--device", default="cuda")
-    t.add_argument("--epocas", type=int, default=None, help="Por defecto 20 (balón y jugadores) o 40 (campo).")
-    t.add_argument("--batch", type=int, default=None, help="Tamaño del lote (por defecto 4 a 1280 px y 12 a 640 px, lo que cabe en 16 GB; -1 = que lo calcule Ultralytics).")
-    t.add_argument("--imgsz", type=int, default=None)
-    t.add_argument("--congelar", type=int, default=10, help="Capas congeladas desde el principio (10 = el tronco de YOLOv8; 0 = ninguna).")
-    t.add_argument("--paciencia", type=int, default=10)
-    t.add_argument("--mezclar", type=Path, nargs="*", default=None, help="Otras carpetas de imágenes YOLO con las que entrenar a la vez (p. ej. el dataset público).")
+    pc = sub.add_parser("preparar-campo", help="Etiqueta los 32 puntos del campo en fotogramas de uno o varios vídeos con el detector del campo actual como maestro (para la siguiente ronda).")
+    pc.add_argument("videos", type=Path, nargs="+")
+    pc.add_argument("--salida", type=Path, default=Path("datasets") / "campo")
+    pc.add_argument("--modelos", type=Path, default=Path("modelos"))
+    pc.add_argument("--device", default="cuda")
+    pc.add_argument("--cada", type=float, default=1.0, help="Segundos entre fotogramas (1 por defecto).")
+    pc.add_argument("--cada-cortos", type=float, default=0.25, help="Segundos entre fotogramas en los vídeos de menos de 10 min.")
 
-    v = sub.add_parser("evaluar", help="Compara los pesos públicos con los afinados sobre la validación del dataset.")
-    v.add_argument("que", choices=["balon", "jugadores", "campo", "todos"])
-    v.add_argument("--dataset", type=Path, required=True)
-    v.add_argument("--modelos", type=Path, default=Path("modelos"))
-    v.add_argument("--salida", type=Path, default=None, help="Por defecto <dataset>/evaluacion.")
-    v.add_argument("--device", default="cuda")
-    v.add_argument("--imgsz", type=int, default=None)
+    ec = sub.add_parser("entrenar-campo", help="Entrena el detector de los puntos del campo (RF-DETR Keypoint) con el dataset de `preparar-campo` y deja modelos/rfdetr/campo.pth.")
+    ec.add_argument("--dataset", type=Path, default=Path("datasets") / "campo")
+    ec.add_argument("--modelos", type=Path, default=Path("modelos"))
+    ec.add_argument("--salida", type=Path, default=None, help="Carpeta del entrenamiento (por defecto entrenamientos/rfdetr-campo-<fecha>).")
+    ec.add_argument("--resolucion", type=int, default=768, help="Lado del cuadrado al que se reescala el fotograma (múltiplo de 24).")
+    ec.add_argument("--epocas", type=int, default=40)
+    ec.add_argument("--lote", type=int, default=4)
+    ec.add_argument("--acumular", type=int, default=4, help="Pasos de acumulación de gradiente (lote efectivo = lote × acumular).")
+    ec.add_argument("--lr", type=float, default=1e-4)
+    ec.add_argument("--paciencia", type=int, default=8)
+    ec.add_argument("--device", default="cuda")
+
+    xc = sub.add_parser("exportar-campo", help="Compila el detector del campo a TensorRT para la GPU de este equipo (modelos/rfdetr/campo.trt).")
+    xc.add_argument("--modelos", type=Path, default=Path("modelos"))
+
+    vc = sub.add_parser("evaluar-campo", help="Mide el detector del campo (fotogramas calibrables, puntos y error de la homografía) sobre la validación de uno o varios datasets.")
+    vc.add_argument("datasets", type=Path, nargs="+", help="Carpetas de `etiquetar` (se usa su campo/) o la de `preparar-campo`.")
+    vc.add_argument("--modelos", type=Path, default=Path("modelos"))
+    vc.add_argument("--motor", choices=["tensorrt", "pytorch"], default="tensorrt")
+    vc.add_argument("--device", default="cuda")
+
+    pb = sub.add_parser("preparar-balon", help="Saca las teselas del balón (RF-DETR) de uno o varios datasets que dejó `etiquetar`.")
+    pb.add_argument("datasets", type=Path, nargs="+", help="Carpetas de `etiquetar` (del mismo partido o de varios).")
+    pb.add_argument("--salida", type=Path, default=Path("datasets") / "balon-teselas")
+    pb.add_argument("--por-balon", type=int, default=2, help="Teselas con el balón por cada fotograma en que está confirmado.")
+    pb.add_argument("--al-azar", type=int, default=2, help="Teselas sin balón al azar por fotograma.")
+    pb.add_argument("--semilla", type=int, default=0)
+
+    eb = sub.add_parser("entrenar-balon", help="Entrena el detector del balón (RF-DETR Medium) con las teselas de `preparar-balon` y deja modelos/rfdetr/balon.pth.")
+    eb.add_argument("--dataset", type=Path, default=Path("datasets") / "balon-teselas")
+    eb.add_argument("--modelos", type=Path, default=Path("modelos"))
+    eb.add_argument("--salida", type=Path, default=None, help="Carpeta del entrenamiento (por defecto entrenamientos/rfdetr-balon-<fecha>).")
+    eb.add_argument("--epocas", type=int, default=40)
+    eb.add_argument("--lote", type=int, default=8)
+    eb.add_argument("--acumular", type=int, default=2, help="Pasos de acumulación de gradiente (lote efectivo = lote × acumular).")
+    eb.add_argument("--lr", type=float, default=1e-4)
+    eb.add_argument("--paciencia", type=int, default=8)
+    eb.add_argument("--device", default="cuda")
+
+    xb = sub.add_parser("exportar-balon", help="Compila el detector del balón a TensorRT para la GPU de este equipo (modelos/rfdetr/balon.trt).")
+    xb.add_argument("--modelos", type=Path, default=Path("modelos"))
+    xb.add_argument("--lote", type=int, default=24, help="Lote para el que se afina el motor (las 24 teselas de un fotograma de 1080p).")
+    xb.add_argument("--lote-max", type=int, default=32)
+
+    vb = sub.add_parser("evaluar-balon", help="Mide el detector del balón sobre los fotogramas enteros de validación de uno o varios datasets.")
+    vb.add_argument("datasets", type=Path, nargs="+", help="Carpetas de `etiquetar`; se usa su balon/images/val.")
+    vb.add_argument("--modelos", type=Path, default=Path("modelos"))
+    vb.add_argument("--motor", choices=["tensorrt", "pytorch"], default="tensorrt")
+    vb.add_argument("--device", default="cuda")
+
+    pj = sub.add_parser("preparar-jugadores", help="Junta las personas (porteros, jugadores, árbitros) de uno o varios datasets que dejó `etiquetar` para RF-DETR.")
+    pj.add_argument("datasets", type=Path, nargs="+", help="Carpetas de `etiquetar` (del mismo partido o de varios).")
+    pj.add_argument("--salida", type=Path, default=Path("datasets") / "jugadores")
+
+    ej = sub.add_parser("entrenar-jugadores", help="Entrena el detector de personas (RF-DETR Medium) con el dataset de `preparar-jugadores` y deja modelos/rfdetr/jugadores.pth.")
+    ej.add_argument("--dataset", type=Path, default=Path("datasets") / "jugadores")
+    ej.add_argument("--modelos", type=Path, default=Path("modelos"))
+    ej.add_argument("--salida", type=Path, default=None, help="Carpeta del entrenamiento (por defecto entrenamientos/rfdetr-jugadores-<fecha>).")
+    ej.add_argument("--resolucion", type=int, default=1280, help="Lado del cuadrado al que se reescala el fotograma (múltiplo de 32).")
+    ej.add_argument("--epocas", type=int, default=30)
+    ej.add_argument("--lote", type=int, default=2)
+    ej.add_argument("--acumular", type=int, default=8, help="Pasos de acumulación de gradiente (lote efectivo = lote × acumular).")
+    ej.add_argument("--lr", type=float, default=1e-4)
+    ej.add_argument("--paciencia", type=int, default=6)
+    ej.add_argument("--device", default="cuda")
+
+    xj = sub.add_parser("exportar-jugadores", help="Compila el detector de personas a TensorRT para la GPU de este equipo (modelos/rfdetr/jugadores.trt).")
+    xj.add_argument("--modelos", type=Path, default=Path("modelos"))
+
+    vj = sub.add_parser("evaluar-jugadores", help="Compara el detector de personas con las etiquetas de validación de uno o varios datasets.")
+    vj.add_argument("datasets", type=Path, nargs="+", help="Carpetas de `etiquetar` (se usa su personas/images/val) o la de `preparar-jugadores`.")
+    vj.add_argument("--modelos", type=Path, default=Path("modelos"))
+    vj.add_argument("--motor", choices=["tensorrt", "pytorch"], default="tensorrt")
+    vj.add_argument("--device", default="cuda")
     return parser
 
 
@@ -120,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
 
         etiquetar(ConfiguracionEtiquetado(
             video=args.video, salida=args.salida or Path("datasets") / args.video.stem, modelos=args.modelos, device=args.device, cada_s=args.cada,
-            segmento=Segmento.parse(args.segmento), imgsz=args.imgsz, campo=a_medidas(args.campo), afinados=args.afinados, maestro_balon=args.maestro_balon, juez=args.juez, modelo_juez=args.modelo_juez,
+            segmento=Segmento.parse(args.segmento), campo=a_medidas(args.campo), juez=args.juez, modelo_juez=args.modelo_juez,
             vista_previa_cada=args.vista_previa_cada, max_muestras=args.max_muestras,
         ))
         return 0
@@ -131,24 +199,108 @@ def main(argv: list[str] | None = None) -> int:
 
         info = info_video(args.video)
         puntos = Path("salidas") / f"{args.video.stem}-campo-puntos.npz"
-        medida = medir_campo_video(Maestro(cargar_modelos(args.modelos, args.device, afinados=False), args.imgsz), info, Segmento.parse(args.segmento), fotogramas=args.fotogramas, guardar_puntos=puntos)
+        medida = medir_campo_video(Maestro(cargar_modelos(args.modelos, args.device)), info, Segmento.parse(args.segmento), fotogramas=args.fotogramas, guardar_puntos=puntos)
         print(f"Puntos detectados guardados en {puntos}. Para analizar: --campo {medida['largo_m']:g}x{medida['ancho_m']:g}")
         return 0
-    if args.orden in ("entrenar", "evaluar"):
-        from .entrenamiento import TAREAS, entrenar, evaluar
+    if args.orden == "preparar-campo":
+        from .dataset_campo import preparar as preparar_campo
+        from .detector_campo import DetectorCampo
+        from .modelos import resolver_device
 
-        tareas = list(TAREAS) if args.que == "todos" else [args.que]
-        for que in tareas:
-            if args.orden == "entrenar":
-                entrenar(que, args.dataset, args.modelos, args.salida, epocas=args.epocas, batch=args.batch, imgsz=args.imgsz, device=args.device, congelar=args.congelar, paciencia=args.paciencia, mezclar=args.mezclar)
-            else:
-                evaluar(que, args.dataset, args.modelos, args.salida or args.dataset / "evaluacion", device=args.device, imgsz=args.imgsz)
+        maestro = DetectorCampo.cargar(args.modelos, resolver_device(args.device))
+        preparar_campo(args.videos, args.salida, maestro.detectar, cada_s=args.cada, cada_s_cortos=args.cada_cortos)
+        return 0
+    if args.orden == "entrenar-campo":
+        from datetime import datetime
+
+        from .detector_campo import entrenar as entrenar_campo
+
+        salida = args.salida or Path("entrenamientos") / f"rfdetr-campo-{datetime.now():%Y%m%d-%H%M}"
+        entrenar_campo(args.dataset, args.modelos, salida, resolucion=args.resolucion, epocas=args.epocas, lote=args.lote, acumular=args.acumular, lr=args.lr, paciencia=args.paciencia, device=args.device)
+        return 0
+    if args.orden == "exportar-campo":
+        from .detector_campo import exportar_tensorrt as exportar_campo
+
+        exportar_campo(args.modelos)
+        return 0
+    if args.orden == "evaluar-campo":
+        import json
+
+        from .detector_campo import DetectorCampo
+        from .detector_campo import evaluar as evaluar_campo
+
+        detector = DetectorCampo.cargar(args.modelos, args.device, preferir_trt=args.motor == "tensorrt")
+        carpetas = [d if (d / "data.yaml").exists() else d / "campo" for d in args.datasets]
+        resumen = evaluar_campo(detector.puntos, carpetas, f"RF-DETR ({detector.motor})")
+        destino = args.modelos / "rfdetr" / f"evaluacion-campo-{detector.motor}.json"
+        destino.write_text(json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Resultado en {destino}")
+        return 0
+    if args.orden == "preparar-balon":
+        from .dataset_balon import preparar
+
+        preparar(args.datasets, args.salida, por_balon=args.por_balon, al_azar=args.al_azar, semilla=args.semilla)
+        return 0
+    if args.orden == "entrenar-balon":
+        from datetime import datetime
+
+        from .detector_balon import entrenar as entrenar_balon
+
+        salida = args.salida or Path("entrenamientos") / f"rfdetr-balon-{datetime.now():%Y%m%d-%H%M}"
+        entrenar_balon(args.dataset, args.modelos, salida, epocas=args.epocas, lote=args.lote, acumular=args.acumular, lr=args.lr, paciencia=args.paciencia, device=args.device)
+        return 0
+    if args.orden == "exportar-balon":
+        from .detector_balon import exportar_tensorrt
+
+        exportar_tensorrt(args.modelos, lote=args.lote, lote_max=args.lote_max)
+        return 0
+    if args.orden == "evaluar-balon":
+        import json
+
+        from .detector_balon import DetectorBalon
+        from .detector_balon import evaluar as evaluar_balon
+
+        detector = DetectorBalon.cargar(args.modelos, args.device, preferir_trt=args.motor == "tensorrt")
+        resumen = evaluar_balon(detector, [d / "balon" for d in args.datasets])
+        destino = args.modelos / "rfdetr" / f"evaluacion-balon-{detector.motor}.json"
+        destino.write_text(json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Resultado en {destino}")
+        return 0
+    if args.orden == "preparar-jugadores":
+        from .dataset_jugadores import preparar as preparar_jugadores
+
+        preparar_jugadores(args.datasets, args.salida)
+        return 0
+    if args.orden == "entrenar-jugadores":
+        from datetime import datetime
+
+        from .detector_jugadores import entrenar as entrenar_jugadores
+
+        salida = args.salida or Path("entrenamientos") / f"rfdetr-jugadores-{datetime.now():%Y%m%d-%H%M}"
+        entrenar_jugadores(args.dataset, args.modelos, salida, resolucion=args.resolucion, epocas=args.epocas, lote=args.lote, acumular=args.acumular, lr=args.lr, paciencia=args.paciencia, device=args.device)
+        return 0
+    if args.orden == "exportar-jugadores":
+        from .detector_jugadores import exportar_tensorrt as exportar_jugadores
+
+        exportar_jugadores(args.modelos)
+        return 0
+    if args.orden == "evaluar-jugadores":
+        import json
+
+        from .detector_jugadores import DetectorJugadores
+        from .detector_jugadores import evaluar as evaluar_jugadores
+
+        detector = DetectorJugadores.cargar(args.modelos, args.device, preferir_trt=args.motor == "tensorrt")
+        carpetas = [d if (d / "data.yaml").exists() and not (d / "personas").exists() else d / "personas" for d in args.datasets]
+        resumen = evaluar_jugadores(detector, carpetas)
+        destino = args.modelos / "rfdetr" / f"evaluacion-jugadores-{detector.motor}.json"
+        destino.write_text(json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Resultado en {destino}")
         return 0
     if args.orden in ("exportar-revision", "importar-revision"):
-        from .entrenamiento import TAREAS
-        from .revision import exportar, importar
+        from .revision import CARPETAS, exportar, importar
 
-        carpeta = args.dataset / TAREAS[args.que].carpeta
+        carpeta = args.dataset / CARPETAS[args.que]
         if args.orden == "exportar-revision":
             destino = args.salida or args.dataset / f"revision-{args.que}-{args.particion}.zip"
             n = exportar(carpeta, destino, args.particion, args.max, args.solo_con_etiqueta)
@@ -165,6 +317,11 @@ def main(argv: list[str] | None = None) -> int:
         pasadas = [(ruta, json.loads((ruta / "analisis.json").read_text(encoding="utf-8"))) for ruta in args.salidas]
         print(comparar(pasadas))
         return 0
+    if args.orden == "entrenar-dorsales":
+        from .entrenar_dorsales import entrenar_dorsales
+
+        return entrenar_dorsales(args.carpetas, args.modelos, epocas=args.epocas, lote=args.lote, lr=args.lr, maximo_por_dorsal=args.maximo_por_dorsal, device=args.device)
+
     if args.orden == "descargar-modelos":
         from .modelos import descargar_modelos
 
@@ -195,12 +352,9 @@ def main(argv: list[str] | None = None) -> int:
         fps_muestreo=args.fps,
         segmento=Segmento.parse(args.segmento),
         descanso=a_segundos(args.descanso) if args.descanso else None,
-        imgsz=args.imgsz,
-        imgsz_campo=args.imgsz_campo,
         confianza=args.confianza,
-        balon_fino=not args.sin_balon_fino,
         camara=args.camara,
-        tracker=args.tracker,
+        seguidor=args.seguidor,
         llm=args.llm,
         modelo_llm=args.modelo_llm,
         clips=not args.sin_clips,
@@ -211,6 +365,10 @@ def main(argv: list[str] | None = None) -> int:
         progreso=args.progreso,
         exigir_gpu=args.exigir_gpu,
         semilla=args.semilla,
+        dorsales=not args.sin_dorsales,
+        plantillas=args.plantillas,
+        saque=a_segundos(args.saque) if args.saque else 0.0,
+        guardar_dorsales=args.guardar_dorsales,
     )
     from .analizador import analizar
     from .modelos import SinGpu

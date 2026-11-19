@@ -21,6 +21,30 @@ def test_homografia_ida_y_vuelta():
     assert np.allclose(h.a_imagen(np.array([[0, 0]])), [[100, 50]], atol=0.5)
 
 
+class _DetectorFalso:
+    def __init__(self, xy, conf):
+        self.xy, self.conf = xy, conf
+
+    def puntos(self, imagen):
+        return self.xy, self.conf
+
+
+def test_el_calibrador_usa_los_puntos_seguros_del_detector():
+    f = _proyeccion()
+    indices = [0, 5, 13, 16, 24, 29]
+    conf = np.zeros(len(VERTICES), dtype=np.float32)
+    conf[indices] = 0.9
+    conf[7] = 0.4
+    calibrador = Calibrador(modelo=_DetectorFalso(f(VERTICES), conf), device="cpu", modo="movil")
+    _, mascara = calibrador._detectar(None)
+    assert np.flatnonzero(mascara).tolist() == indices
+    assert calibrador.calibrar(None, 0.0).valida
+
+    # Si el detector no ve el campo devuelve ceros: no hay puntos.
+    calibrador.modelo = _DetectorFalso(np.zeros((len(VERTICES), 2), dtype=np.float32), np.zeros(len(VERTICES), dtype=np.float32))
+    assert calibrador._detectar(None) is None
+
+
 def test_camara_fija_toma_la_mediana_de_cada_punto():
     f = _proyeccion()
     calibrador = Calibrador(modelo=None, device="cpu", modo="fija")

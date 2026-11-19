@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Search;
 using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Players;
@@ -15,12 +16,13 @@ using TercerTiempo.Domain.Teams;
 namespace TercerTiempo.Infrastructure.Search;
 
 // Al guardar cambios en lo que enlaza el buscador (plantillas y sus jugadores, fichas, equipos, clubes, ligas, cuentas
-// de jugador), el índice se da por viejo cuando el guardado ha terminado: la siguiente búsqueda ya ve lo nuevo. Lo mismo
+// de jugador, técnicos y sus nombramientos), el índice se da por viejo cuando el guardado ha terminado: la siguiente búsqueda ya ve lo nuevo. Lo mismo
 // con las lecturas públicas en memoria (PublicDataCache) cuando cambian ligas, partidos, clasificaciones o árbitros.
 internal sealed class SearchIndexInvalidator(SearchIndexHolder holder, PublicDataCache publicData) : SaveChangesInterceptor
 {
     private static readonly Type[] Indexed =
-        [typeof(Squad), typeof(SquadPlayer), typeof(RosterEntry), typeof(Team), typeof(Club), typeof(ClubTeam), typeof(Competition), typeof(Season), typeof(Player)];
+        [typeof(Squad), typeof(SquadPlayer), typeof(RosterEntry), typeof(Team), typeof(Club), typeof(ClubTeam), typeof(Competition), typeof(Season), typeof(Player),
+         typeof(Coach), typeof(CoachAppointment)];
 
     private static readonly Type[] Public =
         [typeof(SeasonYear), typeof(Competition), typeof(Season), typeof(Team), typeof(Match), typeof(Standing), typeof(SeasonZone),

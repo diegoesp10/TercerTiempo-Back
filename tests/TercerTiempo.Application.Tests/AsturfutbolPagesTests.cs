@@ -216,6 +216,78 @@ public class AsturfutbolPagesTests
     }
 
     [Fact]
+    public void Reads_the_coaching_staff_of_each_team_as_written_in_the_sheet()
+    {
+        var sheet = AsturfutbolPages.ParseSheet(Fixture("acta-25744818.html"), matchLength: 90)!;
+
+        var home = sheet.Staff!.Where(s => s.Side == MatchSide.Home).ToList();
+        Assert.Equal(
+            [
+                new OfficialStaffData(MatchSide.Home, "DEL. Campo", "TRELLES CAMPA, ADRIAN"),
+                new OfficialStaffData(MatchSide.Home, "DEL. Equipo", "TRELLES CAMPA, ADRIAN"),
+                new OfficialStaffData(MatchSide.Home, "Entrenador", "FERNANDEZ PARDO, ABEL PABLO"),
+                new OfficialStaffData(MatchSide.Home, "2ºEntrenador", "VICTORIO BALLESTERO, IGNACIO"),
+                new OfficialStaffData(MatchSide.Home, "Fisioterapeuta", "GARCIA ALVAREZ, JAVIER"),
+            ],
+            home);
+
+        var away = sheet.Staff!.Where(s => s.Side == MatchSide.Away).Select(s => (s.Role, s.FullName)).ToList();
+        Assert.Equal(
+            [("DEL. Equipo", "GONZÁLEZ MARTÍNEZ, JESÚS VICENTE"), ("Entrenador", "BOTAS GARCÍA BARRERO, PELAYO"), ("2ºEntrenador", "FERNANDEZ MARTINEZ FARIZA, EMILIO")],
+            away);
+
+        // El cuerpo técnico no se cuela entre los jugadores.
+        Assert.DoesNotContain(sheet.Lines, l => l.FullName.Contains("TRELLES", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_staff_keeps_the_roles_the_federation_writes_and_maps_them_to_ours()
+    {
+        var sheet = AsturfutbolPages.ParseSheet(Fixture("acta-25744748.html"), matchLength: 90)!;
+        var saved = OfficialMatchSheet.Create(Guid.NewGuid(), "asturfutbol", "25744748", null, DateTimeOffset.UtcNow);
+        saved.Apply(sheet, DateTimeOffset.UtcNow);
+
+        var away = saved.StaffOf(MatchSide.Away).ToList();
+        Assert.Equal(["DEL. Equipo", "Entrenador", "Encargado Material"], away.Select(s => s.RoleLabel));
+        Assert.Equal([OfficialStaffRole.TeamDelegate, OfficialStaffRole.HeadCoach, OfficialStaffRole.KitManager], away.Select(s => s.Role));
+        Assert.NotNull(saved.StaffReadAt);
+    }
+
+    [Theory]
+    [InlineData("Entrenador", OfficialStaffRole.HeadCoach)]
+    [InlineData("2ºEntrenador", OfficialStaffRole.AssistantCoach)]
+    [InlineData("2º Entrenador", OfficialStaffRole.AssistantCoach)]
+    [InlineData("Segundo Entrenador", OfficialStaffRole.AssistantCoach)]
+    [InlineData("Entrenador Auxiliar", OfficialStaffRole.AssistantCoach)]
+    [InlineData("Entrenador Prácticas", OfficialStaffRole.AssistantCoach)]
+    [InlineData("Especialista de Porteros", OfficialStaffRole.GoalkeeperCoach)]
+    [InlineData("Entrenador de Porteros", OfficialStaffRole.GoalkeeperCoach)]
+    [InlineData("Preparador Físico", OfficialStaffRole.FitnessCoach)]
+    [InlineData("DEL. Equipo", OfficialStaffRole.TeamDelegate)]
+    [InlineData("DEL. Campo", OfficialStaffRole.FieldDelegate)]
+    [InlineData("Delegado", OfficialStaffRole.TeamDelegate)]
+    [InlineData("Fisioterapeuta", OfficialStaffRole.Physio)]
+    [InlineData("Médico", OfficialStaffRole.Medical)]
+    [InlineData("Encargado Material", OfficialStaffRole.KitManager)]
+    [InlineData("Utillero", OfficialStaffRole.KitManager)]
+    [InlineData("Psicólogo", OfficialStaffRole.Other)]
+    public void Staff_roles_from_the_federation_labels(string label, OfficialStaffRole expected) =>
+        Assert.Equal(expected, OfficialStaffRoles.FromLabel(label));
+
+    [Fact]
+    public void A_team_without_a_coach_is_not_a_person_called_no_presenta()
+    {
+        var saved = OfficialMatchSheet.Create(Guid.NewGuid(), "asturfutbol", "1", null, DateTimeOffset.UtcNow);
+        saved.ApplyStaff([
+            new OfficialStaffData(MatchSide.Home, "Entrenador", "No presenta"),
+            new OfficialStaffData(MatchSide.Home, "DEL. Equipo", "PEREZ GARCIA, JUAN"),
+            new OfficialStaffData(MatchSide.Away, "Entrenador", "NO PRESENTADO"),
+        ], DateTimeOffset.UtcNow);
+
+        Assert.Equal(["PEREZ GARCIA, JUAN"], saved.Staff.Select(s => s.FullName));
+    }
+
+    [Fact]
     public void A_page_without_teams_is_not_a_sheet()
     {
         Assert.Null(AsturfutbolPages.ParseSheet("<html><body><p>No se ha aceptado el cookie</p></body></html>", 90));

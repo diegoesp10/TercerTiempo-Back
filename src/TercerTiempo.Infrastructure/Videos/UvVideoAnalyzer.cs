@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Videos;
 using TercerTiempo.Application.Videos.Analysis;
+using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Videos;
 
 namespace TercerTiempo.Infrastructure.Videos;
 
@@ -21,23 +23,41 @@ internal sealed class UvVideoAnalyzer(
     ILogger<UvVideoAnalyzer> logger) : IVideoAnalyzer
 {
     public const string ProgressPrefix = "##progreso ";
+    public const string StatePrefix = "##estado ";
+    public const string LogPrefix = "##hito ";
+    public const string PauseCommand = "##pausa";
+    public const string ResumeCommand = "##sigue";
+
+    private static readonly IReadOnlyDictionary<string, string> Stages = new Dictionary<string, string>
+    {
+        ["modelos"] = "models",
+        ["equipos"] = "teams",
+        ["pasada"] = "tracking",
+        ["jugadas"] = "plays",
+        ["revision"] = "review",
+        ["salidas"] = "outputs",
+    };
 
     // Código de salida del analizador cuando se le exige GPU (--exigir-gpu) y torch no ve ninguna.
     public const int NoGpuExitCode = 3;
 
     // Versiones de acta-propuesta.json que esta app sabe leer.
-    public static readonly IReadOnlySet<int> ProposalVersions = new HashSet<int> { 1 };
+    // La 2 trae a cada jugador identificado por su dorsal (con el acta oficial) en lugar de cada tracklet suelto.
+    public static readonly IReadOnlySet<int> ProposalVersions = new HashSet<int> { 1, 2 };
 
     // Por debajo de esto el vídeo está dañado o cortado: no se da por bueno lo poco que se leyó.
     public const decimal MinReadFramesPct = 50m;
 
     public const string StderrFile = "stderr.txt";
 
+    // Los dorsales del acta oficial que se le pasan al analizador (--plantillas).
+    public const string RosterFile = "plantillas.json";
+
     private const int StderrTail = 4000;
     private const int MaxLoggedStderrChars = 1024 * 1024;
     private const int MaxCropBytes = 512 * 1024;
 
-    public async Task<VideoAnalysisRun> AnalyzeAsync(VideoAnalysisRequest request, Func<int, CancellationToken, Task> progress, CancellationToken cancellationToken)
+    public async Task<VideoAnalysisRun> AnalyzeAsync(VideoAnalysisRequest request, Func<VideoAnalysisUpdate, CancellationToken, Task> report, VideoAnalysisControl control, CancellationToken cancellationToken)
     {
         var settings = options.Value;
         var directory = AnalyzerDirectory(settings);
@@ -47,6 +67,8 @@ internal sealed class UvVideoAnalyzer(
 
         var output = OutputFolder(request.VideoId);
         ResetFolder(output);
+        if (request.Roster is { } roster)
+            await File.WriteAllTextAsync(Path.Combine(output, RosterFile), RosterJson(roster), cancellationToken);
 
         var arguments = Arguments(video, output, request, settings);
         logger.LogDebug("Analizador: {Uv} {Arguments} (en {Directory})", UvPath(settings), string.Join(' ', arguments), directory);
@@ -56,8 +78,9 @@ internal sealed class UvVideoAnalyzer(
             UvPath(settings), arguments, directory, stderrPath,
             TimeSpan.FromMinutes(Math.Max(1, settings.TimeoutMinutes)),
             settings.InactivityMinutes > 0 ? TimeSpan.FromMinutes(settings.InactivityMinutes) : null,
-            progress, cancellationToken,
-            line => logger.LogDebug("Analizador: {Line}", line));
+            report, cancellationToken,
+            line => logger.LogDebug("Analizador: {Line}", line),
+            control);
 
         if (result.ExitCode != 0)
             LogStderr(request.VideoId, result.ExitCode, stderrPath);
@@ -93,6 +116,8 @@ internal sealed class UvVideoAnalyzer(
             "--equipos", $"{TeamName(request.OurTeam)},{TeamName(request.RivalTeam)}",
             "--sin-clips", "--progreso",
         };
+        if (request.Roster is not null)
+            args.AddRange(["--plantillas", Path.Combine(output, RosterFile)]);
         if (request is { PitchLengthM: { } length, PitchWidthM: { } width })
             args.AddRange(["--campo", string.Create(CultureInfo.InvariantCulture, $"{length:0.#}x{width:0.#}")]);
         if (!string.IsNullOrWhiteSpace(settings.Segment))
@@ -104,11 +129,30 @@ internal sealed class UvVideoAnalyzer(
         return args;
     }
 
+    // {"parte", "minutos_parte", "equipos": [{"lado", "nombre", "jugadores": [{"dorsal", "nombre", "titular", "entra", "sale", "goles"}]}],
+    //  "resultado": {"local", "visitante"}, "goles": [{"lado", "minuto", "descuento"}]}; sin acta cerrada, sin resultado ni goles.
+    internal static string RosterJson(VideoAnalysisRoster roster) => JsonSerializer.Serialize(new
+    {
+        parte = roster.Part switch { VideoPart.FirstHalf => "primera", VideoPart.SecondHalf => "segunda", _ => "partido" },
+        minutos_parte = roster.HalfMinutes,
+        equipos = roster.Teams.Select(t => new
+        {
+            lado = Side(t.Side),
+            nombre = t.Name,
+            jugadores = t.Players.Select(p => new { dorsal = p.ShirtNumber, nombre = p.Name, titular = p.Started, entra = p.MinuteIn, sale = p.MinuteOut, goles = p.Goals }),
+        }),
+        resultado = roster.Score is { } score ? new { local = score.Home, visitante = score.Away } : null,
+        goles = (roster.Goals ?? []).Select(g => new { lado = Side(g.ScoringSide), minuto = g.Minute, descuento = g.ExtraMinute }),
+    });
+
+    private static string Side(MatchSide side) => side == MatchSide.Away ? "visitante" : "local";
+
     internal sealed record ProcessResult(int ExitCode, string StderrTail);
 
-    // Lanza el proceso y lee su avance hasta que termina. La salida de error va entera a `stderrPath`. Se mata con todo
-    // su árbol si se cancela, si pasa `timeout` o si pasa `inactivity` sin escribir ninguna línea (ni de avance ni de
-    // error); estos dos últimos, con un VideoAnalysisException que lo explica.
+    // Lanza el proceso y lee lo que cuenta (avance, estado y registro) hasta que termina. La salida de error va entera a
+    // `stderrPath`. Se mata con todo su árbol si se cancela, si pasa `timeout` (sin contar el tiempo en pausa) o si pasa
+    // `inactivity` sin escribir ninguna línea (en pausa el analizador sigue dando señales); estos dos últimos, con un
+    // VideoAnalysisException que lo explica. Las órdenes de `control` le llegan por su entrada estándar.
     internal static async Task<ProcessResult> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
@@ -116,17 +160,30 @@ internal sealed class UvVideoAnalyzer(
         string stderrPath,
         TimeSpan timeout,
         TimeSpan? inactivity,
-        Func<int, CancellationToken, Task> progress,
+        Func<VideoAnalysisUpdate, CancellationToken, Task> report,
         CancellationToken cancellationToken,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        VideoAnalysisControl? control = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(timeout);
+        var clock = new PausableDeadline(deadline, timeout);
         using var idle = new CancellationTokenSource();
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, idle.Token);
 
         using var process = Start(fileName, arguments, workingDirectory);
         ChildProcessJob.TryAssign(process);
+
+        var input = new CommandWriter(process);
+        void OnControl(bool paused)
+        {
+            clock.Pause(paused);
+            input.Send(paused ? PauseCommand : ResumeCommand);
+        }
+        if (control is not null)
+        {
+            control.Changed += OnControl;
+            if (control.Paused) OnControl(true);
+        }
 
         var activity = new OutputActivity();
         using var stderr = new StderrSink(stderrPath);
@@ -139,14 +196,25 @@ internal sealed class UvVideoAnalyzer(
             while (await process.StandardOutput.ReadLineAsync(stop.Token) is { } line)
             {
                 activity.Touch();
-                if (ProgressPercent(line) is not { } percent)
+                if (ProgressPercent(line) is { } percent)
                 {
-                    if (line.Length > 0) log?.Invoke(line);
-                    continue;
+                    if (percent == lastPercent) continue;
+                    lastPercent = percent;
+                    await report(new VideoAnalysisUpdate(Percent: percent), cancellationToken);
                 }
-                if (percent == lastPercent) continue;
-                lastPercent = percent;
-                await progress(percent, cancellationToken);
+                else if (LiveState(line) is { } live)
+                {
+                    await report(new VideoAnalysisUpdate(Live: live), cancellationToken);
+                }
+                else if (LogLine(line) is { } entry)
+                {
+                    log?.Invoke(entry);
+                    await report(new VideoAnalysisUpdate(Log: entry), cancellationToken);
+                }
+                else if (line.Length > 0)
+                {
+                    log?.Invoke(line);
+                }
             }
 
             await process.WaitForExitAsync(stop.Token);
@@ -163,6 +231,8 @@ internal sealed class UvVideoAnalyzer(
         }
         finally
         {
+            if (control is not null) control.Changed -= OnControl;
+            input.Close();
             await stop.CancelAsync();
             await watchdog;
             await errors;
@@ -170,6 +240,66 @@ internal sealed class UvVideoAnalyzer(
 
         return new ProcessResult(process.ExitCode, stderr.Tail);
     }
+
+    // «##estado {json}» → el estado detallado (con los nombres de la app); null si la línea es otra cosa o no se entiende.
+    internal static VideoAnalysisLive? LiveState(string line)
+    {
+        if (!line.StartsWith(StatePrefix, StringComparison.Ordinal)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(line.AsMemory(StatePrefix.Length));
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+
+            var stage = root.TryGetProperty("etapa", out var s) && s.ValueKind == JsonValueKind.String && s.GetString() is { } name
+                ? Stages.GetValueOrDefault(name, name)
+                : "models";
+            IReadOnlyList<string>? colors = root.TryGetProperty("colores", out var c) && c.ValueKind == JsonValueKind.Array
+                ? c.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).Where(IsColor).Take(2).ToList()
+                : null;
+
+            return new VideoAnalysisLive(
+                stage.Length > 20 ? stage[..20] : stage,
+                root.TryGetProperty("pausado", out var p) && p.ValueKind == JsonValueKind.True,
+                Int(root, "t_video"), Int(root, "tramo_inicio_s"), Int(root, "tramo_fin_s"),
+                Int(root, "fotogramas"), Int(root, "fotogramas_total"),
+                Int(root, "jugadores_en_imagen"), Int(root, "jugadores_seguidos"),
+                Pct(root, "balon_pct"), Pct(root, "calibrado_pct"),
+                Dec(root, "fps"), Dec(root, "velocidad"), Int(root, "resta_s"),
+                Int(root, "muestras"), Int(root, "objetivo"),
+                colors is { Count: > 0 } ? colors : null,
+                Int(root, "toques"), Int(root, "eventos"), Int(root, "pausa_s"));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    // «##hito texto» → el texto, en una línea y sin pasarse de largo.
+    internal static string? LogLine(string line)
+    {
+        if (!line.StartsWith(LogPrefix, StringComparison.Ordinal)) return null;
+        var text = line[LogPrefix.Length..].Trim();
+        return text.Length == 0 ? null : text.Length > 300 ? text[..300] : text;
+    }
+
+    private static bool IsColor(string value) =>
+        value.Length == 7 && value[0] == '#' && value.AsSpan(1).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
+
+    private static int? Int(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number)
+            && double.IsFinite(number) && Math.Abs(number) < int.MaxValue
+            ? (int)Math.Round(number)
+            : null;
+
+    private static decimal? Dec(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number)
+            && double.IsFinite(number) && number is >= 0 and < 1_000_000
+            ? Math.Round((decimal)number, 2)
+            : null;
+
+    private static decimal? Pct(JsonElement root, string name) => Dec(root, name) is { } value ? Math.Clamp(Math.Round(value, 1), 0, 100) : null;
 
     // «##progreso 42» → 42; null si la línea es otra cosa.
     internal static int? ProgressPercent(string line) =>
@@ -302,7 +432,7 @@ internal sealed class UvVideoAnalyzer(
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = false,
+            RedirectStandardInput = true,
             CreateNoWindow = true,
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
@@ -410,6 +540,91 @@ internal sealed class UvVideoAnalyzer(
         element is { } e && e.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number ? value.GetDouble() : 0;
 
     private static decimal Percent(double value) => Math.Round((decimal)Math.Clamp(value, 0, 100), 1);
+
+    // Las órdenes para el analizador, por su entrada estándar. Si el proceso ya ha terminado no pasa nada.
+    private sealed class CommandWriter(Process process)
+    {
+        private readonly Lock _lock = new();
+        private bool _closed;
+
+        public void Send(string command)
+        {
+            lock (_lock)
+            {
+                if (_closed) return;
+                try
+                {
+                    process.StandardInput.WriteLine(command);
+                    process.StandardInput.Flush();
+                }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+                {
+                    _closed = true;
+                }
+            }
+        }
+
+        public void Close()
+        {
+            lock (_lock)
+            {
+                if (_closed) return;
+                _closed = true;
+                try
+                {
+                    process.StandardInput.Close();
+                }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+                {
+                    // Ya estaba cerrada.
+                }
+            }
+        }
+    }
+
+    // El tiempo máximo del análisis, parado mientras está en pausa: una pausa larga no lo da por pasado de tiempo.
+    private sealed class PausableDeadline
+    {
+        private readonly Lock _lock = new();
+        private readonly CancellationTokenSource _source;
+        private TimeSpan _remaining;
+        private long _since = Environment.TickCount64;
+        private bool _paused;
+
+        public PausableDeadline(CancellationTokenSource source, TimeSpan timeout)
+        {
+            _source = source;
+            _remaining = timeout;
+            source.CancelAfter(timeout);
+        }
+
+        public void Pause(bool paused)
+        {
+            lock (_lock)
+            {
+                if (_paused == paused) return;
+                var now = Environment.TickCount64;
+                try
+                {
+                    if (paused)
+                    {
+                        _remaining -= TimeSpan.FromMilliseconds(now - _since);
+                        _source.CancelAfter(Timeout.InfiniteTimeSpan);
+                    }
+                    else
+                    {
+                        _source.CancelAfter(_remaining > TimeSpan.Zero ? _remaining : TimeSpan.Zero);
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+                _since = now;
+                _paused = paused;
+            }
+        }
+    }
 
     // Cuándo escribió el proceso por última vez (en cualquiera de sus dos salidas).
     private sealed class OutputActivity

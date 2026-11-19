@@ -13,6 +13,9 @@ public interface IPerformanceStore
     Task<IReadOnlyList<PlayerMatchPerformance>> GetComparableBySeasonAsync(Guid seasonId, Guid ownSquadId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PlayerMatchPerformance>> GetWithoutRatingAsync(CancellationToken cancellationToken = default);
+
+    // Las que tienen acta oficial cerrada en su partido o ya tomaron algo de ella (puede haber dejado de estar).
+    Task<IReadOnlyList<PlayerMatchPerformance>> GetWithOfficialSheetDataAsync(CancellationToken cancellationToken = default);
     void Add(PlayerMatchPerformance performance);
     void Remove(PlayerMatchPerformance performance);
 }

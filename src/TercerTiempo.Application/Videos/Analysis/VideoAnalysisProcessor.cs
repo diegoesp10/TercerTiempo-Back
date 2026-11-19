@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Videos;
@@ -6,6 +7,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Jobs;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Domain.Videos;
 
@@ -40,6 +42,7 @@ public sealed class VideoAnalysisProcessor(
     IMatchVideoStore videos,
     IMatchStore matches,
     ITeamStore teams,
+    IOfficialSheetStore sheets,
     IVideoAnalyzer analyzer,
     IVideoJobLog jobs,
     IOptions<VideoAnalysisOptions> options,
@@ -50,8 +53,11 @@ public sealed class VideoAnalysisProcessor(
     private static readonly TimeSpan ProgressSaveInterval = TimeSpan.FromSeconds(5);
     private static readonly CultureInfo Spanish = CultureInfo.GetCultureInfo("es-ES");
 
-    // Cada cuánto se renueva el latido aunque el avance no cambie: también es lo que tarda en notarse una cancelación.
+    // Cada cuánto se renueva el latido aunque el avance no cambie.
     private static readonly TimeSpan LeaseBeatInterval = TimeSpan.FromSeconds(15);
+
+    // Cada cuánto se mira si el cuerpo técnico ha pausado, reanudado o cancelado: lo que tarda en notarse.
+    private static readonly TimeSpan ControlInterval = TimeSpan.FromSeconds(3);
 
     private int MaxAttempts => Math.Max(1, options.Value.MaxAttempts);
 
@@ -98,52 +104,78 @@ public sealed class VideoAnalysisProcessor(
         var context = await ContextAsync(video, cancellationToken);
         var runId = await jobs.StartedAsync(JobNames.VideoAnalysis, context.Label, cancellationToken);
         var started = clock.GetUtcNow();
+        var owner = analysis.WorkerId;
 
-        // La fila la guardan el avance y el latido, que corren a la vez sobre la misma unidad de trabajo: de uno en uno.
+        // La fila la guardan lo que cuenta el analizador y el vigilante (latido y órdenes), que corren a la vez sobre la
+        // misma unidad de trabajo: de uno en uno.
         using var gate = new SemaphoreSlim(1, 1);
         using var changed = new CancellationTokenSource();
         using var running = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, changed.Token);
-        using var leaseStop = CancellationTokenSource.CreateLinkedTokenSource(running.Token);
-        var lease = KeepLeaseAsync(analysis, gate, changed, leaseStop.Token);
+        using var watchStop = CancellationTokenSource.CreateLinkedTokenSource(running.Token);
+        var control = new VideoAnalysisControl();
+        control.Set(analysis.Status == VideoAnalysisStatus.Paused);
+        var row = new RowWriter(analyses, unitOfWork, analysis, owner, gate, changed);
+        var watch = WatchAsync(row, control, watchStop.Token);
 
         try
         {
-            logger.LogInformation("Vídeo {Video} ({Label}): analizando{Pitch}", video.Id, context.Label,
-                context.PitchLengthM is { } length ? $" en un campo de {length:0.#} × {context.PitchWidthM:0.#} m" : "");
+            logger.LogInformation("Vídeo {Video} ({Label}): analizando{Pitch}{Roster}", video.Id, context.Label,
+                context.PitchLengthM is { } length ? $" en un campo de {length:0.#} × {context.PitchWidthM:0.#} m" : "",
+                context.Roster is { } roster ? $", con los dorsales del acta oficial ({roster.Teams.Sum(t => t.Players.Count)} jugadores)" : ", sin acta oficial");
 
             var lastSave = started;
+            var percent = 0;
+            VideoAnalysisLive? live = null;
+            var log = new List<string>();
             var run = await analyzer.AnalyzeAsync(
-                new VideoAnalysisRequest(video.Id, video.StorageKey, context.OurTeam, context.RivalTeam, context.PitchLengthM, context.PitchWidthM),
-                async (percent, token) =>
+                new VideoAnalysisRequest(video.Id, video.StorageKey, context.OurTeam, context.RivalTeam, context.PitchLengthM, context.PitchWidthM, context.Roster),
+                async (update, token) =>
                 {
                     var now = clock.GetUtcNow();
-                    if (percent == analysis.Progress || now - lastSave < ProgressSaveInterval) return;
-                    await SaveLockedAsync(gate, () =>
+                    // Una línea del registro, un cambio de etapa o entrar y salir de la pausa se guardan enseguida; el
+                    // resto (avance, minuto del vídeo…) como mucho cada pocos segundos.
+                    var urgent = update.Log is not null
+                        || (update.Live is { } next && (next.Stage != live?.Stage || next.Paused != live?.Paused));
+                    if (update.Percent is { } p) percent = Math.Max(percent, p);
+                    if (update.Live is { } l) live = l;
+                    if (update.Log is { } text) log.Add(text);
+                    if (!urgent && now - lastSave < ProgressSaveInterval) return;
+
+                    var pending = log.ToList();
+                    var snapshot = live;
+                    var reached = percent;
+                    await row.SaveAsync(a =>
                     {
-                        analysis.ReportProgress(percent);
-                        analysis.Beat(now);
+                        a.ReportLive(reached, snapshot?.Stage, snapshot is null ? null : LiveJson(snapshot), now);
+                        foreach (var entry in pending) a.AddLog(entry, now);
+                        a.Beat(now);
                     }, token);
+                    log.RemoveRange(0, pending.Count);
                     lastSave = now;
                 },
+                control,
                 running.Token);
 
-            await StopLeaseAsync(leaseStop, lease);
+            await StopWatchAsync(watchStop, watch);
             changed.Token.ThrowIfCancellationRequested();
 
-            analysis.Complete(
-                new VideoAnalysisOutcome(run.OutputPath, run.AnalyzerVersion, run.Weights, run.ProposalJson, run.Frames,
-                    run.BallFramesPct, run.CalibratedFramesPct, run.AnalyzedSeconds, run.PitchLengthM, run.PitchWidthM, run.ReadFramesPct),
-                clock.GetUtcNow());
-            // Terminado el análisis, el resultado se guarda aunque el servicio se esté parando.
-            await analyses.SaveResultAsync(
-                analysis.Id, run.Crops.Select(c => new VideoAnalysisCrop(analysis.Id, c.Key, c.Value)).ToList(), CancellationToken.None);
+            // Terminado el análisis, el resultado se guarda aunque el servicio se esté parando (y aunque justo se hubiera
+            // pedido una pausa: ya no hay nada que pausar).
+            var outcome = new VideoAnalysisOutcome(run.OutputPath, run.AnalyzerVersion, run.Weights, run.ProposalJson, run.Frames,
+                run.BallFramesPct, run.CalibratedFramesPct, run.AnalyzedSeconds, run.PitchLengthM, run.PitchWidthM, run.ReadFramesPct);
+            var crops = run.Crops.Select(c => new VideoAnalysisCrop(analysis.Id, c.Key, c.Value)).ToList();
+            await row.SaveResultAsync(() => analysis.Complete(outcome, clock.GetUtcNow()), crops);
 
-            var minutes = Math.Max(1, (int)Math.Round((clock.GetUtcNow() - started).TotalMinutes));
+            var minutes = Math.Max(1, (int)Math.Round((clock.GetUtcNow() - started).TotalMinutes - analysis.PausedSeconds / 60.0));
             var read = run.ReadFramesPct is { } pct && pct < MatchVideoAnalysis.LowReadFramesPct
                 ? string.Create(Spanish, $" Solo se pudo leer el {pct:0.#} % de los fotogramas del tramo.")
                 : "";
+            var proposal = VideoProposal.Parse(run.ProposalJson);
+            var players = proposal.Identified
+                ? $"{proposal.Players.Count} jugadores identificados por el dorsal"
+                : $"{run.Crops.Count} jugadores seguidos";
             var summary = string.Create(Spanish,
-                $"{context.Label}: {run.Crops.Count} jugadores seguidos, balón a la vista en el {run.BallFramesPct:0.#} % de los fotogramas y campo calibrado en el {run.CalibratedFramesPct:0.#} %, en {minutes} min.{read}");
+                $"{context.Label}: {players}, balón a la vista en el {run.BallFramesPct:0.#} % de los fotogramas y campo calibrado en el {run.CalibratedFramesPct:0.#} %, en {minutes} min.{read}");
             logger.LogInformation("Vídeo {Video}: {Summary}", video.Id, summary);
             await jobs.FinishedAsync(runId, true, summary, null, CancellationToken.None);
         }
@@ -156,9 +188,9 @@ public sealed class VideoAnalysisProcessor(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Eliminado mientras se analizaba (no hay nada que guardar) o apagado del servicio (vuelve a la cola).
-            if (!await videos.IsDeletedAsync(video.Id, CancellationToken.None) && await TryDiscardAsync(analysis)
-                && analysis.Status == VideoAnalysisStatus.Running)
+            // Eliminado mientras se analizaba (no hay nada que guardar) o apagado del servicio (vuelve a la cola o, si
+            // estaba en pausa, se queda en pausa para empezar de nuevo al reanudarlo).
+            if (!await videos.IsDeletedAsync(video.Id, CancellationToken.None) && await TryDiscardAsync(analysis) && analysis.IsWorking)
             {
                 analysis.Requeue();
                 await TrySaveAsync();
@@ -178,7 +210,7 @@ public sealed class VideoAnalysisProcessor(
 
             // Lo que hubiera en memoria (un resultado a medio guardar) no cuenta: manda la fila tal como está en la base.
             var retry = false;
-            if (await TryDiscardAsync(analysis) && analysis.Status == VideoAnalysisStatus.Running)
+            if (await TryDiscardAsync(analysis) && analysis.IsWorking)
             {
                 retry = !definitive && analysis.Attempts < MaxAttempts;
                 if (retry) analysis.RetryLater(ex.Message);
@@ -190,32 +222,67 @@ public sealed class VideoAnalysisProcessor(
         }
         finally
         {
-            await StopLeaseAsync(leaseStop, lease);
+            await StopWatchAsync(watchStop, watch);
+        }
+    }
+
+    private static readonly JsonSerializerOptions LiveJsonOptions = new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+
+    internal static string LiveJson(VideoAnalysisLive live) => JsonSerializer.Serialize(live, LiveJsonOptions);
+
+    internal static VideoAnalysisLive? ReadLive(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<VideoAnalysisLive>(json, LiveJsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 
     private static bool Stopped(Exception ex, CancellationTokenSource changed, CancellationToken cancellationToken) =>
         ex is ConcurrentChangeException || (ex is OperationCanceledException && changed.IsCancellationRequested && !cancellationToken.IsCancellationRequested);
 
-    private async Task KeepLeaseAsync(MatchVideoAnalysis analysis, SemaphoreSlim gate, CancellationTokenSource changed, CancellationToken cancellationToken)
+    // Cada pocos segundos mira cómo está la fila en la base: si el cuerpo técnico la ha pausado o reanudado, se lo dice al
+    // analizador; si la ha cancelado (o el vídeo se ha ido, u otro analizador la ha retomado), para todo. Y renueva el
+    // latido, también en pausa, para que nadie la dé por abandonada.
+    private async Task WatchAsync(RowWriter row, VideoAnalysisControl control, CancellationToken cancellationToken)
     {
+        var lastBeat = clock.GetUtcNow();
         try
         {
             while (true)
             {
-                await Task.Delay(LeaseBeatInterval, clock, cancellationToken);
+                await Task.Delay(ControlInterval, clock, cancellationToken);
                 try
                 {
-                    await SaveLockedAsync(gate, () => analysis.Beat(clock.GetUtcNow()), cancellationToken);
+                    var state = await row.ReadControlAsync(cancellationToken);
+                    if (state is null || state.WorkerId != row.Owner || state.Status is not (VideoAnalysisStatus.Running or VideoAnalysisStatus.Paused))
+                    {
+                        await row.StopAsync();
+                        return;
+                    }
+                    if (control.Paused != (state.Status == VideoAnalysisStatus.Paused))
+                        logger.LogInformation("Vídeo {Video}: análisis {Action}", row.VideoId, state.Status == VideoAnalysisStatus.Paused ? "en pausa" : "reanudado");
+                    control.Set(state.Status == VideoAnalysisStatus.Paused);
+
+                    var now = clock.GetUtcNow();
+                    if (now - lastBeat >= LeaseBeatInterval)
+                    {
+                        await row.SaveAsync(a => a.Beat(now), cancellationToken);
+                        lastBeat = now;
+                    }
                 }
                 catch (ConcurrentChangeException)
                 {
-                    await changed.CancelAsync();
                     return;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    logger.LogWarning(ex, "Vídeo {Video}: no se pudo renovar el latido del análisis; se vuelve a intentar", analysis.VideoId);
+                    logger.LogWarning(ex, "Vídeo {Video}: no se pudo mirar ni renovar el análisis; se vuelve a intentar", row.VideoId);
                 }
             }
         }
@@ -225,24 +292,94 @@ public sealed class VideoAnalysisProcessor(
         }
     }
 
-    private async Task SaveLockedAsync(SemaphoreSlim gate, Action change, CancellationToken cancellationToken)
+    // Guarda los cambios de la fila de uno en uno. Si al guardar la fila ha cambiado en la base (una pausa o una
+    // reanudación pedida desde la app), se relee y se vuelve a aplicar mientras siga siendo de este analizador; si no
+    // (cancelado, retomado por otro), se para el análisis.
+    private sealed class RowWriter(IMatchVideoAnalysisStore analyses, IUnitOfWork unitOfWork, MatchVideoAnalysis analysis, string? owner, SemaphoreSlim gate, CancellationTokenSource changed)
     {
-        await gate.WaitAsync(cancellationToken);
-        try
+        private const int MaxRetries = 3;
+
+        public string? Owner => owner;
+
+        public Guid VideoId => analysis.VideoId;
+
+        public async Task SaveAsync(Action<MatchVideoAnalysis> change, CancellationToken cancellationToken)
         {
-            change();
-            await unitOfWork.SaveChangesAsync(cancellationToken);
+            await gate.WaitAsync(cancellationToken);
+            try
+            {
+                for (var attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        change(analysis);
+                        await unitOfWork.SaveChangesAsync(cancellationToken);
+                        return;
+                    }
+                    catch (ConcurrentChangeException) when (attempt < MaxRetries)
+                    {
+                        if (!await analyses.DiscardChangesAsync(analysis, cancellationToken) || !Ours())
+                        {
+                            await changed.CancelAsync();
+                            throw;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
         }
-        finally
+
+        public async Task SaveResultAsync(Action complete, IReadOnlyCollection<VideoAnalysisCrop> crops)
         {
-            gate.Release();
+            await gate.WaitAsync(CancellationToken.None);
+            try
+            {
+                for (var attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        complete();
+                        await analyses.SaveResultAsync(analysis.Id, crops, CancellationToken.None);
+                        return;
+                    }
+                    catch (ConcurrentChangeException) when (attempt < MaxRetries)
+                    {
+                        if (!await analyses.DiscardChangesAsync(analysis, CancellationToken.None) || !Ours())
+                            throw;
+                    }
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
         }
+
+        public async Task<VideoAnalysisControlState?> ReadControlAsync(CancellationToken cancellationToken)
+        {
+            await gate.WaitAsync(cancellationToken);
+            try
+            {
+                return await analyses.GetControlAsync(analysis.Id, cancellationToken);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        public Task StopAsync() => changed.CancelAsync();
+
+        private bool Ours() => analysis.IsWorking && analysis.WorkerId == owner;
     }
 
-    private static async Task StopLeaseAsync(CancellationTokenSource stop, Task lease)
+    private static async Task StopWatchAsync(CancellationTokenSource stop, Task watch)
     {
         await stop.CancelAsync();
-        await lease;
+        await watch;
     }
 
     private async Task<bool> TryDiscardAsync(MatchVideoAnalysis analysis)
@@ -281,7 +418,7 @@ public sealed class VideoAnalysisProcessor(
             _ => "partido completo",
         };
         var match = await matches.GetByIdAsync(video.MatchId, cancellationToken);
-        if (match is null) return new AnalysisContext($"{video.Title} ({part})", "Nuestro equipo", "Rival", null, null);
+        if (match is null) return new AnalysisContext($"{video.Title} ({part})", "Nuestro equipo", "Rival", null, null, null);
 
         var byId = (await teams.GetByIdsAsync([match.HomeTeamId, match.AwayTeamId], cancellationToken)).ToDictionary(t => t.Id);
         var home = byId.GetValueOrDefault(match.HomeTeamId);
@@ -294,8 +431,46 @@ public sealed class VideoAnalysisProcessor(
             ours?.Name ?? "Nuestro equipo",
             rival?.Name ?? "Rival",
             home?.Profile.HasPitch == true ? home.Profile.PitchLengthM : null,
-            home?.Profile.HasPitch == true ? home.Profile.PitchWidthM : null);
+            home?.Profile.HasPitch == true ? home.Profile.PitchWidthM : null,
+            Roster(await sheets.GetByMatchAsync(match.Id, cancellationToken), video.Part));
     }
 
-    private sealed record AnalysisContext(string Label, string OurTeam, string RivalTeam, decimal? PitchLengthM, decimal? PitchWidthM);
+    // Del acta oficial (también la provisional, que ya trae las alineaciones), los que jugaron con dorsal: el analizador
+    // solo da por bueno un número que esté aquí y en sus minutos. Cada parte dura la mitad de lo que jugó quien lo jugó
+    // todo (90 → 45; en categorías con partes más cortas, menos).
+    internal static VideoAnalysisRoster? Roster(OfficialMatchSheet? sheet, VideoPart part)
+    {
+        if (sheet is null || !sheet.HasLineups) return null;
+        var full = sheet.Lines.Where(l => l.Played).Select(l => l.MinutesPlayed).DefaultIfEmpty(0).Max();
+        var half = full >= 40 ? (int)Math.Round(full / 2.0) : 45;
+        var teams = new[] { MatchSide.Home, MatchSide.Away }
+            .Select(side => new VideoAnalysisRosterTeam(
+                side,
+                side == MatchSide.Home ? sheet.HomeTeamName : sheet.AwayTeamName,
+                sheet.LinesOf(side)
+                    .Where(l => l.Played && l.ShirtNumber is not null)
+                    .GroupBy(l => l.ShirtNumber!.Value)
+                    .Select(g => g.First())
+                    .OrderBy(l => l.ShirtNumber)
+                    .Select(l => new VideoAnalysisRosterPlayer(l.ShirtNumber!.Value, l.FullName, l.Started, l.Started ? null : l.MinuteIn, l.MinuteOut, l.Goals + l.PenaltyGoals))
+                    .ToList()))
+            .Where(t => t.Players.Count > 0)
+            .ToList();
+        if (teams.Count == 0) return null;
+
+        // La provisional no trae marcador (y le pueden faltar goles): solo la cerrada dice cuántos hubo.
+        if (sheet is not { IsAvailable: true, HomeGoals: { } homeGoals, AwayGoals: { } awayGoals })
+            return new VideoAnalysisRoster(part, half, teams);
+        var goals = sheet.Events
+            .Where(e => e.Type is OfficialEventType.Goal or OfficialEventType.PenaltyGoal or OfficialEventType.OwnGoal)
+            .OrderBy(e => e.Order)
+            .Select(e => new VideoAnalysisGoal(
+                e.Type == OfficialEventType.OwnGoal ? (e.Side == MatchSide.Home ? MatchSide.Away : MatchSide.Home) : e.Side,
+                e.Minute,
+                e.ExtraMinute ?? 0))
+            .ToList();
+        return new VideoAnalysisRoster(part, half, teams, new VideoAnalysisScore(homeGoals, awayGoals), goals);
+    }
+
+    private sealed record AnalysisContext(string Label, string OurTeam, string RivalTeam, decimal? PitchLengthM, decimal? PitchWidthM, VideoAnalysisRoster? Roster);
 }

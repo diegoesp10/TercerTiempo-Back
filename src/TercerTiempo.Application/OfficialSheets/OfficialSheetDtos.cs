@@ -42,7 +42,18 @@ public sealed record OfficialTeamSheetDto(
     Guid? TeamId,
     int? Goals,
     IReadOnlyList<OfficialLineDto> Starters,
-    IReadOnlyList<OfficialLineDto> Bench);
+    IReadOnlyList<OfficialLineDto> Bench,
+    [property: System.ComponentModel.Description("Cuerpo técnico del equipo en el acta (entrenador primero); vacío si el acta no lo trae.")]
+    IReadOnlyList<OfficialStaffDto>? Staff = null);
+
+public sealed record OfficialStaffDto(
+    OfficialStaffRole Role,
+    [property: System.ComponentModel.Description("Función tal como la escribe la federación; si la misma persona figura en dos (delegado de campo y de equipo), las dos con «·».")]
+    string RoleLabel,
+    [property: System.ComponentModel.Description("Nombre como en el acta: «APELLIDOS, NOMBRE».")]
+    string FullName,
+    [property: System.ComponentModel.Description("Perfil del técnico en la app si el club lo ha nombrado en ese equipo y temporada con el mismo nombre; null si no.")]
+    Guid? CoachId = null);
 
 public sealed record OfficialLineDto(
     Guid Id,
@@ -110,7 +121,35 @@ internal static class OfficialSheetMapper
             teamId,
             side == MatchSide.Home ? sheet.HomeGoals : sheet.AwayGoals,
             lines.Where(l => l.Started).OrderBy(l => l.ShirtNumber ?? int.MaxValue).Select(ToDto).ToList(),
-            lines.Where(l => !l.Started).OrderBy(l => l.ShirtNumber ?? int.MaxValue).Select(ToDto).ToList());
+            lines.Where(l => !l.Started).OrderBy(l => l.ShirtNumber ?? int.MaxValue).Select(ToDto).ToList(),
+            StaffOf(sheet, side));
+    }
+
+    // Una fila por persona (quien es delegado de campo y de equipo sale una vez con las dos funciones), del entrenador al
+    // encargado de material.
+    public static IReadOnlyList<OfficialStaffDto> StaffOf(OfficialMatchSheet sheet, MatchSide side) =>
+        sheet.StaffOf(side)
+            .GroupBy(s => s.NormalizedName)
+            .Select(g => new OfficialStaffDto(g.Min(s => s.Role), string.Join(" · ", g.Select(s => s.RoleLabel).Distinct()), g.First().FullName))
+            .OrderBy(s => s.Role)
+            .ToList();
+
+    // Enlaza a su perfil a quien el club ha nombrado en el cuerpo técnico de ese equipo y temporada con el mismo nombre.
+    public static OfficialSheetDto LinkStaff(OfficialSheetDto dto, IReadOnlyList<Domain.Clubs.CoachAppointment> appointments)
+    {
+        if (appointments.Count == 0) return dto;
+
+        OfficialTeamSheetDto? Link(OfficialTeamSheetDto? team) => team?.Staff is not { Count: > 0 } staff ? team : team with
+        {
+            Staff = staff.Select(s => s with
+            {
+                CoachId = appointments
+                    .Where(a => a.TeamId == team.TeamId && a.CoachId is not null && !a.IsRevoked)
+                    .FirstOrDefault(a => Domain.Common.PersonName.SameAsSheet(s.FullName, a.NormalizedCoachName))?.CoachId,
+            }).ToList(),
+        };
+
+        return dto with { Home = Link(dto.Home), Away = Link(dto.Away) };
     }
 
     public static OfficialSheetDto ToDto(OfficialMatchSheet sheet, Guid homeTeamId, Guid awayTeamId, OfficialSheetAvailability status, string? message) =>

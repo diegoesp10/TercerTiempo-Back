@@ -116,7 +116,9 @@ public sealed record RunFootballSyncCommand(
     [property: Description("Descargar también las plantillas (catálogo entero de jugadores). Por defecto: sí en la temporada completa; en la jornada, lo de los ajustes; en fechas, no.")]
     bool? IncludeRosters,
     [property: Description("Encolar también las actas de la federación de los partidos ya jugados del alcance que no estén guardadas. Se descargan después, al ritmo que permite asturfutbol.es (20 por hora, 60 al día).")]
-    bool IncludeSheets = false) : ICommand<JobDto>;
+    bool IncludeSheets = false,
+    [property: Description("Solo con FullSeason: una temporada pasada de la web («2025/2026») para guardar sus partidos y clasificaciones (los precedentes de la previa), sin plantillas ni actas. Vacío = la actual.")]
+    string? Season = null) : ICommand<JobDto>;
 
 internal sealed class RunFootballSyncValidator : AbstractValidator<RunFootballSyncCommand>
 {
@@ -126,6 +128,11 @@ internal sealed class RunFootballSyncValidator : AbstractValidator<RunFootballSy
     {
         RuleFor(x => x.Scope).IsInEnum().WithName("Alcance");
         RuleFor(x => x.CompetitionIds).Must(ids => ids is null || ids.Count <= 100).WithName("Ligas");
+        When(x => !string.IsNullOrWhiteSpace(x.Season), () =>
+        {
+            RuleFor(x => x.Season).Matches(@"^\s*\d{4}\s*[/-]\s*(\d{2}|\d{4})\s*$").WithMessage("La temporada va como «2025/2026».");
+            RuleFor(x => x.Scope).Equal(SyncScopeKind.FullSeason).WithMessage("Una temporada pasada se descarga entera.");
+        });
 
         When(x => x.Scope == SyncScopeKind.DateRange, () =>
         {
@@ -165,6 +172,11 @@ internal sealed class RunFootballSyncHandler(
             _ => SyncScope.FullSeason(ids, command.IncludeRosters ?? true),
         };
 
-        return await JobLauncher.LaunchAsync(monitor, JobNames.FootballData, scope with { IncludeSheets = command.IncludeSheets }, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(command.Season))
+            scope = scope with { IncludeRosters = false, SeasonLabel = command.Season.Trim().Replace(" ", string.Empty) };
+        else
+            scope = scope with { IncludeSheets = command.IncludeSheets };
+
+        return await JobLauncher.LaunchAsync(monitor, JobNames.FootballData, scope, cancellationToken);
     }
 }

@@ -45,7 +45,11 @@ public static class DependencyInjection
         services.AddScoped<Videos.Analysis.VideoAnalysisQueue>();
         services.AddScoped<Videos.Analysis.VideoAnalysisProcessor>();
         services.AddScoped<Videos.Analysis.VideoAnalysisReader>();
+        services.AddScoped<Performances.OfficialSheetRatings>();
         services.AddScoped<Squads.MatchSheet.MatchSheetWriter>();
+        services.AddScoped<Squads.Suspensions.SuspensionReader>();
+        services.AddScoped<Squads.SquadPlayerMerger>();
+        services.AddScoped<Squads.SquadRosterReconciliation>();
         services.AddSingleton<OfficialSheets.OfficialSheetSyncMemory>();
         services.AddScoped<IPublicSheetSource, FederationSheetSource>();
         services.AddSingleton<Common.PublicDataCache>();

@@ -156,7 +156,8 @@ que tira de la cola, o se alquila GPU por horas en la nube solo mientras analiza
 
 **Licencias**: Ultralytics (YOLO) es AGPL-3.0: en un servicio cerrado hay que pagar su licencia comercial o usar
 detectores Apache 2.0 (RF-DETR, RT-DETR, YOLOX). El resto (supervision, ByteTrack, SoccerNet, WASB) es MIT o
-Apache. Hay que decidirlo antes de escribir el analizador.
+Apache. **Decidido el 17-11-2026: RF-DETR** (con TensorRT en la GPU que analice). El balón ya es RF-DETR; quedan
+jugadores, el seguidor (ByteTrack de supervision) y los puntos del campo (RF-DETR Keypoint).
 
 ### C. Híbrido (recomendado): B para los números, un LLM para lo que hay que «entender»
 
@@ -238,7 +239,8 @@ archivo lo dice (`pct_leido`): por debajo de 95 % la propuesta va con aviso y po
   y hay que reflejarlo en la política de privacidad y en el contrato con el club.
 - **Coste de GPU en producción**: o el PC de Diego hace de analizador (vale para el piloto), o GPU por horas en la
   nube; conviene decidirlo antes del piloto con clubes.
-- **Licencia de Ultralytics** (AGPL) frente a RF-DETR (Apache): decidir antes de escribir.
+- **Licencia de Ultralytics** (AGPL) frente a RF-DETR (Apache): decidido RF-DETR el 17-11-2026 y hecho el 18-11-2026
+  (balón, jugadores y campo son RF-DETR; Ultralytics ya no está en el analizador).
 
 ## 8. Plan propuesto
 

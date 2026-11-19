@@ -101,9 +101,20 @@ internal sealed class GetOfficialSheetHandler(
     IOfficialSheetQueue queue,
     OfficialSheetSyncMemory memory,
     TercerTiempo.Application.Abstractions.Identity.ICurrentUser currentUser,
+    TercerTiempo.Domain.Clubs.ICoachAppointmentStore appointments,
     TimeProvider clock) : IQueryHandler<GetOfficialSheetQuery, OfficialSheetDto>
 {
     public async Task<OfficialSheetDto> Handle(GetOfficialSheetQuery query, CancellationToken cancellationToken)
+    {
+        var dto = await ReadAsync(query, cancellationToken);
+        if (dto.Home?.Staff is not { Count: > 0 } && dto.Away?.Staff is not { Count: > 0 }) return dto;
+
+        var match = (await matches.GetByIdAsync(query.MatchId, cancellationToken))!;
+        var named = await appointments.GetByTeamsAndSeasonsAsync([match.HomeTeamId, match.AwayTeamId], [match.SeasonId], cancellationToken);
+        return OfficialSheetMapper.LinkStaff(dto, named);
+    }
+
+    private async Task<OfficialSheetDto> ReadAsync(GetOfficialSheetQuery query, CancellationToken cancellationToken)
     {
         var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
             ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);

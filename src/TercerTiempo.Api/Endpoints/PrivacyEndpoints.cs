@@ -13,12 +13,12 @@ internal static class PrivacyEndpoints
         group.MapGet("/cookies", (IPrivacyRepository privacy, CancellationToken ct) => privacy.GetCookiePolicyAsync(ct))
             .WithName("GetCookiePolicy")
             .WithSummary("Política de cookies")
-            .WithDescription("Versión vigente y todo lo que la web guarda en el navegador por categorías: Necessary y Preferences (exentas, siempre activas) y Analytics (solo con consentimiento). Público.");
+            .WithDescription("Versión vigente y todo lo que la web guarda en el navegador por categorías: Necessary y Preferences (exentas, siempre activas) y Analytics (solo con consentimiento), con su finalidad, tipo, responsable y duración, sin el nombre técnico de cada dato. Público.");
 
         group.MapPost("/cookies/consent", (RecordConsentCommand command, IPrivacyRepository privacy, CancellationToken ct) => privacy.RecordConsentAsync(command, ct))
             .WithName("RecordCookieConsent")
             .WithSummary("Guardar la elección de cookies")
-            .WithDescription("Sin sesión o con ella (se apunta la cuenta). visitorId es el UUID que el navegador guarda en tt.consent; action AcceptAll, RejectAll o Custom (con analytics). Cada elección se guarda con la versión vigente: si la política cambia, hay que volver a elegir. Público (con el límite de llamadas por IP de toda la API).")
+            .WithDescription("Sin sesión o con ella (se apunta la cuenta). visitorId es el UUID que el navegador guarda con la elección; action AcceptAll, RejectAll o Custom (con analytics). Cada elección se guarda con la versión vigente: si la política cambia, hay que volver a elegir. Público (con el límite de llamadas por IP de toda la API).")
             .ProducesValidationProblem();
 
         group.MapPost("/analytics/events", (TrackEventsCommand command, IPrivacyRepository privacy, CancellationToken ct) => privacy.TrackAsync(command, ct))
@@ -34,6 +34,11 @@ internal static class PrivacyEndpoints
             .WithName("GetAnalyticsReport")
             .WithSummary("Uso de la web")
             .WithDescription("De from a to (30 días por defecto): páginas vistas, visitantes, visitas, búsquedas y clics; por día; páginas, búsquedas, clics y equipos/ligas/partidos más vistos; por tipo de usuario; clubes más activos y más visitados; y las elecciones de cookies. Con clubId: scope Actor = lo que hacen sus usuarios, Subject = las visitas a sus páginas. Solo administradores.");
+
+        admin.MapGet("/cookies", (IAdminRepository repo, CancellationToken ct) => repo.GetCookiePolicyAsync(ct))
+            .WithName("GetAdminCookiePolicy")
+            .WithSummary("Catálogo de cookies con sus nombres")
+            .WithDescription("Lo mismo que /api/cookies más el nombre técnico de cada dato, que la política pública no enseña. Solo administradores.");
 
         admin.MapPost("/cookies", (UpsertCookieCommand command, IAdminRepository repo, CancellationToken ct) => repo.UpsertCookieAsync(command with { Id = null }, ct))
             .WithName("CreateCookie")

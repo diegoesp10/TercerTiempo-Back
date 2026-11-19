@@ -6,6 +6,8 @@ using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
+using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
@@ -28,13 +30,16 @@ internal sealed class ImportRosterHandler(
     ICompetitionStore competitions,
     IInjuryStore injuries,
     IClubStore clubs,
+    IPerformanceStore performances,
+    IMatchStore matches,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<ImportRosterCommand, SquadDetailDto>
 {
     public async Task<SquadDetailDto> Handle(ImportRosterCommand command, CancellationToken cancellationToken)
     {
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
-        SquadOpening.ImportRoster(squad, await teams.GetRosterAsync(squad.TeamId, squad.SeasonId, cancellationToken), clock.GetUtcNow());
+        var completed = SquadOpening.ImportRoster(squad, await teams.GetRosterAsync(squad.TeamId, squad.SeasonId, cancellationToken), clock.GetUtcNow());
+        await SquadRosterReconciliation.RecalculateRatingsAsync(squad, completed, performances, matches, cancellationToken);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

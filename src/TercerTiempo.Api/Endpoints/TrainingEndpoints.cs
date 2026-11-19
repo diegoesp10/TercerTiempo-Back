@@ -50,6 +50,14 @@ internal static class TrainingEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{squadId:guid}/trainings/attendance", (Guid squadId, DateOnly? from, DateOnly? to, Guid? squadPlayerId, ITrainingsRepository trainings, CancellationToken ct) =>
+                trainings.SquadAttendanceAsync(squadId, from, to, squadPlayerId, ct))
+            .WithName("GetSquadTrainingAttendance")
+            .WithSummary("Entrenamientos hechos por cada jugador")
+            .WithDescription("Entre dos fechas (ambas incluidas; sin ellas, toda la temporada de la plantilla): cuántos entrenamientos acabados le tocaban a cada jugador, a cuántos vino y a cuántos faltó (y en cuántos avisó), su porcentaje y los minutos entrenados. Quien contaba con venir y no se marcó cuenta como que vino. El club y el cuerpo técnico ven a todos (o a uno, con squadPlayerId); un jugador solo a sí mismo.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapGet("/{squadId:guid}/trainings", (Guid squadId, DateOnly from, DateOnly to, ITrainingsRepository trainings, CancellationToken ct) => trainings.ListTrainingsAsync(squadId, from, to, ct))
             .WithName("ListTrainings")
             .WithSummary("Entrenamientos entre dos fechas (ambas incluidas)")
@@ -96,11 +104,12 @@ internal static class TrainingEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        group.MapDelete("/{squadId:guid}/trainings/{sessionId:guid}", (Guid squadId, Guid sessionId, bool? series, ITrainingsRepository trainings, CancellationToken ct) => trainings.DeleteTrainingAsync(squadId, sessionId, series ?? false, ct))
+        group.MapDelete("/{squadId:guid}/trainings/{sessionId:guid}", (Guid squadId, Guid sessionId, ITrainingsRepository trainings, CancellationToken ct) => trainings.DeleteTrainingAsync(squadId, sessionId, ct))
             .WithName("DeleteTraining")
             .WithSummary("Borrar un entrenamiento")
-            .WithDescription("Con ?series=true se borran también las sesiones posteriores de la misma serie semanal. Si la sesión aún no ha empezado, se avisa a los jugadores con cuenta de que se anula (TrainingCall).")
+            .WithDescription("De una en una (no hay borrado en bloque) y solo si aún no ha acabado: un entrenamiento acabado no se borra (422, training.past_locked). Si la sesión aún no ha empezado, se avisa a los jugadores con cuenta de que se anula (TrainingCall).")
             .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapPost("/{squadId:guid}/trainings/{sessionId:guid}/trial-players", (Guid squadId, Guid sessionId, TrainingTrialPlayerRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.AddTrialPlayerToTrainingAsync(squadId, sessionId, request, ct))
@@ -168,6 +177,13 @@ internal static class TrainingEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        group.MapGet("/{squadId:guid}/grounds", (Guid squadId, ITrainingsRepository trainings, CancellationToken ct) => trainings.GroundsAsync(squadId, ct))
+            .WithName("GetSquadGrounds")
+            .WithSummary("Campos de fútbol de la liga de la plantilla")
+            .WithDescription("Los campos de los partidos de la temporada (información pública del proveedor de datos), con su dirección y su punto en el mapa cuando se han encontrado en OpenStreetMap, y los equipos que juegan en cada uno como locales. El de casa va el primero (homeGroundId). Para elegir dónde se cita a los convocados.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapGet("/{squadId:guid}/callups", (Guid squadId, ITrainingsRepository trainings, CancellationToken ct) => trainings.ListCallUpsAsync(squadId, ct))
             .WithName("ListSquadCallUps")
             .WithSummary("Estado de las convocatorias de la plantilla, por partido")
@@ -186,7 +202,7 @@ internal static class TrainingEndpoints
         group.MapPut("/{squadId:guid}/matches/{matchId:guid}/callup", (Guid squadId, Guid matchId, CallUpRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.SaveCallUpAsync(squadId, matchId, request, ct))
             .WithName("SaveMatchCallUp")
             .WithSummary("Guardar o enviar (publicar) la convocatoria de un partido")
-            .WithDescription("Club propietario o cuerpo técnico vigente, solo antes del partido. Quién va, cita (hora y lugar) y notas. Al publicar se avisa en la app a cada jugador con cuenta, vaya o no; después, solo a quien le cambie la convocatoria. El convocado la firma; el que no va se da por enterado.")
+            .WithDescription("Club propietario o cuerpo técnico vigente, solo antes del partido. Quién va, cita (hora y lugar: un campo de la liga, meetGroundId, u otro sitio escrito a mano, meetPlace) y notas. Al publicar se avisa en la app a cada jugador con cuenta, vaya o no; después, solo a quien le cambie la convocatoria. El convocado la firma; el que no va se da por enterado.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -212,6 +228,14 @@ internal static class TrainingEndpoints
             .WithName("ListMyTrainings")
             .WithSummary("Próximos entrenamientos del jugador, con su asistencia")
             .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapGet("/trainings/attendance", (Guid? squadId, DateOnly? from, DateOnly? to, ITrainingsRepository trainings, CancellationToken ct) =>
+                trainings.MyAttendanceAsync(squadId, from, to, ct))
+            .WithName("GetMyTrainingAttendance")
+            .WithSummary("Entrenamientos hechos por el jugador")
+            .WithDescription("De una temporada (squadId, de la lista seasons que devuelve) o de todas, y entre dos fechas si se dan: a cuántos entrenamientos acabados le tocaba ir, a cuántos vino, a cuántos faltó, su porcentaje y los minutos entrenados.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapPut("/trainings/{sessionId:guid}/absence", (Guid sessionId, AbsenceRequest request, ITrainingsRepository trainings, CancellationToken ct) => trainings.ReportAbsenceAsync(sessionId, request, ct))
             .WithName("ReportTrainingAbsence")

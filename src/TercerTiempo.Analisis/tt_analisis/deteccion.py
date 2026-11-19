@@ -1,30 +1,34 @@
 """Detección y seguimiento de personas (jugadores, porteros, árbitros) y detección del balón en un fotograma.
 
-Las personas se siguen con el seguidor integrado en Ultralytics (modo `track`, con estado entre fotogramas). El balón
-se busca a fotograma entero (el detector de balón y la clase balón del detector de jugadores) y, si no aparece, por
-teselas en cada fotograma en que está perdido (encuentra el balón pequeño del fondo; cuesta unos 56 ms por fotograma en
-la RTX 5070 Ti, medido con el vídeo del Vallobín). Se descartan los balones de tamaño imposible y los saltos imposibles
-respecto al último visto; entre varios candidatos se elige el más coherente con la trayectoria reciente y con dónde
-están los jugadores (el balón casi siempre está cerca de alguno), y un candidato flojo solo vale cerca de un jugador o
-de donde se esperaba el balón: así las teselas pueden bajar el umbral sin que cada marca de la línea cuente."""
+Las personas las detecta RF-DETR en el fotograma entero (`detector_jugadores.py`) y se siguen entre fotogramas con
+BoT-SORT o ByteTrack según la cámara (`rastreador.py`). El balón
+lo busca en cada fotograma el detector RF-DETR por teselas de 384 px a resolución nativa, todas en un lote en la GPU
+(`detector_balon.py`), así que el balón pequeño del fondo se ve siempre, no solo cuando se pierde. Se descartan los
+balones de tamaño imposible y los saltos imposibles respecto al último visto; entre varios candidatos se elige el más
+coherente con la trayectoria reciente y con dónde están los jugadores (el balón casi siempre está cerca de alguno), y
+un candidato flojo solo vale cerca de un jugador o de donde se esperaba el balón: así el umbral puede ser bajo sin que
+cada marca de la línea cuente."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import supervision as sv
 
-from .config import ALTURA_JUGADOR_CM, CLASE_ARBITRO, CLASE_BALON, Configuracion
+from .config import ALTURA_JUGADOR_CM, CLASE_ARBITRO, Configuracion
 from .modelos import Modelos
+from .rastreador import Rastreador
 
 BALON_MIN_PX = 4
 BALON_MAX_PX = 70
 SALTO_MAX_PX_S = 2400.0
-CONF_BALON = 0.25
-CONF_TESELA = 0.2
+# Medidos el 17-11-2026 con RF-DETR (segunda ronda) sobre los 134 balones de validación del Vallobín: a 0,2 encuentra
+# 124 (92 %) y a 0,5 118 (88 %); por encima de 0,5 casi todo lo que no cuadra con la etiqueta es un balón de verdad
+# (otro balón, o uno que la regla del etiquetado no confirmó), y entre 0,2 y 0,5 están los reflejos y las medias.
+CONF_BALON = 0.2
 # Por debajo de esta confianza un candidato solo vale cerca de un jugador o de donde se esperaba el balón.
-CONF_FLOJO = 0.3
+CONF_FLOJO = 0.5
 PRIOR_JUGADOR_M = 6.0
 PRIOR_PREDICCION_PX = 150.0
 # Al elegir entre candidatos, cuánto resta cada metro hasta el jugador más cercano (hasta un tope) y lo lejos que cae
@@ -47,15 +51,6 @@ def _cajas(xyxy: np.ndarray, confianza: np.ndarray) -> sv.Detections:
     if len(xyxy) == 0:
         return sv.Detections.empty()
     return sv.Detections(xyxy=xyxy, confidence=np.asarray(confianza, dtype=np.float32).reshape(-1), class_id=np.zeros(len(xyxy), dtype=int))
-
-
-def juntar(*grupos: sv.Detections) -> sv.Detections:
-    """Las detecciones de balón de varias fuentes, sin duplicados (y sin arrastrar identificadores de seguimiento)."""
-    con_algo = [g for g in grupos if len(g)]
-    if not con_algo:
-        return sv.Detections.empty()
-    todas = _cajas(np.concatenate([g.xyxy for g in con_algo]), np.concatenate([g.confidence if g.confidence is not None else np.ones(len(g)) for g in con_algo]))
-    return todas.with_nms(threshold=0.3)
 
 
 def distancias_a_jugadores_m(centros: np.ndarray, personas: sv.Detections) -> np.ndarray:
@@ -105,38 +100,22 @@ class Detector:
     modelos: Modelos
     config: Configuracion
     perdido: int = 0
-    busquedas_finas: int = 0
     descartados: int = 0
     flojos_descartados: int = 0
     # Último balón visto: (t, centro en px, velocidad en px/s o None).
     _ultimo_balon: tuple[float, np.ndarray, np.ndarray | None] | None = None
+    rastreador: Rastreador = field(init=False)
 
     def __post_init__(self) -> None:
-        def callback(trozo: np.ndarray) -> sv.Detections:
-            resultado = self.modelos.balon(trozo, imgsz=640, conf=CONF_TESELA, device=self.modelos.device, **self.modelos.precision, verbose=False)[0]
-            return sv.Detections.from_ultralytics(resultado)
-
-        self._rebanador = sv.InferenceSlicer(callback=callback, overlap_filter=sv.OverlapFilter.NONE, slice_wh=(640, 640), overlap_wh=(64, 64))
+        self.rastreador = Rastreador(self.config.seguidor_efectivo(), self.config.fps_muestreo)
 
     def detectar(self, imagen: np.ndarray, t: float) -> Detecciones:
-        resultado = self.modelos.jugadores.track(
-            imagen, persist=True, tracker=self.config.tracker_yaml(), imgsz=self.config.imgsz, conf=self.config.confianza, device=self.modelos.device, **self.modelos.precision, verbose=False
-        )[0]
-        todas = sv.Detections.from_ultralytics(resultado)
-        if len(todas) == 0 or todas.tracker_id is None:
-            personas = sv.Detections.empty()
-            balon_general = sv.Detections.empty()
-        else:
-            personas = todas[todas.class_id != CLASE_BALON]
-            balon_general = todas[todas.class_id == CLASE_BALON]
-        return Detecciones(personas, self._detectar_balon(imagen, balon_general, personas, t))
+        personas = self.rastreador.actualizar(self.modelos.jugadores.detectar(imagen, self.config.confianza), imagen, t)
+        return Detecciones(personas, self._detectar_balon(imagen, personas, t))
 
-    def _detectar_balon(self, imagen: np.ndarray, del_modelo_general: sv.Detections, personas: sv.Detections, t: float) -> sv.Detections:
-        resultado = self.modelos.balon(imagen, imgsz=self.config.imgsz, conf=CONF_BALON, device=self.modelos.device, **self.modelos.precision, verbose=False)[0]
-        candidatos = self._plausibles(juntar(sv.Detections.from_ultralytics(resultado), del_modelo_general), t)
-        if len(candidatos) == 0 and self.config.balon_fino and self._toca_busqueda_fina():
-            self.busquedas_finas += 1
-            candidatos = self._plausibles(self._rebanador(imagen).with_nms(threshold=0.1), t)
+    def _detectar_balon(self, imagen: np.ndarray, personas: sv.Detections, t: float) -> sv.Detections:
+        cajas, puntuaciones = self.modelos.balon.detectar(imagen, CONF_BALON)
+        candidatos = self._plausibles(_cajas(cajas, puntuaciones), t)
         prediccion, radio = self._prediccion(t)
         balon, flojos = elegir_balon(candidatos, personas, prediccion, radio)
         self.flojos_descartados += flojos
@@ -178,8 +157,3 @@ class Detector:
                 mascara &= salto <= SALTO_MAX_PX_S * lapso + 60
         self.descartados += int((~mascara).sum())
         return balon[mascara]
-
-    def _toca_busqueda_fina(self) -> bool:
-        # Cada fotograma en que el balón está perdido: hasta el 06-11-2026 se buscaba fino solo las primeras ocho veces y
-        # luego una de cada cinco, y con el balón visto en uno de cada cinco fotogramas eso dejaba sin buscar la mitad.
-        return True

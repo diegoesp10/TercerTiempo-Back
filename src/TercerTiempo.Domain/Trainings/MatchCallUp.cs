@@ -17,6 +17,8 @@ public sealed class MatchCallUp : AggregateRoot
     public Guid MatchId { get; private set; }
     public CallUpStatus Status { get; private set; }
     public DateTimeOffset? MeetAt { get; private set; }
+    // Dónde se cita: un campo de las ligas o, si no está en la lista (obras, otro sitio), lo que se escriba.
+    public Guid? MeetGroundId { get; private set; }
     public string? MeetPlace { get; private set; }
     public string? Notes { get; private set; }
     public Guid? CreatedByCoachId { get; private set; }
@@ -56,7 +58,8 @@ public sealed class MatchCallUp : AggregateRoot
 
     // Qué jugadores van y los detalles de la cita. Devuelve a quién le cambia la convocatoria respecto a lo que ya se
     // había publicado, para avisarle.
-    public IReadOnlyList<CallUpEntry> Arrange(Squad squad, IReadOnlySet<Guid> calledSquadPlayerIds, DateTimeOffset? meetAt, string? meetPlace, string? notes, DateTimeOffset now)
+    public IReadOnlyList<CallUpEntry> Arrange(
+        Squad squad, IReadOnlySet<Guid> calledSquadPlayerIds, DateTimeOffset? meetAt, Guid? meetGroundId, string? meetPlace, string? notes, DateTimeOffset now)
     {
         foreach (var player in squad.ActivePlayers)
         {
@@ -71,10 +74,11 @@ public sealed class MatchCallUp : AggregateRoot
             if (entry.SetCalled(called, now)) changed.Add(entry);
         }
 
-        var place = string.IsNullOrWhiteSpace(meetPlace) ? null : Guard.NotEmpty(meetPlace, "lugar", 150);
+        var ground = meetGroundId is { } id && id != Guid.Empty ? id : (Guid?)null;
+        var place = ground is not null || string.IsNullOrWhiteSpace(meetPlace) ? null : Guard.NotEmpty(meetPlace, "lugar", 150);
         // Ya enviada, si cambia la hora o el sitio de la cita, los convocados tienen que enterarse: se les vuelve a avisar
         // y el doble check vuelve a gris hasta que la abran otra vez. La firma se mantiene: siguen convocados.
-        if (IsPublished && (meetAt != MeetAt || place != MeetPlace))
+        if (IsPublished && (meetAt != MeetAt || ground != MeetGroundId || place != MeetPlace))
         {
             foreach (var entry in _entries.Where(e => e.Called && !changed.Contains(e)))
             {
@@ -84,6 +88,7 @@ public sealed class MatchCallUp : AggregateRoot
         }
 
         MeetAt = meetAt;
+        MeetGroundId = ground;
         MeetPlace = place;
         Notes = string.IsNullOrWhiteSpace(notes) ? null : Guard.NotEmpty(notes, "notas", 1000);
         UpdatedAt = now;
@@ -136,6 +141,24 @@ public sealed class MatchCallUp : AggregateRoot
         return entry;
     }
 
+    // Dos fichas de la misma persona que se juntan: queda una línea, la de la que se queda, con lo que diga más de las dos
+    // (convocado, firmado o visto). Nunca cambia de ficha una línea: así no choca con la que ya tenía la otra.
+    public void MergeEntries(Guid fromSquadPlayerId, Guid toSquadPlayerId)
+    {
+        var from = EntryOf(fromSquadPlayerId);
+        if (from is null) return;
+
+        var to = EntryOf(toSquadPlayerId);
+        if (to is null)
+            _entries.Add(CallUpEntry.Create(Id, toSquadPlayerId).TakeOver(from));
+        else if (Weight(from) > Weight(to))
+            to.TakeOver(from);
+        _entries.Remove(from);
+    }
+
+    private static int Weight(CallUpEntry entry) =>
+        (entry.Called ? 4 : 0) + (entry.Response != CallUpResponse.Pending ? 2 : 0) + (entry.SeenAt is not null ? 1 : 0);
+
     // A quién se le puede volver a enviar: ya enviada y sin abrir.
     public IEnumerable<CallUpEntry> UnseenEntries() => IsPublished ? _entries.Where(e => e.SeenAt is null) : [];
 }
@@ -160,6 +183,16 @@ public sealed class CallUpEntry : Entity
         Called = false,
         Response = CallUpResponse.Pending,
     };
+
+    internal CallUpEntry TakeOver(CallUpEntry other)
+    {
+        Called = other.Called;
+        Response = other.Response;
+        RespondedAt = other.RespondedAt;
+        NotifiedAt = other.NotifiedAt;
+        SeenAt = other.SeenAt;
+        return this;
+    }
 
     // true si cambia: entonces la firma anterior deja de valer y hay que volver a avisar al jugador.
     internal bool SetCalled(bool called, DateTimeOffset now)

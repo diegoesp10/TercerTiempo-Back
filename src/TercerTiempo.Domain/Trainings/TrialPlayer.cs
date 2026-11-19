@@ -23,6 +23,12 @@ public sealed class TrialPlayer : AggregateRoot
 
     public bool IsPromoted => PromotedSquadPlayerId is not null;
 
+    // Su ficha se junta con otra de la misma persona: apunta a la que se queda.
+    public void MovePromotionTo(Guid squadPlayerId)
+    {
+        if (IsPromoted) PromotedSquadPlayerId = Guard.NotEmpty(squadPlayerId, nameof(squadPlayerId));
+    }
+
     private TrialPlayer() { }
 
     public static TrialPlayer Create(Squad squad, SquadEditor editor, string fullName, string? notes, DateTimeOffset now)
@@ -54,7 +60,7 @@ public sealed class TrialPlayer : AggregateRoot
     public bool Matches(string name) => NormalizedName == NameNormalizer.Normalize(name);
 
     // Le hacen ficha: se da de alta en la plantilla con su nombre y el jugador de prueba queda cerrado apuntando a ella.
-    public SquadPlayer Promote(Squad squad, Position? position, int? shirtNumber, DateTimeOffset now)
+    public SquadPlayer Promote(Squad squad, Position position, int? shirtNumber, DateTimeOffset now)
     {
         if (IsPromoted)
             throw new DomainException(ErrorCode.TrialPlayerPromoted, FullName);

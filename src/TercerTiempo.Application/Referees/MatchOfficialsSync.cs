@@ -7,6 +7,7 @@ using TercerTiempo.Application.Sync;
 using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Referees;
 using TercerTiempo.Domain.Teams;
 
@@ -14,10 +15,12 @@ namespace TercerTiempo.Application.Referees;
 
 // El trabajo de los equipos arbitrales: primero lo que dicen las actas de la federación ya guardadas (se releen de la
 // caché, sin pedir nada) y después, para los partidos jugados que sigan sin él, la página del partido en
-// futbolasturiano.es, que solo lo publica en algunos (se vuelve a mirar unos días después por si lo añade).
+// futbolasturiano.es, que solo lo publica en algunos (se vuelve a mirar unos días después por si lo añade). De paso lee
+// el cuerpo técnico de las actas guardadas antes de que se leyera (también de la caché).
 internal sealed class SyncMatchOfficialsHandler(
     IRefereeStore referees,
     IOfficialSheetProvider sheets,
+    IOfficialSheetStore sheetStore,
     IFootballDataProvider footballData,
     MatchOfficialsWriter writer,
     IMatchStore matches,
@@ -27,6 +30,7 @@ internal sealed class SyncMatchOfficialsHandler(
     TimeProvider clock) : ICommandHandler<SyncMatchOfficialsCommand, MatchOfficialsSynced>
 {
     private const int LookupBatch = 60;
+    private const int StaffBatch = 2000;
     private const int MaxAttempts = 3;
     private const string Job = JobNames.MatchOfficials;
     private static readonly TimeSpan RetryAfter = TimeSpan.FromDays(3);
@@ -34,6 +38,8 @@ internal sealed class SyncMatchOfficialsHandler(
 
     public async Task<MatchOfficialsSynced> Handle(SyncMatchOfficialsCommand command, CancellationToken cancellationToken)
     {
+        await ReadStaffAsync(cancellationToken);
+
         var fromCache = await referees.GetSheetsWithoutOfficialsAsync(sheets.ProviderName, cancellationToken);
         var names = await TeamsAsync(fromCache.Select(s => s.MatchId), cancellationToken);
         var done = 0;
@@ -88,6 +94,26 @@ internal sealed class SyncMatchOfficialsHandler(
 
         progress.Step(Job, null, total, total);
         return new MatchOfficialsSynced(fromSheets, fromProvider, looked);
+    }
+
+    // Cuerpo técnico de las actas bajadas antes de leerlo: de la página guardada. Si ya no está guardada se marca leída
+    // igual (sin nadie) y lo traerá la próxima vez que se baje el acta.
+    private async Task ReadStaffAsync(CancellationToken cancellationToken)
+    {
+        var pending = await sheetStore.GetWithoutStaffAsync(sheets.ProviderName, StaffBatch, cancellationToken);
+        if (pending.Count == 0) return;
+
+        var now = clock.GetUtcNow();
+        var read = 0;
+        for (var i = 0; i < pending.Count; i++)
+        {
+            progress.Step(Job, "Cuerpos técnicos de las actas ya guardadas", i, pending.Count);
+            var data = await sheets.GetCachedSheetAsync(pending[i].ExternalId, cancellationToken);
+            pending[i].ApplyStaff(data?.Staff ?? [], now);
+            if (pending[i].Staff.Count > 0) read++;
+        }
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        progress.Event(Job, $"Cuerpo técnico leído de {read} {(read == 1 ? "acta guardada" : "actas guardadas")} (sin pedir nada a la federación)", JobEventTone.Success);
     }
 
     private void Report(Guid matchId, string text, string tone, IReadOnlyDictionary<Guid, (SyncTeamRefDto Home, SyncTeamRefDto Away)> names)

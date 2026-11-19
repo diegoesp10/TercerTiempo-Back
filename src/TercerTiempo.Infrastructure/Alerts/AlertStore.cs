@@ -29,13 +29,18 @@ internal sealed class AlertStore(AppDbContext db) : IAlertStore
     public async Task<IReadOnlyList<Alert>> GetByKindAsync(AlertKind kind, CancellationToken cancellationToken = default) =>
         await db.Set<Alert>().Where(a => a.Kind == kind).ToListAsync(cancellationToken);
 
-    public async Task<AlertPage> GetPageForAsync(Guid? clubId, Guid? playerId, Guid? coachId, int take, CancellationToken cancellationToken = default)
+    public async Task<AlertPage> GetPageForAsync(
+        Guid? clubId, Guid? playerId, Guid? coachId, int newTake, int earlierTake, CancellationToken cancellationToken = default)
     {
         if (clubId is null && playerId is null && coachId is null) return new AlertPage(0, []);
-        var mine = For(clubId, playerId, coachId);
-        var unread = await mine.CountAsync(a => a.ReadAt == null && a.ResolvedAt == null, cancellationToken);
-        var latest = await mine.AsNoTracking().OrderByDescending(a => a.CreatedAt).Take(take).ToListAsync(cancellationToken);
-        return new AlertPage(unread, latest);
+        var mine = For(clubId, playerId, coachId).AsNoTracking();
+        var isNew = mine.Where(a => a.SeenAt == null && a.ResolvedAt == null);
+        var fresh = await isNew.OrderByDescending(a => a.CreatedAt).Take(newTake).ToListAsync(cancellationToken);
+        // Si caben todos, ya se sabe cuántos hay: el recuento solo hace falta cuando se llega al tope.
+        var unseen = fresh.Count < newTake ? fresh.Count : await isNew.CountAsync(cancellationToken);
+        var earlier = await mine.Where(a => a.SeenAt != null || a.ResolvedAt != null)
+            .OrderByDescending(a => a.CreatedAt).Take(earlierTake).ToListAsync(cancellationToken);
+        return new AlertPage(unseen, fresh.Concat(earlier).OrderByDescending(a => a.CreatedAt).ToList());
     }
 
     public async Task<IReadOnlyList<Alert>> GetOpenByKeyPrefixAsync(
@@ -52,10 +57,18 @@ internal sealed class AlertStore(AppDbContext db) : IAlertStore
         return found.Where(a => a.Key.StartsWith(keyPrefix, StringComparison.Ordinal)).ToList();
     }
 
+    public Task<int> MarkSeenAsync(
+        Guid? clubId, Guid? playerId, Guid? coachId, IReadOnlyCollection<Guid> alertIds, DateTimeOffset now, CancellationToken cancellationToken = default) =>
+        (clubId is null && playerId is null && coachId is null) || alertIds.Count == 0
+            ? Task.FromResult(0)
+            : For(clubId, playerId, coachId).Where(a => a.SeenAt == null && alertIds.Contains(a.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.SeenAt, now), cancellationToken);
+
     public Task<int> MarkAllReadAsync(Guid? clubId, Guid? playerId, Guid? coachId, DateTimeOffset now, CancellationToken cancellationToken = default) =>
         clubId is null && playerId is null && coachId is null
             ? Task.FromResult(0)
-            : For(clubId, playerId, coachId).Where(a => a.ReadAt == null).ExecuteUpdateAsync(s => s.SetProperty(a => a.ReadAt, now), cancellationToken);
+            : For(clubId, playerId, coachId).Where(a => a.ReadAt == null || a.SeenAt == null).ExecuteUpdateAsync(
+                s => s.SetProperty(a => a.ReadAt, a => a.ReadAt ?? now).SetProperty(a => a.SeenAt, a => a.SeenAt ?? now), cancellationToken);
 
     public Task<int> DeleteResolvedBeforeAsync(DateTimeOffset before, CancellationToken cancellationToken = default) =>
         db.Set<Alert>().Where(a => a.ResolvedAt != null && a.ResolvedAt < before).ExecuteDeleteAsync(cancellationToken);
@@ -74,6 +87,8 @@ internal sealed class AlertConfiguration : IEntityTypeConfiguration<Alert>
         builder.ConfigureAggregate();
         builder.Ignore(a => a.IsRead);
         builder.Ignore(a => a.IsResolved);
+        builder.Ignore(a => a.IsSeen);
+        builder.Ignore(a => a.IsNew);
 
         builder.Property(a => a.Kind).HasConversion<string>().HasMaxLength(40);
         builder.Property(a => a.Key).HasMaxLength(120).IsRequired();

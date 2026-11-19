@@ -11,7 +11,7 @@ using TercerTiempo.Domain.Squads;
 namespace TercerTiempo.Application.Search;
 
 public sealed record SearchItemDto(
-    [property: Description("competition, team, club, player, match o squad.")]
+    [property: Description("competition, team, club, player, coach (cuerpo técnico), match, squad o referee.")]
     string Type,
     Guid Id,
     string Title,
@@ -43,9 +43,9 @@ public sealed record SearchResultsDto(
     double ElapsedMs);
 
 public sealed record SearchQuery(
-    [property: Description("Lo que se busca: nombres de ligas, equipos, clubes, jugadores o dos equipos para un partido («nalón roces»).")]
+    [property: Description("Lo que se busca: nombres de ligas, equipos, clubes, jugadores, técnicos o dos equipos para un partido («nalón roces»).")]
     string? Q,
-    [property: Description("Solo un tipo: competition, team, club, player, match o squad.")]
+    [property: Description("Solo un tipo: competition, team, club, player, coach, match, squad o referee.")]
     string? Type,
     [property: Description("Resultados por tipo (1-50; por defecto 6).")]
     int? Limit) : IQuery<SearchResultsDto>;

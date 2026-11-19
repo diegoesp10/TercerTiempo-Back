@@ -1,4 +1,4 @@
-from tt_analisis.balon import cobertura, distancia_a_jugadores_m, quitar_aislados, rellenar_huecos
+from tt_analisis.balon import cobertura, distancia_a_jugadores_m, objetos_fijos, permanencias, quitar_aislados, quitar_objetos_fijos, rellenar_huecos
 from tt_analisis.tipos import Instante
 
 from conftest import instante, persona
@@ -69,3 +69,57 @@ def test_la_distancia_a_los_jugadores_sin_campo_se_estima_por_su_altura():
     inst = Instante(0, 0.0, [jugador], (520.0, 500.0), None, False)
     assert abs(distancia_a_jugadores_m(inst) - 3.6) < 1e-6
     assert distancia_a_jugadores_m(Instante(0, 0.0, [], (1.0, 1.0), None, False)) is None
+
+
+def _partido_con_paradas(paradas: list[tuple[float, float, tuple[float, float]]]) -> list[Instante]:
+    """Instantes cada 0,2 s con el balón quieto en cada (t_inicio, duración, punto) y sin balón el resto; un jugador
+    en (1000, 1000)."""
+    fin = max(t + d for t, d, _ in paradas) + 5
+    instantes = []
+    for k in range(int(fin / 0.2)):
+        t = round(k * 0.2, 1)
+        balon = next(((xy[0] + (k % 3) * 20, xy[1]) for t0, d, xy in paradas if t0 <= t <= t0 + d), None)
+        instantes.append(instante(k, t, [persona(1, 0, (1000, 1000))], balon))
+    return instantes
+
+
+def test_las_permanencias_son_los_tramos_de_balon_quieto():
+    instantes = _partido_con_paradas([(10.0, 3.0, (3000, 2000)), (30.0, 1.0, (5000, 2000))])
+    perms = permanencias(instantes)
+    assert len(perms) == 1
+    assert perms[0].t_inicio == 10.0 and abs(perms[0].duracion - 3.0) < 1e-6
+    assert abs(perms[0].centro[0] - 3020) <= 20 and perms[0].centro[1] == 2000
+
+
+def test_un_objeto_que_se_para_una_y_otra_vez_en_el_mismo_sitio_se_quita():
+    # Cinco «paradas» en (6900, 4100) entre los minutos 1 y 15, una falta de verdad en (3000, 2000) y cinco saques de
+    # centro: solo lo primero es un objeto.
+    objeto = [(60.0 + 200 * k, 3.0, (6900, 4100)) for k in range(5)]
+    centro = [(80.0 + 200 * k, 3.0, (6000, 3500)) for k in range(5)]
+    instantes = _partido_con_paradas(objeto + centro + [(500.0, 4.0, (3000, 2000))])
+    objetos = objetos_fijos(permanencias(instantes))
+    assert len(objetos) == 1
+    o = objetos[0]
+    assert abs(o.centro[0] - 6920) <= 20 and o.centro[1] == 4100 and o.permanencias == 5
+    assert o.radio >= 250
+    vistos = sum(1 for i in instantes if i.balon_imagen is not None)
+    assert quitar_objetos_fijos(instantes, objetos) == 5 * 16
+    assert sum(1 for i in instantes if i.balon_imagen is not None) == vistos - 5 * 16
+    # La falta y los saques de centro siguen.
+    assert any(i.balon_campo is not None and i.balon_campo[0] < 3100 for i in instantes)
+    assert any(i.balon_campo is not None and abs(i.balon_campo[0] - 6000) <= 40 for i in instantes)
+
+
+def test_pocas_paradas_o_muy_seguidas_no_son_un_objeto():
+    tres = [(60.0 + 300 * k, 3.0, (6900, 4100)) for k in range(3)]
+    assert objetos_fijos(permanencias(_partido_con_paradas(tres))) == []
+    seguidas = [(60.0 + 60 * k, 3.0, (6900, 4100)) for k in range(6)]
+    assert objetos_fijos(permanencias(_partido_con_paradas(seguidas))) == []
+
+
+def test_el_balon_pegado_a_un_jugador_junto_a_un_objeto_fijo_se_queda():
+    objeto = [(60.0 + 200 * k, 3.0, (6900, 4100)) for k in range(5)]
+    instantes = _partido_con_paradas(objeto)
+    objetos = objetos_fijos(permanencias(instantes))
+    regate = instante(len(instantes), 2000.0, [persona(7, 1, (6950, 4150))], (6900, 4100))
+    assert quitar_objetos_fijos([regate], objetos) == 0 and regate.balon_campo == (6900, 4100)

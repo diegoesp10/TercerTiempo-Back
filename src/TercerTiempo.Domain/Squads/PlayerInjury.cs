@@ -58,6 +58,9 @@ public sealed class PlayerInjury : AggregateRoot
     public Guid? RecordedByClubId { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
+    // Se junta con la otra ficha de la misma persona.
+    public void MoveToSquadPlayer(Guid squadPlayerId) => SquadPlayerId = Guard.NotEmpty(squadPlayerId, nameof(squadPlayerId));
+
     public bool IsActive => ReturnedOn is null;
 
     private PlayerInjury() { }
@@ -116,5 +119,28 @@ public sealed class PlayerInjury : AggregateRoot
         UpdatedAt = now;
     }
 
+    // De baja ese día: desde que empezó hasta la víspera del alta (sin alta, de ahí en adelante).
+    public bool CoversDay(DateOnly day) => StartedOn <= day && (ReturnedOn is null || day < ReturnedOn);
+
+    // Toca el periodo [from, to] (cualquiera de los dos abierto).
+    public bool Overlaps(DateOnly? from, DateOnly? to) =>
+        (to is null || StartedOn <= to) && (from is null || ReturnedOn is null || ReturnedOn > from);
+
     public int DaysOut(DateOnly today) => Math.Max(0, (ReturnedOn ?? today).DayNumber - StartedOn.DayNumber);
+}
+
+// Las lesiones de una plantilla para saber quién estaba de baja un día concreto: un lesionado no entrena ni va
+// convocado. Se calcula al leer, así que corregir las fechas de una lesión corrige también lo pasado.
+public sealed class InjuryCalendar
+{
+    private readonly ILookup<Guid, PlayerInjury> _byPlayer;
+
+    public static readonly InjuryCalendar Empty = new([]);
+
+    public InjuryCalendar(IEnumerable<PlayerInjury> injuries) =>
+        _byPlayer = injuries.OrderByDescending(i => i.StartedOn).ToLookup(i => i.SquadPlayerId);
+
+    public PlayerInjury? On(Guid squadPlayerId, DateOnly day) => _byPlayer[squadPlayerId].FirstOrDefault(i => i.CoversDay(day));
+
+    public IReadOnlyList<PlayerInjury> Of(Guid squadPlayerId) => _byPlayer[squadPlayerId].ToList();
 }

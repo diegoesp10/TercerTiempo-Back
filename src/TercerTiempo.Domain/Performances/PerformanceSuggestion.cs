@@ -23,6 +23,9 @@ public sealed class PerformanceSuggestion : AggregateRoot
     public Guid PlayerId { get; private set; }
     public Guid MatchId { get; private set; }
 
+    // Se junta con la otra ficha de la misma persona.
+    public void MoveToSquadPlayer(Guid squadPlayerId) => SquadPlayerId = Guard.NotEmpty(squadPlayerId, nameof(squadPlayerId));
+
     public bool Started { get; private set; }
     public int MinutesPlayed { get; private set; }
     public int Goals { get; private set; }

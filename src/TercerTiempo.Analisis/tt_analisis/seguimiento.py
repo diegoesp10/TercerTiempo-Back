@@ -1,5 +1,5 @@
 """Memoria de cada tracklet (persona seguida): votos de clase y de equipo, y los mejores recortes para que el cuerpo
-técnico (o el modelo de lenguaje) sepa quién es. El seguimiento en sí lo hace Ultralytics en modo `track`.
+técnico (o el modelo de lenguaje) sepa quién es. El seguimiento en sí lo hace `rastreador.py`.
 
 El seguidor a veces junta a dos jugadores en un mismo identificador (se cruzan, uno tapa al otro y sale el otro con el
 mismo número). Como los dos equipos visten distinto, se nota: la camiseta del tracklet cambia de equipo y se queda así.
@@ -47,6 +47,12 @@ class MemoriaTracklet:
     # técnico es del equipo que al final tiene el tracklet, no el de un jugador del otro equipo con el que el seguidor
     # lo haya confundido un momento.
     recortes_por_equipo: dict[int, list[Recorte]] = field(default_factory=lambda: defaultdict(list))
+    # Suma de las lecturas del dorsal (probabilidad de cada número del 1 al 99 por lo legible que se veía) y el recorte
+    # en el que mejor se leyó, por el equipo que se vio en ese fotograma: si el seguidor confunde un momento al jugador
+    # con uno del otro equipo, el dorsal de ese otro no cuenta para él.
+    votos_dorsal_por_equipo: dict[int, np.ndarray] = field(default_factory=dict)
+    mejor_dorsal_por_equipo: dict[int, tuple[float, int, np.ndarray]] = field(default_factory=dict)
+    lecturas_dorsal: int = 0
 
     @property
     def clase(self) -> int:
@@ -57,6 +63,21 @@ class MemoriaTracklet:
         if self.clase == CLASE_ARBITRO or not self.votos_equipo:
             return None
         return max(self.votos_equipo, key=self.votos_equipo.get)
+
+    @property
+    def votos_dorsal(self) -> np.ndarray | None:
+        """Las lecturas del dorsal hechas con la equipación de su equipo (si aún no tiene equipo, todas)."""
+        equipo = self.equipo
+        if equipo is not None:
+            return self.votos_dorsal_por_equipo.get(equipo)
+        return sum(self.votos_dorsal_por_equipo.values()) if self.votos_dorsal_por_equipo else None
+
+    @property
+    def mejor_dorsal(self) -> tuple[float, int, np.ndarray] | None:
+        equipo = self.equipo
+        if equipo is not None:
+            return self.mejor_dorsal_por_equipo.get(equipo)
+        return max(self.mejor_dorsal_por_equipo.values(), key=lambda m: m[0], default=None)
 
     @property
     def es_portero(self) -> bool:
@@ -70,6 +91,20 @@ class MemoriaTracklet:
             return self.recortes_por_equipo[equipo]
         todos = [r for lista in self.recortes_por_equipo.values() for r in lista]
         return sorted(todos, key=lambda r: r.area, reverse=True)
+
+    def sumar_dorsal(self, probabilidades: np.ndarray, peso: float, recorte: np.ndarray | None, equipo: int = -1) -> None:
+        if peso <= 0:
+            return
+        votos = self.votos_dorsal_por_equipo.get(equipo)
+        if votos is None:
+            votos = self.votos_dorsal_por_equipo[equipo] = np.zeros(len(probabilidades))
+        votos += peso * probabilidades
+        self.lecturas_dorsal += 1
+        i = int(probabilidades.argmax())
+        nota = peso * float(probabilidades[i])
+        mejor = self.mejor_dorsal_por_equipo.get(equipo)
+        if recorte is not None and (mejor is None or nota > mejor[0]):
+            self.mejor_dorsal_por_equipo[equipo] = (nota, i + 1, recorte)
 
     def guardar_recorte(self, t: float, caja, confianza: float, imagen: np.ndarray, equipo: int = -1) -> None:
         x1, y1, x2, y2 = caja

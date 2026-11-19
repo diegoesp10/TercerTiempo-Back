@@ -9,5 +9,8 @@ public interface IMatchStore
     Task<IReadOnlyList<Match>> GetBySeasonsAsync(IEnumerable<Guid> seasonIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Match>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Match>> GetTeamMatchesAsync(Guid seasonId, Guid teamId, CancellationToken cancellationToken = default);
+
+    // Todos los partidos entre dos equipos, de cualquier temporada y liga, solo para leer (del más antiguo al más reciente).
+    Task<IReadOnlyList<Match>> GetBetweenAsync(Guid teamA, Guid teamB, CancellationToken cancellationToken = default);
     void Add(Match match);
 }

@@ -2,6 +2,8 @@ using TercerTiempo.Repository.Alerts;
 
 namespace TercerTiempo.Api.Endpoints;
 
+internal sealed record MarkAlertsSeenRequest(IReadOnlyList<Guid> AlertIds);
+
 internal static class AlertEndpoints
 {
     public static IEndpointRouteBuilder MapAlertEndpoints(this IEndpointRouteBuilder app)
@@ -32,6 +34,13 @@ internal static class AlertEndpoints
         group.MapPost("/read", (IAlertsRepository alerts, CancellationToken ct) => alerts.MarkAllReadAsync(ct))
             .WithName($"MarkAllAlertsRead{suffix}")
             .WithSummary("Marcar todos los avisos como leídos")
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapPost("/seen", (MarkAlertsSeenRequest request, IAlertsRepository alerts, CancellationToken ct) => alerts.MarkSeenAsync(request.AlertIds, ct))
+            .WithName($"MarkAlertsSeen{suffix}")
+            .WithSummary("Marcar como vistos los avisos enseñados")
+            .WithDescription("Al abrir la campanita: los avisos nuevos que se han enseñado dejan de contar y pasan a «Anteriores», como en las redes sociales. Solo cambia los de la cuenta; los de otra se ignoran.")
+            .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden);
     }
 }

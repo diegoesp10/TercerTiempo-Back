@@ -198,6 +198,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("ResolvedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("SeenAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -1325,6 +1328,42 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "injury_document.not_found",
+                            Language = "es",
+                            Message = "El documento '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "injury_document.format",
+                            Language = "es",
+                            Message = "Formato no admitido: sube un PDF o una imagen (JPG, PNG o WebP)."
+                        },
+                        new
+                        {
+                            Code = "injury_document.too_large",
+                            Language = "es",
+                            Message = "Cada documento puede ocupar como mucho 15 MB."
+                        },
+                        new
+                        {
+                            Code = "injury_document.limit",
+                            Language = "es",
+                            Message = "Una lesión admite como mucho 10 documentos: borra alguno antes de subir otro."
+                        },
+                        new
+                        {
+                            Code = "injury_document.invalid_kind",
+                            Language = "es",
+                            Message = "Tipo de documento no válido."
+                        },
+                        new
+                        {
+                            Code = "injury_document.private",
+                            Language = "es",
+                            Message = "Las pruebas e informes médicos solo los abren el club, el cuerpo técnico y el propio jugador."
+                        },
+                        new
+                        {
                             Code = "training.not_found",
                             Language = "es",
                             Message = "El entrenamiento '{0}' no existe."
@@ -1370,6 +1409,24 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "training.absence_past",
                             Language = "es",
                             Message = "El entrenamiento ya ha empezado: avisa directamente a tu cuerpo técnico."
+                        },
+                        new
+                        {
+                            Code = "training.past_locked",
+                            Language = "es",
+                            Message = "Este entrenamiento ya ha pasado: no se puede cambiar ni borrar. Solo se puede pasar lista de quién vino y quién faltó."
+                        },
+                        new
+                        {
+                            Code = "training.attendance_settled",
+                            Language = "es",
+                            Message = "Este entrenamiento ya ha pasado: de cada jugador solo se puede marcar si vino o si faltó."
+                        },
+                        new
+                        {
+                            Code = "training.player_injured",
+                            Language = "es",
+                            Message = "{0} estaba lesionado ese día: no entrena, así que no se le pasa lista. Si ya estaba recuperado, corrige las fechas de su lesión o dale el alta."
                         },
                         new
                         {
@@ -1457,6 +1514,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "callup.player_injured",
+                            Language = "es",
+                            Message = "{0} está lesionado el día del partido: no puede ir convocado. Quítalo de la lista o, si ya está recuperado, dale el alta en su lesión."
+                        },
+                        new
+                        {
+                            Code = "callup.player_suspended",
+                            Language = "es",
+                            Message = "{0} está sancionado para este partido ({1}): no puede ir convocado. Quítalo de la lista."
+                        },
+                        new
+                        {
                             Code = "callup.invalid_response",
                             Language = "es",
                             Message = "Respuesta no válida: el convocado firma la convocatoria; el que no va se da por enterado."
@@ -1469,15 +1538,27 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "ground.not_found",
+                            Language = "es",
+                            Message = "Ese campo no está entre los de la liga. Elige uno de la lista o escribe el sitio a mano."
+                        },
+                        new
+                        {
                             Code = "player.invalid_position",
                             Language = "es",
                             Message = "Posición no válida."
                         },
                         new
                         {
+                            Code = "player.position_required",
+                            Language = "es",
+                            Message = "Elige su posición: portero, defensa, centrocampista o delantero."
+                        },
+                        new
+                        {
                             Code = "player.min_age",
                             Language = "es",
-                            Message = "El jugador debe tener al menos 14 años."
+                            Message = "Tienes que ser mayor de edad para tener una cuenta."
                         },
                         new
                         {
@@ -1586,6 +1667,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "sheet.two_yellows",
                             Language = "es",
                             Message = "Dos amarillas implican expulsión: marca la tarjeta roja."
+                        },
+                        new
+                        {
+                            Code = "sheet.player_suspended",
+                            Language = "es",
+                            Message = "{0} estaba sancionado para este partido ({1}): no puede salir en el acta como que jugó."
                         },
                         new
                         {
@@ -2093,6 +2180,18 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "video_analysis.not_pausable",
+                            Language = "es",
+                            Message = "Solo se puede pausar un análisis que esté en cola o analizándose."
+                        },
+                        new
+                        {
+                            Code = "video_analysis.not_paused",
+                            Language = "es",
+                            Message = "Este análisis no está en pausa: no hay nada que reanudar."
+                        },
+                        new
+                        {
                             Code = "team.pitch_own_teams_only",
                             Language = "es",
                             Message = "Solo puedes cambiar las medidas del campo de los equipos de tu club."
@@ -2410,6 +2509,56 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasKey("SeasonId", "Position");
 
                     b.ToTable("SeasonZones", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Grounds.Ground", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<string>("Locality")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<int>("LocateAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("LocatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Grounds", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Licensing.ClubLicense", b =>
@@ -5034,6 +5183,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<DateTimeOffset?>("StaffReadAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -5150,6 +5302,51 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("SheetId");
 
                     b.ToTable("OfficialSheetLines", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.OfficialSheets.OfficialSheetStaff", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("RoleLabel")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<Guid>("SheetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Side")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedName");
+
+                    b.HasIndex("SheetId");
+
+                    b.ToTable("OfficialSheetStaff", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Passes.MatchPass", b =>
@@ -5520,16 +5717,25 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("ActionsFromVideo")
+                        .HasColumnType("bit");
+
                     b.Property<int>("Assists")
                         .HasColumnType("int");
 
                     b.Property<int>("BallLosses")
                         .HasColumnType("int");
 
+                    b.Property<int>("Clearances")
+                        .HasColumnType("int");
+
                     b.Property<int>("Fouls")
                         .HasColumnType("int");
 
                     b.Property<int>("Goals")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("GoalsConcededOnPitch")
                         .HasColumnType("int");
 
                     b.Property<int>("Interceptions")
@@ -6042,6 +6248,83 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Purpose = "Identificador anónimo de cada visita, para contar sesiones.",
                             SortOrder = 20,
                             Storage = "SessionStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000111"),
+                            Category = "Necessary",
+                            Duration = "Hasta cerrar sesión",
+                            Name = "tt.active-session",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Deja una sola sesión abierta en el navegador (la de tu cuenta o la del administrador) en todas tus pestañas.",
+                            SortOrder = 50,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000112"),
+                            Category = "Necessary",
+                            Duration = "Hasta cerrar la pestaña",
+                            Name = "tt.reloaded-for",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Evita recargar la página más de una vez cuando se publica una versión nueva de la web.",
+                            SortOrder = 60,
+                            Storage = "SessionStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000113"),
+                            Category = "Necessary",
+                            Duration = "Hasta terminar o cancelar la subida",
+                            Name = "tt.video-upload.*",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Permite reanudar la subida de un vídeo de partido si se corta: nombre y tamaño del fichero y hasta dónde se envió.",
+                            SortOrder = 70,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000114"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.search-recent",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Tus últimas búsquedas, para repetirlas con un clic.",
+                            SortOrder = 50,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000115"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.calendar.view",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Vista del calendario de la plantilla que prefieres (mes, semana, día o lista).",
+                            SortOrder = 60,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000116"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.attendance.view",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Vista de la asistencia a los entrenamientos que prefieres.",
+                            SortOrder = 70,
+                            Storage = "LocalStorage"
+                        },
+                        new
+                        {
+                            Id = new Guid("01a16f00-0000-7000-8000-000000000117"),
+                            Category = "Preferences",
+                            Duration = "Permanente, hasta que la borres",
+                            Name = "tt.group.*",
+                            Provider = "Tercer Tiempo",
+                            Purpose = "Si quieres cada lista de jugadores agrupada por posición.",
+                            SortOrder = 80,
+                            Storage = "LocalStorage"
                         });
                 });
 
@@ -6226,6 +6509,66 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("RefereeRatings", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.InjuryDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<Guid>("InjuryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("SquadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UploadedByClubId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UploadedByCoachId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InjuryId");
+
+                    b.HasIndex("SquadId");
+
+                    b.HasIndex("UploadedByClubId");
+
+                    b.HasIndex("UploadedByCoachId");
+
+                    b.ToTable("InjuryDocuments", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>
@@ -6646,6 +6989,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("MeetAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid?>("MeetGroundId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("MeetPlace")
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
@@ -6680,6 +7026,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasIndex("CreatedByCoachId");
 
                     b.HasIndex("MatchId");
+
+                    b.HasIndex("MeetGroundId");
 
                     b.HasIndex("SquadId", "MatchId")
                         .IsUnique();
@@ -6743,6 +7091,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("ExerciseId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Groups")
+                        .HasColumnType("int");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -7054,6 +7405,16 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("HeartbeatAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("LiveAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LiveJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("LogJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("MatchId")
                         .HasColumnType("uniqueidentifier");
 
@@ -7063,6 +7424,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<string>("OutputPath")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTimeOffset?>("PausedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("PausedSeconds")
+                        .HasColumnType("int");
 
                     b.Property<decimal?>("PitchLengthM")
                         .HasPrecision(5, 1)
@@ -7087,6 +7454,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("SquadId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Stage")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTimeOffset?>("StartedAt")
                         .HasColumnType("datetimeoffset");
@@ -8102,6 +8473,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.OfficialSheets.OfficialSheetStaff", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.OfficialSheets.OfficialMatchSheet", null)
+                        .WithMany("Staff")
+                        .HasForeignKey("SheetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Passes.MatchPass", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
@@ -8345,6 +8725,31 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TeamId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.InjuryDocument", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Squads.PlayerInjury", null)
+                        .WithMany()
+                        .HasForeignKey("InjuryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
+                        .WithMany()
+                        .HasForeignKey("SquadId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedByClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Coaches.Coach", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedByCoachId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>
@@ -8689,6 +9094,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("TercerTiempo.Domain.Grounds.Ground", null)
+                        .WithMany()
+                        .HasForeignKey("MeetGroundId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
                         .WithMany()
                         .HasForeignKey("SquadId")
@@ -8881,6 +9291,8 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Navigation("Events");
 
                     b.Navigation("Lines");
+
+                    b.Navigation("Staff");
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Squads.Squad", b =>

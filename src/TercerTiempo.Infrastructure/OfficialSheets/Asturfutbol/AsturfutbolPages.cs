@@ -139,9 +139,10 @@ internal static partial class AsturfutbolPages
 
         var lines = new List<SheetLineBuilder>();
         var events = new List<OfficialEventData>();
+        var staff = new List<OfficialStaffData>();
 
-        if (homeBlock is not null) ReadTeam(homeBlock, MatchSide.Home, lines, events, matchLength);
-        if (awayBlock is not null && !ReferenceEquals(awayBlock, homeBlock)) ReadTeam(awayBlock, MatchSide.Away, lines, events, matchLength);
+        if (homeBlock is not null) ReadTeam(homeBlock, MatchSide.Home, lines, events, staff, matchLength);
+        if (awayBlock is not null && !ReferenceEquals(awayBlock, homeBlock)) ReadTeam(awayBlock, MatchSide.Away, lines, events, staff, matchLength);
 
         if (goalsBlock is not null) ReadGoals(goalsBlock, lines, events);
 
@@ -152,7 +153,8 @@ internal static partial class AsturfutbolPages
             ScoreOf(lines, MatchSide.Home), ScoreOf(lines, MatchSide.Away),
             lines.Select(l => l.Build()).ToList(),
             ordered,
-            officials);
+            officials,
+            staff);
     }
 
     // Equipo arbitral: un <h5> por persona con su función en <strong> («Árbitro», «Árbitro Asistente» dos veces y, si lo
@@ -186,12 +188,19 @@ internal static partial class AsturfutbolPages
 
     private static string Title(IElement block) => Clean(block.QuerySelector(".number")?.TextContent ?? string.Empty);
 
-    private static void ReadTeam(IElement block, MatchSide side, List<SheetLineBuilder> lines, List<OfficialEventData> events, int matchLength)
+    private static void ReadTeam(
+        IElement block, MatchSide side, List<SheetLineBuilder> lines, List<OfficialEventData> events, List<OfficialStaffData> staff, int matchLength)
     {
         // Titulares y suplentes: tabla que sigue a cada cabecera <h5><strong>Titulares</strong></h5>.
         foreach (var header in block.QuerySelectorAll("h5, h4"))
         {
             var title = Clean(header.TextContent);
+            if (header.TagName == "H4" && NameNormalizer.Normalize(title) == "cuerpo tecnico")
+            {
+                ReadStaff(header, side, staff);
+                continue;
+            }
+
             var table = NextTable(header);
             if (table is null) continue;
 
@@ -256,6 +265,23 @@ internal static partial class AsturfutbolPages
                     if (minute is not null) events.Add(new OfficialEventData(side, type, minute.Value, extra, name, null));
                 }
             }
+        }
+    }
+
+    // «Cuerpo Técnico»: un <h5> por persona detrás de la cabecera, con la función en <strong> («Entrenador:», «2ºEntrenador:»,
+    // «DEL. Campo:») y el nombre en la última celda de su tabla. Quien figura en dos funciones (delegado de campo y de
+    // equipo) sale dos veces, como en el acta.
+    private static void ReadStaff(IElement header, MatchSide side, List<OfficialStaffData> staff)
+    {
+        for (var sibling = header.NextElementSibling; sibling is not null; sibling = sibling.NextElementSibling)
+        {
+            if (sibling.TagName == "H4") break;
+            if (sibling.TagName != "H5") continue;
+
+            var role = Clean(sibling.QuerySelector("strong")?.TextContent ?? string.Empty).TrimEnd(':').Trim();
+            var name = sibling.QuerySelectorAll("td").Select(c => Clean(c.TextContent)).LastOrDefault(t => t.Any(char.IsLetter)) ?? string.Empty;
+            if (name.Length == 0) continue;
+            staff.Add(new OfficialStaffData(side, role, name));
         }
     }
 

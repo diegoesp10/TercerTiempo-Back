@@ -258,6 +258,9 @@ internal sealed class FakeFootballDataProvider(TimeProvider clock) : IFootballDa
     public Task<IReadOnlyList<TercerTiempo.Domain.Competitions.LeagueZoneData>?> GetLeagueZonesAsync(string competitionExternalId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Competitions.LeagueZoneData>?>([]);
 
+    // Los datos de prueba solo tienen una temporada.
+    public void UseSeason(string seasonLabel) { }
+
     public Task<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?>([]);
 }

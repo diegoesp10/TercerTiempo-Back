@@ -49,6 +49,9 @@ internal sealed class JsonFileFootballDataProvider(IOptions<FootballDataOptions>
     public Task<IReadOnlyList<TercerTiempo.Domain.Competitions.LeagueZoneData>?> GetLeagueZonesAsync(string competitionExternalId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Competitions.LeagueZoneData>?>([]);
 
+    // Los ficheros traen una sola temporada.
+    public void UseSeason(string seasonLabel) { }
+
     public Task<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?>([]);
 }

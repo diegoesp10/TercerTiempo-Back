@@ -141,6 +141,7 @@ internal sealed class MatchCallUpConfiguration : IEntityTypeConfiguration<MatchC
 
         builder.HasOne<Squad>().WithMany().HasForeignKey(c => c.SquadId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Match>().WithMany().HasForeignKey(c => c.MatchId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<TercerTiempo.Domain.Grounds.Ground>().WithMany().HasForeignKey(c => c.MeetGroundId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Coach>().WithMany().HasForeignKey(c => c.CreatedByCoachId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Club>().WithMany().HasForeignKey(c => c.CreatedByClubId).OnDelete(DeleteBehavior.Restrict);
 

@@ -21,7 +21,43 @@ public sealed record MatchPreviewDto(
     TeamPreviewDto Home,
     TeamPreviewDto Away,
     PredictionDto Prediction,
-    IReadOnlyList<string> DataNotes);
+    IReadOnlyList<string> DataNotes,
+    [property: System.ComponentModel.Description("Hasta cuándo cuentan los datos: el inicio del partido. Solo entra lo jugado antes (la previa de la jornada 1 no sabe nada de la 10).")]
+    DateTimeOffset? AsOf = null,
+    [property: System.ComponentModel.Description("Partidos de la liga jugados antes de este, en los que se basa la previa.")]
+    int LeagueMatchesBefore = 0,
+    [property: System.ComponentModel.Description("true si la clasificación se ha calculado con los resultados anteriores al partido (partido ya jugado o con jornadas posteriores ya disputadas); false si es la oficial de hoy.")]
+    bool TableFromResults = false,
+    [property: System.ComponentModel.Description("Enfrentamientos anteriores entre los dos equipos, de esta temporada y de las pasadas que estén guardadas.")]
+    HeadToHeadDto? HeadToHead = null);
+
+public sealed record HeadToHeadDto(
+    int Played,
+    [property: System.ComponentModel.Description("Victorias del local de este partido (jugara donde jugara aquellos).")]
+    int HomeWins,
+    int Draws,
+    int AwayWins,
+    int HomeGoals,
+    int AwayGoals,
+    [property: System.ComponentModel.Description("Temporadas distintas con algún enfrentamiento.")]
+    int Seasons,
+    [property: System.ComponentModel.Description("Del más reciente al más antiguo.")]
+    IReadOnlyList<HeadToHeadMatchDto> Matches);
+
+public sealed record HeadToHeadMatchDto(
+    Guid MatchId,
+    string SeasonLabel,
+    string CompetitionName,
+    int Matchday,
+    DateTimeOffset KickoffAt,
+    TeamRefDto HomeTeam,
+    TeamRefDto AwayTeam,
+    int HomeGoals,
+    int AwayGoals,
+    [property: System.ComponentModel.Description("Resultado para el local de este partido: W, D o L.")]
+    string Outcome,
+    [property: System.ComponentModel.Description("De la misma temporada y liga que este partido.")]
+    bool SameSeason);
 
 public sealed record TeamPreviewDto(
     TeamRefDto Team,
@@ -103,8 +139,18 @@ internal sealed class GetMatchPreviewHandler(
 
         var (competition, season) = await Resolvers.SeasonByIdAsync(competitions, match.SeasonId, cancellationToken);
         var seasonMatches = await matches.GetBySeasonAsync(season.Id, cancellationToken);
-        var played = seasonMatches.Where(m => m.Status == MatchStatus.Played && m.Score is not null).OrderBy(m => m.KickoffAt).ToList();
-        var table = (await standings.GetBySeasonAsync(season.Id, cancellationToken)).ToDictionary(s => s.TeamId);
+
+        // La previa se hace con lo que se sabía antes del partido: solo los jugados antes de su inicio. Así la de la jornada
+        // 1 no usa lo que pasó en la 10, y la de un partido ya jugado es la que se habría visto ese día.
+        var asOf = match.KickoffAt;
+        var allPlayed = seasonMatches.Where(m => m.Id != match.Id && m.Status == MatchStatus.Played && m.Score is not null).ToList();
+        var played = allPlayed.Where(m => m.KickoffAt < asOf).OrderBy(m => m.KickoffAt).ToList();
+
+        // La clasificación oficial es la de hoy (con sanciones, si las hay): solo vale si el partido está por jugar y no hay
+        // ninguno jugado después de su inicio. Si no, se calcula con los resultados anteriores.
+        var official = (await standings.GetBySeasonAsync(season.Id, cancellationToken)).ToDictionary(s => s.TeamId);
+        var tableFromResults = match.Status == MatchStatus.Played || allPlayed.Count != played.Count || official.Count == 0;
+        var table = tableFromResults ? TableAt(played) : official.ToDictionary(kv => kv.Key, kv => TableRow.From(kv.Value));
 
         var teamIds = seasonMatches.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();
         var teamMap = (await teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
@@ -112,20 +158,79 @@ internal sealed class GetMatchPreviewHandler(
         var league = LeagueAverages.From(played);
         var home = await BuildTeamAsync(match.HomeTeamId, isHome: true, match, played, table, teamMap, cancellationToken);
         var away = await BuildTeamAsync(match.AwayTeamId, isHome: false, match, played, table, teamMap, cancellationToken);
-        var prediction = Predict(home, away, league, played, match);
+        var headToHead = await HeadToHeadAsync(match, asOf, teamMap, cancellationToken);
+        var prediction = Predict(home, away, league, headToHead, match);
 
         var notes = new List<string>
         {
+            played.Count == 0
+                ? $"Datos hasta el inicio del partido ({SpainTime.Local(asOf):dd/MM/yyyy HH:mm}): todavía no se había jugado ningún partido de la liga, así que las probabilidades parten de un equipo medio con la ventaja de jugar en casa."
+                : $"Datos hasta el inicio del partido ({SpainTime.Local(asOf):dd/MM/yyyy HH:mm}): {played.Count} partidos de la liga jugados antes; lo posterior no cuenta.{(tableFromResults ? " La clasificación se ha calculado con esos resultados (sin sanciones de despacho)." : string.Empty)}",
             "Las probabilidades salen de los goles a favor y en contra de esta liga (modelo de Poisson con la fuerza atacante y defensiva de cada equipo y la ventaja de jugar en casa); con pocas jornadas disputadas son orientativas.",
             "Los jugadores en forma, los penaltis, los goles en propia y las tarjetas proceden de las actas públicas de la federación ya guardadas; los partidos sin acta no cuentan.",
             "Córners, posesión y goles a balón parado (salvo penaltis) no constan en ninguna fuente pública: los apunta el cuerpo técnico en «Datos del equipo» del acta interna de cada partido y solo se ven los de su propio equipo.",
         };
 
-        return new MatchPreviewDto(MatchMapper.ToDto(match, teamMap), competition.Name, home, away, prediction, notes);
+        if (headToHead.Played > 0)
+            notes.Add($"Enfrentamientos anteriores: {headToHead.Played} partidos guardados de {headToHead.Seasons} {(headToHead.Seasons == 1 ? "temporada" : "temporadas")} (las temporadas pasadas que no se han descargado no cuentan).");
+
+        return new MatchPreviewDto(MatchMapper.ToDto(match, teamMap), competition.Name, home, away, prediction, notes, asOf, played.Count, tableFromResults, headToHead);
+    }
+
+    // Los enfrentamientos entre los dos equipos jugados antes de este, de cualquier temporada y liga guardada.
+    private async Task<HeadToHeadDto> HeadToHeadAsync(Match match, DateTimeOffset asOf, Dictionary<Guid, Team> teamMap, CancellationToken cancellationToken)
+    {
+        var meetings = (await matches.GetBetweenAsync(match.HomeTeamId, match.AwayTeamId, cancellationToken))
+            .Where(m => m.Id != match.Id && m.Status == MatchStatus.Played && m.Score is not null && m.KickoffAt < asOf)
+            .OrderByDescending(m => m.KickoffAt)
+            .ToList();
+
+        var seasons = new Dictionary<Guid, (string Label, string Competition)>();
+        foreach (var seasonId in meetings.Select(m => m.SeasonId).Distinct())
+        {
+            var (competition, season) = await Resolvers.SeasonByIdAsync(competitions, seasonId, cancellationToken);
+            seasons[seasonId] = (season.Label, competition.Name);
+        }
+
+        var rows = meetings.Select(m => new HeadToHeadMatchDto(
+            m.Id, seasons[m.SeasonId].Label, seasons[m.SeasonId].Competition, m.Matchday, m.KickoffAt,
+            MatchMapper.Ref(m.HomeTeamId, teamMap), MatchMapper.Ref(m.AwayTeamId, teamMap),
+            m.Score!.Home, m.Score.Away, Outcome(m, match.HomeTeamId), m.SeasonId == match.SeasonId)).ToList();
+
+        return new HeadToHeadDto(
+            rows.Count,
+            rows.Count(r => r.Outcome == "W"), rows.Count(r => r.Outcome == "D"), rows.Count(r => r.Outcome == "L"),
+            meetings.Sum(m => m.GoalsFor(match.HomeTeamId) ?? 0), meetings.Sum(m => m.GoalsAgainst(match.HomeTeamId) ?? 0),
+            seasons.Count, rows);
+    }
+
+    // Clasificación con los resultados dados: 3 puntos la victoria y 1 el empate; a igualdad, diferencia de goles y goles a
+    // favor. Solo entran los equipos que ya han jugado.
+    private static Dictionary<Guid, TableRow> TableAt(List<Match> played)
+    {
+        var rows = played
+            .SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId })
+            .Distinct()
+            .Select(teamId =>
+            {
+                var mine = played.Where(m => m.Involves(teamId)).ToList();
+                var won = mine.Count(m => m.GoalsFor(teamId) > m.GoalsAgainst(teamId));
+                var drawn = mine.Count(m => m.GoalsFor(teamId) == m.GoalsAgainst(teamId));
+                return new TableRow(teamId, 0, mine.Count, won, drawn, mine.Count - won - drawn,
+                    mine.Sum(m => m.GoalsFor(teamId) ?? 0), mine.Sum(m => m.GoalsAgainst(teamId) ?? 0), won * 3 + drawn);
+            })
+            .OrderByDescending(r => r.Points).ThenByDescending(r => r.GoalsFor - r.GoalsAgainst).ThenByDescending(r => r.GoalsFor)
+            .ToList();
+        return rows.Select((r, i) => r with { Position = i + 1 }).ToDictionary(r => r.TeamId);
+    }
+
+    private sealed record TableRow(Guid TeamId, int Position, int Played, int Won, int Drawn, int Lost, int GoalsFor, int GoalsAgainst, int Points)
+    {
+        public static TableRow From(Standing s) => new(s.TeamId, s.Position, s.Played, s.Won, s.Drawn, s.Lost, s.GoalsFor, s.GoalsAgainst, s.Points);
     }
 
     private async Task<TeamPreviewDto> BuildTeamAsync(
-        Guid teamId, bool isHome, Match match, List<Match> played, Dictionary<Guid, Standing> table,
+        Guid teamId, bool isHome, Match match, List<Match> played, Dictionary<Guid, TableRow> table,
         Dictionary<Guid, Team> teamMap, CancellationToken cancellationToken)
     {
         var mine = played.Where(m => m.Involves(teamId)).ToList();
@@ -231,13 +336,13 @@ internal sealed class GetMatchPreviewHandler(
         return (players, new SetPiecesDto(penFor, penAgainst, ownFor, ownAgainst, yellow, red), available.Count);
     }
 
-    private static PredictionDto Predict(TeamPreviewDto home, TeamPreviewDto away, LeagueAverages league, List<Match> played, Match match)
+    private static PredictionDto Predict(TeamPreviewDto home, TeamPreviewDto away, LeagueAverages league, HeadToHeadDto headToHead, Match match)
     {
         // Fuerzas relativas a la media de la liga (1 = un equipo medio); sin partidos, equipo medio.
-        var homeAttack = Strength(home.GoalsForPerMatch, league.GoalsPerTeamMatch);
-        var homeDefence = Strength(home.GoalsAgainstPerMatch, league.GoalsPerTeamMatch);
-        var awayAttack = Strength(away.GoalsForPerMatch, league.GoalsPerTeamMatch);
-        var awayDefence = Strength(away.GoalsAgainstPerMatch, league.GoalsPerTeamMatch);
+        var homeAttack = Strength(home.GoalsForPerMatch, home.Played, league.GoalsPerTeamMatch);
+        var homeDefence = Strength(home.GoalsAgainstPerMatch, home.Played, league.GoalsPerTeamMatch);
+        var awayAttack = Strength(away.GoalsForPerMatch, away.Played, league.GoalsPerTeamMatch);
+        var awayDefence = Strength(away.GoalsAgainstPerMatch, away.Played, league.GoalsPerTeamMatch);
 
         var lambdaHome = Math.Max(0.15, league.HomeGoals * homeAttack * awayDefence);
         var lambdaAway = Math.Max(0.15, league.AwayGoals * awayAttack * homeDefence);
@@ -285,9 +390,13 @@ internal sealed class GetMatchPreviewHandler(
         if (home.Form.Count > 0 || away.Form.Count > 0)
             reasons.Add($"Forma reciente (últimos {FormMatches}): {homeName} {FormLabel(home.Form)} · {awayName} {FormLabel(away.Form)}.");
 
-        var previous = played.FirstOrDefault(m => m.Id != match.Id && m.Involves(match.HomeTeamId) && m.Involves(match.AwayTeamId));
-        if (previous is not null)
-            reasons.Add($"Precedente esta temporada (jornada {previous.Matchday}): {previous.Score!.Home}-{previous.Score.Away} con {(previous.HomeTeamId == match.HomeTeamId ? homeName : awayName)} de local.");
+        if (headToHead.Matches.FirstOrDefault() is { } last)
+        {
+            var record = headToHead.Played == 1
+                ? "un enfrentamiento anterior"
+                : $"{headToHead.Played} enfrentamientos anteriores ({homeName} {headToHead.HomeWins} {(headToHead.HomeWins == 1 ? "victoria" : "victorias")}, {headToHead.Draws} {(headToHead.Draws == 1 ? "empate" : "empates")}, {awayName} {headToHead.AwayWins})";
+            reasons.Add($"Precedentes: {record}; el último, {(last.SameSeason ? "esta temporada" : last.SeasonLabel)} (jornada {last.Matchday}): {last.HomeTeam.Name} {last.HomeGoals}-{last.AwayGoals} {last.AwayTeam.Name}.");
+        }
 
         var hot = away.InFormPlayers.FirstOrDefault();
         if (hot is not null && hot.Goals > 0)
@@ -298,8 +407,16 @@ internal sealed class GetMatchPreviewHandler(
             Math.Round(lambdaHome, 2), Math.Round(lambdaAway, 2), bestScore, reasons);
     }
 
-    private static double Strength(double perMatch, double leagueAverage) =>
-        leagueAverage <= 0 || double.IsNaN(perMatch) ? 1 : Math.Clamp(perMatch / leagueAverage, 0.3, 3);
+    // Con pocos partidos la fuerza se acerca a la de un equipo medio (como si llevara TeamPriorMatches partidos de media):
+    // sin jugar es un equipo medio y tras una goleada en la jornada 1 no pasa a ser el triple de bueno.
+    private const double TeamPriorMatches = 3;
+
+    private static double Strength(double perMatch, int played, double leagueAverage)
+    {
+        if (leagueAverage <= 0 || double.IsNaN(perMatch)) return 1;
+        var shrunk = (perMatch * played + leagueAverage * TeamPriorMatches) / (played + TeamPriorMatches);
+        return Math.Clamp(shrunk / leagueAverage, 0.3, 3);
+    }
 
     private static double Poisson(double lambda, int k)
     {
@@ -322,16 +439,18 @@ internal sealed class GetMatchPreviewHandler(
 
     private sealed record LeagueAverages(double HomeGoals, double AwayGoals, double GoalsPerTeamMatch, double HomeWinRate)
     {
+        // Las primeras jornadas dicen poco de la liga: las medias parten de las de una liga normal (1,4 goles el local y
+        // 1,1 el visitante, con el peso de PriorMatches partidos) y se van ajustando a lo jugado.
+        private const double PriorHomeGoals = 1.4;
+        private const double PriorAwayGoals = 1.1;
+        private const double PriorMatches = 10;
+
         public static LeagueAverages From(List<Match> played)
         {
-            if (played.Count == 0) return new LeagueAverages(1.4, 1.1, 1.25, 0);
-            var homeGoals = played.Sum(m => m.Score!.Home);
-            var awayGoals = played.Sum(m => m.Score!.Away);
-            return new LeagueAverages(
-                (double)homeGoals / played.Count,
-                (double)awayGoals / played.Count,
-                (double)(homeGoals + awayGoals) / (played.Count * 2),
-                (double)played.Count(m => m.Score!.Home > m.Score.Away) / played.Count);
+            var homeGoals = (played.Sum(m => m.Score!.Home) + PriorHomeGoals * PriorMatches) / (played.Count + PriorMatches);
+            var awayGoals = (played.Sum(m => m.Score!.Away) + PriorAwayGoals * PriorMatches) / (played.Count + PriorMatches);
+            var homeWinRate = played.Count == 0 ? 0 : (double)played.Count(m => m.Score!.Home > m.Score.Away) / played.Count;
+            return new LeagueAverages(homeGoals, awayGoals, (homeGoals + awayGoals) / 2, homeWinRate);
         }
     }
 

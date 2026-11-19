@@ -28,7 +28,7 @@ internal static class CoachEndpoints
             .WithTags("Cuerpo técnico")
             .WithName("GetCoachProfile")
             .WithSummary("Perfil de un técnico")
-            .WithDescription("Para cualquier cuenta con sesión: nombre, foto y los equipos que dirige o ha dirigido por los nombramientos de sus clubes (vigentes primero; los revocados no salen). isMe dice si es tu propio perfil.")
+            .WithDescription("Para cualquier cuenta con sesión: nombre, foto e historial de equipos y temporadas (entrenador, ayudante, fisio, delegado...) por los nombramientos de sus clubes, vigentes primero. Si el club le retiró un nombramiento ya empezado, sale hasta ese día (leftOn); si se lo retiró antes de empezar, no sale. isMe dice si es tu propio perfil.")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         var group = app.MapGroup("/api/coaches/me").WithTags("Cuerpo técnico").RequireAuthorization();

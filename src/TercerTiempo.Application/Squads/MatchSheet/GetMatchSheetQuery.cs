@@ -1,6 +1,7 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Squads.Suspensions;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
@@ -8,6 +9,7 @@ using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Trainings;
 using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Squads.MatchSheet;
@@ -24,6 +26,8 @@ internal sealed class GetMatchSheetHandler(
     IPerformanceStore performances,
     ITeamMatchStatsStore teamStats,
     IClubStore clubs,
+    ICallUpStore callUps,
+    SuspensionReader suspensions,
     TimeProvider clock) : IQueryHandler<GetMatchSheetQuery, MatchSheetDto>
 {
     public async Task<MatchSheetDto> Handle(GetMatchSheetQuery query, CancellationToken cancellationToken)
@@ -39,6 +43,7 @@ internal sealed class GetMatchSheetHandler(
         if (match.SeasonId != squad.SeasonId || !match.Involves(squad.TeamId))
             throw new ConflictException(ErrorCode.MatchNotOfSquad);
 
-        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, cancellationToken);
+        return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, callUps,
+            await suspensions.LoadAsync(squad, cancellationToken), cancellationToken);
     }
 }

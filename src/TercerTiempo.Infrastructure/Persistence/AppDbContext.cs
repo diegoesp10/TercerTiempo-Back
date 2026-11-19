@@ -35,6 +35,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<SquadStaff> SquadStaff => Set<SquadStaff>();
     public DbSet<SquadPlayer> SquadPlayers => Set<SquadPlayer>();
     public DbSet<PlayerInjury> PlayerInjuries => Set<PlayerInjury>();
+    public DbSet<InjuryDocument> InjuryDocuments => Set<InjuryDocument>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<RosterEntry> RosterEntries => Set<RosterEntry>();
     public DbSet<Competition> Competitions => Set<Competition>();

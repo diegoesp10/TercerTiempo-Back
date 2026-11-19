@@ -50,29 +50,10 @@ internal static class TrainingCalls
             Link(squad.Id, session.Id), CallUps.DayOf(session.StartsAt), now, cancellationToken);
     }
 
-    // upcoming: las sesiones anuladas que aún no han empezado, en orden. Con la serie se dan por resueltos también los
-    // avisos sueltos de cada una (un cambio de hora, por ejemplo), que si no se quedarían abiertos citando a una sesión
-    // que ya no existe.
-    public static async Task CancelledAsync(Squad squad, IReadOnlyList<TrainingSession> upcoming, bool series, IAlertStore alerts, DateTimeOffset now, CancellationToken cancellationToken)
-    {
-        var session = upcoming[0];
-        var key = KeyPrefix(series && session.SeriesId is { } seriesId ? seriesId : session.Id);
-        if (series)
-        {
-            var keys = upcoming.Select(s => KeyPrefix(s.Id) + ":").ToList();
-            var players = squad.ActivePlayers.Where(p => p.PlayerId is not null).Select(p => p.PlayerId!.Value).ToList();
-            foreach (var old in await alerts.GetOpenByKeyPrefixAsync("training-call:", players, [], null, cancellationToken))
-                if (keys.Any(k => old.Key.StartsWith(k, StringComparison.Ordinal)))
-                    old.Resolve(now);
-        }
-
-        var message = series
-            ? $"El cuerpo técnico ha anulado los entrenamientos «{session.Title}» desde el {CallUps.When(session.StartsAt)}."
-            : $"El cuerpo técnico ha anulado el entrenamiento «{session.Title}» del {CallUps.When(session.StartsAt)}.";
-        await NotifyAsync(squad, alerts, key, resolvePrevious: true,
-            series ? $"Entrenamientos anulados desde el {CallUps.When(session.StartsAt)}" : $"Entrenamiento anulado: {CallUps.When(session.StartsAt)}",
-            message, Link(squad.Id), CallUps.DayOf(session.StartsAt), now, cancellationToken);
-    }
+    public static Task CancelledAsync(Squad squad, TrainingSession session, IAlertStore alerts, DateTimeOffset now, CancellationToken cancellationToken) =>
+        NotifyAsync(squad, alerts, KeyPrefix(session.Id), resolvePrevious: true, $"Entrenamiento anulado: {CallUps.When(session.StartsAt)}",
+            $"El cuerpo técnico ha anulado el entrenamiento «{session.Title}» del {CallUps.When(session.StartsAt)}.",
+            Link(squad.Id), CallUps.DayOf(session.StartsAt), now, cancellationToken);
 
     private static async Task NotifyAsync(
         Squad squad, IAlertStore alerts, string keyPrefix, bool resolvePrevious, string title, string message, string link, DateOnly dueOn,

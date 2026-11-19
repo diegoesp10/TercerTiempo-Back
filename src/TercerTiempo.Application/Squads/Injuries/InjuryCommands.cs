@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
+using TercerTiempo.Application.Abstractions.Medical;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Clubs;
@@ -100,8 +101,20 @@ internal static class InjuryAccess
         return injury;
     }
 
-    public static async Task<IReadOnlyList<InjuryDto>> ListAsync(Squad squad, IInjuryStore injuries, TimeProvider clock, CancellationToken cancellationToken) =>
-        InjuryMapper.ToList(await injuries.GetBySquadAsync(squad.Id, cancellationToken), squad, SquadAccess.Today(clock));
+    public static async Task<IReadOnlyList<InjuryDto>> ListAsync(
+        Squad squad, IInjuryStore injuries, IInjuryDocumentStore documents, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var list = await injuries.GetBySquadAsync(squad.Id, cancellationToken);
+        var attached = list.Count == 0 ? [] : await documents.GetByInjuryIdsAsync(list.Select(i => i.Id).ToList(), cancellationToken);
+        return InjuryMapper.ToList(list, squad, SquadAccess.Today(clock), attached.ToLookup(d => d.InjuryId));
+    }
+
+    // Las pruebas e informes médicos los abren el club, el cuerpo técnico y el propio jugador. El administrador no: puede
+    // revisar la plataforma en solo lectura, pero una radiografía no le hace falta para eso.
+    public static async Task<bool> CanOpenDocumentsAsync(
+        Squad squad, PlayerInjury injury, ICurrentUser currentUser, TimeProvider clock, IClubStore clubs, CancellationToken cancellationToken) =>
+        await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken)
+        || (currentUser.PlayerId is { } playerId && squad.Players.Any(p => p.Id == injury.SquadPlayerId && p.PlayerId == playerId));
 
     // Son datos de salud, muchas veces de menores: el club, el cuerpo técnico y el administrador las ven todas; un jugador,
     // solo las suyas, nunca las de sus compañeros.
@@ -115,18 +128,18 @@ internal static class InjuryAccess
     }
 }
 
-internal sealed class ListSquadInjuriesHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, TimeProvider clock)
+internal sealed class ListSquadInjuriesHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IInjuryDocumentStore documents, TimeProvider clock)
     : IQueryHandler<ListSquadInjuriesQuery, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(ListSquadInjuriesQuery query, CancellationToken cancellationToken)
     {
         var squad = await InjuryAccess.SquadForViewerAsync(squads, clubs, currentUser, query.SquadId, clock, cancellationToken);
         var visible = await InjuryAccess.VisibleSquadPlayersAsync(squad, currentUser, clock, clubs, cancellationToken);
-        return (await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken)).Where(i => visible(i.SquadPlayerId)).ToList();
+        return (await InjuryAccess.ListAsync(squad, injuries, documents, clock, cancellationToken)).Where(i => visible(i.SquadPlayerId)).ToList();
     }
 }
 
-internal sealed class RecordInjuryHandler(ICurrentUser currentUser, ISquadStore squads, ICoachStore coaches, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class RecordInjuryHandler(ICurrentUser currentUser, ISquadStore squads, ICoachStore coaches, IClubStore clubs, IInjuryStore injuries, IInjuryDocumentStore documents, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<RecordInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(RecordInjuryCommand command, CancellationToken cancellationToken)
@@ -146,11 +159,11 @@ internal sealed class RecordInjuryHandler(ICurrentUser currentUser, ISquadStore 
         injuries.Add(PlayerInjury.Create(squad, player, editor, command.Type, command.Reason, command.StartedOn, expected, clock.GetUtcNow()));
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken);
+        return await InjuryAccess.ListAsync(squad, injuries, documents, clock, cancellationToken);
     }
 }
 
-internal sealed class UpdateInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class UpdateInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IInjuryDocumentStore documents, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<UpdateInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(UpdateInjuryCommand command, CancellationToken cancellationToken)
@@ -161,11 +174,11 @@ internal sealed class UpdateInjuryHandler(ICurrentUser currentUser, ISquadStore 
         injury.Update(command.Type, command.Reason, command.StartedOn, command.ExpectedReturnOn, clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken);
+        return await InjuryAccess.ListAsync(squad, injuries, documents, clock, cancellationToken);
     }
 }
 
-internal sealed class CloseInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class CloseInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IInjuryDocumentStore documents, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<CloseInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(CloseInjuryCommand command, CancellationToken cancellationToken)
@@ -176,11 +189,11 @@ internal sealed class CloseInjuryHandler(ICurrentUser currentUser, ISquadStore s
         injury.Close(command.ReturnedOn ?? SquadAccess.Today(clock), clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken);
+        return await InjuryAccess.ListAsync(squad, injuries, documents, clock, cancellationToken);
     }
 }
 
-internal sealed class ReopenInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+internal sealed class ReopenInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IInjuryDocumentStore documents, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<ReopenInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(ReopenInjuryCommand command, CancellationToken cancellationToken)
@@ -195,11 +208,14 @@ internal sealed class ReopenInjuryHandler(ICurrentUser currentUser, ISquadStore 
         injury.Reopen(clock.GetUtcNow());
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken);
+        return await InjuryAccess.ListAsync(squad, injuries, documents, clock, cancellationToken);
     }
 }
 
-internal sealed class DeleteInjuryHandler(ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IUnitOfWork unitOfWork, TimeProvider clock)
+// Con la lesión se van sus pruebas e informes: primero de la base de datos y, ya guardado, los ficheros.
+internal sealed class DeleteInjuryHandler(
+    ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IInjuryStore injuries, IInjuryDocumentStore documents,
+    IInjuryDocumentStorage storage, IUnitOfWork unitOfWork, TimeProvider clock)
     : ICommandHandler<DeleteInjuryCommand, IReadOnlyList<InjuryDto>>
 {
     public async Task<IReadOnlyList<InjuryDto>> Handle(DeleteInjuryCommand command, CancellationToken cancellationToken)
@@ -207,9 +223,15 @@ internal sealed class DeleteInjuryHandler(ICurrentUser currentUser, ISquadStore 
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var injury = await InjuryAccess.InjuryOfAsync(squad, command.InjuryId, injuries, cancellationToken);
 
+        var attached = await documents.GetByInjuryIdsAsync([injury.Id], cancellationToken);
+        foreach (var document in attached)
+            documents.Remove(document);
         injuries.Remove(injury);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return await InjuryAccess.ListAsync(squad, injuries, clock, cancellationToken);
+        foreach (var document in attached)
+            await storage.DeleteAsync(document.StorageKey, CancellationToken.None);
+
+        return await InjuryAccess.ListAsync(squad, injuries, documents, clock, cancellationToken);
     }
 }

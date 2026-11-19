@@ -39,7 +39,8 @@ public sealed record IndividualStatsDto(
     int PassesAttempted = 0,
     [property: System.ComponentModel.Description("Pases completados sobre intentados; null sin pases apuntados.")]
     double? PassAccuracyPct = null,
-    double? RecoveriesPer90 = null)
+    double? RecoveriesPer90 = null,
+    int Clearances = 0)
 {
     public static readonly IndividualStatsDto Empty =
         new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null, null, null, null, null);

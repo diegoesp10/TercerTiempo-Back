@@ -1,4 +1,5 @@
-from tt_analisis.eventos import Parametros, detectar_descanso, detectar_eventos
+from tt_analisis.eventos import Parametros, detectar_eventos
+from tt_analisis.mitades import detectar_descanso
 from tt_analisis.tipos import Toque
 
 from conftest import instante, persona, portero
@@ -46,8 +47,48 @@ def test_gol_candidato_confirmado_por_el_saque_de_centro():
     assert len(goles) == 1 and goles[0].equipo == 0 and goles[0].tracklet == 7
     assert goles[0].confianza >= 0.8
     assert _tipos(r, "saque_centro")
+    # El disparo se vio antes de entrar: es el mismo tiro, no otro.
     tiros = _tipos(r, "tiro")
-    assert tiros and tiros[0].tracklet == 7
+    assert len(tiros) == 1 and tiros[0].tracklet == 7
+    assert tiros[0].detalle.startswith("A puerta") and "entra" in tiros[0].detalle
+
+
+def test_un_toque_es_un_solo_tiro_aunque_tarde_en_entrar():
+    # Disparo desde 30 m a 15 m/s: se ve el tiro y dos segundos después el balón cruza la línea entre los postes.
+    balones = [(9000 + 300 * i, 3500) for i in range(12)]
+    instantes = _instantes(balones)
+    toques = [Toque(4, 0, 0.0, 0.2, (9000, 3500), (9300, 3500))]
+    r = detectar_eventos(instantes, toques, [1] * len(instantes), lambda e, m: DIRECCION[e], lambda e: set())
+    assert len(_tipos(r, "gol")) == 1
+    tiros = _tipos(r, "tiro")
+    assert len(tiros) == 1 and tiros[0].t == 0.2 and "entra" in tiros[0].detalle
+
+
+def test_el_balon_que_tiembla_en_la_linea_es_el_mismo_saque_de_banda():
+    # Sale por la banda y, mientras lo recogen, la calibración lo mete y lo saca de nuevo junto a la línea.
+    balones = [(6000, 3000)] * 3 + [(6000, 6800)] + [(6000, 7200)] * 12 + [(6000, 6800)] * 4 + [(6000, 7200)] * 3
+    instantes = _instantes(balones)
+    toques = [Toque(1, 0, 0.0, 0.5, (6000, 3000), (6000, 3000))]
+    r = detectar_eventos(instantes, toques, [1] * len(instantes), lambda e, m: DIRECCION[e], lambda e: set())
+    assert [(e.tipo, e.equipo) for e in r.eventos] == [("saque_banda", 1)]
+    assert len(r.cortes) == 1
+
+
+def test_un_balon_que_apenas_vuelve_al_campo_no_reanuda_el_juego():
+    # Se aleja 15 m pegado a la línea, pero solo un segundo: lo están recogiendo; el siguiente fuera es el mismo parón.
+    balones = [(6000, 3000)] * 3 + [(6000, 6800)] + [(6000, 7200)] * 3 + [(6500, 6800), (7000, 6800)] + [(7500, 6800)] * 3 + [None] * 7 + [(7500, 6800), (7500, 7200), (7500, 7200)]
+    instantes = _instantes(balones)
+    toques = [Toque(1, 0, 0.0, 0.5, (6000, 3000), (6000, 3000))]
+    r = detectar_eventos(instantes, toques, [1] * len(instantes), lambda e, m: DIRECCION[e], lambda e: set())
+    assert [(e.tipo, e.equipo) for e in r.eventos] == [("saque_banda", 1)]
+
+
+def test_otro_fuera_por_la_misma_banda_cuenta_si_el_balon_volvio_al_juego():
+    balones = [(6000, 3000)] * 3 + [(6000, 6800)] + [(6000, 7200)] * 5 + [(6000, 5000)] + [(6000, 3000)] * 10 + [(6000, 6800)] + [(6000, 7200)] * 2
+    instantes = _instantes(balones)
+    toques = [Toque(1, 0, 0.0, 0.5, (6000, 3000), (6000, 3000)), Toque(2, 1, 3.0, 3.5, (6000, 3000), (6000, 3000))]
+    r = detectar_eventos(instantes, toques, [1] * len(instantes), lambda e, m: DIRECCION[e], lambda e: set())
+    assert [(e.tipo, e.equipo) for e in r.eventos] == [("saque_banda", 1), ("saque_banda", 0)]
 
 
 def test_tiro_a_puerta_y_parada_del_portero():

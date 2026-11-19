@@ -37,7 +37,13 @@ public sealed record PerformanceDto(
     int Recoveries = 0,
     int PassesCompleted = 0,
     int PassesAttempted = 0,
-    string? PlayerPhotoUrl = null);
+    string? PlayerPhotoUrl = null,
+    [property: System.ComponentModel.Description("Las acciones las puso el vídeo y aún no cuentan en la nota: el cuerpo técnico las hace suyas al guardar el acta.")]
+    bool ActionsFromVideo = false,
+    [property: System.ComponentModel.Description("Goles que encajó el equipo con él en el campo, según el acta oficial cerrada; null si no se sabe.")]
+    int? GoalsConcededOnPitch = null,
+    [property: System.ComponentModel.Description("Despejes.")]
+    int Clearances = 0);
 
 public sealed record PerformanceWithMatchDto(PerformanceDto Performance, MatchDto Match);
 
@@ -49,5 +55,10 @@ internal static class PerformanceMapper
             p.TeamId, p.Started, p.MinutesPlayed, p.Goals, p.Assists, p.Shots, p.ShotsOnTarget,
             p.KeyPasses, p.Tackles, p.Interceptions, p.Saves, p.YellowCards, p.RedCard,
             p.Rating, p.Notes, p.UpdatedAt, p.Fouls,
-            p.BallLosses, p.Recoveries, p.PassesCompleted, p.PassesAttempted);
+            p.BallLosses, p.Recoveries, p.PassesCompleted, p.PassesAttempted)
+        {
+            ActionsFromVideo = p.ActionsFromVideo,
+            GoalsConcededOnPitch = p.GoalsConcededOnPitch,
+            Clearances = p.Clearances,
+        };
 }

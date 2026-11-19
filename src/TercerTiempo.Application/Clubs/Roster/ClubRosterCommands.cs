@@ -19,6 +19,7 @@ public sealed record AddClubRosterEntryCommand(
     Guid TeamId,
     [property: Description("Nombre y apellidos.")]
     string FullName,
+    [property: Description("Obligatoria: Goalkeeper, Defender, Midfielder o Forward.")]
     Position? Position) : ICommand<IReadOnlyList<RosterEntryDto>>;
 
 public sealed record UpdateClubRosterEntryCommand(
@@ -35,7 +36,7 @@ internal sealed class AddClubRosterEntryValidator : AbstractValidator<AddClubRos
     {
         RuleFor(x => x.TeamId).NotEmpty();
         RuleFor(x => x.FullName).NotEmpty().MinimumLength(2).MaximumLength(150);
-        RuleFor(x => x.Position).IsInEnum().When(x => x.Position.HasValue);
+        RuleFor(x => x.Position).NotNull().WithCatalogMessage(ErrorCode.PlayerPositionRequired).IsInEnum();
     }
 }
 
@@ -46,7 +47,7 @@ internal sealed class UpdateClubRosterEntryValidator : AbstractValidator<UpdateC
         RuleFor(x => x.TeamId).NotEmpty();
         RuleFor(x => x.EntryId).NotEmpty();
         RuleFor(x => x.FullName).NotEmpty().MinimumLength(2).MaximumLength(150);
-        RuleFor(x => x.Position).IsInEnum().When(x => x.Position.HasValue);
+        RuleFor(x => x.Position).NotNull().WithCatalogMessage(ErrorCode.PlayerPositionRequired).IsInEnum();
     }
 }
 

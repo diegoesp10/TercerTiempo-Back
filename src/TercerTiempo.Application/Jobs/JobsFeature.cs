@@ -14,6 +14,7 @@ public static class JobNames
     public const string LicenseAlerts = "license-alerts";
     public const string MatchOfficials = "match-officials";
     public const string LeagueZones = "league-zones";
+    public const string Grounds = "grounds";
     public const string RealDataCopy = "real-data";
 
     // Lo ejecuta el servicio de vídeo (otro proceso), una ejecución por vídeo subido.

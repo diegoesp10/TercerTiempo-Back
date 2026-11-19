@@ -1,5 +1,6 @@
 from tt_analisis.config import CLASE_ARBITRO
-from tt_analisis.estadisticas import direcciones_de_ataque, mapa_equipo, mitades, resumir_tracklets
+from tt_analisis.estadisticas import mapa_equipo, resumir_tracklets
+from tt_analisis.mitades import direcciones_de_ataque, mitades
 from tt_analisis.tipos import Persona
 
 from conftest import instante, persona, portero

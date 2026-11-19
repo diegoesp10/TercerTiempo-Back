@@ -103,6 +103,36 @@ public class TrainingSessionTests
     }
 
     [Fact]
+    public void With_exercises_the_session_lasts_what_they_add_up_and_each_one_says_who_does_it()
+    {
+        var (squad, editor, _, _) = SquadWithTwoPlayers();
+        var session = Plan(squad, editor, minutes: 80);
+
+        session.ReplaceItems(
+        [
+            new(null, "Posesiones", ExerciseType.Warmup, 30, null),
+            new(null, "Blocajes", ExerciseType.Technical, 20, null, TrainingGroup.Goalkeepers),
+            new(null, "Centros y remates", ExerciseType.Technical, 60, null, TrainingGroup.Defenders | TrainingGroup.Forwards),
+            new(null, "Partidillo", ExerciseType.Game, 10, null, TrainingGroup.All),
+        ], TestData.Now);
+
+        Assert.Equal(120, session.DurationMinutes);
+        Assert.Equal(Tomorrow.AddMinutes(120), session.EndsAt);
+        Assert.Equal(
+            [TrainingGroup.None, TrainingGroup.Goalkeepers, TrainingGroup.Defenders | TrainingGroup.Forwards, TrainingGroup.None],
+            session.Items.OrderBy(i => i.Order).Select(i => i.Groups));
+        Assert.Equal([Position.Defender, Position.Forward], TrainingGroups.Positions(session.Items.Single(i => i.Name == "Centros y remates").Groups));
+        Assert.Equal(TrainingGroup.None, TrainingGroups.From([Position.Goalkeeper, Position.Defender, Position.Midfielder, Position.Forward]));
+
+        session.Update(TrainingKind.Season, null, Tomorrow, 45, null, null, TestData.Now);
+        Assert.Equal(120, session.DurationMinutes);
+
+        var tooShort = Assert.Throws<DomainException>(() => session.ReplaceItems([new(null, "Charla", ExerciseType.Other, 10, null)], TestData.Now));
+        Assert.Equal(ErrorCode.TrainingDurationRange, tooShort.Code);
+        Assert.Equal(4, session.Items.Count);
+    }
+
+    [Fact]
     public void An_item_needs_a_known_type_and_a_sensible_duration()
     {
         var (squad, editor, _, _) = SquadWithTwoPlayers();
@@ -215,7 +245,7 @@ public class TrainingSessionTests
         Assert.NotNull(moved);
         Assert.Equal((AttendanceStatus.Attended, false), (moved.Status, moved.IsTrial));
         Assert.Null(session.TrialAttendanceOf(trial.Id));
-        Assert.Equal(ErrorCode.TrialPlayerPromoted, Assert.Throws<DomainException>(() => trial.Promote(squad, null, null, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.TrialPlayerPromoted, Assert.Throws<DomainException>(() => trial.Promote(squad, Position.Midfielder, null, TestData.Now)).Code);
         Assert.Equal(ErrorCode.TrialPlayerPromoted, Assert.Throws<DomainException>(() => trial.Update("Otro", null, TestData.Now)).Code);
 
         // Si la ficha ya tenía línea (Pelayo), la de prueba sobra.

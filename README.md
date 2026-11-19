@@ -240,7 +240,7 @@ Endpoint ──(1 línea)──▶ Repository (fachada) ──▶ Application (v
 | GET / PUT | `/api/squads/{id}/matches/{matchId}/sheet` | Consultar / registrar el acta interna de un partido (idempotente; `played = false` borra la línea) |
 | GET / POST | `/api/squads/{id}/matches/{matchId}/video-analysis` | **Del vídeo**: estado del análisis de cada vídeo de la plantilla en el partido, su calidad y la propuesta (los dos equipos detectados y los jugadores seguidos) / analizar o volver a analizar. Club, cuerpo técnico y, solo lectura, el administrador |
 | POST | `/api/squads/{id}/matches/{matchId}/video-analysis/apply` | Volcar al acta interna lo aceptado de la propuesta (datos de equipo marcados y jugadores seguidos asignados a fichas); 409 `video_analysis.overwrite` si pisa datos sin `overwrite = true` |
-| GET | `/api/squads/{id}/matches/{matchId}/video-analysis/crops/{tracklet}` | Recorte (JPEG) de un jugador seguido, para reconocerlo |
+| GET | `/api/squads/{id}/matches/{matchId}/video-analysis/crops/{tracklet}` | Recorte (JPEG) de un jugador seguido (o, identificado por el dorsal, en el que mejor se le leyó), para reconocerlo |
 | POST | `/api/squads/{id}/matches/{matchId}/video-analysis/cancel` | Cancelar lo que está en cola o analizándose (`videoId` opcional: sin él, todos los vídeos del partido); 409 `video_analysis.not_active` si no hay nada que cancelar. Club y cuerpo técnico |
 | GET | `/api/squads/{id}/matches/{matchId}/sheet/comparison` | **Comparador**: acta interna frente a la oficial guardada en SQL, jugador a jugador, con las discrepancias. `refresh` no fuerza descargas |
 | GET | `/api/squads/{id}/stats` | Estadísticas de temporada de cada jugador y su impacto en los resultados |
@@ -534,7 +534,7 @@ carpeta:
 
 ```
 uv run --frozen tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<vídeo> --equipos "<nuestro>,<rival>"
-       [--campo LxA] --sin-clips --progreso --camara movil --exigir-gpu [--segmento 20:00-25:00]
+       [--plantillas <salida>/plantillas.json] [--campo LxA] --sin-clips --progreso --camara movil --exigir-gpu [--segmento 20:00-25:00]
 ```
 
 - **`MatchVideoAnalysis`** (tabla `MatchVideoAnalyses`, uno por vídeo): `Pending` → `Running` (con `Progress`, leído de
@@ -569,9 +569,16 @@ uv run --frozen tt-analisis analizar <vídeo> --salida <Videos:Directory>/analys
 - Cada análisis queda en `JobRuns` como una ejecución de `video-analysis` («Análisis de vídeos» en `/jobs`: «CD Vallobín -
   Real Titánico (partido completo): 27 jugadores seguidos, balón a la vista en el 19,3 % de los fotogramas y campo
   calibrado en el 66,9 %, en 5 min»).
-- **La API** (`Application/Videos/Analysis`) enseña la propuesta y la vuelca. El analizador separa dos equipaciones
-  pero no sabe cuál es la del club: lo dice el cuerpo técnico (`ourTeam`), que además asigna cada jugador seguido
-  («tracklet»; un jugador tiene varios, porque se corta al perderlo de vista) a una ficha. `POST …/apply` escribe con
+- **La API** (`Application/Videos/Analysis`) enseña la propuesta y la vuelca. Si el partido tiene acta oficial (también
+  provisional), el procesador le pasa al analizador los que jugaron por lado, con dorsal y minutos
+  (`VideoAnalysisProcessor.Roster` → `plantillas.json`, con la parte del vídeo y lo que dura cada parte), y el
+  analizador lee el dorsal de cada jugador en el vídeo (PARSeq) y deja la propuesta en su versión 2: una línea por
+  jugador identificado (identificador `900000 + equipo·1000 + dorsal`, con `dorsal`, `nombreActa` y `confianzaDorsal`)
+  y el `lado` del acta de cada equipo. Con eso la API propone el equipo del club (`suggestedOurTeam`) y la ficha de cada
+  jugador (`suggestedSquadPlayerId`: la que `SheetMatcher` cruza con la línea del acta de su lado que lleva ese
+  dorsal; un dorsal repetido en el acta no propone a nadie); el cuerpo técnico solo corrige. Sin acta, el analizador
+  separa dos equipaciones sin saber cuál es la del club: lo dice el cuerpo técnico (`ourTeam`), que además asigna cada
+  jugador seguido («tracklet»; un jugador tiene varios, porque se corta al perderlo de vista) a una ficha. `POST …/apply` escribe con
   `MatchSheetWriter`, el mismo camino que `PUT …/sheet` y `PUT …/team-stats`, en nombre de quien lo vuelca:
   posesión, tiros, tiros a puerta, córners, saques de banda y saques de puerta (cada uno, el valor del equipo y el del
   rival) y, por ficha, tiros, tiros a puerta, paradas, recuperaciones, pérdidas y pases, sumando sus tramos y las dos

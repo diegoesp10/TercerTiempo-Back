@@ -18,13 +18,24 @@ public interface ISquadStore
 
     Task<Squad?> GetByPlayerAsync(Guid playerId, CancellationToken cancellationToken = default);
 
+    // Todas las plantillas en las que ha estado el jugador (también las de temporadas pasadas o de las que se fue).
+    Task<IReadOnlyList<Squad>> GetAllByPlayerAsync(Guid playerId, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<Squad>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Squad>> GetByTeamIdsAsync(IEnumerable<Guid> teamIds, Guid seasonId, CancellationToken cancellationToken = default);
 
     // Todas las temporadas de esos equipos.
     Task<IReadOnlyList<Squad>> GetByTeamIdsAsync(IEnumerable<Guid> teamIds, CancellationToken cancellationToken = default);
 
+    // Las que tienen algún jugador en activo sin posición (la federación no la publica de todos).
+    Task<IReadOnlyList<Squad>> GetWithPlayersMissingPositionAsync(CancellationToken cancellationToken = default);
+
+    // Los nombres de los jugadores en activo de todas las plantillas, sin cargarlas: para buscar fichas repetidas.
+    Task<IReadOnlyList<SquadPlayerName>> GetActivePlayerNamesAsync(CancellationToken cancellationToken = default);
+
     void Add(Squad squad);
 }
 
 public sealed record SquadRef(Guid Id, Guid TeamId, Guid SeasonId, SquadVisibility Visibility);
+
+public sealed record SquadPlayerName(Guid SquadId, Guid SquadPlayerId, string NormalizedName);

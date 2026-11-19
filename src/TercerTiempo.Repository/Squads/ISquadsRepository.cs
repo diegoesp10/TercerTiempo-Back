@@ -1,9 +1,12 @@
+using TercerTiempo.Application.Clubs.ManageTeams;
 using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Squads.Charts;
 using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Application.Squads.Suggestions;
 using TercerTiempo.Application.Squads.TeamStats;
+
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Repository.Squads;
 
@@ -39,6 +42,9 @@ public interface ISquadsRepository
     Task<IReadOnlyList<InjuryDto>> CloseInjuryAsync(Guid squadId, Guid injuryId, CloseInjuryRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InjuryDto>> ReopenInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InjuryDto>> DeleteInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InjuryDto>> UploadInjuryDocumentAsync(Guid squadId, Guid injuryId, InjuryDocumentKind kind, string? note, CrestUpload file, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InjuryDto>> DeleteInjuryDocumentAsync(Guid squadId, Guid injuryId, Guid documentId, CancellationToken cancellationToken = default);
+    Task<InjuryDocumentFile> OpenInjuryDocumentAsync(Guid squadId, Guid injuryId, Guid documentId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<SuggestionDto>> ListSuggestionsAsync(Guid squadId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SuggestionDto>> ResolveSuggestionAsync(Guid squadId, Guid suggestionId, ResolveSuggestionRequest request, CancellationToken cancellationToken = default);

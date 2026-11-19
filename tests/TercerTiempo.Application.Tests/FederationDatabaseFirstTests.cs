@@ -42,6 +42,7 @@ public class FederationDatabaseFirstTests
             Stub<IOfficialSheetQueue>((method, _) => throw new Exception($"Unexpected queue call: {method}")),
             new OfficialSheetSyncMemory(),
             Stub<TercerTiempo.Application.Abstractions.Identity.ICurrentUser>((method, _) => method == "get_IsAuthenticated" ? true : null),
+            Stub<TercerTiempo.Domain.Clubs.ICoachAppointmentStore>((_, _) => Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Clubs.CoachAppointment>>([])),
             TimeProvider.System);
         var result = await handler.Handle(new(match.Id), default);
         Assert.Equal(OfficialSheetAvailability.Available, result.Status);

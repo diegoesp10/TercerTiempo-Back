@@ -37,5 +37,11 @@ internal sealed class MatchStore(AppDbContext db) : IMatchStore
             .OrderBy(m => m.Matchday)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Match>> GetBetweenAsync(Guid teamA, Guid teamB, CancellationToken cancellationToken = default) =>
+        await db.Matches.AsNoTracking()
+            .Where(m => (m.HomeTeamId == teamA && m.AwayTeamId == teamB) || (m.HomeTeamId == teamB && m.AwayTeamId == teamA))
+            .OrderBy(m => m.KickoffAt)
+            .ToListAsync(cancellationToken);
+
     public void Add(Match match) => db.Matches.Add(match);
 }

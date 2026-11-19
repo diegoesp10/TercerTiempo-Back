@@ -6,6 +6,8 @@ using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Standings;
 using TercerTiempo.Application.Teams.Roster;
 using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
+using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Competitions;
@@ -28,6 +30,8 @@ internal sealed class GetTeamHandler(
     ISquadStore squads,
     ITeamProfileProvider profiles,
     IClubStore clubs,
+    ICoachAppointmentStore appointments,
+    ICoachStore coaches,
     Seasons.ISeasonContext seasons,
     TimeProvider clock) : IQueryHandler<GetTeamQuery, TeamDetailDto>
 {
@@ -62,6 +66,45 @@ internal sealed class GetTeamHandler(
             roster,
             squadDto,
             TeamProfileDto.From(team.Profile),
-            team.OfficialRef is { } official && official.Provider == profiles.ProviderName ? profiles.TeamUrl(official.ExternalId) : null);
+            team.OfficialRef is { } official && official.Provider == profiles.ProviderName ? profiles.TeamUrl(official.ExternalId) : null,
+            await StaffAsync(team.Id, season.Id, cancellationToken),
+            SourceUrl(team.ExternalRef));
     }
+
+    // Lo que dicen las actas oficiales es público; el perfil de cada uno, su función en la app y a quién más ha nombrado el
+    // club, solo para cuentas con sesión (como el perfil del técnico y el buscador).
+    private async Task<TeamStaffDto> StaffAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken)
+    {
+        var byMatch = (await matches.GetTeamMatchesAsync(seasonId, teamId, cancellationToken))
+            .Where(m => m.KickoffAt <= clock.GetUtcNow())
+            .ToDictionary(m => m.Id);
+        var rows = new List<SheetStaffEntry>();
+        foreach (var sheet in await sheets.GetStaffByMatchIdsAsync(byMatch.Keys, cancellationToken))
+        {
+            var match = byMatch[sheet.MatchId];
+            var side = match.IsHome(teamId) ? MatchSide.Home : MatchSide.Away;
+            rows.AddRange(sheet.StaffOf(side).Select(s => new SheetStaffEntry(sheet.Id, match.KickoffAt, s.Role, s.RoleLabel, s.FullName)));
+        }
+
+        var today = SquadAccess.Today(clock);
+        var named = (await appointments.GetByTeamAndSeasonAsync(teamId, seasonId, cancellationToken))
+            .Where(a => a.CoachId is not null && (a.RevokedAt is null || (a.RedeemedAt is { } redeemed && a.RevokedAt > redeemed)))
+            .ToList();
+        var coachProfiles = (await coaches.GetByIdsAsync(named.Select(a => a.CoachId!.Value).Distinct(), cancellationToken)).ToDictionary(c => c.Id);
+        var appointed = named.Select(a =>
+        {
+            var coach = coachProfiles.GetValueOrDefault(a.CoachId!.Value);
+            return new AppStaffEntry(
+                a.CoachId!.Value, coach?.DisplayName ?? a.CoachName,
+                new[] { coach?.NormalizedName, a.NormalizedCoachName }.OfType<string>().Distinct().ToList(),
+                a.Role, a.IsActiveOn(today));
+        }).ToList();
+
+        return TeamStaffSummary.Build(rows, appointed, includeAppOnly: currentUser.IsAuthenticated, includeProfiles: currentUser.IsAuthenticated);
+    }
+
+    // futbolasturiano.es lleva de /?p={id} a la página del equipo (/equipo/{slug}/).
+    private static string? SourceUrl(ExternalRef? source) => source is { Provider: "futbolasturiano" }
+        ? $"https://www.futbolasturiano.es/?p={Uri.EscapeDataString(source.ExternalId)}"
+        : null;
 }

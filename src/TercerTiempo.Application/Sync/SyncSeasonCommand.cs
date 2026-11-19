@@ -43,6 +43,12 @@ internal sealed class SyncSeasonHandler(
         var now = clock.GetUtcNow();
         var providerName = provider.ProviderName;
         var scope = command.Scope ?? SyncScope.FullSeason();
+        // Una temporada pasada: solo partidos y clasificaciones (las plantillas de la web son las de hoy).
+        if (scope.SeasonLabel is { } pastSeason)
+        {
+            provider.UseSeason(pastSeason);
+            scope = scope with { IncludeRosters = false, IncludeSheets = false };
+        }
 
         IReadOnlyList<CompetitionSnapshot> snapshots;
         try
@@ -136,6 +142,13 @@ internal sealed class SyncSeasonHandler(
         var seasonRef = ExternalRef.Create(providerName, snapshot.SeasonExternalId);
 
         var competition = await competitions.GetByExternalRefAsync(competitionRef, cancellationToken);
+
+        // Una temporada pasada no crea ligas ni temporadas vacías: la web lista todas sus ligas, también las que ese año no
+        // existían.
+        if (scope.SeasonLabel is not null && competition?.Seasons.Any(s => s.ExternalRef == seasonRef) != true
+            && (await provider.GetMatchesAsync(snapshot.ExternalId, [], scope.Window, cancellationToken)).Count == 0)
+            return (0, 0, 0, 0);
+
         if (competition is null)
         {
             competition = Competition.Create(snapshot.Name, snapshot.Category, snapshot.Level, snapshot.Tier, snapshot.Group, snapshot.Region, competitionRef);
@@ -149,7 +162,8 @@ internal sealed class SyncSeasonHandler(
         var season = competition.Seasons.FirstOrDefault(s => s.ExternalRef == seasonRef)
             ?? competition.AddSeason(snapshot.SeasonLabel, snapshot.StartsOn, snapshot.EndsOn, seasonRef, year.Id);
         if (season.SeasonYearId != year.Id) competition.LinkSeasonYear(season.Id, year.Id);
-        competition.MarkCurrent(season.Id);
+        // Solo la temporada en curso de la app pasa a ser la actual de la liga: guardar una pasada no cambia lo que se ve.
+        if (year.IsCurrent) competition.MarkCurrent(season.Id);
 
         // 2. Calendario según el proveedor. Se le pasan los partidos ya guardados de esta temporada para que pueda
         //    reutilizarlos (futbolasturiano.es tiene que leer de una en una las páginas de los partidos que su API oculta).

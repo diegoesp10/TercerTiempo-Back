@@ -13,6 +13,9 @@ ANCHO_CM = 7000.0
 ANCHO_PORTERIA_CM = 732.0
 AREA_GRANDE_LARGO_CM = 2015.0
 AREA_GRANDE_ANCHO_CM = 4100.0
+AREA_PEQUENA_LARGO_CM = 550.0
+AREA_PEQUENA_ANCHO_CM = 1832.0
+PUNTO_PENALTI_CM = 1100.0
 MARGEN_FUERA_CM = 80.0
 # Medidas del campo en uso (las cambia `campo.configurar_campo`: no todos los campos miden 105 × 68).
 DIMENSIONES = {"largo": LARGO_CM, "ancho": ANCHO_CM}
@@ -66,6 +69,20 @@ class Campo:
         if lado < 0:
             return dentro_y and 0 <= x <= AREA_GRANDE_LARGO_CM
         return dentro_y and self.largo - AREA_GRANDE_LARGO_CM <= x <= self.largo
+
+    def en_punto_de_saque(self, xy: Punto, margen: float = 300.0) -> bool:
+        """Donde el reglamento para el balón una y otra vez: el centro, los puntos de penalti, el área pequeña (saques
+        de puerta) y las esquinas (córneres). Con `margen` cm de holgura por lo que se desvía la calibración."""
+        cerca = lambda p: distancia(xy, p) <= margen  # noqa: E731
+        if cerca(self.centro) or cerca((PUNTO_PENALTI_CM, self.ancho / 2)) or cerca((self.largo - PUNTO_PENALTI_CM, self.ancho / 2)):
+            return True
+        if self.en_area_pequena(xy, margen):
+            return True
+        return any(cerca((ex, ey)) for ex in (0.0, self.largo) for ey in (0.0, self.ancho))
+
+    def en_area_pequena(self, xy: Punto, margen: float = 0.0) -> bool:
+        x, y = xy
+        return abs(y - self.ancho / 2) <= AREA_PEQUENA_ANCHO_CM / 2 + margen and (x <= AREA_PEQUENA_LARGO_CM + margen or x >= self.largo - AREA_PEQUENA_LARGO_CM - margen)
 
     def celda(self, xy: Punto, columnas: int = 12, filas: int = 8) -> tuple[int, int]:
         x, y = xy

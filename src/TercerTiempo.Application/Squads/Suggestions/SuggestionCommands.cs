@@ -5,6 +5,7 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Application.Performances;
+using TercerTiempo.Application.Squads.Suspensions;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
@@ -205,6 +206,7 @@ internal sealed class ResolveSuggestionHandler(
     IPerformanceStore performances,
     IPerformanceSuggestionStore suggestions,
     IUnitOfWork unitOfWork,
+    SuspensionReader suspensions,
     TimeProvider clock) : ICommandHandler<ResolveSuggestionCommand, IReadOnlyList<SuggestionDto>>
 {
     public async Task<IReadOnlyList<SuggestionDto>> Handle(ResolveSuggestionCommand command, CancellationToken cancellationToken)
@@ -228,7 +230,12 @@ internal sealed class ResolveSuggestionHandler(
                 .FirstOrDefault(p => p.SquadPlayerId == entry.Id);
 
             if (current is null)
+            {
+                // Como en el acta: a un sancionado no se le abre línea en el partido de su sanción.
+                if ((await suspensions.LoadAsync(squad, cancellationToken)).On(entry.Id, match.Id) is { } suspension)
+                    throw new DomainException(ErrorCode.SheetPlayerSuspended, entry.FullName, SuspensionReader.ReasonInSentence(suspension));
                 performances.Add(PlayerMatchPerformance.Record(squad, entry, match, recorder, suggestion.ToStats(), now));
+            }
             else
                 // La sugerencia del jugador no trae el detalle que apunta el cuerpo técnico: se conserva el de la línea.
                 current.Update(suggestion.ToStats(current.Notes) with
@@ -238,6 +245,7 @@ internal sealed class ResolveSuggestionHandler(
                     Recoveries = current.Recoveries,
                     PassesCompleted = current.PassesCompleted,
                     PassesAttempted = current.PassesAttempted,
+                    Clearances = current.Clearances,
                 }, entry, match, recorder, now);
 
             suggestion.Approve(currentUser.CoachId, currentUser.ClubId, command.Note, now);

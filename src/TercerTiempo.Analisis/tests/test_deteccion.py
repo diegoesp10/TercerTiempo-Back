@@ -2,7 +2,7 @@ import numpy as np
 import supervision as sv
 
 from tt_analisis.config import CLASE_ARBITRO, CLASE_JUGADOR
-from tt_analisis.deteccion import distancias_a_jugadores_m, elegir_balon, juntar
+from tt_analisis.deteccion import distancias_a_jugadores_m, elegir_balon
 
 
 def _balones(*centros_conf):
@@ -50,10 +50,3 @@ def test_entre_varios_candidatos_gana_el_coherente_con_los_jugadores_y_la_trayec
     # Y si el balón venía volando hacia la marca lejana, gana la trayectoria.
     elegido, _ = elegir_balon(candidatos, personas, prediccion=np.array([1490.0, 500.0]), radio_prediccion=150.0)
     assert elegido.xyxy[0][0] > 1000
-
-
-def test_juntar_quita_duplicados_y_no_arrastra_identificadores():
-    con_id = sv.Detections(xyxy=np.array([[100, 100, 110, 110]], dtype=np.float32), confidence=np.array([0.5], dtype=np.float32), class_id=np.array([0]), tracker_id=np.array([7]))
-    todas = juntar(_balones((105, 105, 0.6), (800, 300, 0.3)), con_id, sv.Detections.empty())
-    assert len(todas) == 2 and todas.tracker_id is None
-    assert len(juntar(sv.Detections.empty())) == 0

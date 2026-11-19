@@ -4,13 +4,18 @@ using TercerTiempo.Application.Auth;
 using TercerTiempo.Application.Coaches.Profile;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
+using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
+using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Squads;
+using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 
 namespace TercerTiempo.Application.Tests;
 
-// El perfil de un técnico: los equipos de sus nombramientos (los vigentes primero, sin los revocados) y si es el tuyo.
+// El perfil de un técnico: su historial de equipos por los nombramientos (los vigentes primero; un nombramiento retirado
+// solo sale si llegó a empezarlo, hasta el día que lo dejó), el balance de cada equipo mientras estuvo y si es el tuyo.
 public class CoachProfileTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
@@ -22,6 +27,9 @@ public class CoachProfileTests
     private readonly Team _filial = Team.Create("Hispano 'B'", "HIB", null);
     private readonly Competition _competition = Competition.Create("1ª AsturFútbol", "1ª AsturFútbol", CompetitionLevel.Regional, 1, null, "Asturias", null);
     private readonly List<CoachAppointment> _appointments = [];
+    private readonly List<Match> _matches = [];
+    private readonly List<Standing> _standings = [];
+    private readonly List<OfficialMatchSheet> _sheets = [];
 
     public CoachProfileTests()
     {
@@ -51,6 +59,103 @@ public class CoachProfileTests
         Assert.Equal([("Hispano", true, StaffRole.HeadCoach), ("Hispano 'B'", false, StaffRole.AssistantCoach)],
             profile.Teams.Select(t => (t.TeamName, t.Current, t.Role)));
         Assert.All(profile.Teams, t => Assert.Equal("Hispano", t.ClubName));
+    }
+
+    [Fact]
+    public async Task A_coach_who_left_mid_season_stays_in_the_history_until_the_day_he_left()
+    {
+        var season = _competition.Seasons.Single(s => s.Label == "2026/2027");
+        var dismissed = CoachAppointment.Create(_club.Id, _filial.Id, season.Id, _coach.DisplayName, null, StaffRole.Physio, Today.AddDays(-50), Today.AddDays(200), Now.AddDays(-50));
+        dismissed.Redeem(_coach.Id, Now.AddDays(-45));
+        dismissed.Revoke(Now);
+        _appointments.Add(dismissed);
+
+        var profile = await Handler(new Viewer(CoachId: Guid.NewGuid())).Handle(new GetCoachProfileQuery(_coach.Id), default);
+
+        Assert.Equal([("Hispano", true, StaffRole.HeadCoach, (DateOnly?)null), ("Hispano 'B'", false, StaffRole.Physio, SpainTime.Today(Now)), ("Hispano 'B'", false, StaffRole.AssistantCoach, null)],
+            profile.Teams.Select(t => (t.TeamName, t.Current, t.Role, t.LeftOn)));
+    }
+
+    [Fact]
+    public async Task Each_team_counts_only_the_matches_played_while_in_it_with_its_table_position_and_a_summary()
+    {
+        var season = _competition.Seasons.Single(s => s.Label == "2026/2027");
+        var rival = Guid.NewGuid();
+        // Uno antes del nombramiento (no cuenta), dos victorias y un empate mientras está, y uno sin jugar.
+        _matches.AddRange([
+            Played(season.Id, 1, _first.Id, rival, -40, 0, 3),
+            Played(season.Id, 2, _first.Id, rival, -20, 2, 1),
+            Played(season.Id, 3, rival, _first.Id, -10, 0, 1),
+            Played(season.Id, 4, _first.Id, rival, -3, 1, 1),
+            Match.Schedule(season.Id, 5, rival, _first.Id, Now.AddDays(5), null, null),
+        ]);
+        _standings.AddRange([
+            Standing.Create(season.Id, rival, new StandingLine(1, 4, 3, 1, 0, 6, 3, 10), Now),
+            Standing.Create(season.Id, _first.Id, new StandingLine(2, 4, 2, 1, 1, 4, 5, 7), Now),
+            Standing.Create(season.Id, Guid.NewGuid(), new StandingLine(3, 4, 0, 0, 4, 1, 7, 0), Now),
+        ]);
+
+        var profile = await Handler(new Viewer(CoachId: Guid.NewGuid())).Handle(new GetCoachProfileQuery(_coach.Id), default);
+
+        var head = profile.Teams.Single(t => t.Role == StaffRole.HeadCoach);
+        Assert.Equal(new CoachTeamRecordDto(3, 2, 1, 0, 4, 2, 7), head.Record);
+        Assert.Equal((2, 3), (head.Position!.Value, head.TeamsInTable!.Value));
+        var past = profile.Teams.Single(t => t.Role == StaffRole.AssistantCoach);
+        Assert.Equal(0, past.Record!.Played);
+        Assert.Null(past.Position);
+
+        var summary = profile.Summary!;
+        Assert.Equal((3, 2, 1, 0, 7), (summary.Played, summary.Won, summary.Drawn, summary.Lost, summary.Points));
+        Assert.Equal((66.7, 33.3, 0.0, 2.33), (summary.WinPct!.Value, summary.DrawPct!.Value, summary.LossPct!.Value, summary.PointsPerMatch!.Value));
+        Assert.Equal((2.0, 1), (summary.AveragePosition!.Value, summary.RankedTeams));
+    }
+
+    [Fact]
+    public async Task Each_team_says_in_how_many_official_sheets_the_coach_appears_by_name_and_with_which_role()
+    {
+        var season = _competition.Seasons.Single(s => s.Label == "2026/2027");
+        var rival = Guid.NewGuid();
+        var withHim = Played(season.Id, 2, _first.Id, rival, -20, 2, 1);
+        var away = Played(season.Id, 3, rival, _first.Id, -10, 0, 1);
+        var withoutStaff = Played(season.Id, 4, _first.Id, rival, -3, 1, 1);
+        _matches.AddRange([withHim, away, withoutStaff]);
+        _sheets.AddRange([
+            Sheet(withHim, [new(MatchSide.Home, "Entrenador", "MENENDEZ CUETO, XURDE"), new(MatchSide.Away, "Entrenador", "OTRO PEREZ, JUAN")]),
+            // Fuera de casa figura en el lado visitante; el local con el mismo apellido no es él.
+            Sheet(away, [new(MatchSide.Home, "Entrenador", "MENENDEZ GARCIA, PABLO"), new(MatchSide.Away, "2ºEntrenador", "MENENDEZ CUETO, XURDE")]),
+            Sheet(withoutStaff, []),
+        ]);
+
+        var profile = await Handler(new Viewer(CoachId: Guid.NewGuid())).Handle(new GetCoachProfileQuery(_coach.Id), default);
+
+        var head = profile.Teams.Single(t => t.Role == StaffRole.HeadCoach);
+        Assert.Equal((2, 2), (head.OfficialSheets, head.OfficialAppearances));
+        Assert.Contains(head.OfficialRole, new[] { "Entrenador", "2ºEntrenador" });
+    }
+
+    private static OfficialMatchSheet Sheet(Match match, IReadOnlyList<OfficialStaffData> staff)
+    {
+        var sheet = OfficialMatchSheet.Create(match.Id, "asturfutbol", match.Id.ToString("N"), null, Now);
+        sheet.ApplyStaff(staff, Now);
+        return sheet;
+    }
+
+    [Fact]
+    public async Task Without_matches_the_summary_has_no_averages()
+    {
+        var profile = await Handler(new Viewer(CoachId: Guid.NewGuid())).Handle(new GetCoachProfileQuery(_coach.Id), default);
+
+        Assert.Equal(0, profile.Summary!.Played);
+        Assert.Null(profile.Summary.WinPct);
+        Assert.Null(profile.Summary.PointsPerMatch);
+        Assert.Null(profile.Summary.AveragePosition);
+    }
+
+    private static Match Played(Guid seasonId, int matchday, Guid home, Guid away, int days, int homeGoals, int awayGoals)
+    {
+        var match = Match.Schedule(seasonId, matchday, home, away, Now.AddDays(days), null, null);
+        match.RecordResult(homeGoals, awayGoals, Now.AddDays(days));
+        return match;
     }
 
     [Fact]
@@ -99,7 +204,16 @@ public class CoachProfileTests
             Stub<Licensing.ILicenseGate>(),
             TimeProvider.System,
             new NoSeasons());
-        return new GetCoachProfileHandler(viewer, stores);
+        var matches = Stub<IMatchStore>((method, args) => method == nameof(IMatchStore.GetTeamMatchesAsync)
+            ? Task.FromResult<IReadOnlyList<Match>>(_matches.Where(m => m.SeasonId == (Guid)args![0]! && m.Involves((Guid)args[1]!)).ToList())
+            : throw new NotSupportedException(method));
+        var standings = Stub<IStandingStore>((method, args) => method == nameof(IStandingStore.GetBySeasonAsync)
+            ? Task.FromResult<IReadOnlyList<Standing>>(_standings.Where(s => s.SeasonId == (Guid)args![0]!).ToList())
+            : throw new NotSupportedException(method));
+        var sheets = Stub<IOfficialSheetStore>((method, args) => method == nameof(IOfficialSheetStore.GetStaffByMatchIdsAsync)
+            ? Task.FromResult<IReadOnlyList<OfficialMatchSheet>>(_sheets.Where(s => ((IEnumerable<Guid>)args![0]!).Contains(s.MatchId)).ToList())
+            : throw new NotSupportedException(method));
+        return new GetCoachProfileHandler(viewer, stores, matches, standings, sheets);
     }
 
     private sealed record Viewer(Guid? CoachId = null, Guid? ClubId = null) : ICurrentUser

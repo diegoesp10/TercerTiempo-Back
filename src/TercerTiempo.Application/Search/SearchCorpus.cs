@@ -1,5 +1,6 @@
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Search;
 
@@ -14,7 +15,14 @@ public sealed record SearchCorpus(
     IReadOnlyList<CorpusMatch> Matches,
     IReadOnlyList<CorpusSquad> Squads,
     // Árbitros con los partidos en que figuran (solo los ven clubes y cuerpos técnicos).
-    IReadOnlyList<CorpusReferee>? Referees = null);
+    IReadOnlyList<CorpusReferee>? Referees = null,
+    // Cuerpo técnico con perfil (entrenadores, segundos, delegados, fisios...) y los equipos en que está o ha estado.
+    IReadOnlyList<CorpusCoach>? Coaches = null);
+
+public sealed record CorpusCoach(Guid Id, string Name, string? PhotoUrl, IReadOnlyList<CorpusCoachTeam> Teams);
+
+// Current: el nombramiento está vigente hoy.
+public sealed record CorpusCoachTeam(Guid TeamId, StaffRole Role, bool Current, DateOnly ValidUntil);
 
 public sealed record CorpusCompetition(
     Guid Id, string Name, string Category, string? Group, string Region, int Tier, int SortOrder,

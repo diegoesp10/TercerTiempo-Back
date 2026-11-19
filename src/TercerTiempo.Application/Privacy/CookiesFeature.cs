@@ -9,9 +9,11 @@ using TercerTiempo.Domain.Privacy;
 
 namespace TercerTiempo.Application.Privacy;
 
+// Lo que ve cualquiera en la política y en el panel de ajustes: para qué sirve cada dato, de qué tipo es, quién lo pone
+// y cuánto dura, sin su nombre técnico (no hace falta para elegir y no da pistas a nadie). El nombre solo lo ve el
+// administrador, que gestiona el catálogo.
 public sealed record CookieDto(
     Guid Id,
-    string Name,
     CookieCategory Category,
     CookieStorage Storage,
     string Provider,
@@ -26,13 +28,23 @@ public sealed record CookiePolicyDto(
     DateTimeOffset UpdatedAt,
     IReadOnlyList<CookieDto> Cookies);
 
+public sealed record AdminCookieDto(
+    Guid Id,
+    string Name,
+    CookieCategory Category,
+    CookieStorage Storage,
+    string Provider,
+    string Purpose,
+    string Duration,
+    int SortOrder,
+    bool RequiresConsent);
+
+public sealed record AdminCookiePolicyDto(string Version, DateTimeOffset UpdatedAt, IReadOnlyList<AdminCookieDto> Cookies);
+
 internal static class CookieMapper
 {
-    public static CookieDto ToDto(CookieDefinition c) =>
-        new(c.Id, c.Name, c.Category, c.Storage, c.Provider, c.Purpose, c.Duration, c.SortOrder, c.RequiresConsent);
-
-    public static IReadOnlyList<CookieDto> ToDtos(IEnumerable<CookieDefinition> cookies) =>
-        cookies.OrderBy(c => c.Category).ThenBy(c => c.SortOrder).ThenBy(c => c.Name).Select(ToDto).ToList();
+    public static IEnumerable<CookieDefinition> Sorted(IEnumerable<CookieDefinition> cookies) =>
+        cookies.OrderBy(c => c.Category).ThenBy(c => c.SortOrder).ThenBy(c => c.Name);
 
     // Sin la fila sembrada (base recién creada a mano), la primera versión publicada.
     public static async Task<CookiePolicy> PolicyAsync(ICookieStore store, TimeProvider clock, CancellationToken cancellationToken) =>
@@ -46,14 +58,31 @@ internal sealed class GetCookiePolicyHandler(ICookieStore store, TimeProvider cl
     public async Task<CookiePolicyDto> Handle(GetCookiePolicyQuery query, CancellationToken cancellationToken)
     {
         var policy = await CookieMapper.PolicyAsync(store, clock, cancellationToken);
-        return new CookiePolicyDto(policy.Version, policy.UpdatedAt, CookieMapper.ToDtos(await store.GetAllAsync(cancellationToken)));
+        var cookies = CookieMapper.Sorted(await store.GetAllAsync(cancellationToken))
+            .Select(c => new CookieDto(c.Id, c.Category, c.Storage, c.Provider, c.Purpose, c.Duration, c.SortOrder, c.RequiresConsent))
+            .ToList();
+        return new CookiePolicyDto(policy.Version, policy.UpdatedAt, cookies);
+    }
+}
+
+public sealed record GetAdminCookiePolicyQuery : IQuery<AdminCookiePolicyDto>;
+
+internal sealed class GetAdminCookiePolicyHandler(ICookieStore store, TimeProvider clock) : IQueryHandler<GetAdminCookiePolicyQuery, AdminCookiePolicyDto>
+{
+    public async Task<AdminCookiePolicyDto> Handle(GetAdminCookiePolicyQuery query, CancellationToken cancellationToken)
+    {
+        var policy = await CookieMapper.PolicyAsync(store, clock, cancellationToken);
+        var cookies = CookieMapper.Sorted(await store.GetAllAsync(cancellationToken))
+            .Select(c => new AdminCookieDto(c.Id, c.Name, c.Category, c.Storage, c.Provider, c.Purpose, c.Duration, c.SortOrder, c.RequiresConsent))
+            .ToList();
+        return new AdminCookiePolicyDto(policy.Version, policy.UpdatedAt, cookies);
     }
 }
 
 public sealed record ConsentDto(string VisitorId, bool Analytics, ConsentAction Action, string PolicyVersion, DateTimeOffset CreatedAt);
 
 public sealed record RecordConsentCommand(
-    [property: Description("Id aleatorio (UUID) que el navegador genera y guarda en tt.consent.")]
+    [property: Description("Id aleatorio (UUID) que el navegador genera y guarda con la elección de cookies.")]
     string VisitorId,
     [property: Description("AcceptAll, RejectAll o Custom (entonces vale analytics).")]
     ConsentAction Action,
@@ -92,7 +121,7 @@ public sealed record UpsertCookieCommand(
     string Provider,
     string Purpose,
     string Duration,
-    int SortOrder) : ICommand<CookiePolicyDto>;
+    int SortOrder) : ICommand<AdminCookiePolicyDto>;
 
 internal sealed class UpsertCookieValidator : AbstractValidator<UpsertCookieCommand>
 {
@@ -109,9 +138,9 @@ internal sealed class UpsertCookieValidator : AbstractValidator<UpsertCookieComm
 }
 
 internal sealed class UpsertCookieHandler(ICookieStore store, IUnitOfWork unitOfWork, TimeProvider clock)
-    : ICommandHandler<UpsertCookieCommand, CookiePolicyDto>
+    : ICommandHandler<UpsertCookieCommand, AdminCookiePolicyDto>
 {
-    public async Task<CookiePolicyDto> Handle(UpsertCookieCommand command, CancellationToken cancellationToken)
+    public async Task<AdminCookiePolicyDto> Handle(UpsertCookieCommand command, CancellationToken cancellationToken)
     {
         var all = await store.GetAllForUpdateAsync(cancellationToken);
         if (command.Id is { } id)
@@ -125,29 +154,29 @@ internal sealed class UpsertCookieHandler(ICookieStore store, IUnitOfWork unitOf
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return await new GetCookiePolicyHandler(store, clock).Handle(new GetCookiePolicyQuery(), cancellationToken);
+        return await new GetAdminCookiePolicyHandler(store, clock).Handle(new GetAdminCookiePolicyQuery(), cancellationToken);
     }
 }
 
-public sealed record DeleteCookieCommand(Guid Id) : ICommand<CookiePolicyDto>;
+public sealed record DeleteCookieCommand(Guid Id) : ICommand<AdminCookiePolicyDto>;
 
 internal sealed class DeleteCookieHandler(ICookieStore store, IUnitOfWork unitOfWork, TimeProvider clock)
-    : ICommandHandler<DeleteCookieCommand, CookiePolicyDto>
+    : ICommandHandler<DeleteCookieCommand, AdminCookiePolicyDto>
 {
-    public async Task<CookiePolicyDto> Handle(DeleteCookieCommand command, CancellationToken cancellationToken)
+    public async Task<AdminCookiePolicyDto> Handle(DeleteCookieCommand command, CancellationToken cancellationToken)
     {
         var cookie = (await store.GetAllForUpdateAsync(cancellationToken)).FirstOrDefault(c => c.Id == command.Id)
             ?? throw new NotFoundException(ErrorCode.CookieNotFound, command.Id);
         store.Remove(cookie);
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return await new GetCookiePolicyHandler(store, clock).Handle(new GetCookiePolicyQuery(), cancellationToken);
+        return await new GetAdminCookiePolicyHandler(store, clock).Handle(new GetAdminCookiePolicyQuery(), cancellationToken);
     }
 }
 
 // Publicar una versión nueva hace que el aviso vuelva a salir a todos (los consentimientos anteriores dejan de valer).
 public sealed record PublishCookiePolicyCommand(
     [property: Description("Nueva versión, p. ej. la fecha: 2026-11-02.")]
-    string Version) : ICommand<CookiePolicyDto>;
+    string Version) : ICommand<AdminCookiePolicyDto>;
 
 internal sealed class PublishCookiePolicyValidator : AbstractValidator<PublishCookiePolicyCommand>
 {
@@ -155,9 +184,9 @@ internal sealed class PublishCookiePolicyValidator : AbstractValidator<PublishCo
 }
 
 internal sealed class PublishCookiePolicyHandler(ICookieStore store, IUnitOfWork unitOfWork, TimeProvider clock)
-    : ICommandHandler<PublishCookiePolicyCommand, CookiePolicyDto>
+    : ICommandHandler<PublishCookiePolicyCommand, AdminCookiePolicyDto>
 {
-    public async Task<CookiePolicyDto> Handle(PublishCookiePolicyCommand command, CancellationToken cancellationToken)
+    public async Task<AdminCookiePolicyDto> Handle(PublishCookiePolicyCommand command, CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
         var policy = await store.GetPolicyForUpdateAsync(cancellationToken);
@@ -167,6 +196,6 @@ internal sealed class PublishCookiePolicyHandler(ICookieStore store, IUnitOfWork
             policy.Publish(command.Version.Trim(), now);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        return await new GetCookiePolicyHandler(store, clock).Handle(new GetCookiePolicyQuery(), cancellationToken);
+        return await new GetAdminCookiePolicyHandler(store, clock).Handle(new GetAdminCookiePolicyQuery(), cancellationToken);
     }
 }

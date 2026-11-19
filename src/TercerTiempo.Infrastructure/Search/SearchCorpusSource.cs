@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TercerTiempo.Application.Coaches.Photos;
 using TercerTiempo.Application.Players.Photos;
 using TercerTiempo.Application.Search;
 using TercerTiempo.Application.Teams;
@@ -28,7 +29,6 @@ internal sealed class SearchCorpusSource(AppDbContext db) : ISearchCorpusSource
         var teams = await db.Teams.AsNoTracking().ToListAsync(cancellationToken);
         var roster = await db.RosterEntries.AsNoTracking().Where(r => seasonIds.Contains(r.SeasonId) && !r.Hidden).ToListAsync(cancellationToken);
         var clubs = await db.Clubs.AsNoTracking().ToListAsync(cancellationToken);
-        // El cuerpo técnico no entra en el buscador: solo los jugadores.
         var squads = await db.Squads.AsNoTracking().IgnoreAutoIncludes().Include(s => s.Players).ToListAsync(cancellationToken);
         var linkedPlayers = squads.SelectMany(s => s.Players).Select(p => p.PlayerId).OfType<Guid>().Distinct().ToList();
         var accountPhotos = await db.Players.AsNoTracking()
@@ -110,6 +110,21 @@ internal sealed class SearchCorpusSource(AppDbContext db) : ISearchCorpusSource
                 : new CorpusReferee(r.Id, r.Name, 0))
             .ToList();
 
-        return new SearchCorpus(corpusCompetitions, corpusTeams, corpusClubs, corpusPlayers, corpusMatches, corpusSquads, corpusReferees);
+        // Cuerpo técnico con perfil: quien ha canjeado algún nombramiento, con sus equipos (los que el club le retiró antes de
+        // empezar no cuentan).
+        var today = TercerTiempo.Domain.Common.SpainTime.Today(DateTimeOffset.UtcNow);
+        var appointments = await db.CoachAppointments.AsNoTracking()
+            .Where(a => a.CoachId != null && (a.RevokedAt == null || a.RevokedAt > a.RedeemedAt))
+            .Select(a => new { CoachId = a.CoachId!.Value, a.TeamId, a.Role, a.ValidFrom, a.ValidUntil, a.RevokedAt })
+            .ToListAsync(cancellationToken);
+        var coachIds = appointments.Select(a => a.CoachId).Distinct().ToList();
+        var corpusCoaches = (await db.Coaches.AsNoTracking().Where(c => coachIds.Contains(c.Id)).ToListAsync(cancellationToken))
+            .Select(c => new CorpusCoach(c.Id, c.DisplayName, c.PhotoLink(), appointments
+                .Where(a => a.CoachId == c.Id)
+                .Select(a => new CorpusCoachTeam(a.TeamId, a.Role, a.RevokedAt == null && today >= a.ValidFrom && today <= a.ValidUntil, a.ValidUntil))
+                .ToList()))
+            .ToList();
+
+        return new SearchCorpus(corpusCompetitions, corpusTeams, corpusClubs, corpusPlayers, corpusMatches, corpusSquads, corpusReferees, corpusCoaches);
     }
 }
