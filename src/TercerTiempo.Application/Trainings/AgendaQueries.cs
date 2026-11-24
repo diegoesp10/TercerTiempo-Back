@@ -78,7 +78,7 @@ internal sealed class GetSquadAgendaHandler(
             var manager = await TrainingAccess.CanEditAsync(squad, currentUser, clock, clubs, cancellationToken);
             // Solo las convocatorias de los partidos del intervalo, filtradas en SQL.
             var visible = await callUps.GetBySquadAndMatchesAsync(squad.Id, inRange.Select(m => m.Id), publishedOnly: !manager, cancellationToken);
-            var byMatch = CallUps.Summaries(visible, squad, viewer).ToDictionary(c => c.MatchId);
+            var byMatch = CallUps.Summaries(visible, squad, viewer, inRange.ToDictionary(m => m.Id, m => m.KickoffAt)).ToDictionary(c => c.MatchId);
             // Quién no puede jugar solo se calcula si hay algún partido por jugar en el intervalo.
             var sanctions = inRange.Any(m => !IsPlayed(m, now)) ? await suspensions.LoadAsync(squad, season, cancellationToken) : SuspensionCalendar.Empty;
             items.AddRange(inRange.Select(m =>

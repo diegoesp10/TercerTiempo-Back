@@ -27,6 +27,7 @@ public sealed record SyncResultDto(
 internal sealed class SyncSeasonHandler(
     IFootballDataProvider provider,
     ICompetitionStore competitions,
+    ITerritoryStore territories,
     ITeamStore teams,
     IMatchStore matches,
     IStandingStore standings,
@@ -128,6 +129,22 @@ internal sealed class SyncSeasonHandler(
         return new SyncResultDto(providerName, totals.Competitions, totals.Teams, totals.Matches, totals.Standings, totals.Roster, errors, now);
     }
 
+    // El ámbito de la liga: el nacional para las de la RFEF y las profesionales; para las demás, el de su comunidad, que se
+    // crea la primera vez que llega una liga suya.
+    private async Task<Guid> TerritoryIdAsync(CompetitionSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        if (Territory.IsNational(snapshot.Level, snapshot.Category))
+            return Territory.NationalId;
+
+        var territory = await territories.GetByNameAsync(snapshot.Region, cancellationToken);
+        if (territory is null)
+        {
+            territory = Territory.CreateRegion(snapshot.Region);
+            territories.Add(territory);
+        }
+        return territory.Id;
+    }
+
     private async Task<(int Teams, int Matches, int Standings, int Roster)> SyncCompetitionAsync(
         CompetitionSnapshot snapshot,
         string providerName,
@@ -158,6 +175,7 @@ internal sealed class SyncSeasonHandler(
         {
             competition.UpdateDetails(snapshot.Name, snapshot.Category, snapshot.Level, snapshot.Tier, snapshot.Group, snapshot.Region);
         }
+        competition.PlaceIn(await TerritoryIdAsync(snapshot, cancellationToken));
 
         var season = competition.Seasons.FirstOrDefault(s => s.ExternalRef == seasonRef)
             ?? competition.AddSeason(snapshot.SeasonLabel, snapshot.StartsOn, snapshot.EndsOn, seasonRef, year.Id);

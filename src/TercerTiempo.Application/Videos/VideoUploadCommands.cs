@@ -36,7 +36,7 @@ public sealed record BeginVideoUploadCommand(
     Guid MatchId,
     [property: Description("Full (partido completo), FirstHalf o SecondHalf.")]
     VideoPart Part,
-    string? Title,
+    [property: Description("Nombre del archivo en el equipo de quien sube: sirve para reanudar y por su extensión; el vídeo se llama como el partido («Local vs Visitante dd-mm-aaaa»).")]
     string FileName,
     [property: Description("video/mp4 o video/webm; un partido entero a 1080p (unos 6 GB) cabe de sobra en Videos:MaxSizeMb.")]
     string ContentType,
@@ -59,8 +59,7 @@ internal sealed class BeginVideoUploadValidator : AbstractValidator<BeginVideoUp
         RuleFor(x => x.SquadId).NotEmpty();
         RuleFor(x => x.MatchId).NotEmpty();
         RuleFor(x => x.Part).IsInEnum();
-        RuleFor(x => x.Title).MaximumLength(150);
-        RuleFor(x => x.FileName).NotEmpty().MaximumLength(255);
+        RuleFor(x => x.FileName).NotEmpty().MaximumLength(MatchVideo.MaxFileNameLength);
         RuleFor(x => x.ContentType)
             .Must(ct => settings.AllowedContentTypes.Contains(ct, StringComparer.OrdinalIgnoreCase))
             .WithCatalogMessage(ErrorCode.VideoFormatNotAllowed, string.Join(", ", settings.AllowedContentTypes));
@@ -186,7 +185,7 @@ internal sealed class BeginVideoUploadHandler(
 
         var storageKey = await storage.BeginUploadAsync(command.FileName, cancellationToken);
         var session = VideoUploadSession.Begin(
-            squad.Id, match.Id, uploader.CoachId, command.Part, command.Title, command.FileName, command.ContentType.ToLowerInvariant(),
+            squad.Id, match.Id, uploader.CoachId, command.Part, command.FileName, command.ContentType.ToLowerInvariant(),
             command.SizeBytes, settings.ChunkSizeBytes, storageKey, clock.GetUtcNow(), TimeSpan.FromHours(settings.UploadExpiryHours), uploader.ClubId);
 
         uploads.Add(session);
@@ -254,11 +253,12 @@ internal sealed class CompleteVideoUploadHandler(
         var match = await VideoUploads.MatchOfSquadAsync(squad, session.MatchId, matches, clock, cancellationToken);
         await VideoUploads.EnsurePartAvailableAsync(squad, match.Id, session.Part, videos, cancellationToken);
 
+        var title = await MatchVideoNames.TitleAsync(match, session.Part, teams, cancellationToken);
         var storageKey = await storage.CommitUploadAsync(session.StorageKey, session.FileName, cancellationToken);
 
         var video = MatchVideo.Upload(
             squad.Id, squad.TeamId, match.Id, match.SeasonId, uploader.CoachId, session.Part,
-            session.Title, session.FileName, session.ContentType, session.SizeBytes, storageKey,
+            title, MatchVideoNames.FileName(title, session.FileName, session.ContentType), session.ContentType, session.SizeBytes, storageKey,
             clock.GetUtcNow(), uploader.ClubId);
 
         videos.Add(video);
@@ -267,7 +267,7 @@ internal sealed class CompleteVideoUploadHandler(
         processing.Wake();
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
-        return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDownload: true, canDelete: true);
+        return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDownload: true, canDelete: true, uploadedByMe: true);
     }
 }
 

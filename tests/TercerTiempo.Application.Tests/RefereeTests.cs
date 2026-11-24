@@ -87,6 +87,28 @@ public class RefereeTests
     }
 
     [Fact]
+    public async Task The_designated_referee_is_kept_apart_and_follows_the_federation_until_the_match()
+    {
+        var store = new InMemoryRefereeStore();
+        var writer = new MatchOfficialsWriter(store, TimeProvider.System);
+        var matchId = Guid.NewGuid();
+
+        Assert.Equal(1, await writer.DesignateAsync(matchId, [new(OfficialRole.Referee, "Menéndez Rodríguez, Nicolás")], "asturfutbol", default));
+        // Una designación no es una actuación: no cuenta en las cifras de ningún árbitro.
+        Assert.Empty(store.Officials);
+        Assert.Equal("Nicolás Menéndez Rodríguez", store.Referees.Single(r => r.Id == Assert.Single(store.Designations).RefereeId).Name);
+
+        // La misma persona escrita de otra forma no es un cambio; otra persona, sí.
+        Assert.Equal(0, await writer.DesignateAsync(matchId, [new(OfficialRole.Referee, "MENENDEZ RODRIGUEZ, NICOLAS")], "asturfutbol", default));
+        Assert.Equal(1, await writer.DesignateAsync(matchId, [new(OfficialRole.Referee, "Santos Díaz, Eva")], "asturfutbol", default));
+        Assert.Equal("Eva Santos Díaz", store.Referees.Single(r => r.Id == Assert.Single(store.Designations).RefereeId).Name);
+
+        // Si la federación deja de publicarlo, se retira.
+        Assert.Equal(1, await writer.DesignateAsync(matchId, [], "asturfutbol", default));
+        Assert.Empty(store.Designations);
+    }
+
+    [Fact]
     public void A_rating_goes_from_0_to_10_and_is_given_by_the_club_or_a_coach()
     {
         var official = MatchOfficial.Assign(Guid.NewGuid(), Guid.NewGuid(), OfficialRole.Referee, "asturfutbol", Now);
@@ -258,7 +280,8 @@ public class RefereeTests
             ? Task.FromResult<IReadOnlyList<Competition>>([third, thirdTwo, second])
             : Task.FromResult<Competition?>(third));
         Assert.Equal("3a-asturfutbol", RefereeCategories.Key("3ª AsturFútbol"));
-        var list = new ListRefereesHandler(store, competitions, new PublicDataCache(TimeProvider.System));
+        var territories = Stub<ITerritoryStore>((_, _) => Task.FromResult<IReadOnlyList<Territory>>([]));
+        var list = new ListRefereesHandler(store, competitions, territories, new PublicDataCache(TimeProvider.System));
 
         var thirdMain = await list.Handle(new ListRefereesQuery("3a-asturfutbol", OfficialDuty.Main), default);
         var main = Assert.Single(thirdMain.Referees);
@@ -280,11 +303,12 @@ public class RefereeTests
         var unknown = await Assert.ThrowsAsync<NotFoundException>(() => list.Handle(new ListRefereesQuery("juveniles"), default));
         Assert.Equal(ErrorCode.RefereeCategoryNotFound, unknown.Code);
 
-        var categories = await new ListRefereeCategoriesHandler(store, competitions, new PublicDataCache(TimeProvider.System)).Handle(new ListRefereeCategoriesQuery(), default);
+        var categories = await new ListRefereeCategoriesHandler(store, competitions, territories, new PublicDataCache(TimeProvider.System)).Handle(new ListRefereeCategoriesQuery(), default);
         Assert.Equal(["2a-asturfutbol", "3a-asturfutbol"], categories.Select(c => c.Key));
         var thirdCategory = categories[1];
         Assert.Equal((1, 1, 2, 1), (thirdCategory.Referees, thirdCategory.Assistants, thirdCategory.Matches, thirdCategory.Ratings));
         Assert.Equal([third.Id, thirdTwo.Id], thirdCategory.CompetitionIds);
+        Assert.Equal((Territory.AsturiasId, "Asturias", TerritoryKind.Regional), (thirdCategory.Territory.Id, thirdCategory.Territory.Name, thirdCategory.Territory.Kind));
     }
 
     private static string Page(string name)
@@ -386,6 +410,7 @@ internal sealed class InMemoryRefereeStore : IRefereeStore
     public List<MatchOfficialLookup> Lookups { get; } = [];
     public List<RefereeRating> Ratings { get; } = [];
     public List<Match> Matches { get; } = [];
+    public List<RefereeDesignation> Designations { get; } = [];
 
     public Task<Referee?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Referees.FirstOrDefault(r => r.Id == id));
     public Task<IReadOnlyList<Referee>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) =>
@@ -403,6 +428,10 @@ internal sealed class InMemoryRefereeStore : IRefereeStore
         Task.FromResult<IReadOnlyList<MatchOfficial>>(Officials.Where(o => o.RefereeId == refereeId).ToList());
     public Task<IReadOnlyList<MatchOfficial>> GetAllOfficialsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MatchOfficial>>(Officials.ToList());
     public void AddOfficial(MatchOfficial official) => Officials.Add(official);
+    public Task<IReadOnlyList<RefereeDesignation>> GetDesignationsAsync(Guid matchId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<RefereeDesignation>>(Designations.Where(d => d.MatchId == matchId).ToList());
+    public void AddDesignation(RefereeDesignation designation) => Designations.Add(designation);
+    public void RemoveDesignation(RefereeDesignation designation) => Designations.Remove(designation);
     public Task<IReadOnlyList<OfficialAppearanceRow>> GetAllAppearancesAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<OfficialAppearanceRow>>(Officials
             .Select(o => (Official: o, Match: Matches.FirstOrDefault(m => m.Id == o.MatchId)))

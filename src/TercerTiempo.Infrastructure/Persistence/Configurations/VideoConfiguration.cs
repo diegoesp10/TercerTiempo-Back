@@ -59,6 +59,7 @@ internal sealed class MatchVideoAnalysisConfiguration : IEntityTypeConfiguration
         builder.Property(a => a.Status).HasConversion<string>().HasMaxLength(20);
         builder.Property(a => a.Error).HasMaxLength(MatchVideoAnalysis.MaxErrorLength);
         builder.Property(a => a.OutputPath).HasMaxLength(500);
+        builder.Property(a => a.AnalyzerName).HasMaxLength(40);
         builder.Property(a => a.AnalyzerVersion).HasMaxLength(40);
         builder.Property(a => a.Weights).HasMaxLength(500);
         builder.Property(a => a.BallFramesPct).HasPrecision(5, 1);
@@ -114,7 +115,6 @@ internal sealed class VideoUploadSessionConfiguration : IEntityTypeConfiguration
         builder.Ignore(s => s.TotalChunks);
 
         builder.Property(s => s.Part).HasConversion<string>().HasMaxLength(20);
-        builder.Property(s => s.Title).HasMaxLength(150);
         builder.Property(s => s.FileName).HasMaxLength(255).IsRequired();
         builder.Property(s => s.ContentType).HasMaxLength(100).IsRequired();
         builder.Property(s => s.StorageKey).HasMaxLength(500).IsRequired();

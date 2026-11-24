@@ -18,6 +18,9 @@ internal sealed class AdminRepository(
     ICommandHandler<TercerTiempo.Application.Privacy.UpsertCookieCommand, TercerTiempo.Application.Privacy.AdminCookiePolicyDto> upsertCookie,
     ICommandHandler<TercerTiempo.Application.Privacy.DeleteCookieCommand, TercerTiempo.Application.Privacy.AdminCookiePolicyDto> deleteCookie,
     ICommandHandler<TercerTiempo.Application.Privacy.PublishCookiePolicyCommand, TercerTiempo.Application.Privacy.AdminCookiePolicyDto> publishCookies,
+    IQueryHandler<TercerTiempo.Application.Squads.Injuries.ListAdminInjuryTypesQuery, IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> injuryTypes,
+    ICommandHandler<TercerTiempo.Application.Squads.Injuries.SaveInjuryTypeCommand, IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> saveInjuryType,
+    ICommandHandler<TercerTiempo.Application.Squads.Injuries.DeleteInjuryTypeCommand, IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> deleteInjuryType,
     IRealData realData,
     IQueryHandler<TercerTiempo.Application.Presence.GetPresenceQuery, TercerTiempo.Application.Presence.PresenceOverviewDto> presence,
     IQueryHandler<TercerTiempo.Application.Licensing.ListPaymentEventsQuery, IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> paymentEvents,
@@ -90,6 +93,15 @@ internal sealed class AdminRepository(
 
     public Task<TercerTiempo.Application.Privacy.AdminCookiePolicyDto> PublishCookiePolicyAsync(TercerTiempo.Application.Privacy.PublishCookiePolicyCommand command, CancellationToken cancellationToken = default) =>
         publishCookies.Handle(command, cancellationToken);
+
+    public Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> GetInjuryTypesAsync(CancellationToken cancellationToken = default) =>
+        injuryTypes.Handle(new TercerTiempo.Application.Squads.Injuries.ListAdminInjuryTypesQuery(), cancellationToken);
+
+    public Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> SaveInjuryTypeAsync(TercerTiempo.Application.Squads.Injuries.SaveInjuryTypeCommand command, CancellationToken cancellationToken = default) =>
+        saveInjuryType.Handle(command, cancellationToken);
+
+    public Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> DeleteInjuryTypeAsync(string code, CancellationToken cancellationToken = default) =>
+        deleteInjuryType.Handle(new TercerTiempo.Application.Squads.Injuries.DeleteInjuryTypeCommand(code), cancellationToken);
 
     public Task<IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> GetPaymentEventsAsync(Guid? licenseId, int? max, CancellationToken cancellationToken = default) =>
         paymentEvents.Handle(new TercerTiempo.Application.Licensing.ListPaymentEventsQuery(licenseId, max ?? 100), cancellationToken);

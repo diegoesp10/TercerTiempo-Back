@@ -10,6 +10,7 @@ public sealed record ListCompetitionsQuery : IQuery<IReadOnlyList<CompetitionDto
 
 internal sealed class ListCompetitionsHandler(
     ICompetitionStore competitions,
+    ITerritoryStore territories,
     IStandingStore standings,
     ISeasonContext seasons,
     PublicDataCache cache) : IQueryHandler<ListCompetitionsQuery, IReadOnlyList<CompetitionDto>>
@@ -23,6 +24,7 @@ internal sealed class ListCompetitionsHandler(
     private async Task<IReadOnlyList<CompetitionDto>> LoadAsync(SeasonYear? year, CancellationToken cancellationToken)
     {
         var all = await competitions.GetAllAsync(cancellationToken);
+        var byId = (await territories.GetAllAsync(cancellationToken)).ToDictionary(t => t.Id);
 
         // Solo las ligas que se jugaron en la temporada elegida.
         var listed = all
@@ -33,7 +35,8 @@ internal sealed class ListCompetitionsHandler(
 
         var teams = await standings.CountBySeasonsAsync(listed.Where(x => x.Season is not null).Select(x => x.Season!.Id), cancellationToken);
         return listed
-            .Select(x => CompetitionDto.From(x.Competition, x.Season, x.Season is null ? 0 : teams.GetValueOrDefault(x.Season.Id)))
+            .Select(x => CompetitionDto.From(
+                x.Competition, TerritoryDto.Of(x.Competition.TerritoryId, byId), x.Season, x.Season is null ? 0 : teams.GetValueOrDefault(x.Season.Id)))
             .ToList();
     }
 }

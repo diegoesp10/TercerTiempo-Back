@@ -60,6 +60,9 @@ public sealed class AsturfutbolOptions
     public string CalendarCode { get; set; } = "1000120";
     public string TeamsCode { get; set; } = "1000119";
 
+    // Página de sanciones del comité de competición (una petición por grupo, con toda la temporada).
+    public string SanctionsCode { get; set; } = "1000152";
+
     public string TimeZone { get; set; } = "Europe/Madrid";
 
     public int MatchLength { get; set; } = 90;

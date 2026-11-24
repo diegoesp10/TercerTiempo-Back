@@ -54,6 +54,13 @@ internal sealed class RefereeStore(AppDbContext db) : IRefereeStore
 
     public void AddOfficial(MatchOfficial official) => db.Set<MatchOfficial>().Add(official);
 
+    public async Task<IReadOnlyList<RefereeDesignation>> GetDesignationsAsync(Guid matchId, CancellationToken cancellationToken = default) =>
+        await db.Set<RefereeDesignation>().Where(d => d.MatchId == matchId).ToListAsync(cancellationToken);
+
+    public void AddDesignation(RefereeDesignation designation) => db.Set<RefereeDesignation>().Add(designation);
+
+    public void RemoveDesignation(RefereeDesignation designation) => db.Set<RefereeDesignation>().Remove(designation);
+
     public async Task<IReadOnlyList<Guid>> GetMatchesWithOfficialsAsync(IEnumerable<Guid> teamIds, DateTimeOffset since, CancellationToken cancellationToken = default)
     {
         var teams = teamIds.Distinct().ToList();
@@ -159,6 +166,22 @@ internal sealed class MatchOfficialConfiguration : IEntityTypeConfiguration<Matc
         builder.HasOne<Referee>().WithMany().HasForeignKey(o => o.RefereeId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(o => new { o.MatchId, o.Role }).IsUnique();
         builder.HasIndex(o => o.RefereeId);
+    }
+}
+
+internal sealed class RefereeDesignationConfiguration : IEntityTypeConfiguration<RefereeDesignation>
+{
+    public void Configure(EntityTypeBuilder<RefereeDesignation> builder)
+    {
+        builder.ToTable("RefereeDesignations");
+        builder.HasKey(d => d.Id);
+        builder.Property(d => d.Id).ValueGeneratedNever();
+        builder.Property(d => d.Role).HasConversion<string>().HasMaxLength(30);
+        builder.Property(d => d.Source).HasMaxLength(40).IsRequired();
+        builder.HasOne<Match>().WithMany().HasForeignKey(d => d.MatchId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Referee>().WithMany().HasForeignKey(d => d.RefereeId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(d => new { d.MatchId, d.Role }).IsUnique();
+        builder.HasIndex(d => d.RefereeId);
     }
 }
 

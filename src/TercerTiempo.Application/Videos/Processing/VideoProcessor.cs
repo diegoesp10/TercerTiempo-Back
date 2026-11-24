@@ -86,7 +86,7 @@ public sealed class VideoProcessor(
             }, cancellationToken);
             newKey = result.StorageKey;
 
-            video.Compressed(result.StorageKey, result.SizeBytes, "video/mp4", Path.ChangeExtension(video.FileName, ".mp4"),
+            video.Compressed(result.StorageKey, result.SizeBytes, "video/mp4", MatchVideoNames.FileName(video.Title, null, "video/mp4"),
                 Seconds(result.DurationSeconds), result.Height, clock.GetUtcNow());
             await unitOfWork.SaveChangesAsync(cancellationToken);
             newKey = null;

@@ -90,4 +90,10 @@ public sealed class SquadPlayer : Entity
     }
 
     public bool Matches(string name) => NormalizedName == NameNormalizer.Normalize(name);
+
+    // El día (hora de España) en que causó baja; null si sigue en la plantilla.
+    public DateOnly? LeftOn => LeftAt is { } at ? SpainTime.Today(at) : null;
+
+    // Seguía en la plantilla en ese momento: lo que pasó antes de su baja es historia suya; lo de después ya no le toca.
+    public bool WasMemberAt(DateTimeOffset at) => LeftAt is not { } left || left > at;
 }

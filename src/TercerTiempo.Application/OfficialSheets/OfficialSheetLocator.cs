@@ -24,7 +24,7 @@ internal sealed class OfficialSheetLocator(
         if (competitionRef is null)
             return null;
 
-        var fixtures = await provider.GetMatchdayAsync(competitionRef, match.Matchday, cancellationToken);
+        var fixtures = await provider.GetMatchdayAsync(competitionRef, match.Matchday, null, cancellationToken);
         if (fixtures.Count == 0)
         {
             logger.LogInformation("{Provider}: la jornada {Matchday} de {Competition} no tiene partidos publicados", provider.ProviderName, match.Matchday, competition.Name);

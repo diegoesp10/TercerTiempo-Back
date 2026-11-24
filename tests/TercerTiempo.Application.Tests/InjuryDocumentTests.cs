@@ -140,7 +140,7 @@ public class InjuryDocumentTests
 
         public PlayerInjury Injure(SquadPlayer player)
         {
-            var injury = PlayerInjury.Create(Squad, player, SquadEditor.Coach(Coach.Id), InjuryType.AnkleSprain, null, SpainTime.Today(Now).AddDays(-3), null, Now);
+            var injury = PlayerInjury.Create(Squad, player, SquadEditor.Coach(Coach.Id), TestInjuryTypes.Of(InjuryTypeCodes.AnkleSprain), null, SpainTime.Today(Now).AddDays(-3), null, Now);
             Injuries.Add(injury);
             return injury;
         }

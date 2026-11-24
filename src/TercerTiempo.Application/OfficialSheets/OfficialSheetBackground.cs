@@ -10,6 +10,7 @@ using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Referees;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
@@ -97,6 +98,8 @@ public sealed record GetOfficialSheetQuery(Guid MatchId) : IQuery<OfficialSheetD
 internal sealed class GetOfficialSheetHandler(
     IOfficialSheetProvider provider,
     IMatchStore matches,
+    ICompetitionStore competitions,
+    IRefereeStore referees,
     IOfficialSheetStore sheets,
     IOfficialSheetQueue queue,
     OfficialSheetSyncMemory memory,
@@ -106,21 +109,49 @@ internal sealed class GetOfficialSheetHandler(
 {
     public async Task<OfficialSheetDto> Handle(GetOfficialSheetQuery query, CancellationToken cancellationToken)
     {
-        var dto = await ReadAsync(query, cancellationToken);
+        var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
+
+        var sheet = await sheets.GetByMatchAsync(match.Id, cancellationToken);
+        var dto = Read(match, sheet);
+        dto = dto with { Referees = await RefereesAsync(match, cancellationToken) ?? dto.Referees };
         if (dto.Home?.Staff is not { Count: > 0 } && dto.Away?.Staff is not { Count: > 0 }) return dto;
 
-        var match = (await matches.GetByIdAsync(query.MatchId, cancellationToken))!;
         var named = await appointments.GetByTeamsAndSeasonsAsync([match.HomeTeamId, match.AwayTeamId], [match.SeasonId], cancellationToken);
         return OfficialSheetMapper.LinkStaff(dto, named);
     }
 
-    private async Task<OfficialSheetDto> ReadAsync(GetOfficialSheetQuery query, CancellationToken cancellationToken)
+    // Quien pitó el partido, de las actas; si aún no se ha jugado, quien ha designado la federación (solo en sus ligas: en
+    // las demás no se va a saber). Si no, queda el árbitro que trae el acta, por si su equipo arbitral aún no se ha leído.
+    private async Task<SheetRefereesDto?> RefereesAsync(Match match, CancellationToken cancellationToken)
     {
-        var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
-            ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
+        var officials = await referees.GetOfficialsAsync(match.Id, cancellationToken);
+        if (officials.Count > 0) return new SheetRefereesDto(false, await NamedAsync(officials.Select(o => (o.Role, o.RefereeId)), cancellationToken));
 
+        if (match.Status == MatchStatus.Scheduled && match.KickoffAt > clock.GetUtcNow())
+        {
+            var competition = await competitions.GetBySeasonAsync(match.SeasonId, cancellationToken);
+            if (competition is null || !provider.Publishes(competition.Category)) return null;
+            var designated = await referees.GetDesignationsAsync(match.Id, cancellationToken);
+            return new SheetRefereesDto(true, await NamedAsync(designated.Select(d => (d.Role, d.RefereeId)), cancellationToken));
+        }
+
+        return null;
+    }
+
+    private async Task<IReadOnlyList<SheetOfficialDto>> NamedAsync(IEnumerable<(OfficialRole Role, Guid RefereeId)> officials, CancellationToken cancellationToken)
+    {
+        var list = officials.OrderBy(o => o.Role).ToList();
+        var people = (await referees.GetByIdsAsync(list.Select(o => o.RefereeId), cancellationToken)).ToDictionary(r => r.Id);
+        return list
+            .Select(o => people.TryGetValue(o.RefereeId, out var person) ? new SheetOfficialDto(o.Role, person.Name, person.Id) : null)
+            .OfType<SheetOfficialDto>()
+            .ToList();
+    }
+
+    private OfficialSheetDto Read(Match match, OfficialMatchSheet? sheet)
+    {
         var now = clock.GetUtcNow();
-        var sheet = await sheets.GetByMatchAsync(match.Id, cancellationToken);
 
         if (match.Status is MatchStatus.Cancelled)
             return Result(sheet, match, OfficialSheetAvailability.Unavailable, "El partido está cancelado.");

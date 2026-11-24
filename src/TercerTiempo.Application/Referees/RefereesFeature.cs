@@ -4,6 +4,7 @@ using FluentValidation;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Competitions;
 using TercerTiempo.Application.Licensing;
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Application.Moderation;
@@ -39,6 +40,8 @@ public sealed record RefereeCategoryDto(
     string Name,
     CompetitionLevel Level,
     int Tier,
+    [property: Description("Ámbito de la categoría (Nacional, Asturias…), para elegirla como las ligas: primero el ámbito.")]
+    TerritoryDto Territory,
     [property: Description("Árbitros que han dirigido algún partido de la categoría.")]
     int Referees,
     [property: Description("Asistentes y cuartos árbitros que han estado en algún partido de la categoría.")]
@@ -239,7 +242,7 @@ public sealed record ListPendingRefereeRatingsQuery : IQuery<IReadOnlyList<Pendi
 
 public sealed record SyncMatchOfficialsCommand : ICommand<MatchOfficialsSynced>;
 
-public sealed record MatchOfficialsSynced(int FromSheets, int FromProvider, int Looked);
+public sealed record MatchOfficialsSynced(int FromSheets, int FromProvider, int Looked, int Designated);
 
 internal sealed class RateRefereeValidator : AbstractValidator<RateRefereeCommand>
 {
@@ -338,7 +341,7 @@ internal static class RefereeAccess
 }
 
 // La categoría de la liga de un partido, con sus grupos juntos: un árbitro de «3ª AsturFútbol» pita en cualquiera de ellos.
-internal sealed record RefereeCategory(string Key, string Name, CompetitionLevel Level, int Tier);
+internal sealed record RefereeCategory(string Key, string Name, CompetitionLevel Level, int Tier, TerritoryDto Territory);
 
 internal static class RefereeCategories
 {
@@ -354,16 +357,21 @@ internal static class RefereeCategories
         return builder.ToString().TrimEnd('-');
     }
 
-    public static async Task<Dictionary<Guid, RefereeCategory>> BySeasonAsync(ICompetitionStore competitions, CancellationToken cancellationToken)
+    public static async Task<Dictionary<Guid, RefereeCategory>> BySeasonAsync(
+        ICompetitionStore competitions, ITerritoryStore territories, CancellationToken cancellationToken)
     {
+        var byId = (await territories.GetAllAsync(cancellationToken)).ToDictionary(t => t.Id);
         var map = new Dictionary<Guid, RefereeCategory>();
         foreach (var competition in await competitions.GetAllAsync(cancellationToken))
         {
-            var category = new RefereeCategory(Key(competition.Category), competition.Category, competition.Level, competition.Tier);
+            var category = Of(competition, byId);
             foreach (var season in competition.Seasons) map[season.Id] = category;
         }
         return map;
     }
+
+    public static RefereeCategory Of(Competition competition, IReadOnlyDictionary<Guid, Territory> territories) =>
+        new(Key(competition.Category), competition.Category, competition.Level, competition.Tier, TerritoryDto.Of(competition.TerritoryId, territories));
 
     public static IOrderedEnumerable<T> Ordered<T>(IEnumerable<T> items, Func<T, RefereeCategory> category) =>
         items.OrderBy(x => category(x).Level).ThenBy(x => category(x).Tier).ThenBy(x => category(x).Name, StringComparer.Ordinal);
@@ -372,7 +380,7 @@ internal static class RefereeCategories
     {
         int People(OfficialDuty duty) => items.Where(a => a.Duty == duty).Select(a => a.RefereeId).Distinct().Count();
         return new RefereeCategoryDto(
-            category.Key, category.Name, category.Level, category.Tier, People(OfficialDuty.Main), People(OfficialDuty.Assistant),
+            category.Key, category.Name, category.Level, category.Tier, category.Territory, People(OfficialDuty.Main), People(OfficialDuty.Assistant),
             items.Select(a => a.MatchId).Distinct().Count(), items.Sum(a => a.Scored), competitionIds);
     }
 }
@@ -389,16 +397,19 @@ internal sealed record RefereeName(string Name, string NormalizedName);
 internal sealed record RefereeStats(
     IReadOnlyList<Appearance> Appearances, IReadOnlyDictionary<Guid, RefereeName> People, IReadOnlyDictionary<string, List<Guid>> CompetitionIds)
 {
-    public static Task<RefereeStats> GetAsync(IRefereeStore referees, ICompetitionStore competitions, PublicDataCache cache, CancellationToken cancellationToken) =>
-        cache.GetAsync("referee-stats", ct => LoadAsync(referees, competitions, ct), cancellationToken);
+    public static Task<RefereeStats> GetAsync(
+        IRefereeStore referees, ICompetitionStore competitions, ITerritoryStore territories, PublicDataCache cache, CancellationToken cancellationToken) =>
+        cache.GetAsync("referee-stats", ct => LoadAsync(referees, competitions, territories, ct), cancellationToken);
 
-    private static async Task<RefereeStats> LoadAsync(IRefereeStore referees, ICompetitionStore competitions, CancellationToken cancellationToken)
+    private static async Task<RefereeStats> LoadAsync(
+        IRefereeStore referees, ICompetitionStore competitions, ITerritoryStore territories, CancellationToken cancellationToken)
     {
         var all = await competitions.GetAllAsync(cancellationToken);
+        var byId = (await territories.GetAllAsync(cancellationToken)).ToDictionary(t => t.Id);
         var categories = new Dictionary<Guid, RefereeCategory>();
         foreach (var competition in all)
         {
-            var category = new RefereeCategory(RefereeCategories.Key(competition.Category), competition.Category, competition.Level, competition.Tier);
+            var category = RefereeCategories.Of(competition, byId);
             foreach (var season in competition.Seasons) categories[season.Id] = category;
         }
 
@@ -446,6 +457,35 @@ internal sealed class MatchOfficialsWriter(IRefereeStore referees, TimeProvider 
                 existing.Reassign(referee.Id, source, now);
                 changed++;
             }
+        }
+        return changed;
+    }
+
+    // Lo que la federación designa para un partido por jugar: sustituye a lo designado antes (puede cambiar hasta el día
+    // del partido) y quita las funciones que ya no publica. Devuelve cuántas funciones han cambiado.
+    public async Task<int> DesignateAsync(Guid matchId, IReadOnlyList<MatchOfficialData> designated, string source, CancellationToken cancellationToken)
+    {
+        var now = clock.GetUtcNow();
+        var current = await referees.GetDesignationsAsync(matchId, cancellationToken);
+        var changed = 0;
+        foreach (var data in designated)
+        {
+            var referee = await ResolveAsync(data, now, cancellationToken);
+            if (current.FirstOrDefault(d => d.Role == data.Role) is { } existing)
+            {
+                if (existing.Change(referee.Id, now)) changed++;
+            }
+            else
+            {
+                referees.AddDesignation(RefereeDesignation.Designate(matchId, referee.Id, data.Role, source, now));
+                changed++;
+            }
+        }
+
+        foreach (var withdrawn in current.Where(d => designated.All(x => x.Role != d.Role)))
+        {
+            referees.RemoveDesignation(withdrawn);
+            changed++;
         }
         return changed;
     }
@@ -603,14 +643,14 @@ internal sealed class NoVoteMatchOfficialsHandler(
     }
 }
 
-internal sealed class ListRefereesHandler(IRefereeStore referees, ICompetitionStore competitions, PublicDataCache cache)
+internal sealed class ListRefereesHandler(IRefereeStore referees, ICompetitionStore competitions, ITerritoryStore territories, PublicDataCache cache)
     : IQueryHandler<ListRefereesQuery, RefereeCategoryListDto>
 {
     public async Task<RefereeCategoryListDto> Handle(ListRefereesQuery query, CancellationToken cancellationToken)
     {
         var key = RefereeCategories.Key(query.Category ?? string.Empty);
         var search = NameNormalizer.Normalize(query.Search);
-        var stats = await RefereeStats.GetAsync(referees, competitions, cache, cancellationToken);
+        var stats = await RefereeStats.GetAsync(referees, competitions, territories, cache, cancellationToken);
         var people = stats.People;
         var inCategory = stats.Appearances.Where(a => a.Category.Key == key).ToList();
         if (inCategory.Count == 0) throw new NotFoundException(ErrorCode.RefereeCategoryNotFound, query.Category ?? string.Empty);
@@ -662,12 +702,12 @@ internal static class RefereeSorting
         desc ? items.ThenByDescending(key) : items.ThenBy(key);
 }
 
-internal sealed class ListRefereeCategoriesHandler(IRefereeStore referees, ICompetitionStore competitions, PublicDataCache cache)
+internal sealed class ListRefereeCategoriesHandler(IRefereeStore referees, ICompetitionStore competitions, ITerritoryStore territories, PublicDataCache cache)
     : IQueryHandler<ListRefereeCategoriesQuery, IReadOnlyList<RefereeCategoryDto>>
 {
     public async Task<IReadOnlyList<RefereeCategoryDto>> Handle(ListRefereeCategoriesQuery query, CancellationToken cancellationToken)
     {
-        var stats = await RefereeStats.GetAsync(referees, competitions, cache, cancellationToken);
+        var stats = await RefereeStats.GetAsync(referees, competitions, territories, cache, cancellationToken);
         var groups = stats.Appearances.GroupBy(a => a.Category.Key).Select(g => (Category: g.First().Category, Items: g.ToList()));
         return RefereeCategories.Ordered(groups, g => g.Category)
             .Select(g => RefereeCategories.ToDto(g.Category, g.Items, stats.CompetitionIds.GetValueOrDefault(g.Category.Key) ?? []))
@@ -675,7 +715,7 @@ internal sealed class ListRefereeCategoriesHandler(IRefereeStore referees, IComp
     }
 }
 
-internal sealed class GetRefereeHandler(IRefereeStore referees, IMatchStore matches, ITeamStore teams, ICompetitionStore competitions)
+internal sealed class GetRefereeHandler(IRefereeStore referees, IMatchStore matches, ITeamStore teams, ICompetitionStore competitions, ITerritoryStore territories)
     : IQueryHandler<GetRefereeQuery, RefereeDetailDto>
 {
     private const int BestShown = 5;
@@ -691,7 +731,7 @@ internal sealed class GetRefereeHandler(IRefereeStore referees, IMatchStore matc
             .ToDictionary(m => m.Id);
         var teamIds = matchMap.Values.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Concat(ratings.Select(r => r.TeamId)).Distinct();
         var teamMap = (await teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
-        var categories = await RefereeCategories.BySeasonAsync(competitions, cancellationToken);
+        var categories = await RefereeCategories.BySeasonAsync(competitions, territories, cancellationToken);
         RefereeCategory? CategoryOf(Guid matchId) => matchMap.TryGetValue(matchId, out var m) ? categories.GetValueOrDefault(m.SeasonId) : null;
 
         RefereeRatingDto? ToDto(RefereeRating r)

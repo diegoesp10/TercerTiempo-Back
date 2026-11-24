@@ -62,7 +62,7 @@ public class SquadPlayerMergeTests
         var duplicate = squad.AddPlayer("Lucas Paredes", Position.Forward, null, null, TestData.Now);
         var match = TestData.ScheduledMatch();
         var callUp = MatchCallUp.Draft(squad, match, SquadEditor.Coach(coachId), TestData.Now);
-        callUp.Arrange(squad, new HashSet<Guid> { duplicate.Id }, match.KickoffAt.AddHours(-2), null, "Puerta del campo", null, TestData.Now);
+        callUp.Arrange(squad, 18, new HashSet<Guid> { duplicate.Id }, match.KickoffAt.AddHours(-2), null, "Puerta del campo", null, TestData.Now);
         callUp.Publish(TestData.Now);
         callUp.Respond(duplicate.Id, CallUpResponse.Confirmed, match, TestData.Now);
 

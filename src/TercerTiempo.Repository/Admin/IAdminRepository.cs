@@ -21,6 +21,9 @@ public interface IAdminRepository
     Task<TercerTiempo.Application.Privacy.AdminCookiePolicyDto> UpsertCookieAsync(TercerTiempo.Application.Privacy.UpsertCookieCommand command, CancellationToken cancellationToken = default);
     Task<TercerTiempo.Application.Privacy.AdminCookiePolicyDto> DeleteCookieAsync(Guid id, CancellationToken cancellationToken = default);
     Task<TercerTiempo.Application.Privacy.AdminCookiePolicyDto> PublishCookiePolicyAsync(TercerTiempo.Application.Privacy.PublishCookiePolicyCommand command, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> GetInjuryTypesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> SaveInjuryTypeAsync(TercerTiempo.Application.Squads.Injuries.SaveInjuryTypeCommand command, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> DeleteInjuryTypeAsync(string code, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> SetCurrentSeasonAsync(Guid seasonYearId, CancellationToken cancellationToken = default);
     Task<FootballSyncSettingsDto> GetFootballSyncSettingsAsync(CancellationToken cancellationToken = default);
     Task<FootballSyncSettingsDto> UpdateFootballSyncSettingsAsync(UpdateFootballSyncSettingsCommand command, CancellationToken cancellationToken = default);

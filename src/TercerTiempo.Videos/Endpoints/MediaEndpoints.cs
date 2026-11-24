@@ -22,19 +22,19 @@ internal static class MediaEndpoints
         // Toda subida es sobre una plantilla concreta: pasa por la puerta de licencias del equipo.
         var group = app.MapGroup("/media/squads").WithTags("Subidas").RequireAuthorization().RequireLicense(LicenseScope.Squad);
 
-        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video", async (Guid squadId, Guid matchId, IFormFile file, string? title, VideoPart? part, HttpContext http, IVideosRepository videos, IOptions<VideoOptions> options, CancellationToken ct) =>
+        group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video", async (Guid squadId, Guid matchId, IFormFile file, VideoPart? part, HttpContext http, IVideosRepository videos, IOptions<VideoOptions> options, CancellationToken ct) =>
             {
                 // El límite por defecto de Kestrel (30 MB) se queda corto para un partido entero.
                 if (http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
                     limit.MaxRequestBodySize = options.Value.MaxSizeBytes + 1024 * 1024;
 
                 await using var content = file.OpenReadStream();
-                return await videos.UploadAsync(squadId, matchId, part ?? VideoPart.Full, title, new VideoUpload(file.FileName, file.ContentType, file.Length, content), ct);
+                return await videos.UploadAsync(squadId, matchId, part ?? VideoPart.Full, new VideoUpload(file.FileName, file.ContentType, file.Length, content), ct);
             })
             .DisableAntiforgery()
             .WithName("UploadMatchVideo")
             .WithSummary("Subir el vídeo de un partido de una sola vez")
-            .WithDescription("Club propietario o cuerpo técnico vigente. multipart/form-data con el campo file (mp4 o webm hasta Videos:MaxSizeMb), part (Full, FirstHalf o SecondHalf; Full por defecto) y title opcional. Para un partido entero usa la subida por trozos (…/video/uploads). El vídeo queda en cola para comprimirse; mientras tanto se sirve tal cual.")
+            .WithDescription("Club propietario o cuerpo técnico vigente. multipart/form-data con los campos file (mp4 o webm hasta Videos:MaxSizeMb) y part (Full, FirstHalf o SecondHalf; Full por defecto). El vídeo se llama como el partido («Local vs Visitante dd-mm-aaaa», con la parte si va en dos), no como el archivo. Para un partido entero usa la subida por trozos (…/video/uploads). El vídeo queda en cola para comprimirse; mientras tanto se sirve tal cual.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)

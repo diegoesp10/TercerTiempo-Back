@@ -4,6 +4,7 @@ using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Players;
@@ -102,8 +103,8 @@ internal static class TrainingAttendanceReport
     public static Func<DateTimeOffset, bool> InjuredAt(InjuryCalendar calendar, Guid squadPlayerId) =>
         at => calendar.On(squadPlayerId, CallUps.DayOf(at)) is not null;
 
-    public static IReadOnlyList<InjuryBriefDto> InjuriesIn(InjuryCalendar calendar, Guid squadPlayerId, DateOnly? from, DateOnly? to) =>
-        calendar.Of(squadPlayerId).Where(i => i.Overlaps(from, to)).Select(InjuryView.Brief).ToList();
+    public static IReadOnlyList<InjuryBriefDto> InjuriesIn(InjuryCalendar calendar, Guid squadPlayerId, DateOnly? from, DateOnly? to, DateOnly today) =>
+        calendar.Of(squadPlayerId).Where(i => i.Overlaps(from, to)).Select(i => InjuryView.Brief(i, today)).ToList();
 
     public static int? Rate(PlayerTrainingTally tally) =>
         tally.Sessions == 0 ? null : (int)Math.Round(tally.Attended * 100.0 / tally.Sessions, MidpointRounding.AwayFromZero);
@@ -162,7 +163,7 @@ internal sealed class GetSquadTrainingAttendanceHandler(
                 return new PlayerTrainingTallyDto(
                     x.Player.Id, x.Player.FullName, x.Player.ShirtNumber, x.Player.IsActive,
                     x.Tally.Sessions, x.Tally.Attended, x.Tally.Missed, x.Tally.Warned, x.Tally.AttendedMinutes, TrainingAttendanceReport.Rate(x.Tally),
-                    x.Tally.Injured, TrainingAttendanceReport.InjuriesIn(calendar, x.Player.Id, from, to), outcomes, why.Count > 0 ? why : null);
+                    x.Tally.Injured, TrainingAttendanceReport.InjuriesIn(calendar, x.Player.Id, from, to, SpainTime.Today(now)), outcomes, why.Count > 0 ? why : null);
             })
             .ToList();
 
@@ -219,7 +220,7 @@ internal sealed class GetMyTrainingAttendanceHandler(
         var tally = entries.Aggregate(PlayerTrainingTally.Empty, (sum, e) =>
             sum.Add(TrainingTally.For(e.Entry, e.Squad.Id, history.Slots, marks, now, TrainingAttendanceReport.InjuredAt(calendars[e.Squad.Id], e.Entry.Id))));
         var mineInjuries = entries
-            .SelectMany(e => TrainingAttendanceReport.InjuriesIn(calendars[e.Squad.Id], e.Entry.Id, from, to))
+            .SelectMany(e => TrainingAttendanceReport.InjuriesIn(calendars[e.Squad.Id], e.Entry.Id, from, to, SpainTime.Today(now)))
             .OrderByDescending(i => i.StartedOn)
             .ToList();
 

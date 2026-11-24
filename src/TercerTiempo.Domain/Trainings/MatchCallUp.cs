@@ -16,6 +16,9 @@ public sealed class MatchCallUp : AggregateRoot
     public Guid SquadId { get; private set; }
     public Guid MatchId { get; private set; }
     public CallUpStatus Status { get; private set; }
+    // A cuántos se convoca: el número fijo de la plantilla o el que se diga en esta convocatoria. Es exacto: nunca se
+    // pasa y, si se envía con menos, se avisa de que falta gente. Las de antes de que existiera el número no lo tienen.
+    public int? Size { get; private set; }
     public DateTimeOffset? MeetAt { get; private set; }
     // Dónde se cita: un campo de las ligas o, si no está en la lista (obras, otro sitio), lo que se escriba.
     public Guid? MeetGroundId { get; private set; }
@@ -46,6 +49,7 @@ public sealed class MatchCallUp : AggregateRoot
             SquadId = squad.Id,
             MatchId = match.Id,
             Status = CallUpStatus.Draft,
+            Size = squad.CallUpSize,
             CreatedByCoachId = editor.CoachId,
             CreatedByClubId = editor.ClubId,
             CreatedAt = now,
@@ -57,10 +61,20 @@ public sealed class MatchCallUp : AggregateRoot
     }
 
     // Qué jugadores van y los detalles de la cita. Devuelve a quién le cambia la convocatoria respecto a lo que ya se
-    // había publicado, para avisarle.
+    // había publicado, para avisarle. El número fijo de la plantilla manda; si no lo tiene, vale el que se diga ahora
+    // (o el que ya tenía la convocatoria).
     public IReadOnlyList<CallUpEntry> Arrange(
-        Squad squad, IReadOnlySet<Guid> calledSquadPlayerIds, DateTimeOffset? meetAt, Guid? meetGroundId, string? meetPlace, string? notes, DateTimeOffset now)
+        Squad squad, int? size, IReadOnlySet<Guid> calledSquadPlayerIds, DateTimeOffset? meetAt, Guid? meetGroundId, string? meetPlace, string? notes, DateTimeOffset now)
     {
+        var target = squad.CallUpSize ?? size ?? Size ?? throw new DomainException(ErrorCode.CallUpSizeRequired);
+        if (!Squad.IsValidCallUpSize(target))
+            throw new DomainException(ErrorCode.CallUpSizeInvalid, Squad.MinCallUpSize, Squad.MaxCallUpSize);
+
+        var calling = squad.ActivePlayers.Count(p => calledSquadPlayerIds.Contains(p.Id));
+        if (calling > target)
+            throw new DomainException(ErrorCode.CallUpOverSize, target, calling, calling - target);
+        Size = target;
+
         foreach (var player in squad.ActivePlayers)
         {
             if (_entries.All(e => e.SquadPlayerId != player.Id))
@@ -93,6 +107,14 @@ public sealed class MatchCallUp : AggregateRoot
         Notes = string.IsNullOrWhiteSpace(notes) ? null : Guard.NotEmpty(notes, "notas", 1000);
         UpdatedAt = now;
         return changed;
+    }
+
+    // Cuántos faltan para llegar al número, contando solo a quien sigue en la plantilla. Sin número, ninguno.
+    public int Missing(Squad squad)
+    {
+        if (Size is not { } size) return 0;
+        var active = squad.ActivePlayers.Select(p => p.Id).ToHashSet();
+        return Math.Max(0, size - _entries.Count(e => e.Called && active.Contains(e.SquadPlayerId)));
     }
 
     public void Publish(DateTimeOffset now)
@@ -236,5 +258,8 @@ public interface ICallUpStore
     // Las de esos partidos: todas o solo las publicadas.
     Task<IReadOnlyList<MatchCallUp>> GetBySquadAndMatchesAsync(
         Guid squadId, IEnumerable<Guid> matchIds, bool publishedOnly, CancellationToken cancellationToken = default);
+
+    // El número de la última convocatoria que lo tiene: lo que se propone al preguntar a cuántos se convoca.
+    Task<int?> GetLatestSizeAsync(Guid squadId, CancellationToken cancellationToken = default);
     void Add(MatchCallUp callUp);
 }

@@ -1,6 +1,7 @@
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Admin;
 using TercerTiempo.Application.Clubs.Invitations;
+using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Repository.Admin;
 
 namespace TercerTiempo.Api.Endpoints;
@@ -26,6 +27,33 @@ internal static class AdminEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         var group = app.MapGroup("/api/admin").WithTags("Admin").RequireAuthorization(AuthClaims.AdminPolicy);
+
+        group.MapGet("/injury-types", (IAdminRepository admin, CancellationToken ct) => admin.GetInjuryTypesAsync(ct))
+            .WithName("GetAdminInjuryTypes")
+            .WithSummary("Catálogo de tipos de lesión")
+            .WithDescription("Todos, también los retirados, con su duración media, su orden y cuántas lesiones guardadas los usan. Solo administradores.");
+
+        group.MapPost("/injury-types", (SaveInjuryTypeCommand command, IAdminRepository admin, CancellationToken ct) => admin.SaveInjuryTypeAsync(command with { Code = null }, ct))
+            .WithName("CreateInjuryType")
+            .WithSummary("Añadir un tipo de lesión")
+            .WithDescription("El código sale del nombre y no cambia aunque luego se renombre. 409 si ya hay uno con ese nombre. Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPut("/injury-types/{code}", (string code, SaveInjuryTypeCommand command, IAdminRepository admin, CancellationToken ct) => admin.SaveInjuryTypeAsync(command with { Code = code }, ct))
+            .WithName("UpdateInjuryType")
+            .WithSummary("Cambiar un tipo de lesión")
+            .WithDescription("Nombre, duración media, orden y si se ofrece (active = false lo retira: deja de salir al registrar lesiones nuevas, pero las que ya lo tienen lo conservan). El nombre nuevo se ve también en las lesiones ya guardadas. Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapDelete("/injury-types/{code}", (string code, IAdminRepository admin, CancellationToken ct) => admin.DeleteInjuryTypeAsync(code, ct))
+            .WithName("DeleteInjuryType")
+            .WithSummary("Borrar un tipo de lesión")
+            .WithDescription("Solo si ninguna lesión guardada lo usa (409 si alguna lo tiene: entonces se retira). Solo administradores.")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapGet("/jobs", (string? provider, int? requests, IAdminRepository admin, CancellationToken ct) => admin.GetJobsAsync(provider, requests, ct))
             .WithName("GetJobs")

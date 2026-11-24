@@ -27,10 +27,11 @@ internal sealed class AsturfutbolClient(
         return await store.PeekAsync(key, cancellationToken) is { } cached ? Decode(cached.Content, cached.ContentType) : null;
     }
 
-    // refresh: la copia guardada no sirve aunque no haya caducado; la petición pasa por los mismos límites que cualquiera.
-    public async Task<string?> GetHtmlAsync(string pathAndQuery, CancellationToken cancellationToken, bool refresh = false)
+    // refresh: la copia guardada no sirve aunque no haya caducado; maxAge: solo sirve si es de hace menos de eso. La
+    // petición pasa por los mismos límites que cualquiera.
+    public async Task<string?> GetHtmlAsync(string pathAndQuery, CancellationToken cancellationToken, bool refresh = false, TimeSpan? maxAge = null)
     {
-        var response = await FetchAsync(pathAndQuery, html: true, cancellationToken, refresh);
+        var response = await FetchAsync(pathAndQuery, html: true, cancellationToken, refresh, maxAge);
         return response.Content is null ? null : Decode(response.Content, response.ContentType);
     }
 
@@ -42,7 +43,7 @@ internal sealed class AsturfutbolClient(
 
     public string AbsoluteUrl(string pathAndQuery) => new Uri(http.BaseAddress!, pathAndQuery).ToString();
 
-    private async Task<FederationResponse> FetchAsync(string pathAndQuery, bool html, CancellationToken ct, bool refresh = false)
+    private async Task<FederationResponse> FetchAsync(string pathAndQuery, bool html, CancellationToken ct, bool refresh = false, TimeSpan? maxAge = null)
     {
         var original = new Uri(http.BaseAddress!, pathAndQuery);
         EnsureHost(original);
@@ -58,7 +59,7 @@ internal sealed class AsturfutbolClient(
             while (true)
             {
                 var now = clock.GetUtcNow();
-                var reservation = await store.ReserveAsync(key, original.AbsoluteUri, lease, redirect, now, _options.AsturfutbolLimits, ct, refresh);
+                var reservation = await store.ReserveAsync(key, original.AbsoluteUri, lease, redirect, now, _options.AsturfutbolLimits, ct, refresh, maxAge);
                 if (reservation.Cached is { } cached) return cached;
                 if (reservation.RetryAt is { } retry)
                 {
@@ -104,7 +105,7 @@ internal sealed class AsturfutbolClient(
                     if (response.StatusCode == HttpStatusCode.NotFound)
                     {
                         var absent = new FederationResponse(null, null);
-                        await store.CompleteAsync(AsturfutbolOfficialSheetProvider.Name, key, absent, clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.CacheHours)), ct);
+                        await store.CompleteAsync(AsturfutbolOfficialSheetProvider.Name, key, absent, clock.GetUtcNow(), clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.CacheHours)), ct);
                         return absent;
                     }
 
@@ -163,7 +164,7 @@ internal sealed class AsturfutbolClient(
                     }
                     session.Served();
                     var result = new FederationResponse(content, contentType);
-                    await store.CompleteAsync(AsturfutbolOfficialSheetProvider.Name, key, result, clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.CacheHours)), ct);
+                    await store.CompleteAsync(AsturfutbolOfficialSheetProvider.Name, key, result, clock.GetUtcNow(), clock.GetUtcNow().AddHours(Math.Max(1, _options.Asturfutbol.CacheHours)), ct);
                     return result;
                 }
             }

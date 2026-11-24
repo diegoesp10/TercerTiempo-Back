@@ -22,10 +22,12 @@ public enum VideoAnalysisStatus
 // Una línea del registro del análisis: cada cosa que el analizador va sabiendo («Equipos separados…», «En pausa…»).
 public sealed record VideoAnalysisLogEntry(DateTimeOffset At, string Text);
 
-// Lo que deja el analizador al terminar: dónde está su carpeta de salida, con qué versión y pesos trabajó, la propuesta
-// (acta-propuesta.json tal cual) y cuánto se fía uno de ella (fotogramas con balón y con el campo calibrado).
+// Lo que deja el analizador al terminar: dónde está su carpeta de salida, quién analizó (nombre y versión del analizador)
+// y con qué modelos, la propuesta (acta-propuesta.json tal cual) y cuánto se fía uno de ella (fotogramas con balón y con
+// el campo calibrado).
 public sealed record VideoAnalysisOutcome(
     string OutputPath,
+    string AnalyzerName,
     string AnalyzerVersion,
     string Weights,
     string ProposalJson,
@@ -89,6 +91,7 @@ public sealed class MatchVideoAnalysis : AggregateRoot
     public int PausedSeconds { get; private set; }
 
     public string? OutputPath { get; private set; }
+    public string? AnalyzerName { get; private set; }
     public string? AnalyzerVersion { get; private set; }
     public string? Weights { get; private set; }
     public string? ProposalJson { get; private set; }
@@ -112,6 +115,9 @@ public sealed class MatchVideoAnalysis : AggregateRoot
     public bool IsWorking => Status == VideoAnalysisStatus.Running || (Status == VideoAnalysisStatus.Paused && WorkerId is not null);
 
     public bool GenericPitch => PitchLengthM == GenericPitchLengthM && PitchWidthM == GenericPitchWidthM;
+
+    // Quién analizó el vídeo, como se enseña: «Ojeador 1.0.0».
+    public string? Analyzer => AnalyzerName is null || AnalyzerVersion is null ? null : $"{AnalyzerName} {AnalyzerVersion}";
 
     public bool LowQuality =>
         Status == VideoAnalysisStatus.Ready
@@ -260,8 +266,9 @@ public sealed class MatchVideoAnalysis : AggregateRoot
             throw new DomainException(ErrorCode.VideoAnalysisEmptyProposal);
 
         OutputPath = Guard.NotEmpty(outcome.OutputPath, "carpeta de salida", 500);
+        AnalyzerName = Guard.NotEmpty(outcome.AnalyzerName, "nombre del analizador", 40);
         AnalyzerVersion = Guard.NotEmpty(outcome.AnalyzerVersion, "versión del analizador", 40);
-        Weights = Guard.NotEmpty(outcome.Weights, "pesos", 500);
+        Weights = Guard.NotEmpty(outcome.Weights, "modelos", 500);
         ProposalJson = outcome.ProposalJson;
         Frames = Guard.NotNegative(outcome.Frames, "fotogramas");
         BallFramesPct = Guard.InRange(outcome.BallFramesPct, 0m, 100m, "fotogramas con balón");
@@ -382,6 +389,7 @@ public sealed class MatchVideoAnalysis : AggregateRoot
     private void ClearResult()
     {
         OutputPath = null;
+        AnalyzerName = null;
         AnalyzerVersion = null;
         Weights = null;
         ProposalJson = null;

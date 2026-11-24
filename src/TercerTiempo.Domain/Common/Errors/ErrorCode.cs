@@ -150,6 +150,11 @@ public static class ErrorCode
     public const string SquadAlreadyStaff = "squad.already_staff";
     public const string SquadStaffNotMember = "squad.staff_not_member";
     public const string SquadPlayerDuplicate = "squad.player_duplicate";
+    public const string SquadPlayerLeftExists = "squad.player_left_exists";
+    public const string SquadPlayerNotLeft = "squad.player_not_left";
+    public const string SquadPlayerLeftBefore = "squad.player_left_before";
+    public const string SquadPlayerLeftReadOnly = "squad.player_left_read_only";
+    public const string SquadPlayerInOtherSquad = "squad.player_in_other_squad";
     public const string SquadPlayerNotMember = "squad.player_not_member";
     public const string SquadPlayerAlreadyLeft = "squad.player_already_left";
     public const string SquadEntryInactive = "squad.entry_inactive";
@@ -163,7 +168,19 @@ public static class ErrorCode
     public const string InjuryAlreadyClosed = "injury.already_closed";
     public const string InjuryDatesInvalid = "injury.dates_invalid";
     public const string InjuryReturnInvalid = "injury.return_invalid";
+    public const string InjuryStartInFuture = "injury.start_in_future";
+    public const string InjuryReturnInFuture = "injury.return_in_future";
+    public const string InjuryRelapseNeedsReturn = "injury.relapse_needs_return";
+    public const string InjuryRelapseBeforeReturn = "injury.relapse_before_return";
+    public const string InjuryHasRelapse = "injury.has_relapse";
+    public const string InjuryContinued = "injury.continued";
+    public const string InjuryPrivate = "injury.private";
     public const string InjuryInvalidType = "injury.invalid_type";
+    public const string InjuryTypeNotFound = "injury_type.not_found";
+    public const string InjuryTypeRetired = "injury_type.retired";
+    public const string InjuryTypeInUse = "injury_type.in_use";
+    public const string InjuryTypeDuplicate = "injury_type.duplicate";
+    public const string InjuryTypeAverageDaysInvalid = "injury_type.average_days_invalid";
     public const string InjuryDocumentNotFound = "injury_document.not_found";
     public const string InjuryDocumentFormat = "injury_document.format";
     public const string InjuryDocumentTooLarge = "injury_document.too_large";
@@ -200,6 +217,9 @@ public static class ErrorCode
     public const string CallUpPlayerSuspended = "callup.player_suspended";
     public const string CallUpInvalidResponse = "callup.invalid_response";
     public const string CallUpMatchNotOfSquad = "callup.match_not_of_squad";
+    public const string CallUpSizeRequired = "callup.size_required";
+    public const string CallUpSizeInvalid = "callup.size_invalid";
+    public const string CallUpOverSize = "callup.over_size";
     public const string GroundNotFound = "ground.not_found";
 
     // Jugadores

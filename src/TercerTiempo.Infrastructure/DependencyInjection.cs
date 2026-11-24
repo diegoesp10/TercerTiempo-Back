@@ -103,7 +103,10 @@ public static class DependencyInjection
 
         services.AddHostedService<LicenseRenewalWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.Alerts.LicenseAlertsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Squads.InjuryCarryOverWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.Referees.MatchOfficialsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Sanctions.CommitteeSanctionsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Sanctions.SuspensionAlertsWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.FootballData.LeagueZonesWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.Grounds.GroundsWorker>();
 
@@ -149,10 +152,12 @@ public static class DependencyInjection
         services.AddScoped<ICoachStore, CoachStore>();
         services.AddScoped<ISquadStore, SquadStore>();
         services.AddScoped<IInjuryStore, InjuryStore>();
+        services.AddScoped<IInjuryTypeStore, InjuryTypeStore>();
         services.AddScoped<IInjuryDocumentStore, InjuryDocumentStore>();
         services.AddScoped<ITeamMatchStatsStore, TeamMatchStatsStore>();
         services.AddScoped<ITeamStore, TeamStore>();
         services.AddScoped<ICompetitionStore, CompetitionStore>();
+        services.AddScoped<ITerritoryStore, TerritoryStore>();
         services.AddScoped<IMatchStore, MatchStore>();
         services.AddScoped<IStandingStore, StandingStore>();
         services.AddScoped<IPerformanceStore, PerformanceStore>();
@@ -161,6 +166,7 @@ public static class DependencyInjection
         services.AddScoped<IClubInvitationStore, ClubInvitationStore>();
         services.AddScoped<ICoachAppointmentStore, CoachAppointmentStore>();
         services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
+        services.AddScoped<TercerTiempo.Domain.Sanctions.ICommitteeSanctionStore, TercerTiempo.Infrastructure.Sanctions.CommitteeSanctionStore>();
         services.AddScoped<IMatchVideoStore, MatchVideoStore>();
         services.AddScoped<IMatchVideoAnalysisStore, MatchVideoAnalysisStore>();
         services.AddScoped<IVideoAnalyzerHeartbeatStore, VideoAnalyzerHeartbeatStore>();

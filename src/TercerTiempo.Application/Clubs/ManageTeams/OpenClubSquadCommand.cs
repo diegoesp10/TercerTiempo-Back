@@ -24,12 +24,14 @@ internal sealed class OpenClubSquadValidator : AbstractValidator<OpenClubSquadCo
 }
 
 // El club es la entidad de la que depende el cuerpo técnico: no necesita a un técnico para abrir la plantilla de su
-// equipo y trabajar en ella (actas internas, datos del equipo, lesiones y vídeos).
+// equipo y trabajar en ella (actas internas, datos del equipo, lesiones y vídeos). Sin traspaso (algunas pruebas) la
+// plantilla nueva no recibe las lesiones abiertas de la temporada anterior.
 internal sealed class OpenClubSquadHandler(
     ICurrentUser currentUser,
     AccountStores stores,
     IMatchStore matches,
-    IUnitOfWork unitOfWork) : ICommandHandler<OpenClubSquadCommand, ClubSquadDto>
+    IUnitOfWork unitOfWork,
+    Squads.Injuries.InjuryCarryOver? carryOver = null) : ICommandHandler<OpenClubSquadCommand, ClubSquadDto>
 {
     public async Task<ClubSquadDto> Handle(OpenClubSquadCommand command, CancellationToken cancellationToken)
     {
@@ -51,7 +53,7 @@ internal sealed class OpenClubSquadHandler(
             seasonId = (await Resolvers.SeasonOfTeamAsync(stores.Competitions, stores.Seasons, command.TeamId, cancellationToken)).Season.Id;
         }
 
-        var squad = await SquadOpening.OpenAsync(stores.Squads, stores.Teams, command.TeamId, seasonId, stores.Clock.GetUtcNow(), cancellationToken);
+        var squad = await SquadOpening.OpenAsync(stores.Squads, stores.Teams, command.TeamId, seasonId, stores.Clock.GetUtcNow(), cancellationToken, carryOver);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new ClubSquadDto(squad.Id, squad.TeamId, squad.SeasonId);

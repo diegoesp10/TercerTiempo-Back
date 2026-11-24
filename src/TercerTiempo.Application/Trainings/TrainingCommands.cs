@@ -272,13 +272,18 @@ internal static class StaffAlerts
             alerts.Add(Alert.ForClub(club.Id, kind, key, title, message, link, dueOn, now));
     }
 
+    // Los abiertos del cuerpo técnico y del club, de una vez.
+    public static async Task<IReadOnlyList<Alert>> OpenAsync(Squad squad, IClubStore clubs, IAlertStore alerts, string keyPrefix, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var club = await clubs.GetByTeamAsync(squad.TeamId, cancellationToken);
+        var coaches = squad.StaffOn(SquadAccess.Today(clock)).Select(m => m.CoachId).Distinct().ToList();
+        return await alerts.GetOpenByKeyPrefixAsync(keyPrefix, [], coaches, club?.Id, cancellationToken);
+    }
+
     public static async Task ResolveAsync(Squad squad, IClubStore clubs, IAlertStore alerts, string keyPrefix, TimeProvider clock, CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
-        var club = await clubs.GetByTeamAsync(squad.TeamId, cancellationToken);
-        var coaches = squad.StaffOn(SquadAccess.Today(clock)).Select(m => m.CoachId).Distinct().ToList();
-        // Los del cuerpo técnico y los del club, de una vez.
-        foreach (var alert in await alerts.GetOpenByKeyPrefixAsync(keyPrefix, [], coaches, club?.Id, cancellationToken))
+        foreach (var alert in await OpenAsync(squad, clubs, alerts, keyPrefix, clock, cancellationToken))
             alert.Resolve(now);
     }
 }
@@ -455,8 +460,11 @@ internal sealed class SetAttendanceHandler(ICurrentUser currentUser, ISquadStore
         {
             if (entry.SquadPlayerId is { } squadPlayerId)
             {
-                if (squad.ActivePlayers.All(p => p.Id != squadPlayerId))
-                    throw new NotFoundException(ErrorCode.SquadPlayerNotFound, squadPlayerId);
+                var player = squad.Players.FirstOrDefault(p => p.Id == squadPlayerId)
+                    ?? throw new NotFoundException(ErrorCode.SquadPlayerNotFound, squadPlayerId);
+                // De quien causó baja solo se corrige la lista de cuando era de la plantilla; una línea suya de después
+                // (de una pantalla abierta antes de la baja) no cuenta y se ignora.
+                if (!player.IsActive && !session.WasInSquad(player)) continue;
                 session.SetAttendance(squadPlayerId, entry.Status, entry.Reason, now);
             }
             else if (entry.TrialPlayerId is { } trialPlayerId)

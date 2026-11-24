@@ -66,7 +66,9 @@ public sealed record TrainingAttendanceDto(
     [property: Description("Estaba lesionado el día de la sesión: no entrena y no se le pasa lista (no cuenta como falta).")]
     bool Injured = false,
     [property: Description("La lesión que se lo impide; solo para el club, el cuerpo técnico y el propio jugador (los compañeros ven solo Injured).")]
-    InjuryBriefDto? Injury = null);
+    InjuryBriefDto? Injury = null,
+    [property: Description("Causó baja en la plantilla después de esta sesión: su línea es historial.")]
+    bool Left = false);
 
 public sealed record AttendanceCountsDto(
     int Expected,
@@ -162,7 +164,13 @@ public sealed record CallUpEntryDto(
     bool Suspended = false,
     SuspensionBriefDto? Suspension = null,
     [property: Description("Amarillas del ciclo que lleva al empezar el partido (de 0 a 4): con 4, la siguiente le cuesta un partido.")]
-    int CycleYellows = 0);
+    int CycleYellows = 0,
+    [property: Description("Causó baja en la plantilla después del partido: la línea es historial.")]
+    bool Left = false)
+{
+    [Description("Apercibido para este partido: cuatro amarillas del ciclo y ninguna sanción; con una más se pierde el siguiente de liga. Misma regla que en la plantilla.")]
+    public bool Warned => !Suspended && CycleYellows >= SuspensionCalendar.YellowsPerSuspension - 1;
+}
 
 public sealed record CallUpCountsDto(
     int Called,
@@ -195,7 +203,15 @@ public sealed record MatchCallUpDto(
     [property: Description("La línea de quien mira, si es un jugador de la plantilla.")]
     CallUpEntryDto? Mine,
     [property: Description("El campo del partido: el que trae el partido o, si no trae, el habitual del equipo local. Es el que se propone para la cita.")]
-    TercerTiempo.Application.Grounds.GroundDto? MatchGround = null);
+    TercerTiempo.Application.Grounds.GroundDto? MatchGround = null,
+    [property: Description("A cuántos se convoca: el número fijo de la plantilla o el de esta convocatoria. null: aún no se ha dicho (o es de antes de que existiera).")]
+    int? Size = null,
+    [property: Description("La plantilla tiene un número fijo: manda ese y no se pregunta.")]
+    bool SizeFixed = false,
+    [property: Description("Sin número todavía: el de la última convocatoria, para proponerlo al preguntar. Solo para quien la prepara.")]
+    int? SuggestedSize = null,
+    [property: Description("Huella de lo que se ve (quién va, firmas, vistos, cita y si el partido ha empezado). GET …/callup/stamp da la de ahora: si no coincide, algo ha cambiado y hay que volver a pedir la convocatoria.")]
+    string Stamp = "");
 
 public sealed record MyCallUpDto(
     Guid CallUpId,
@@ -231,7 +247,8 @@ internal static class TrainingMapper
 
     public static TrainingAttendanceDto ToDto(TrainingAttendance attendance, SquadPlayer? player, bool done) =>
         new(attendance.SquadPlayerId, null, player?.FullName ?? "Jugador", player?.ShirtNumber, player?.IsLinked ?? false, false,
-            TrainingSession.Settled(attendance.Status, done), attendance.Reason, attendance.UpdatedAt, done && attendance.Status == AttendanceStatus.WillMiss);
+            TrainingSession.Settled(attendance.Status, done), attendance.Reason, attendance.UpdatedAt, done && attendance.Status == AttendanceStatus.WillMiss,
+            Left: player is { IsActive: false });
 
     public static TrainingAttendanceDto ToDto(TrainingAttendance attendance, TrialPlayer? trial, bool done) =>
         new(null, attendance.TrialPlayerId, trial?.FullName ?? "Jugador a prueba", null, false, true,
@@ -241,13 +258,14 @@ internal static class TrainingMapper
         new(trial.Id, trial.FullName, trial.Notes, trial.CreatedAt, counts?.Sessions ?? 0, counts?.Attended ?? 0, trial.PromotedSquadPlayerId, trial.PromotedAt);
 
     // Las líneas que cuentan: las de quien era de la plantilla a la hora de la sesión (el que aún no tiene línea cuenta como
-    // esperado; quien ya tenía línea cuenta aunque luego causara baja) y las de prueba apuntadas a la sesión.
+    // esperado; quien tenía línea y causó baja después sigue contando en esa) y las de prueba apuntadas a la sesión. Las
+    // de quien ya se había ido (sesiones planificadas antes de su baja) no salen: ya no le tocan.
     private static IEnumerable<(TrainingAttendance? Line, SquadPlayer? Player, Guid? TrialPlayerId)> Rows(TrainingSession session, Squad squad)
     {
         foreach (var player in squad.Players)
         {
             var line = session.AttendanceOf(player.Id);
-            if (line is not null || (player.IsActive && session.WasInSquad(player)))
+            if (player.IsActive ? line is not null || session.WasInSquad(player) : line is not null && session.WasInSquad(player))
                 yield return (line, player, null);
         }
         foreach (var line in session.Attendance.Where(a => a.IsTrial))
@@ -321,7 +339,12 @@ internal static class TrainingMapper
 
     public static CallUpEntryDto ToDto(CallUpEntry entry, SquadPlayer? player) =>
         new(entry.Id, entry.SquadPlayerId, player?.FullName ?? "Jugador", player?.ShirtNumber, player?.IsLinked ?? false, entry.Called, entry.Response, entry.RespondedAt,
-            player?.IsLinked == true ? entry.NotifiedAt : null, entry.SeenAt);
+            player?.IsLinked == true ? entry.NotifiedAt : null, entry.SeenAt, Left: player is { IsActive: false });
+
+    // Las líneas de una convocatoria que cuentan: las de quien seguía en la plantilla a la hora del partido (quien causó
+    // baja después sale como historial; quien se fue antes, ya no).
+    public static IEnumerable<CallUpEntry> Members(IEnumerable<CallUpEntry> entries, IReadOnlyDictionary<Guid, SquadPlayer> players, DateTimeOffset? kickoffAt) =>
+        entries.Where(e => players.TryGetValue(e.SquadPlayerId, out var p) && (p.IsActive || kickoffAt is { } at && p.WasMemberAt(at)));
 
     public static CallUpCountsDto Counts(IReadOnlyList<CallUpEntryDto> entries) =>
         new(entries.Count(e => e.Called),
@@ -345,15 +368,14 @@ internal static class TrainingMapper
     public static MatchCallUpDto ToDto(
         MatchCallUp? callUp, Squad squad, MatchDto match, bool canEdit, Guid? viewerSquadPlayerId, DateTimeOffset now,
         TercerTiempo.Application.Grounds.GroundDto? meetGround = null, TercerTiempo.Application.Grounds.GroundDto? matchGround = null,
-        InjuryView? injuries = null, SuspensionCalendar? suspensions = null)
+        InjuryView? injuries = null, SuspensionCalendar? suspensions = null, int? suggestedSize = null)
     {
         injuries ??= InjuryView.None;
         suspensions ??= SuspensionCalendar.Empty;
         var players = squad.Players.ToDictionary(p => p.Id);
-        var active = squad.ActivePlayers.Select(p => p.Id).ToHashSet();
         var entries = callUp is null
             ? squad.ActivePlayers.Select(p => new CallUpEntryDto(Guid.Empty, p.Id, p.FullName, p.ShirtNumber, p.IsLinked, false, CallUpResponse.Pending, null, null, null)).ToList()
-            : callUp.Entries.Where(e => active.Contains(e.SquadPlayerId)).Select(e => ToDto(e, players.GetValueOrDefault(e.SquadPlayerId))).ToList();
+            : Members(callUp.Entries, players, match.KickoffAt).Select(e => ToDto(e, players[e.SquadPlayerId])).ToList();
         entries = entries
             .Select(e => WithSuspension(WithInjury(e, match.KickoffAt, injuries), match.Id, suspensions))
             .OrderByDescending(e => e.Called).ThenBy(e => e.PlayerName).ToList();
@@ -361,7 +383,8 @@ internal static class TrainingMapper
 
         return new MatchCallUpDto(
             callUp?.Id, squad.Id, match, callUp?.Status ?? CallUpStatus.Draft, callUp?.MeetAt, meetGround, callUp?.MeetPlace, callUp?.Notes,
-            callUp?.PublishedAt, match.KickoffAt <= now, entries, Counts(entries), canEdit, mine, matchGround);
+            callUp?.PublishedAt, match.KickoffAt <= now, entries, Counts(entries), canEdit, mine, matchGround,
+            squad.CallUpSize ?? callUp?.Size, squad.CallUpSize is not null, canEdit ? suggestedSize : null, CallUpStamp.Of(callUp, match.KickoffAt <= now));
     }
 }
 

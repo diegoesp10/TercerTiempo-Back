@@ -1,5 +1,7 @@
 using System.Reflection;
 using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Referees;
+using TercerTiempo.Domain.Sanctions;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
 namespace TercerTiempo.Application.Tests;
@@ -59,6 +61,20 @@ public class AsturfutbolPagesTests
         Assert.Equal("9602883", lenense.AwayCode);
         Assert.Equal(new DateOnly(2026, 10, 17), lenense.Date);
         Assert.All(fixtures, f => Assert.False(string.IsNullOrEmpty(f.SheetCode)));
+    }
+
+    [Fact]
+    public void Reads_the_referee_published_under_each_fixture_of_a_matchday()
+    {
+        var fixtures = AsturfutbolPages.ParseMatchday(Fixture("jornada-6.html"));
+
+        var vallobin = Assert.Single(Assert.Single(fixtures, f => f.HomeCode == "3597").Officials);
+        Assert.Equal(new MatchOfficialData(OfficialRole.Referee, "Menéndez Rodríguez, Nicolás"), vallobin);
+
+        var lenense = Assert.Single(Assert.Single(fixtures, f => f.HomeCode == "4210").Officials);
+        Assert.Equal(new MatchOfficialData(OfficialRole.Referee, "Piedrafita Fernández, Javier"), lenense);
+
+        Assert.All(fixtures, f => Assert.Equal(OfficialRole.Referee, Assert.Single(f.Officials).Role));
     }
 
     // ------------------------------------------------------------------ acta
@@ -134,8 +150,12 @@ public class AsturfutbolPagesTests
         Assert.Equal("MARQUES FERNANDEZ, ENRIQUE", last.PlayerName);
         Assert.True(sheet.Events.Select(e => e.Minute).SequenceEqual(sheet.Events.Select(e => e.Minute).OrderBy(m => m)));
 
-        // Tarjeta a un delegado: queda como suceso aunque no haya línea.
+        // Tarjeta a un delegado: queda como suceso aunque no haya línea, y va a su ficha del cuerpo técnico (a la primera de
+        // sus dos funciones).
         Assert.Contains(sheet.Events, e => e.Type == OfficialEventType.YellowCard && e.PlayerName == "TRELLES CAMPA, ADRIAN");
+        var delegateRows = sheet.Staff!.Where(s => s.Side == MatchSide.Home && s.FullName == "TRELLES CAMPA, ADRIAN").ToList();
+        Assert.Equal((1, false), (delegateRows[0].YellowCards, delegateRows[0].RedCard));
+        Assert.All(delegateRows.Skip(1), s => Assert.Equal(0, s.YellowCards));
     }
 
     [Fact]
@@ -211,8 +231,10 @@ public class AsturfutbolPagesTests
         var away = sheet.Lines.Where(l => l.Side == MatchSide.Away).ToList();
         Assert.Equal(46, Assert.Single(away, l => l.ShirtNumber == 23).MinutesPlayed);
         Assert.Equal(44, Assert.Single(away, l => l.ShirtNumber == 8).MinutesPlayed);
-        // Dos amarillas al segundo entrenador: suceso sin línea de jugador.
+        // Dos amarillas al segundo entrenador: suceso sin línea de jugador y, en su ficha del cuerpo técnico, expulsado.
         Assert.Equal(2, sheet.Events.Count(e => e.PlayerName == "FERNANDEZ MARTINEZ FARIZA, EMILIO"));
+        var second = Assert.Single(sheet.Staff!, s => s.FullName == "FERNANDEZ MARTINEZ FARIZA, EMILIO");
+        Assert.Equal((MatchSide.Away, 2, true), (second.Side, second.YellowCards, second.RedCard));
     }
 
     [Fact]
@@ -291,6 +313,68 @@ public class AsturfutbolPagesTests
     public void A_page_without_teams_is_not_a_sheet()
     {
         Assert.Null(AsturfutbolPages.ParseSheet("<html><body><p>No se ha aceptado el cookie</p></body></html>", 90));
+    }
+
+    // ------------------------------------------------------------------ sanciones del comité
+
+    [Fact]
+    public void Reads_the_matches_each_player_is_suspended_for_by_meeting_and_matchday()
+    {
+        var meetings = AsturfutbolPages.ParseSanctions(Fixture("sanciones-grupo-22932421.html"));
+
+        Assert.Equal(
+            [(new DateOnly(2026, 9, 15), 1), (new DateOnly(2026, 9, 29), 3), (new DateOnly(2026, 10, 16), 3), (new DateOnly(2026, 11, 17), 10)],
+            meetings.Select(m => (m.MeetingOn, m.Matchday)));
+        Assert.All(meetings, m => Assert.Equal("Comité Territorial de Competición", m.Committee));
+        Assert.Equal(new DateOnly(2026, 9, 13), meetings[0].MatchdayOn);
+
+        // Solo lo que cuesta partidos: ni las amonestaciones de los jugadores ni las del cuerpo técnico.
+        var first = meetings[0].Sanctions;
+        Assert.Equal(4, first.Count);
+        Assert.All(first, s => Assert.Equal(CommitteeSanctionKind.Player, s.Kind));
+        Assert.Contains(new CommitteeSanctionData("C.D. Vallobin A", "GONZALEZ CENDAN, VICTOR", "71-b", "Provocar a otro", 1), first);
+        Assert.Contains(new CommitteeSanctionData("C. Europa A", "PRESTAMO GONZALEZ, PABLO", "34", "Doble amonestación", 1), first);
+        Assert.Contains(new CommitteeSanctionData("Puerto Vega C.F. A", "JAVIER", "35", "Infracción de las reglas del juego determinante de expulsión", 1), first);
+        Assert.DoesNotContain(first, s => s.PersonName == "NUEVO FERNANDEZ, IVAN");
+
+        Assert.Contains(new CommitteeSanctionData("Tsk Roces A", "SANCHEZ FERNANDEZ, CESAR", "60-f", "Agredir a otro", 4), meetings[1].Sanctions);
+        Assert.Equal(11, meetings[1].Sanctions.Count(s => s.Kind == CommitteeSanctionKind.Player));
+        // Una reunión que vuelve sobre una jornada solo con una resolución especial: vista, sin sanciones nuevas.
+        Assert.Empty(meetings[2].Sanctions);
+
+        // La 5.ª amarilla también la sanciona el comité.
+        Assert.Equal(
+            ["ALVAREZ VILLAMOR, SERGIO", "MARQUES FERNANDEZ, ENRIQUE", "QUINTANA TORRES, DIEGO"],
+            meetings[3].Sanctions.Where(s => s.Kind == CommitteeSanctionKind.Player).Select(s => s.PersonName).Order());
+        Assert.Equal("Acumulación de amonestaciones", meetings[3].Sanctions.Single(s => s.PersonName == "QUINTANA TORRES, DIEGO").Reason);
+    }
+
+    [Fact]
+    public void Reads_the_staff_sanctions_with_their_matches_or_days_of_ban()
+    {
+        var meetings = AsturfutbolPages.ParseSanctions(Fixture("sanciones-grupo-22932421.html"));
+
+        // Las amonestaciones del cuerpo técnico no entran (salen de las actas); lo que cuesta partidos, sí.
+        Assert.DoesNotContain(meetings[0].Sanctions, s => s.Kind == CommitteeSanctionKind.Staff);
+        Assert.Equal(
+            [
+                new CommitteeSanctionData("Tsk Roces A", "COSTALES ALONSO, SANTIAGO", "71-f", "Protestar al árbitro", 1, CommitteeSanctionKind.Staff),
+                new CommitteeSanctionData("Tsk Roces A", "VALCARCEL GARCIA, IVAN", "71-c", "Menosprecio al árbitro", 1, CommitteeSanctionKind.Staff),
+            ],
+            meetings[1].Sanctions.Where(s => s.Kind == CommitteeSanctionKind.Staff));
+
+        var staff = meetings[3].Sanctions.Where(s => s.Kind == CommitteeSanctionKind.Staff).ToList();
+        Assert.Equal(
+            [("FERNANDEZ MARTINEZ FARIZA, EMILIO", 4, null), ("FERNANDEZ MARTINEZ FARIZA, EMILIO", 1, null), ("FERNANDEZ MARTINEZ FARIZA, EMILIO", 1, null),
+             ("VERDASCO LOPEZ, PABLO", 0, 21), ("LOPEZ PRIETO, ISRAEL", 1, null)],
+            staff.Select(s => (s.PersonName, s.Matches, s.Days)));
+        Assert.Equal("Menosprecio al árbitro", staff.Single(s => s.Days is not null).Reason);
+    }
+
+    [Fact]
+    public void A_page_without_meetings_has_no_sanctions()
+    {
+        Assert.Empty(AsturfutbolPages.ParseSanctions(Fixture("calendario.html")));
     }
 
     // ------------------------------------------------------------------ nombres

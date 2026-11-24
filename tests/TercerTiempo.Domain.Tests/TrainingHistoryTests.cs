@@ -113,7 +113,7 @@ public class TrainingHistoryTests
         var sessions = Enumerable.Range(0, 4).Select(d => Plan(squad, editor, Tomorrow.AddDays(d * 2))).ToList();
         var day = DateOnly.FromDateTime(Tomorrow.UtcDateTime);
         // Lesionado en la segunda y la tercera sesión; con el alta el día de la cuarta, a esa ya le toca ir.
-        var injury = PlayerInjury.Create(squad, pelayo, editor, InjuryType.MuscleTear, null, day.AddDays(1), day.AddDays(5), TestData.Now);
+        var injury = PlayerInjury.Create(squad, pelayo, editor, TestData.InjuryType(InjuryTypeCodes.MuscleTear), null, day.AddDays(1), day.AddDays(5), TestData.Now);
         injury.Close(day.AddDays(6), TestData.Now);
         var calendar = new InjuryCalendar([injury]);
         var slots = sessions.Select(s => new TrainingSlot(s.Id, squad.Id, s.StartsAt, s.DurationMinutes)).ToList();
@@ -131,7 +131,7 @@ public class TrainingHistoryTests
         var sessions = Enumerable.Range(0, 5).Select(d => Plan(squad, editor, Tomorrow.AddDays(d * 2), 60 + d * 10)).ToList();
         sessions[1].ReportOwnAbsence(pelayo.Id, willMiss: true, "Examen", TestData.Now);
         var day = DateOnly.FromDateTime(Tomorrow.UtcDateTime);
-        var injury = PlayerInjury.Create(squad, pelayo, editor, InjuryType.Contusion, null, day.AddDays(5), day.AddDays(6), TestData.Now);
+        var injury = PlayerInjury.Create(squad, pelayo, editor, TestData.InjuryType(InjuryTypeCodes.Contusion), null, day.AddDays(5), day.AddDays(6), TestData.Now);
         injury.Close(day.AddDays(7), TestData.Now);
         var calendar = new InjuryCalendar([injury]);
         var now = Tomorrow.AddDays(7);
@@ -156,9 +156,9 @@ public class TrainingHistoryTests
     {
         var (squad, editor, pelayo, nel) = SquadWithTwoPlayers();
         var start = new DateOnly(2026, 11, 3);
-        var old = PlayerInjury.Create(squad, pelayo, editor, InjuryType.Contusion, null, start.AddDays(-30), null, TestData.Now);
+        var old = PlayerInjury.Create(squad, pelayo, editor, TestData.InjuryType(InjuryTypeCodes.Contusion), null, start.AddDays(-30), null, TestData.Now);
         old.Close(start.AddDays(-25), TestData.Now);
-        var open = PlayerInjury.Create(squad, pelayo, editor, InjuryType.AnkleSprain, null, start, start.AddDays(21), TestData.Now);
+        var open = PlayerInjury.Create(squad, pelayo, editor, TestData.InjuryType(InjuryTypeCodes.AnkleSprain), null, start, start.AddDays(21), TestData.Now);
         var calendar = new InjuryCalendar([old, open]);
 
         Assert.Null(calendar.On(pelayo.Id, start.AddDays(-1)));

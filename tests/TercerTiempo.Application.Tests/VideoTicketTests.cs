@@ -18,7 +18,7 @@ public class VideoTicketTests
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var tickets = new MemoryVideoTickets(cache, Options.Create(new VideoOptions()), TimeProvider.System);
         var video = MatchVideo.Upload(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            VideoPart.Full, null, "video.webm", "video/webm", 2048, "video.webm", DateTimeOffset.UtcNow);
+            VideoPart.Full, "Partido", "video.webm", "video/webm", 2048, "video.webm", DateTimeOffset.UtcNow);
         var videos = Proxy<IMatchVideoStore>((_, _) => Task.FromResult<MatchVideo?>(video));
         var storage = Proxy<IVideoStorage>((_, _) => Task.FromResult<Stream>(new MemoryStream([1, 2, 3])));
         var handler = new OpenVideoStreamHandler(tickets, videos, storage);

@@ -29,7 +29,8 @@ public sealed record MatchVideoDto(
     string Title,
     string FileName,
     string ContentType,
-    long SizeBytes,
+    [property: Description("Lo que ocupa el archivo; solo para quien lo subió (null para los demás).")]
+    long? SizeBytes,
     DateTimeOffset UploadedAt,
     string UploadedBy,
     VideoAccessLevel Access,
@@ -40,7 +41,7 @@ public sealed record MatchVideoDto(
     VideoStatus Status,
     [property: Description("Avance de la compresión en %, mientras está en Processing.")]
     int Progress,
-    [property: Description("Lo que ocupaba el archivo subido, cuando se ha sustituido por el comprimido.")]
+    [property: Description("Lo que ocupaba el archivo subido, cuando se ha sustituido por el comprimido; solo para quien lo subió.")]
     long? OriginalSizeBytes,
     int? DurationSeconds,
     [property: Description("Alto del vídeo en píxeles (1080 = Full HD) cuando se conoce.")]
@@ -56,9 +57,13 @@ public sealed record VideoUpload(string FileName, string ContentType, long Lengt
 
 internal static class VideoMapper
 {
-    public static MatchVideoDto ToDto(MatchVideo video, string teamName, string uploadedBy, VideoAccessLevel access, bool canDownload, bool canDelete) =>
+    // Lo que ocupa el vídeo solo le importa a quien lo subió: a los demás no se les manda.
+    public static MatchVideoDto ToDto(MatchVideo video, string teamName, string uploadedBy, VideoAccessLevel access, bool canDownload, bool canDelete, bool uploadedByMe) =>
         new(video.Id, video.MatchId, video.SquadId, video.TeamId, teamName, video.Part, video.Title, video.FileName, video.ContentType,
-            video.SizeBytes, video.UploadedAt, uploadedBy, access, VideoAccess.CanWatch(access), canDownload, canDelete,
-            video.Status, video.ProcessingProgress, video.OriginalSizeBytes, video.DurationSeconds, video.Height,
+            uploadedByMe ? video.SizeBytes : null, video.UploadedAt, uploadedBy, access, VideoAccess.CanWatch(access), canDownload, canDelete,
+            video.Status, video.ProcessingProgress, uploadedByMe ? video.OriginalSizeBytes : null, video.DurationSeconds, video.Height,
             canDelete ? video.ProcessingError : null);
+
+    public static bool UploadedBy(MatchVideo video, Guid? coachId, Guid? clubId) =>
+        (video.UploadedByCoachId is { } coach && coach == coachId) || (video.UploadedByClubId is { } club && club == clubId);
 }

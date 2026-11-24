@@ -17,6 +17,15 @@ public static class JobNames
     public const string Grounds = "grounds";
     public const string RealDataCopy = "real-data";
 
+    // Página de sanciones del comité de competición de cada grupo (asturfutbol.es), a la base de datos reales.
+    public const string CommitteeSanctions = "committee-sanctions";
+
+    // Avisos de esas sanciones en la campanita (no llama a nada de fuera).
+    public const string SuspensionAlerts = "suspension-alerts";
+
+    // Lesiones abiertas al cambiar de temporada, a la plantilla nueva (no llama a nada de fuera).
+    public const string InjuryCarryOver = "injury-carry-over";
+
     // Lo ejecuta el servicio de vídeo (otro proceso), una ejecución por vídeo subido.
     public const string VideoTranscode = "video-transcode";
 

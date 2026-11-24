@@ -12,7 +12,13 @@ public sealed class Squad : AggregateRoot
     public Guid TeamId { get; private set; }
     public Guid SeasonId { get; private set; }
     public SquadVisibility Visibility { get; private set; }
+    // A cuántos se convoca en cada partido: siempre los mismos o, sin número, se pregunta en cada convocatoria.
+    public int? CallUpSize { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
+
+    // Menos de 7 no se puede empezar un partido; más de 30 no cabe en ninguna acta.
+    public const int MinCallUpSize = 7;
+    public const int MaxCallUpSize = 30;
 
     public IReadOnlyCollection<SquadStaff> Staff => _staff.AsReadOnly();
     public IReadOnlyCollection<SquadPlayer> Players => _players.AsReadOnly();
@@ -91,14 +97,19 @@ public sealed class Squad : AggregateRoot
 
         if (rosterEntryId is { } rosterId && _players.FirstOrDefault(p => p.RosterEntryId == rosterId) is { } fromRoster)
         {
-            // Ya se importó esta ficha: si había causado baja, se reactiva.
-            if (!fromRoster.IsActive) fromRoster.Reactivate();
+            // Ya se importó esta ficha. Si causó baja no vuelve sola: se reincorpora a mano desde «De baja».
+            if (!fromRoster.IsActive)
+                throw new DomainException(ErrorCode.SquadPlayerLeftExists, fromRoster.FullName);
             fromRoster.Update(fullName, position ?? fromRoster.Position, shirtNumber ?? fromRoster.ShirtNumber);
             return fromRoster;
         }
 
         if (ActivePlayers.Any(p => p.NormalizedName == normalized))
             throw new DomainException(ErrorCode.SquadPlayerDuplicate, fullName.Trim());
+
+        // Quien causó baja sigue en la plantilla con su historial: se le reincorpora, no se le crea otra ficha.
+        if (_players.FirstOrDefault(p => !p.IsActive && PersonName.SamePerson(p.NormalizedName, normalized)) is { } former)
+            throw new DomainException(ErrorCode.SquadPlayerLeftExists, former.FullName);
 
         var player = SquadPlayer.Create(Id, fullName, position, shirtNumber, rosterEntryId, now);
         _players.Add(player);
@@ -113,6 +124,8 @@ public sealed class Squad : AggregateRoot
     public void UpdatePlayer(Guid squadPlayerId, string fullName, Position position, int? shirtNumber)
     {
         var player = GetPlayer(squadPlayerId);
+        if (!player.IsActive)
+            throw new DomainException(ErrorCode.SquadPlayerLeftReadOnly, player.FullName);
         var normalized = NameNormalizer.Normalize(fullName);
 
         if (ActivePlayers.Any(p => p.Id != squadPlayerId && p.NormalizedName == normalized))
@@ -148,6 +161,20 @@ public sealed class Squad : AggregateRoot
             throw new DomainException(ErrorCode.SquadPlayerAlreadyLeft);
 
         player.Leave(now);
+    }
+
+    // Vuelve con su historial (actas, asistencia, lesiones). No si mientras tanto se ha dado de alta otra ficha suya.
+    public SquadPlayer ReinstatePlayer(Guid squadPlayerId)
+    {
+        var player = GetPlayer(squadPlayerId);
+        if (player.IsActive)
+            throw new DomainException(ErrorCode.SquadPlayerNotLeft, player.FullName);
+
+        if (ActivePlayers.FirstOrDefault(p => PersonName.SamePerson(p.NormalizedName, player.NormalizedName)) is { } twin)
+            throw new DomainException(ErrorCode.SquadPlayerDuplicate, twin.FullName);
+
+        player.Reactivate();
+        return player;
     }
 
     public SquadPlayer LinkPlayer(Guid squadPlayerId, Guid playerId)
@@ -188,6 +215,16 @@ public sealed class Squad : AggregateRoot
 
         Visibility = visibility;
     }
+
+    public void SetCallUpSize(int? size)
+    {
+        if (size is { } n && !IsValidCallUpSize(n))
+            throw new DomainException(ErrorCode.CallUpSizeInvalid, MinCallUpSize, MaxCallUpSize);
+
+        CallUpSize = size;
+    }
+
+    public static bool IsValidCallUpSize(int size) => size is >= MinCallUpSize and <= MaxCallUpSize;
 
     public void GeneratePlayerInviteCode(Guid squadPlayerId) => GetPlayer(squadPlayerId).GenerateInviteCode();
 

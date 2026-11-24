@@ -100,11 +100,40 @@ internal static partial class AsturfutbolPages
                 Clean(teamLinks[0].TextContent), TeamCode(teamLinks[0]),
                 Clean(teamLinks[1].TextContent), TeamCode(teamLinks[1]),
                 date, time,
-                string.IsNullOrEmpty(sheetCode) ? null : sheetCode));
+                string.IsNullOrEmpty(sheetCode) ? null : sheetCode,
+                FixtureOfficials(table)));
         }
 
         return result;
     }
+
+    // Bajo cada partido de la jornada: «<strong>Árbitro: </strong>&nbsp;Apellidos, Nombre» (antes del partido, el
+    // designado). Si algún día publica también los asistentes con su etiqueta, se leen igual.
+    private static IReadOnlyList<MatchOfficialData> FixtureOfficials(IElement table)
+    {
+        var officials = new List<MatchOfficialData>();
+        foreach (var label in table.QuerySelectorAll("strong").Where(s => s.Closest("table") == table))
+        {
+            if (FixtureRole(Clean(label.TextContent).TrimEnd(':', ' ')) is not { } role || officials.Any(o => o.Role == role)) continue;
+
+            // El nombre es el texto que sigue a la etiqueta, hasta la siguiente etiqueta.
+            var text = new System.Text.StringBuilder();
+            for (var node = label.NextSibling; node is not null && node is not IElement { LocalName: "strong" or "div" or "br" }; node = node.NextSibling)
+                text.Append(node.TextContent);
+            var name = Clean(text.ToString());
+            if (name.Length > 0) officials.Add(new MatchOfficialData(role, name));
+        }
+        return officials;
+    }
+
+    private static OfficialRole? FixtureRole(string label) => NameNormalizer.Normalize(label) switch
+    {
+        "arbitro" or "arbitro principal" => OfficialRole.Referee,
+        "arbitro asistente 1" or "asistente 1" or "1 asistente" or "asistente 1o" => OfficialRole.AssistantReferee1,
+        "arbitro asistente 2" or "asistente 2" or "2 asistente" or "asistente 2o" => OfficialRole.AssistantReferee2,
+        "cuarto arbitro" or "4 arbitro" => OfficialRole.FourthOfficial,
+        _ => null,
+    };
 
     private static string? TeamCode(IElement link)
     {
@@ -191,6 +220,10 @@ internal static partial class AsturfutbolPages
     private static void ReadTeam(
         IElement block, MatchSide side, List<SheetLineBuilder> lines, List<OfficialEventData> events, List<OfficialStaffData> staff, int matchLength)
     {
+        // Las tarjetas de quien no está en la alineación: son del cuerpo técnico (van en la misma lista).
+        var staffCards = new List<(string Name, OfficialEventType Type)>();
+        var staffFrom = staff.Count;
+
         // Titulares y suplentes: tabla que sigue a cada cabecera <h5><strong>Titulares</strong></h5>.
         foreach (var header in block.QuerySelectorAll("h5, h4"))
         {
@@ -260,12 +293,45 @@ internal static partial class AsturfutbolPages
                         if (type == OfficialEventType.YellowCard) line.Yellow(minute);
                         else line.Red(minute);
                     }
+                    else
+                    {
+                        staffCards.Add((name, type));
+                    }
 
                     // Sin minuto no se sabe cuándo fue: cuenta en la línea del jugador pero no entra en la cronología.
                     if (minute is not null) events.Add(new OfficialEventData(side, type, minute.Value, extra, name, null));
                 }
             }
         }
+
+        foreach (var (name, type) in staffCards)
+            CardStaff(staff, staffFrom, name, type);
+    }
+
+    // La tarjeta va a la primera vez que figura esa persona en el cuerpo técnico de su equipo (quien está en dos funciones
+    // sale dos veces). Con dos amarillas, expulsado, como un jugador.
+    private static void CardStaff(List<OfficialStaffData> staff, int from, string name, OfficialEventType type)
+    {
+        var normalized = NameNormalizer.Normalize(name.Replace(',', ' '));
+        var index = staff.FindIndex(from, s => NameNormalizer.Normalize(s.FullName.Replace(',', ' ')) == normalized);
+        if (index < 0)
+        {
+            var person = NameNormalizer.Normalize(PersonName.FromSheet(name));
+            index = staff.FindIndex(from, s => PersonName.SamePerson(NameNormalizer.Normalize(PersonName.FromSheet(s.FullName)), person));
+        }
+        if (index < 0) return;
+
+        var member = staff[index];
+        staff[index] = type switch
+        {
+            OfficialEventType.YellowCard => member with
+            {
+                YellowCards = Math.Min(2, member.YellowCards + 1),
+                RedCard = member.RedCard || member.YellowCards + 1 >= 2,
+            },
+            OfficialEventType.SecondYellow => member with { YellowCards = 2, RedCard = true },
+            _ => member with { RedCard = true },
+        };
     }
 
     // «Cuerpo Técnico»: un <h5> por persona detrás de la cabecera, con la función en <strong> («Entrenador:», «2ºEntrenador:»,

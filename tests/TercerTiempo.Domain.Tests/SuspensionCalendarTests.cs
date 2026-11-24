@@ -24,7 +24,7 @@ public class SuspensionCalendarTests
         // Apercibido antes de la quinta; después el ciclo vuelve a cero.
         Assert.Equal(4, calendar.YellowsBefore(Pelayo, season[4].Id));
         Assert.Equal(0, calendar.YellowsBefore(Pelayo, season[5].Id));
-        Assert.Empty(calendar.For(season[5].Id).Where(s => s.SquadPlayerId == Nel));
+        Assert.DoesNotContain(calendar.For(season[5].Id), s => s.SquadPlayerId == Nel);
     }
 
     [Fact]
@@ -102,6 +102,56 @@ public class SuspensionCalendarTests
         Assert.NotNull(calendar.On(Pelayo, season[2].Id));
         Assert.Null(calendar.On(Pelayo, season[1].Id));
     }
+
+    [Fact]
+    public void What_the_committee_publishes_replaces_the_minimum_of_the_cards()
+    {
+        var season = Season(6);
+        var calendar = SuspensionCalendar.Build(season, Cards((season[0], Pelayo, 0, true)), Decisions(
+            (season[0], Pelayo, new CommitteePenalty(3, "Agredir a otro", new DateOnly(2026, 9, 15)))));
+
+        var served = season.Select(m => calendar.On(Pelayo, m.Id)).ToList();
+        Assert.Equal([null, 1, 2, 3, null, null], served.Select(s => s?.Nth));
+        Assert.All(served.Where(s => s is not null), s => Assert.Equal((SuspensionCause.Committee, 3, "Agredir a otro", 1), (s!.Cause, s.Matches, s.Detail, s.FromMatchday)));
+        Assert.Equal(new DateOnly(2026, 9, 15), served[1]!.DecidedOn);
+    }
+
+    [Fact]
+    public void A_player_the_committee_does_not_name_keeps_the_minimum_of_his_cards()
+    {
+        var season = Season(8);
+        var calendar = SuspensionCalendar.Build(season, Cards(
+                (season[0], Pelayo, 1, false), (season[1], Pelayo, 1, false), (season[2], Pelayo, 1, false), (season[3], Pelayo, 1, false),
+                (season[4], Pelayo, 1, true), (season[4], Nel, 0, true)),
+            Decisions((season[4], Nel, new CommitteePenalty(2, "Producirse de manera violenta", new DateOnly(2026, 10, 20)))));
+
+        // Nel: los dos partidos del comité en vez del mínimo de la roja.
+        Assert.Equal([1, 2], season.Skip(5).Take(2).Select(m => calendar.On(Nel, m.Id)!.Nth));
+        Assert.Null(calendar.On(Nel, season[7].Id));
+        // Pelayo no sale en lo publicado: nunca se le quita una sanción por no encontrarla. La roja y la quinta amarilla,
+        // una detrás de otra, y el ciclo vuelve a cero.
+        Assert.Equal([SuspensionCause.RedCard, SuspensionCause.YellowCards], season.Skip(5).Take(2).Select(m => calendar.On(Pelayo, m.Id)!.Cause));
+        Assert.Equal(0, calendar.YellowsBefore(Pelayo, season[5].Id));
+        Assert.Equal(season[4].Id, Assert.Single(calendar.Decisions).Key);
+    }
+
+    [Fact]
+    public void Two_sanctions_for_the_same_match_are_served_one_after_the_other()
+    {
+        var season = Season(6);
+        var calendar = SuspensionCalendar.Build(season, Cards((season[0], Pelayo, 0, true)), Decisions(
+            (season[0], Pelayo, new CommitteePenalty(1, "Provocar a otro", new DateOnly(2026, 9, 22))),
+            (season[0], Pelayo, new CommitteePenalty(2, "Menosprecio al árbitro", new DateOnly(2026, 9, 22)))));
+
+        Assert.Equal(["Provocar a otro", "Menosprecio al árbitro", "Menosprecio al árbitro"],
+            season.Skip(1).Take(3).Select(m => calendar.On(Pelayo, m.Id)!.Detail));
+        Assert.Null(calendar.On(Pelayo, season[4].Id));
+    }
+
+    private static Dictionary<Guid, CommitteeDecision> Decisions(params (Match Match, Guid Player, CommitteePenalty Penalty)[] penalties) =>
+        penalties.GroupBy(p => p.Match.Id).ToDictionary(
+            g => g.Key,
+            g => new CommitteeDecision(g.GroupBy(p => p.Player).ToDictionary(p => p.Key, p => (IReadOnlyList<CommitteePenalty>)p.Select(x => x.Penalty).ToList())));
 
     private static List<Match> Season(int matches) =>
         Enumerable.Range(1, matches)

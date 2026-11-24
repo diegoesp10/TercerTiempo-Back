@@ -10,12 +10,13 @@ public sealed record CompetitionDto(
     int Tier,
     string? Group,
     string Region,
+    TerritoryDto Territory,
     int SortOrder,
     Guid? SeasonId,
     string? SeasonLabel,
     int TeamsCount)
 {
-    public static CompetitionDto From(Competition competition, Season? season, int teamsCount) =>
+    public static CompetitionDto From(Competition competition, TerritoryDto territory, Season? season, int teamsCount) =>
         new(competition.Id, competition.Name, competition.Category, competition.Level, competition.Tier, competition.Group,
-            competition.Region, competition.SortOrder, season?.Id, season?.Label, teamsCount);
+            competition.Region, territory, competition.SortOrder, season?.Id, season?.Label, teamsCount);
 }

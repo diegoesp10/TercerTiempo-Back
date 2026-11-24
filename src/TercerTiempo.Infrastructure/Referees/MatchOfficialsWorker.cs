@@ -9,7 +9,8 @@ using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.Referees;
 
-// Equipos arbitrales de los partidos: de las actas guardadas (sin peticiones) y de futbolasturiano.es.
+// Equipos arbitrales de los partidos: de las actas guardadas (sin peticiones) y de futbolasturiano.es; y los árbitros
+// designados para los próximos partidos, de la página de la jornada de la federación.
 internal sealed class MatchOfficialsWorker(
     IServiceScopeFactory scopeFactory,
     JobScheduler scheduler,
@@ -52,7 +53,8 @@ internal sealed class MatchOfficialsWorker(
         var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<SyncMatchOfficialsCommand, MatchOfficialsSynced>>();
         var result = await handler.Handle(new SyncMatchOfficialsCommand(), cancellationToken);
         var summary = $"{result.FromSheets} {(result.FromSheets == 1 ? "partido" : "partidos")} desde las actas guardadas; " +
-            $"{result.FromProvider} de {result.Looked} {(result.Looked == 1 ? "página consultada" : "páginas consultadas")} en futbolasturiano.es";
+            $"{result.FromProvider} de {result.Looked} {(result.Looked == 1 ? "página consultada" : "páginas consultadas")} en futbolasturiano.es; " +
+            $"{result.Designated} {(result.Designated == 1 ? "partido próximo" : "partidos próximos")} con árbitro designado nuevo o cambiado";
         return new JobOutcome(summary, []);
     }
 }

@@ -80,13 +80,15 @@ internal sealed class GetSquadSeasonTableHandler(
             .Where(s => s.IsAvailable)
             .ToDictionary(s => s.MatchId);
 
-        var roster = squad.Players.Where(p => p.IsActive).ToList();
+        // También los que causaron baja: lo que jugaron mientras eran del equipo es suyo (en el acta oficial de cada partido
+        // solo se cruza a quien era del equipo ese día).
+        var roster = squad.Players.ToList();
         var officialLines = new Dictionary<(Guid MatchId, Guid PlayerId), OfficialSheetLine>();
         foreach (var match in played)
         {
             if (!officialSheets.TryGetValue(match.Id, out var sheet)) continue;
             var side = match.HomeTeamId == squad.TeamId ? MatchSide.Home : MatchSide.Away;
-            foreach (var (playerId, line) in SheetMatcher.Match(roster, sheet.LinesOf(side)))
+            foreach (var (playerId, line) in SheetMatcher.Match(roster.Where(p => p.WasMemberAt(match.KickoffAt)), sheet.LinesOf(side)))
                 officialLines[(match.Id, playerId)] = line;
         }
 
@@ -127,6 +129,9 @@ internal sealed class GetSquadSeasonTableHandler(
                     if (official.RedCard) reds++;
                 }
             }
+
+            // De los que causaron baja, solo quien llegó a jugar.
+            if (!player.IsActive && games == 0) continue;
 
             rows.Add(new SquadSeasonRowDto(
                 SquadMapper.WithPhoto(SquadMapper.ToPlayerDto(player, linkedMap), player, photos, linkedMap),

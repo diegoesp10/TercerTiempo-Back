@@ -66,11 +66,11 @@ internal sealed class AsturfutbolOfficialSheetProvider(
         return new OfficialCompetitionRef(competition.Code, chosen.Code, season.Code);
     }
 
-    public async Task<IReadOnlyList<OfficialFixture>> GetMatchdayAsync(OfficialCompetitionRef competition, int matchday, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<OfficialFixture>> GetMatchdayAsync(OfficialCompetitionRef competition, int matchday, TimeSpan? maxAge, CancellationToken cancellationToken)
     {
         var html = await client.GetHtmlAsync(
             $"NFG_CmpJornada?cod_primaria={_settings.CalendarCode}&CodCompeticion={competition.CompetitionCode}&CodGrupo={competition.GroupCode}&CodTemporada={competition.SeasonCode}&cod_agrupacion=1&CodJornada={matchday}",
-            cancellationToken);
+            cancellationToken, maxAge: maxAge);
 
         return html is null ? [] : AsturfutbolPages.ParseMatchday(html);
     }
@@ -88,6 +88,16 @@ internal sealed class AsturfutbolOfficialSheetProvider(
         var html = await client.GetHtmlAsync(SheetPath(sheetCode), cancellationToken, refresh);
 
         return html is null ? null : AsturfutbolPages.ParseSheet(html, _settings.MatchLength);
+    }
+
+    public async Task<IReadOnlyList<CommitteeMeetingData>?> GetSanctionsAsync(OfficialCompetitionRef competition, CancellationToken cancellationToken)
+    {
+        var html = await client.GetHtmlAsync(
+            $"NFG_ConsultaSanciones?cod_primaria={_settings.SanctionsCode}&buscar=1&Sch_Cod_Temporada={competition.SeasonCode}&Sch_Competicion={competition.CompetitionCode}&Sch_Grupo={competition.GroupCode}",
+            cancellationToken,
+            refresh: true);
+
+        return html is null ? null : AsturfutbolPages.ParseSanctions(html);
     }
 
     private async Task<IReadOnlyList<CatalogEntry>> GetSeasonsAsync(CancellationToken cancellationToken)

@@ -137,7 +137,8 @@ public class VideoProcessorTests
         Assert.Equal(2_000_000_000, video.SizeBytes);
         Assert.Equal(6_000_000_000, video.OriginalSizeBytes);
         Assert.Equal("video/mp4", video.ContentType);
-        Assert.Equal("partido.mp4", video.FileName);
+        // El archivo comprimido se sigue llamando como el partido, ahora en .mp4.
+        Assert.Equal("Partido.mp4", video.FileName);
         Assert.Equal(5760, video.DurationSeconds);
         Assert.Equal(1080, video.Height);
         Assert.Equal(["original.webm"], world.Storage.Deleted);
@@ -335,6 +336,8 @@ public class VideoProcessorTests
         public Task<MatchVideo?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Items.FirstOrDefault(v => v.Id == id));
         public Task<IReadOnlyList<MatchVideo>> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MatchVideo>>(Items.Where(v => v.MatchId == matchId).ToList());
         public Task<IReadOnlyList<MatchVideo>> GetBySquadsAsync(IEnumerable<Guid> squadIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<MatchVideo>> GetAllAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MatchVideo>>(Items.Where(v => !v.IsDeleted).ToList());
         public void Add(MatchVideo video) => Items.Add(video);
         public Task<MatchVideo?> GetNextPendingAsync(int maxAttempts, CancellationToken cancellationToken = default) =>
             Task.FromResult(Items.Where(v => v.AwaitsProcessing(maxAttempts)).OrderBy(v => v.UploadedAt).FirstOrDefault());

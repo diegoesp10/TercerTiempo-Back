@@ -6,9 +6,11 @@ namespace TercerTiempo.Application.Squads;
 
 internal static class SquadOpening
 {
-    // La plantilla de un equipo en una temporada: la que ya existe o una nueva con las fichas publicadas del equipo.
+    // La plantilla de un equipo en una temporada: la que ya existe o una nueva con las fichas publicadas del equipo y las
+    // lesiones que sus jugadores traen abiertas de la temporada anterior del club.
     public static async Task<Squad> OpenAsync(
-        ISquadStore squads, ITeamStore teams, Guid teamId, Guid seasonId, DateTimeOffset now, CancellationToken cancellationToken)
+        ISquadStore squads, ITeamStore teams, Guid teamId, Guid seasonId, DateTimeOffset now, CancellationToken cancellationToken,
+        Injuries.InjuryCarryOver? carryOver = null)
     {
         if (await squads.GetByTeamAndSeasonAsync(teamId, seasonId, cancellationToken) is { } existing)
             return existing;
@@ -17,13 +19,14 @@ internal static class SquadOpening
         ImportRoster(squad, await teams.GetRosterAsync(teamId, seasonId, cancellationToken), now);
 
         squads.Add(squad);
+        if (carryOver is not null) await carryOver.IntoAsync(squad, cancellationToken);
         return squad;
     }
 
     // Las personas publicadas que aún no están en la plantilla, una vez cada una: el proveedor publica a algunos
     // jugadores dos veces ("Lucas Paredes" y "Lucas Paredes Rivera", con distinto id) y el club puede haberlos añadido
     // ya a mano. Llegan sin dorsal (la ficha publicada no lo lleva): el habitual lo pone el cuerpo técnico y el de cada
-    // partido va en su acta.
+    // partido va en su acta. Quien causó baja tampoco vuelve por importar: se le reincorpora a mano desde «De baja».
     public static IReadOnlyList<SquadPlayer> ImportRoster(Squad squad, IEnumerable<RosterEntry> roster, DateTimeOffset now)
     {
         var people = RosterPeople.Group(roster);
@@ -31,7 +34,7 @@ internal static class SquadOpening
         foreach (var person in people)
         {
             var fichas = person.Entries.Select(e => e.Id).ToHashSet();
-            if (squad.ActivePlayers.Any(p => p.RosterEntryId is { } id && fichas.Contains(id) || PersonName.SamePerson(p.NormalizedName, person.Main.NormalizedName)))
+            if (squad.Players.Any(p => p.RosterEntryId is { } id && fichas.Contains(id) || PersonName.SamePerson(p.NormalizedName, person.Main.NormalizedName)))
                 continue;
 
             squad.AddPlayer(person.Main.FullName, person.Position, null, person.Main.Id, now);

@@ -7,6 +7,7 @@ using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Referees;
 using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 
 namespace TercerTiempo.Application.Tests;
@@ -35,19 +36,67 @@ public class FederationDatabaseFirstTests
     public async Task Reading_a_saved_sheet_never_queues_or_contacts_the_provider()
     {
         var (match, sheet) = CompletedSheet();
-        var handler = new GetOfficialSheetHandler(
-            Stub<IOfficialSheetProvider>((method, _) => throw new Exception($"Unexpected provider call: {method}")),
+        var result = await SheetHandler(match, sheet, new InMemoryRefereeStore()).Handle(new(match.Id), default);
+        Assert.Equal(OfficialSheetAvailability.Available, result.Status);
+        Assert.NotEmpty(result.Home!.Starters);
+        // Sin el equipo arbitral leído, al menos el árbitro que trae el acta.
+        Assert.Equal(new SheetOfficialDto(OfficialRole.Referee, "Nicolás Menéndez Rodríguez", null), Assert.Single(result.Referees!.Officials));
+    }
+
+    [Fact]
+    public async Task A_played_match_shows_its_whole_refereeing_team_in_order()
+    {
+        var (match, sheet) = CompletedSheet();
+        var referees = new InMemoryRefereeStore();
+        foreach (var (role, name) in new[] { (OfficialRole.AssistantReferee2, "Alonso Fernández, Pelayo"), (OfficialRole.Referee, "Caicoya Beunza, Pablo"), (OfficialRole.AssistantReferee1, "Boudden Fatihi, Hamza") })
+        {
+            var referee = Referee.Create(name, null, Now);
+            referees.Add(referee);
+            referees.AddOfficial(MatchOfficial.Assign(match.Id, referee.Id, role, "asturfutbol", Now));
+        }
+
+        var result = await SheetHandler(match, sheet, referees).Handle(new(match.Id), default);
+
+        Assert.False(result.Referees!.Designated);
+        Assert.Equal(["Pablo Caicoya Beunza", "Hamza Boudden Fatihi", "Pelayo Alonso Fernández"], result.Referees.Officials.Select(o => o.Name));
+        Assert.All(result.Referees.Officials, o => Assert.NotNull(o.RefereeId));
+    }
+
+    [Fact]
+    public async Task An_upcoming_match_shows_the_referee_designated_by_the_federation_or_that_it_is_not_known_yet()
+    {
+        var competition = Competition.Create("Liga", "Primera", CompetitionLevel.Regional, 1, null, "Asturias", null);
+        var season = competition.AddSeason("2026/2027", new(2026, 8, 1), new(2027, 6, 30), null);
+        var match = Match.Schedule(season.Id, 11, Guid.NewGuid(), Guid.NewGuid(), Now.AddDays(1), null, null);
+        var referees = new InMemoryRefereeStore();
+
+        var unknown = await SheetHandler(match, null, referees, competition).Handle(new(match.Id), default);
+        Assert.Equal(OfficialSheetAvailability.NotPlayed, unknown.Status);
+        Assert.True(unknown.Referees!.Designated);
+        Assert.Empty(unknown.Referees.Officials);
+
+        var referee = Referee.Create("Santos Díaz, Eva", null, Now);
+        referees.Add(referee);
+        referees.AddDesignation(RefereeDesignation.Designate(match.Id, referee.Id, OfficialRole.Referee, "asturfutbol", Now));
+
+        var designated = await SheetHandler(match, null, referees, competition).Handle(new(match.Id), default);
+        Assert.True(designated.Referees!.Designated);
+        Assert.Equal(new SheetOfficialDto(OfficialRole.Referee, "Eva Santos Díaz", referee.Id), Assert.Single(designated.Referees.Officials));
+    }
+
+    // El acta se lee solo de la base: ni la web de actas (salvo para saber qué ligas publica) ni la cola de descargas.
+    private static GetOfficialSheetHandler SheetHandler(Match match, OfficialMatchSheet? sheet, InMemoryRefereeStore referees, Competition? competition = null) =>
+        new(
+            Stub<IOfficialSheetProvider>((method, _) => method == nameof(IOfficialSheetProvider.Publishes) ? true : throw new Exception($"Unexpected provider call: {method}")),
             Stub<IMatchStore>((_, _) => Task.FromResult<Match?>(match)),
-            Stub<IOfficialSheetStore>((_, _) => Task.FromResult<OfficialMatchSheet?>(sheet)),
+            Stub<ICompetitionStore>((_, _) => Task.FromResult(competition)),
+            referees,
+            Stub<IOfficialSheetStore>((_, _) => Task.FromResult(sheet)),
             Stub<IOfficialSheetQueue>((method, _) => throw new Exception($"Unexpected queue call: {method}")),
             new OfficialSheetSyncMemory(),
             Stub<TercerTiempo.Application.Abstractions.Identity.ICurrentUser>((method, _) => method == "get_IsAuthenticated" ? true : null),
             Stub<TercerTiempo.Domain.Clubs.ICoachAppointmentStore>((_, _) => Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Clubs.CoachAppointment>>([])),
             TimeProvider.System);
-        var result = await handler.Handle(new(match.Id), default);
-        Assert.Equal(OfficialSheetAvailability.Available, result.Status);
-        Assert.NotEmpty(result.Home!.Starters);
-    }
 
     [Fact]
     public async Task Even_a_legacy_force_command_cannot_download_an_existing_complete_sheet()

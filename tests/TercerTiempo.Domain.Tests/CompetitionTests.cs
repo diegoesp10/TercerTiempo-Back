@@ -19,6 +19,26 @@ public class CompetitionTests
     }
 
     [Fact]
+    public void Territory_is_national_for_the_rfef_and_regional_otherwise()
+    {
+        var tercera = Competition.Create("3ª RFEF · Grupo 2", "3ª RFEF", CompetitionLevel.National, 3, "2", "Asturias", null);
+        var primeraAf = Competition.Create("1ª AsturFútbol", "1ª AsturFútbol", CompetitionLevel.Regional, 1, null, "Asturias", null);
+        var copaRfef = Competition.Create("Copa RFEF", "Copa RFEF", CompetitionLevel.Cup, 0, null, "Asturias", null);
+        var copaAf = Competition.Create("Copa Federación", "Copa Federación", CompetitionLevel.Cup, 0, null, "Asturias", null);
+
+        Assert.Equal(Territory.NationalId, tercera.TerritoryId);
+        Assert.Equal(Territory.AsturiasId, primeraAf.TerritoryId);
+        Assert.Equal(Territory.NationalId, copaRfef.TerritoryId);
+        Assert.Equal(Territory.AsturiasId, copaAf.TerritoryId);
+
+        var galicia = Territory.CreateRegion(" Galicia ");
+        Assert.Equal(("Galicia", TerritoryKind.Regional), (galicia.Name, galicia.Kind));
+        primeraAf.PlaceIn(galicia.Id);
+        Assert.Equal(galicia.Id, primeraAf.TerritoryId);
+        Assert.Throws<DomainException>(() => primeraAf.PlaceIn(Guid.Empty));
+    }
+
+    [Fact]
     public void Only_one_season_is_current()
     {
         var competition = Competition.Create("3ª RFEF", "3ª RFEF", CompetitionLevel.National, 3, null, "Asturias", null);

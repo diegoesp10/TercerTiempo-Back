@@ -75,9 +75,10 @@ internal sealed class GetSquadPlayerProfileHandler(
         var officialMap = new Dictionary<Guid, TercerTiempo.Domain.OfficialSheets.OfficialSheetLine>();
         foreach (var m in teamMatches)
         {
-            if (!officialSheets.TryGetValue(m.Id, out var sheet)) continue;
+            // Lo de después de su baja ya no es suyo.
+            if (!officialSheets.TryGetValue(m.Id, out var sheet) || !entry.WasMemberAt(m.KickoffAt)) continue;
             var side = m.HomeTeamId == squad.TeamId ? TercerTiempo.Domain.OfficialSheets.MatchSide.Home : TercerTiempo.Domain.OfficialSheets.MatchSide.Away;
-            if (OfficialSheets.SheetMatcher.Match(squad.Players.Where(p => p.IsActive || p.Id == entry.Id), sheet.LinesOf(side)).TryGetValue(entry.Id, out var line))
+            if (OfficialSheets.SheetMatcher.Match(squad.Players.Where(p => p.WasMemberAt(m.KickoffAt)), sheet.LinesOf(side)).TryGetValue(entry.Id, out var line))
                 officialMap[m.Id] = line;
         }
 

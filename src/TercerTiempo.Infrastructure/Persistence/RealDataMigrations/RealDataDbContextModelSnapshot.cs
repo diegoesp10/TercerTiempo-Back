@@ -54,12 +54,17 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
 
+                    b.Property<Guid>("TerritoryId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Tier")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
 
                     b.HasIndex("SortOrder");
+
+                    b.HasIndex("TerritoryId");
 
                     b.ToTable("Competitions", (string)null);
                 });
@@ -204,6 +209,43 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.HasKey("SeasonId", "Position");
 
                     b.ToTable("SeasonZones", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Competitions.Territory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Territories", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("0b6f2a1e-7c34-4d8a-9f51-2e7d3c9a1b01"),
+                            Kind = "National",
+                            Name = "Nacional"
+                        },
+                        new
+                        {
+                            Id = new Guid("5d9e8c47-1a2b-4f6e-8c3d-7b4a2e1f9c33"),
+                            Kind = "Regional",
+                            Name = "Asturias"
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Grounds.Ground", b =>
@@ -499,6 +541,11 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.Property<int>("Order")
                         .HasColumnType("int");
 
+                    b.Property<bool>("RedCard")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -516,6 +563,11 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                         .IsRequired()
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
+
+                    b.Property<int>("YellowCards")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.HasKey("Id");
 
@@ -606,6 +658,157 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.HasIndex("Slug");
 
                     b.ToTable("Referees", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.RefereeDesignation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RefereeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RefereeId");
+
+                    b.HasIndex("MatchId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("RefereeDesignations", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeResolution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Committee")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("FirstSeenAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Matchday")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("MatchdayOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("MeetingOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MeetingOn");
+
+                    b.HasIndex("SeasonId", "Committee", "MeetingOn", "Matchday")
+                        .IsUnique();
+
+                    b.ToTable("CommitteeResolutions", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeSanction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Article")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int?>("Days")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Player");
+
+                    b.Property<int>("Matches")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("PersonName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("ResolutionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TeamName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ResolutionId");
+
+                    b.ToTable("CommitteeSanctions", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeSanctionCheck", b =>
+                {
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("PublishedMatchday")
+                        .HasColumnType("int");
+
+                    b.HasKey("SeasonId");
+
+                    b.ToTable("CommitteeSanctionChecks", (string)null);
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Standings.Standing", b =>
@@ -853,6 +1056,9 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("FetchedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<Guid?>("LeaseId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1016,6 +1222,12 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
 
             modelBuilder.Entity("TercerTiempo.Domain.Competitions.Competition", b =>
                 {
+                    b.HasOne("TercerTiempo.Domain.Competitions.Territory", null)
+                        .WithMany()
+                        .HasForeignKey("TerritoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.OwnsOne("TercerTiempo.Domain.Common.ExternalRef", "ExternalRef", b1 =>
                         {
                             b1.Property<Guid>("CompetitionId")
@@ -1267,6 +1479,48 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.RefereeDesignation", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Referees.Referee", null)
+                        .WithMany()
+                        .HasForeignKey("RefereeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeResolution", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeSanction", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Sanctions.CommitteeResolution", null)
+                        .WithMany("Sanctions")
+                        .HasForeignKey("ResolutionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeSanctionCheck", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Standings.Standing", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
@@ -1499,6 +1753,11 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.Navigation("Lines");
 
                     b.Navigation("Staff");
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeResolution", b =>
+                {
+                    b.Navigation("Sanctions");
                 });
 #pragma warning restore 612, 618
         }

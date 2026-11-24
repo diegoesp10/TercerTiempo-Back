@@ -161,7 +161,7 @@ public sealed class VideoAnalysisProcessor(
 
             // Terminado el análisis, el resultado se guarda aunque el servicio se esté parando (y aunque justo se hubiera
             // pedido una pausa: ya no hay nada que pausar).
-            var outcome = new VideoAnalysisOutcome(run.OutputPath, run.AnalyzerVersion, run.Weights, run.ProposalJson, run.Frames,
+            var outcome = new VideoAnalysisOutcome(run.OutputPath, run.AnalyzerName, run.AnalyzerVersion, run.Weights, run.ProposalJson, run.Frames,
                 run.BallFramesPct, run.CalibratedFramesPct, run.AnalyzedSeconds, run.PitchLengthM, run.PitchWidthM, run.ReadFramesPct);
             var crops = run.Crops.Select(c => new VideoAnalysisCrop(analysis.Id, c.Key, c.Value)).ToList();
             await row.SaveResultAsync(() => analysis.Complete(outcome, clock.GetUtcNow()), crops);
@@ -175,7 +175,7 @@ public sealed class VideoAnalysisProcessor(
                 ? $"{proposal.Players.Count} jugadores identificados por el dorsal"
                 : $"{run.Crops.Count} jugadores seguidos";
             var summary = string.Create(Spanish,
-                $"{context.Label}: {players}, balón a la vista en el {run.BallFramesPct:0.#} % de los fotogramas y campo calibrado en el {run.CalibratedFramesPct:0.#} %, en {minutes} min.{read}");
+                $"{context.Label}: {players}, balón a la vista en el {run.BallFramesPct:0.#} % de los fotogramas y campo calibrado en el {run.CalibratedFramesPct:0.#} %, en {minutes} min con {run.AnalyzerName} {run.AnalyzerVersion}.{read}");
             logger.LogInformation("Vídeo {Video}: {Summary}", video.Id, summary);
             await jobs.FinishedAsync(runId, true, summary, null, CancellationToken.None);
         }

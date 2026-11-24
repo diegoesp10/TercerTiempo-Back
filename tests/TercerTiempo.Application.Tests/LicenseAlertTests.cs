@@ -111,6 +111,8 @@ public class LicenseAlertTests
         public Task<IReadOnlyList<Alert>> GetOpenByKeyPrefixAsync(
             string keyPrefix, IReadOnlyCollection<Guid> playerIds, IReadOnlyCollection<Guid> coachIds, Guid? clubId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+        public Task<IReadOnlyList<Alert>> GetAllByKeyPrefixAsync(string keyPrefix, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
         public Task<int> MarkAllReadAsync(Guid? clubId, Guid? playerId, Guid? coachId, DateTimeOffset now, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
         public Task<int> DeleteResolvedBeforeAsync(DateTimeOffset before, CancellationToken cancellationToken = default) => throw new NotSupportedException();

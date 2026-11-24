@@ -18,9 +18,11 @@ public interface ISquadsRepository
     Task<SquadPlayerDto> AddPlayerAsync(Guid squadId, SquadPlayerRequest request, CancellationToken cancellationToken = default);
     Task<SquadPlayerDto> UpdatePlayerAsync(Guid squadId, Guid squadPlayerId, SquadPlayerRequest request, CancellationToken cancellationToken = default);
     Task<SquadPlayerDto> RemovePlayerAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
+    Task<SquadPlayerDto> ReinstatePlayerAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
     Task<SquadDetailDto> ImportRosterAsync(Guid squadId, CancellationToken cancellationToken = default);
 
     Task<SquadDetailDto> SetVisibilityAsync(Guid squadId, SquadVisibilityRequest request, CancellationToken cancellationToken = default);
+    Task<SquadDetailDto> SetCallUpSizeAsync(Guid squadId, SquadCallUpSizeRequest request, CancellationToken cancellationToken = default);
     Task<SquadDetailDto> GeneratePlayerInviteCodeAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<SquadMatchDto>> ListMatchesAsync(Guid squadId, CancellationToken cancellationToken = default);
@@ -31,6 +33,7 @@ public interface ISquadsRepository
     Task<TeamMatchStatsDto> RecordTeamStatsAsync(Guid squadId, Guid matchId, TeamMatchStatsInput request, CancellationToken cancellationToken = default);
     Task<SquadTeamStatsDto> GetTeamStatsAsync(Guid squadId, CancellationToken cancellationToken = default);
     Task<Application.Squads.Stats.SquadSeasonTableDto> GetSeasonTableAsync(Guid squadId, CancellationToken cancellationToken = default);
+    Task<Application.Squads.Suspensions.SquadDisciplineDto> GetDisciplineAsync(Guid squadId, CancellationToken cancellationToken = default);
 
     Task<SquadPlayerProfileDto> GetPlayerProfileAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
     Task<SquadTimelineDto> GetTimelineAsync(Guid squadId, CancellationToken cancellationToken = default);
@@ -41,6 +44,8 @@ public interface ISquadsRepository
     Task<IReadOnlyList<InjuryDto>> UpdateInjuryAsync(Guid squadId, Guid injuryId, InjuryRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InjuryDto>> CloseInjuryAsync(Guid squadId, Guid injuryId, CloseInjuryRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InjuryDto>> ReopenInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InjuryDto>> RecordRelapseAsync(Guid squadId, Guid injuryId, RelapseRequest request, CancellationToken cancellationToken = default);
+    Task<PlayerInjuryHistoryDto> GetPlayerInjuryHistoryAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InjuryDto>> DeleteInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InjuryDto>> UploadInjuryDocumentAsync(Guid squadId, Guid injuryId, InjuryDocumentKind kind, string? note, CrestUpload file, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InjuryDto>> DeleteInjuryDocumentAsync(Guid squadId, Guid injuryId, Guid documentId, CancellationToken cancellationToken = default);

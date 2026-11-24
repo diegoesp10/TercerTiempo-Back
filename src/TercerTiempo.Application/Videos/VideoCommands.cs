@@ -17,7 +17,7 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Videos;
 
-public sealed record UploadMatchVideoCommand(Guid SquadId, Guid MatchId, VideoPart Part, string? Title, VideoUpload File) : ICommand<MatchVideoDto>;
+public sealed record UploadMatchVideoCommand(Guid SquadId, Guid MatchId, VideoPart Part, VideoUpload File) : ICommand<MatchVideoDto>;
 
 internal sealed class UploadMatchVideoValidator : AbstractValidator<UploadMatchVideoCommand>
 {
@@ -28,9 +28,8 @@ internal sealed class UploadMatchVideoValidator : AbstractValidator<UploadMatchV
         RuleFor(x => x.SquadId).NotEmpty();
         RuleFor(x => x.MatchId).NotEmpty();
         RuleFor(x => x.Part).IsInEnum();
-        RuleFor(x => x.Title).MaximumLength(150);
         RuleFor(x => x.File).NotNull();
-        RuleFor(x => x.File.FileName).NotEmpty().MaximumLength(255);
+        RuleFor(x => x.File.FileName).NotEmpty().MaximumLength(MatchVideo.MaxFileNameLength);
         RuleFor(x => x.File.ContentType)
             .Must(ct => settings.AllowedContentTypes.Contains(ct, StringComparer.OrdinalIgnoreCase))
             .WithCatalogMessage(ErrorCode.VideoFormatNotAllowed, string.Join(", ", settings.AllowedContentTypes));
@@ -62,11 +61,12 @@ internal sealed class UploadMatchVideoHandler(
 
         await VideoUploads.EnsurePartAvailableAsync(squad, match.Id, command.Part, videos, cancellationToken);
 
+        var title = await MatchVideoNames.TitleAsync(match, command.Part, teams, cancellationToken);
         var storageKey = await storage.SaveAsync(command.File.Content, command.File.FileName, cancellationToken);
 
         var video = MatchVideo.Upload(
             squad.Id, squad.TeamId, match.Id, match.SeasonId, uploader.CoachId, command.Part,
-            command.Title, command.File.FileName, command.File.ContentType, command.File.Length, storageKey,
+            title, MatchVideoNames.FileName(title, command.File.FileName, command.File.ContentType), command.File.ContentType, command.File.Length, storageKey,
             clock.GetUtcNow(), uploader.ClubId);
 
         videos.Add(video);
@@ -74,7 +74,7 @@ internal sealed class UploadMatchVideoHandler(
         processing.Wake();
 
         var team = await teams.GetByIdAsync(squad.TeamId, cancellationToken);
-        return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDownload: true, canDelete: true);
+        return VideoMapper.ToDto(video, team?.Name ?? "Equipo", uploader.Name, VideoAccessLevel.Owner, canDownload: true, canDelete: true, uploadedByMe: true);
     }
 }
 

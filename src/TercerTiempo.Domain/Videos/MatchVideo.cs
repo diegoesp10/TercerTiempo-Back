@@ -24,6 +24,8 @@ public sealed class MatchVideo : AggregateRoot
 {
     public const long MinSizeBytes = 1024;
     public const int MaxErrorLength = 1000;
+    public const int MaxTitleLength = 150;
+    public const int MaxFileNameLength = 255;
 
     public Guid SquadId { get; private set; }
     public Guid TeamId { get; private set; }
@@ -61,7 +63,7 @@ public sealed class MatchVideo : AggregateRoot
 
     public static MatchVideo Upload(
         Guid squadId, Guid teamId, Guid matchId, Guid seasonId, Guid? coachId, VideoPart part,
-        string? title, string fileName, string contentType, long sizeBytes, string storageKey, DateTimeOffset now, Guid? clubId = null)
+        string title, string fileName, string contentType, long sizeBytes, string storageKey, DateTimeOffset now, Guid? clubId = null)
     {
         VideoOwner.EnsureValid(coachId, clubId);
         if (sizeBytes < MinSizeBytes)
@@ -69,8 +71,6 @@ public sealed class MatchVideo : AggregateRoot
 
         if (!Enum.IsDefined(part))
             throw new DomainException(ErrorCode.VideoPartInvalid);
-
-        var file = Guard.NotEmpty(fileName, "archivo", 255);
 
         return new MatchVideo
         {
@@ -82,8 +82,8 @@ public sealed class MatchVideo : AggregateRoot
             UploadedByCoachId = coachId,
             UploadedByClubId = clubId,
             Part = part,
-            Title = string.IsNullOrWhiteSpace(title) ? file : Guard.NotEmpty(title, "título", 150),
-            FileName = file,
+            Title = Guard.NotEmpty(title, "título", MaxTitleLength),
+            FileName = Guard.NotEmpty(fileName, "archivo", MaxFileNameLength),
             ContentType = Guard.NotEmpty(contentType, "tipo de contenido", 100),
             SizeBytes = sizeBytes,
             StorageKey = Guard.NotEmpty(storageKey, nameof(storageKey), 500),
@@ -97,6 +97,18 @@ public sealed class MatchVideo : AggregateRoot
             throw new DomainException(ErrorCode.VideoAlreadyDeleted);
 
         DeletedAt = now;
+    }
+
+    // Devuelve si cambió algo: los vídeos subidos antes de nombrarse por el partido se renombran una sola vez.
+    public bool Rename(string title, string fileName)
+    {
+        title = Guard.NotEmpty(title, "título", MaxTitleLength);
+        fileName = Guard.NotEmpty(fileName, "archivo", MaxFileNameLength);
+        if (Title == title && FileName == fileName) return false;
+
+        Title = title;
+        FileName = fileName;
+        return true;
     }
 
     public void StartProcessing(DateTimeOffset now)
@@ -137,7 +149,7 @@ public sealed class MatchVideo : AggregateRoot
         StorageKey = Guard.NotEmpty(storageKey, nameof(storageKey), 500);
         SizeBytes = sizeBytes;
         ContentType = Guard.NotEmpty(contentType, "tipo de contenido", 100);
-        FileName = Guard.NotEmpty(fileName, "archivo", 255);
+        FileName = Guard.NotEmpty(fileName, "archivo", MaxFileNameLength);
         DurationSeconds = durationSeconds;
         Height = height;
         Finish(now);
@@ -198,7 +210,9 @@ public sealed class VideoUploadSession : AggregateRoot
     public Guid? CoachId { get; private set; }
     public Guid? ClubId { get; private set; }
     public VideoPart Part { get; private set; }
-    public string? Title { get; private set; }
+
+    // El nombre del archivo en el equipo de quien sube: solo sirve para reanudar la subida con el mismo archivo y para su
+    // extensión; el vídeo se llama como el partido.
     public string FileName { get; private set; } = string.Empty;
     public string ContentType { get; private set; } = string.Empty;
     public long SizeBytes { get; private set; }
@@ -216,7 +230,7 @@ public sealed class VideoUploadSession : AggregateRoot
     private VideoUploadSession() { }
 
     public static VideoUploadSession Begin(
-        Guid squadId, Guid matchId, Guid? coachId, VideoPart part, string? title, string fileName, string contentType,
+        Guid squadId, Guid matchId, Guid? coachId, VideoPart part, string fileName, string contentType,
         long sizeBytes, int chunkSize, string storageKey, DateTimeOffset now, TimeSpan lifetime, Guid? clubId = null)
     {
         VideoOwner.EnsureValid(coachId, clubId);
@@ -234,8 +248,7 @@ public sealed class VideoUploadSession : AggregateRoot
             CoachId = coachId,
             ClubId = clubId,
             Part = part,
-            Title = string.IsNullOrWhiteSpace(title) ? null : Guard.NotEmpty(title, "título", 150),
-            FileName = Guard.NotEmpty(fileName, "archivo", 255),
+            FileName = Guard.NotEmpty(fileName, "archivo", MatchVideo.MaxFileNameLength),
             ContentType = Guard.NotEmpty(contentType, "tipo de contenido", 100),
             SizeBytes = sizeBytes,
             ChunkSize = Guard.InRange(chunkSize, 1024 * 1024, 256 * 1024 * 1024, "tamaño de trozo"),
@@ -281,6 +294,7 @@ public interface IMatchVideoStore
 
     Task<IReadOnlyList<MatchVideo>> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MatchVideo>> GetBySquadsAsync(IEnumerable<Guid> squadIds, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MatchVideo>> GetAllAsync(CancellationToken cancellationToken = default);
     void Add(MatchVideo video);
 
     // Cola de compresión: el subido hace más tiempo que siga esperando y no haya agotado los intentos.

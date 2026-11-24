@@ -1244,6 +1244,36 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "squad.player_left_exists",
+                            Language = "es",
+                            Message = "{0} está en el grupo «De baja» de la plantilla: reincorpóralo desde ahí en vez de añadirlo otra vez (así conserva su historial)."
+                        },
+                        new
+                        {
+                            Code = "squad.player_not_left",
+                            Language = "es",
+                            Message = "{0} no está de baja: sigue en la plantilla."
+                        },
+                        new
+                        {
+                            Code = "squad.player_left_before",
+                            Language = "es",
+                            Message = "{0} causó baja en la plantilla el {1}: no puede salir en lo que pasó después."
+                        },
+                        new
+                        {
+                            Code = "squad.player_left_read_only",
+                            Language = "es",
+                            Message = "{0} ya no está en la plantilla: lo suyo se puede consultar, pero no cambiar. Reincorpóralo si vuelve."
+                        },
+                        new
+                        {
+                            Code = "squad.player_in_other_squad",
+                            Language = "es",
+                            Message = "{0} juega ahora en otra plantilla con su cuenta: no se le puede reincorporar aquí mientras siga allí."
+                        },
+                        new
+                        {
                             Code = "squad.player_not_member",
                             Language = "es",
                             Message = "El jugador no pertenece a esta plantilla."
@@ -1322,9 +1352,81 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "injury.start_in_future",
+                            Language = "es",
+                            Message = "La fecha del parte no puede ser posterior a hoy."
+                        },
+                        new
+                        {
+                            Code = "injury.return_in_future",
+                            Language = "es",
+                            Message = "El alta no puede ser posterior a hoy: mientras no la tenga, cambia la vuelta prevista."
+                        },
+                        new
+                        {
+                            Code = "injury.relapse_needs_return",
+                            Language = "es",
+                            Message = "Solo puede tener una recaída una lesión que ya tiene el alta."
+                        },
+                        new
+                        {
+                            Code = "injury.relapse_before_return",
+                            Language = "es",
+                            Message = "La recaída no puede empezar antes del alta de la lesión anterior."
+                        },
+                        new
+                        {
+                            Code = "injury.has_relapse",
+                            Language = "es",
+                            Message = "Esa lesión tiene una recaída registrada después del alta: borra la recaída antes de deshacer el alta."
+                        },
+                        new
+                        {
+                            Code = "injury.continued",
+                            Language = "es",
+                            Message = "Esa lesión pasó sin el alta a la temporada siguiente: aquí queda como historial (se consulta y se puede borrar) y se lleva desde la plantilla de esa temporada."
+                        },
+                        new
+                        {
+                            Code = "injury.private",
+                            Language = "es",
+                            Message = "Las lesiones de un jugador solo las ven el club, su cuerpo técnico y él mismo."
+                        },
+                        new
+                        {
                             Code = "injury.invalid_type",
                             Language = "es",
-                            Message = "Tipo de lesión no válido."
+                            Message = "Ese tipo de lesión no está en el catálogo: elige otro de la lista."
+                        },
+                        new
+                        {
+                            Code = "injury_type.not_found",
+                            Language = "es",
+                            Message = "El tipo de lesión '{0}' no existe."
+                        },
+                        new
+                        {
+                            Code = "injury_type.retired",
+                            Language = "es",
+                            Message = "«{0}» ya no se usa para lesiones nuevas: elige otro tipo."
+                        },
+                        new
+                        {
+                            Code = "injury_type.in_use",
+                            Language = "es",
+                            Message = "«{0}» lo tienen ya {1} lesiones guardadas, así que no se puede borrar. Si no quieres que se use más, retíralo: dejará de ofrecerse sin tocar esas lesiones."
+                        },
+                        new
+                        {
+                            Code = "injury_type.duplicate",
+                            Language = "es",
+                            Message = "Ya hay un tipo de lesión llamado «{0}»."
+                        },
+                        new
+                        {
+                            Code = "injury_type.average_days_invalid",
+                            Language = "es",
+                            Message = "La duración media va de 1 a {0} días; déjala vacía si no hay una referencia."
                         },
                         new
                         {
@@ -1535,6 +1637,24 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                             Code = "callup.match_not_of_squad",
                             Language = "es",
                             Message = "Ese partido no es de este equipo en esta temporada."
+                        },
+                        new
+                        {
+                            Code = "callup.size_required",
+                            Language = "es",
+                            Message = "Di a cuántos jugadores convocas para este partido."
+                        },
+                        new
+                        {
+                            Code = "callup.size_invalid",
+                            Language = "es",
+                            Message = "La convocatoria tiene que ser de {0} a {1} jugadores."
+                        },
+                        new
+                        {
+                            Code = "callup.over_size",
+                            Language = "es",
+                            Message = "La convocatoria es de {0} jugadores y has marcado a {1}: quita a {2}."
                         },
                         new
                         {
@@ -2356,12 +2476,17 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
 
+                    b.Property<Guid>("TerritoryId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Tier")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
 
                     b.HasIndex("SortOrder");
+
+                    b.HasIndex("TerritoryId");
 
                     b.ToTable("Competitions", (string)null);
                 });
@@ -2509,6 +2634,43 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.HasKey("SeasonId", "Position");
 
                     b.ToTable("SeasonZones", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Competitions.Territory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Territories", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("0b6f2a1e-7c34-4d8a-9f51-2e7d3c9a1b01"),
+                            Kind = "National",
+                            Name = "Nacional"
+                        },
+                        new
+                        {
+                            Id = new Guid("5d9e8c47-1a2b-4f6e-8c3d-7b4a2e1f9c33"),
+                            Kind = "Regional",
+                            Name = "Asturias"
+                        });
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Grounds.Ground", b =>
@@ -5322,6 +5484,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("Order")
                         .HasColumnType("int");
 
+                    b.Property<bool>("RedCard")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -5339,6 +5506,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
+
+                    b.Property<int>("YellowCards")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.HasKey("Id");
 
@@ -5851,6 +6023,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int>("FoulsReceived")
                         .HasColumnType("int");
 
+                    b.Property<DateTimeOffset?>("FromVideoAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<int>("GoalKicksAgainst")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
@@ -5924,6 +6099,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("VideoAnalyzer")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -6439,6 +6618,40 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("Referees", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.RefereeDesignation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RefereeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RefereeId");
+
+                    b.HasIndex("MatchId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("RefereeDesignations", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Referees.RefereeRating", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6511,6 +6724,126 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("RefereeRatings", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeResolution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Committee")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("FirstSeenAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Matchday")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("MatchdayOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("MeetingOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MeetingOn");
+
+                    b.HasIndex("SeasonId", "Committee", "MeetingOn", "Matchday")
+                        .IsUnique();
+
+                    b.ToTable("CommitteeResolutions", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeSanction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Article")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int?>("Days")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Player");
+
+                    b.Property<int>("Matches")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("PersonName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("ResolutionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TeamName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ResolutionId");
+
+                    b.ToTable("CommitteeSanctions", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeSanctionCheck", b =>
+                {
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int?>("PublishedMatchday")
+                        .HasColumnType("int");
+
+                    b.HasKey("SeasonId");
+
+                    b.ToTable("CommitteeSanctionChecks", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Squads.InjuryDocument", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6571,12 +6904,52 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.ToTable("InjuryDocuments", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Squads.InjuryTypeDefinition", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("AverageDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Code");
+
+                    b.HasIndex("Label")
+                        .IsUnique();
+
+                    b.ToTable("InjuryTypes", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("ContinuedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ContinuesInjuryId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateOnly?>("ExpectedReturnOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("InitialExpectedReturnOn")
                         .HasColumnType("date");
 
                     b.Property<string>("Reason")
@@ -6588,6 +6961,15 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("RecordedByCoachId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RelapseOfInjuryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ReturnRecordedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateOnly?>("ReturnedOn")
                         .HasColumnType("date");
@@ -6611,11 +6993,19 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ContinuesInjuryId")
+                        .IsUnique()
+                        .HasFilter("[ContinuesInjuryId] IS NOT NULL");
+
                     b.HasIndex("RecordedByClubId");
 
                     b.HasIndex("RecordedByCoachId");
 
+                    b.HasIndex("RelapseOfInjuryId");
+
                     b.HasIndex("SquadPlayerId");
+
+                    b.HasIndex("Type");
 
                     b.HasIndex("SquadId", "SquadPlayerId");
 
@@ -6626,6 +7016,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("CallUpSize")
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
@@ -7003,6 +7396,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int?>("Size")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("SquadId")
                         .HasColumnType("uniqueidentifier");
 
@@ -7371,6 +7767,10 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<int?>("AnalyzedSeconds")
                         .HasColumnType("int");
 
+                    b.Property<string>("AnalyzerName")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<string>("AnalyzerVersion")
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
@@ -7578,10 +7978,6 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("Title")
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("datetimeoffset");
@@ -7921,6 +8317,9 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("FetchedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<Guid?>("LeaseId")
                         .HasColumnType("uniqueidentifier");
 
@@ -8222,6 +8621,12 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("TercerTiempo.Domain.Competitions.Competition", b =>
                 {
+                    b.HasOne("TercerTiempo.Domain.Competitions.Territory", null)
+                        .WithMany()
+                        .HasForeignKey("TerritoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.OwnsOne("TercerTiempo.Domain.Common.ExternalRef", "ExternalRef", b1 =>
                         {
                             b1.Property<Guid>("CompetitionId")
@@ -8696,6 +9101,21 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Referees.RefereeDesignation", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Referees.Referee", null)
+                        .WithMany()
+                        .HasForeignKey("RefereeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Referees.RefereeRating", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Matches.Match", null)
@@ -8727,6 +9147,33 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeResolution", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeSanction", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Sanctions.CommitteeResolution", null)
+                        .WithMany("Sanctions")
+                        .HasForeignKey("ResolutionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeSanctionCheck", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Squads.InjuryDocument", b =>
                 {
                     b.HasOne("TercerTiempo.Domain.Squads.PlayerInjury", null)
@@ -8754,6 +9201,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("TercerTiempo.Domain.Squads.PlayerInjury", b =>
                 {
+                    b.HasOne("TercerTiempo.Domain.Squads.PlayerInjury", null)
+                        .WithMany()
+                        .HasForeignKey("ContinuesInjuryId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("TercerTiempo.Domain.Clubs.Club", null)
                         .WithMany()
                         .HasForeignKey("RecordedByClubId")
@@ -8763,6 +9215,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("RecordedByCoachId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TercerTiempo.Domain.Squads.PlayerInjury", null)
+                        .WithMany()
+                        .HasForeignKey("RelapseOfInjuryId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("TercerTiempo.Domain.Squads.Squad", null)
                         .WithMany()
@@ -8775,6 +9232,14 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         .HasForeignKey("SquadPlayerId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+
+                    b.HasOne("TercerTiempo.Domain.Squads.InjuryTypeDefinition", "TypeDefinition")
+                        .WithMany()
+                        .HasForeignKey("Type")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("TypeDefinition");
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Squads.Squad", b =>
@@ -9293,6 +9758,11 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                     b.Navigation("Lines");
 
                     b.Navigation("Staff");
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.Sanctions.CommitteeResolution", b =>
+                {
+                    b.Navigation("Sanctions");
                 });
 
             modelBuilder.Entity("TercerTiempo.Domain.Squads.Squad", b =>

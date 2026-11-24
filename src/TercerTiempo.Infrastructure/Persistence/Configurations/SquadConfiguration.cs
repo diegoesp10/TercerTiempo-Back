@@ -66,6 +66,7 @@ internal sealed class SquadPlayerConfiguration : IEntityTypeConfiguration<SquadP
         builder.Property(p => p.Position).HasConversion<string>().HasMaxLength(20);
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
         builder.Ignore(p => p.IsActive);
+        builder.Ignore(p => p.LeftOn);
         builder.Ignore(p => p.IsLinked);
 
         builder.HasOne<Player>().WithMany().HasForeignKey(p => p.PlayerId).OnDelete(DeleteBehavior.SetNull);

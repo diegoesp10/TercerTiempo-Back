@@ -1,4 +1,5 @@
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 
@@ -125,20 +126,69 @@ public class SquadTests
     }
 
     [Fact]
-    public void Importing_the_same_roster_entry_twice_updates_and_reactivates_it()
+    public void Importing_the_same_roster_entry_twice_updates_it()
     {
         var (squad, _) = TestData.NewSquad();
         var rosterEntryId = Guid.NewGuid();
         var entry = squad.AddPlayer("Pelayo Fernández", null, 7, rosterEntryId, TestData.Now);
-        squad.RemovePlayer(entry.Id, TestData.Now);
 
         var again = squad.AddPlayer("Pelayo Fernández", Position.Defender, null, rosterEntryId, TestData.Now.AddDays(1));
 
         Assert.Same(entry, again);
         Assert.Single(squad.Players);
-        Assert.True(again.IsActive);
         Assert.Equal(Position.Defender, again.Position);
         Assert.Equal(7, again.ShirtNumber);
+    }
+
+    [Fact]
+    public void A_player_who_left_does_not_come_back_by_importing_or_adding_him_again_only_by_reinstating_him()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var rosterEntryId = Guid.NewGuid();
+        var entry = squad.AddPlayer("Lucas Paredes", Position.Forward, 7, rosterEntryId, TestData.Now);
+        squad.RemovePlayer(entry.Id, TestData.Now.AddDays(1));
+
+        Assert.Equal(ErrorCode.SquadPlayerLeftExists, Assert.Throws<DomainException>(() =>
+            squad.AddPlayer("Lucas Paredes", Position.Forward, null, rosterEntryId, TestData.Now.AddDays(2))).Code);
+        // A mano y con el nombre completo, tampoco: es la misma persona.
+        Assert.Equal(ErrorCode.SquadPlayerLeftExists, Assert.Throws<DomainException>(() =>
+            squad.AddPlayer("Lucas Paredes Rivera", Position.Forward, null, null, TestData.Now.AddDays(2))).Code);
+        Assert.Equal(ErrorCode.SquadPlayerLeftReadOnly, Assert.Throws<DomainException>(() =>
+            squad.UpdatePlayer(entry.Id, "Lucas Paredes", Position.Defender, null)).Code);
+
+        var back = squad.ReinstatePlayer(entry.Id);
+
+        Assert.Same(entry, back);
+        Assert.True(back.IsActive);
+        Assert.Null(back.LeftAt);
+        Assert.Single(squad.Players);
+        Assert.Equal(ErrorCode.SquadPlayerNotLeft, Assert.Throws<DomainException>(() => squad.ReinstatePlayer(entry.Id)).Code);
+    }
+
+    [Fact]
+    public void A_player_who_left_cannot_be_reinstated_while_another_card_of_his_is_active()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var gone = squad.AddPlayer("Lucas Paredes Rivera", Position.Forward, null, null, TestData.Now);
+        squad.AddPlayer("Lucas Paredes", Position.Forward, null, null, TestData.Now);
+        squad.RemovePlayer(gone.Id, TestData.Now);
+
+        Assert.Equal(ErrorCode.SquadPlayerDuplicate, Assert.Throws<DomainException>(() => squad.ReinstatePlayer(gone.Id)).Code);
+    }
+
+    [Fact]
+    public void What_happened_before_leaving_is_his_and_what_came_after_is_not()
+    {
+        var (squad, _) = TestData.NewSquad();
+        var entry = squad.AddPlayer("Pelayo", Position.Forward, 9, null, TestData.Now);
+        var leftAt = TestData.Now.AddDays(10);
+
+        Assert.True(entry.WasMemberAt(leftAt.AddDays(30)));
+        squad.RemovePlayer(entry.Id, leftAt);
+
+        Assert.True(entry.WasMemberAt(leftAt.AddHours(-2)));
+        Assert.False(entry.WasMemberAt(leftAt.AddHours(2)));
+        Assert.Equal(SpainTime.Today(leftAt), entry.LeftOn);
     }
 
     [Fact]
@@ -343,7 +393,7 @@ public class SquadTests
         squad.RemovePlayer(entry.Id, TestData.Now);
         Assert.Null(entry.InviteCode);
         Assert.Throws<DomainException>(() => squad.GeneratePlayerInviteCode(entry.Id));
-        squad.AddPlayer("Pelayo", null, null, rosterId, TestData.Now);
+        squad.ReinstatePlayer(entry.Id);
         Assert.Throws<DomainException>(() => squad.InvitedPlayer(code));
     }
 

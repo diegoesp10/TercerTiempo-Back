@@ -111,6 +111,9 @@ public sealed class OfficialMatchSheet : AggregateRoot
         StaffReadAt = now;
     }
 
+    // La página ya no está guardada: se deja el cuerpo técnico que había y se da por leído.
+    public void MarkStaffRead(DateTimeOffset now) => StaffReadAt = now;
+
     public IEnumerable<OfficialSheetStaff> StaffOf(MatchSide side) => _staff.Where(s => s.Side == side).OrderBy(s => s.Order);
 }
 
@@ -235,8 +238,9 @@ public sealed record OfficialSheetData(
     IReadOnlyList<OfficialStaffData>? Staff = null);
 
 // Una persona del cuerpo técnico en el acta: la función tal como la escribe la federación («2ºEntrenador», «DEL. Campo»)
-// y el nombre en «APELLIDOS, NOMBRE».
-public sealed record OfficialStaffData(MatchSide Side, string Role, string FullName);
+// y el nombre en «APELLIDOS, NOMBRE». Sus tarjetas van en la misma lista que las de los jugadores: dos amarillas son
+// expulsión, como a ellos.
+public sealed record OfficialStaffData(MatchSide Side, string Role, string FullName, int YellowCards = 0, bool RedCard = false);
 
 public enum OfficialStaffRole
 {
@@ -305,6 +309,11 @@ public sealed class OfficialSheetStaff : Entity
     public string FullName { get; private set; } = string.Empty;
     public string NormalizedName { get; private set; } = string.Empty;
 
+    // Sus tarjetas en el partido (0 a 2 amarillas; con dos, también la roja). Quien figura en dos funciones las lleva en
+    // la primera.
+    public int YellowCards { get; private set; }
+    public bool RedCard { get; private set; }
+
     private OfficialSheetStaff() { }
 
     internal static OfficialSheetStaff Create(Guid sheetId, OfficialStaffData data, int order)
@@ -322,6 +331,8 @@ public sealed class OfficialSheetStaff : Entity
             RoleLabel = label.Length > 60 ? label[..60] : label,
             FullName = name,
             NormalizedName = NameNormalizer.Normalize(name.Replace(',', ' ')),
+            YellowCards = Math.Clamp(data.YellowCards, 0, 2),
+            RedCard = data.RedCard || data.YellowCards >= 2,
         };
     }
 }

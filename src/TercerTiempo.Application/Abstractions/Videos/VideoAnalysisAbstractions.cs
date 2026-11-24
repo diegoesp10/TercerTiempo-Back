@@ -83,6 +83,7 @@ public sealed record VideoAnalysisGoal(MatchSide ScoringSide, int Minute, int Ex
 
 public sealed record VideoAnalysisRun(
     string OutputPath,
+    string AnalyzerName,
     string AnalyzerVersion,
     string Weights,
     string ProposalJson,

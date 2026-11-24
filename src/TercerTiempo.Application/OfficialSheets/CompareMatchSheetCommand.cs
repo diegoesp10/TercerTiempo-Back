@@ -73,7 +73,7 @@ internal sealed class CompareMatchSheetHandler(
             : null;
 
         var officialLines = sheet?.LinesOf(side).ToList() ?? [];
-        var candidates = squad.Players.Where(p => p.IsActive || recorded.ContainsKey(p.Id)).ToList();
+        var candidates = squad.Players.Where(p => p.WasMemberAt(match.KickoffAt) || recorded.ContainsKey(p.Id)).ToList();
         var matched = SheetMatcher.Match(candidates, officialLines);
 
         var rows = SquadMapper.Ordered(candidates)

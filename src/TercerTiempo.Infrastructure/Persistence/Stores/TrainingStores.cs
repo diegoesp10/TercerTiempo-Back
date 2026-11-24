@@ -130,5 +130,12 @@ internal sealed class CallUpStore(AppDbContext db) : ICallUpStore
             .ToListAsync(cancellationToken);
     }
 
+    public Task<int?> GetLatestSizeAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        db.MatchCallUps.AsNoTracking().IgnoreAutoIncludes()
+            .Where(c => c.SquadId == squadId && c.Size != null)
+            .OrderByDescending(c => c.UpdatedAt)
+            .Select(c => c.Size)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public void Add(MatchCallUp callUp) => db.MatchCallUps.Add(callUp);
 }

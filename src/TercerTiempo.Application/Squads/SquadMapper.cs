@@ -64,7 +64,8 @@ internal static class SquadMapper
             player.IsLinked,
             player.PlayerId is { } id && linkedPlayers is not null && linkedPlayers.TryGetValue(id, out var linked) ? linked.DisplayName : null,
             player.Status,
-            injuries?.GetValueOrDefault(player.Id));
+            injuries?.GetValueOrDefault(player.Id),
+            LeftOn: player.LeftOn);
 
     public static async Task<IReadOnlyDictionary<Guid, string>> PhotoLinksAsync(Squad squad, ITeamStore teams, CancellationToken cancellationToken) =>
         (await teams.GetRosterAsync(squad.TeamId, squad.SeasonId, cancellationToken))
@@ -127,7 +128,11 @@ internal static class SquadMapper
         var squadPlayers = Ordered(squad.ActivePlayers)
             .Select(p => WithPhoto(ToPlayerDto(p, linkedMap, activeInjuries) with { InviteCode = canInvitePlayers ? p.InviteCode : null }, p, photos, linkedMap))
             .ToList();
+        var leftPlayers = squad.Players.Where(p => !p.IsActive)
+            .OrderByDescending(p => p.LeftAt)
+            .Select(p => WithPhoto(ToPlayerDto(p, linkedMap), p, photos, linkedMap))
+            .ToList();
 
-        return new SquadDetailDto(summary, canInvitePlayers, canManage, staff, squadPlayers);
+        return new SquadDetailDto(summary, canInvitePlayers, canManage, staff, squadPlayers, leftPlayers, squad.CallUpSize);
     }
 }

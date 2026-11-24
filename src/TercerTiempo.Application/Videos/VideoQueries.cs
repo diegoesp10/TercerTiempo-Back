@@ -59,7 +59,7 @@ internal sealed class ListMatchVideosHandler(
                 return (Level: level, Dto: VideoMapper.ToDto(v,
                     teamMap.GetValueOrDefault(v.TeamId)?.Name ?? "Equipo",
                     v.UploadedByClubId is { } id ? clubMap.GetValueOrDefault(id)?.Name ?? "Club" : v.UploadedByCoachId is { } coach ? coachMap.GetValueOrDefault(coach)?.DisplayName ?? "Cuerpo técnico" : "Equipo",
-                    level, VideoAccess.CanDownload(level, manager, pass), manager));
+                    level, VideoAccess.CanDownload(level, manager, pass), manager, VideoMapper.UploadedBy(v, currentUser.CoachId, currentUser.ClubId)));
             })
             .Where(x => x.Level != VideoAccessLevel.None)
             .Select(x => x.Dto)

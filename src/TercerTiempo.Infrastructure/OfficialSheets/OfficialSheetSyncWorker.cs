@@ -13,6 +13,7 @@ using TercerTiempo.Infrastructure.OfficialSheets.Asturfutbol;
 using TercerTiempo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Referees;
 using TercerTiempo.Infrastructure.RealData;
 
 namespace TercerTiempo.Infrastructure.OfficialSheets;
@@ -286,7 +287,7 @@ internal sealed class OfficialSheetSyncWorker(
         List<string> parts = [$"{players} jugadores"];
         if (goals > 0) parts.Add(goals == 1 ? "1 gol" : $"{goals} goles");
         if (cards > 0) parts.Add(cards == 1 ? "1 tarjeta" : $"{cards} tarjetas");
-        if (!string.IsNullOrWhiteSpace(sheet.Referee)) parts.Add($"árbitro {sheet.Referee}");
+        if (sheet.Referees?.Officials.FirstOrDefault(o => o.Role == OfficialRole.Referee) is { } referee) parts.Add($"árbitro {referee.Name}");
         return (SheetDownloadStatus.Done, string.Join(" · ", parts));
     }
 

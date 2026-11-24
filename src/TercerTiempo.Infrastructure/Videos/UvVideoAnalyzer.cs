@@ -302,14 +302,25 @@ internal sealed class UvVideoAnalyzer(
     private static decimal? Pct(JsonElement root, string name) => Dec(root, name) is { } value ? Math.Clamp(Math.Round(value, 1), 0, 100) : null;
 
     // «##progreso 42» → 42; null si la línea es otra cosa.
+    // Los análisis de antes de que el analizador tuviera nombre: era el mismo, en su versión 0.x.
+    private const string UnnamedAnalyzer = "Ojeador";
+
+    private static readonly Dictionary<string, string> ModelRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["jugadores"] = "Jugadores",
+        ["balon"] = "Balón",
+        ["campo"] = "Campo",
+        ["dorsales"] = "Dorsales",
+    };
+
     internal static int? ProgressPercent(string line) =>
         line.StartsWith(ProgressPrefix, StringComparison.Ordinal)
         && int.TryParse(line.AsSpan(ProgressPrefix.Length).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var percent)
             ? Math.Clamp(percent, 0, 100)
             : null;
 
-    // Lo que deja el analizador en su carpeta: la propuesta (acta-propuesta.json, que se guarda compacta), la calidad
-    // y los pesos (analisis.json) y el recorte de cada jugador de la propuesta.
+    // Lo que deja el analizador en su carpeta: la propuesta (acta-propuesta.json, que se guarda compacta), quién analizó,
+    // la calidad y los modelos (analisis.json) y el recorte de cada jugador de la propuesta.
     internal static VideoAnalysisRun ReadRun(string folder, string outputKey)
     {
         var proposalFile = Path.Combine(folder, "acta-propuesta.json");
@@ -326,15 +337,21 @@ internal sealed class UvVideoAnalyzer(
 
         using var document = ParseJson(analysisFile);
         var root = document.RootElement;
-        var version = root.TryGetProperty("version", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "desconocida";
 
         var count = Object(root, "recuento");
         var videoInfo = Object(root, "video");
         var parameters = Object(root, "parametros");
 
-        var weights = parameters is { } p && p.TryGetProperty("modelos", out var models) && models.ValueKind == JsonValueKind.Object
-            ? string.Join(" · ", models.EnumerateObject().Select(m => $"{m.Name}: {m.Value}"))
-            : "";
+        // Quién analizó: el nombre y la versión del analizador y cada modelo con su entrenamiento, motor y huella. Los
+        // análisis de antes de que el analizador tuviera nombre solo traen la versión y las rutas de los pesos.
+        var analyzer = Object(root, "analizador");
+        var name = Text(analyzer, "nombre") ?? UnnamedAnalyzer;
+        var version = Text(analyzer, "version") ?? Text(root, "version") ?? "desconocida";
+        var weights = analyzer is { } a && a.TryGetProperty("modelos", out var described) && described.ValueKind == JsonValueKind.Array
+            ? string.Join(" · ", described.EnumerateArray().Where(m => m.ValueKind == JsonValueKind.Object).Select(DescribeModel))
+            : parameters is { } p && p.TryGetProperty("modelos", out var models) && models.ValueKind == JsonValueKind.Object
+                ? string.Join(" · ", models.EnumerateObject().Select(m => $"{m.Name}: {m.Value}"))
+                : "";
         if (weights.Length == 0) weights = "desconocidos";
 
         decimal? pitchLength = null, pitchWidth = null;
@@ -367,6 +384,7 @@ internal sealed class UvVideoAnalyzer(
 
         return new VideoAnalysisRun(
             outputKey,
+            name.Length > 40 ? name[..40] : name,
             version.Length > 40 ? version[..40] : version,
             weights.Length > 500 ? weights[..500] : weights,
             proposalJson,
@@ -535,6 +553,23 @@ internal sealed class UvVideoAnalyzer(
 
     private static JsonElement? Object(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Object ? value : null;
+
+    private static string? Text(JsonElement? element, string name) =>
+        element is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+        && value.GetString() is { Length: > 0 } text
+            ? text.Trim()
+            : null;
+
+    // «Balón: RF-DETR Medium (rfdetr-balon-20261117-v2, TensorRT, huella b46dbd49)».
+    private static string DescribeModel(JsonElement model)
+    {
+        var role = Text(model, "que") ?? "modelo";
+        var details = new[] { Text(model, "entrenamiento"), Text(model, "motor"), Text(model, "huella") is { } print ? $"huella {print}" : null }
+            .OfType<string>()
+            .ToList();
+        var what = Text(model, "modelo") ?? "desconocido";
+        return $"{ModelRoles.GetValueOrDefault(role, role)}: {what}" + (details.Count > 0 ? $" ({string.Join(", ", details)})" : "");
+    }
 
     private static double Number(JsonElement? element, string name) =>
         element is { } e && e.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number ? value.GetDouble() : 0;

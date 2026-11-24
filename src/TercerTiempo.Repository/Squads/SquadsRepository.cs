@@ -23,8 +23,10 @@ internal sealed class SquadsRepository(
     ICommandHandler<AddSquadPlayerCommand, SquadPlayerDto> addPlayer,
     ICommandHandler<UpdateSquadPlayerCommand, SquadPlayerDto> updatePlayer,
     ICommandHandler<RemoveSquadPlayerCommand, SquadPlayerDto> removePlayer,
+    ICommandHandler<ReinstateSquadPlayerCommand, SquadPlayerDto> reinstatePlayer,
     ICommandHandler<ImportRosterCommand, SquadDetailDto> importRoster,
     ICommandHandler<SetSquadVisibilityCommand, SquadDetailDto> setVisibility,
+    ICommandHandler<SetSquadCallUpSizeCommand, SquadDetailDto> setCallUpSize,
     ICommandHandler<GeneratePlayerInviteCodeCommand, SquadDetailDto> generatePlayerInviteCode,
     IQueryHandler<ListSquadMatchesQuery, IReadOnlyList<SquadMatchDto>> listMatches,
     IQueryHandler<GetMatchSheetQuery, MatchSheetDto> getMatchSheet,
@@ -34,6 +36,7 @@ internal sealed class SquadsRepository(
     ICommandHandler<ResolveSuggestionCommand, IReadOnlyList<SuggestionDto>> resolveSuggestion,
     IQueryHandler<GetSquadStatsQuery, SquadStatsDto> getStats,
     IQueryHandler<GetSquadSeasonTableQuery, SquadSeasonTableDto> getSeasonTable,
+    IQueryHandler<Application.Squads.Suspensions.GetSquadDisciplineQuery, Application.Squads.Suspensions.SquadDisciplineDto> getDiscipline,
     IQueryHandler<GetSquadPlayerProfileQuery, SquadPlayerProfileDto> getPlayerProfile,
     IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto> getTimeline,
     IQueryHandler<ListInjuryTypesQuery, IReadOnlyList<InjuryTypeDto>> listInjuryTypes,
@@ -42,6 +45,8 @@ internal sealed class SquadsRepository(
     ICommandHandler<UpdateInjuryCommand, IReadOnlyList<InjuryDto>> updateInjury,
     ICommandHandler<CloseInjuryCommand, IReadOnlyList<InjuryDto>> closeInjury,
     ICommandHandler<ReopenInjuryCommand, IReadOnlyList<InjuryDto>> reopenInjury,
+    ICommandHandler<RecordRelapseCommand, IReadOnlyList<InjuryDto>> recordRelapse,
+    IQueryHandler<GetPlayerInjuryHistoryQuery, PlayerInjuryHistoryDto> getPlayerInjuryHistory,
     ICommandHandler<DeleteInjuryCommand, IReadOnlyList<InjuryDto>> deleteInjury,
     ICommandHandler<UploadInjuryDocumentCommand, IReadOnlyList<InjuryDto>> uploadInjuryDocument,
     ICommandHandler<DeleteInjuryDocumentCommand, IReadOnlyList<InjuryDto>> deleteInjuryDocument,
@@ -64,11 +69,17 @@ internal sealed class SquadsRepository(
     public Task<SquadPlayerDto> RemovePlayerAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default) =>
         removePlayer.Handle(new RemoveSquadPlayerCommand(squadId, squadPlayerId), cancellationToken);
 
+    public Task<SquadPlayerDto> ReinstatePlayerAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default) =>
+        reinstatePlayer.Handle(new ReinstateSquadPlayerCommand(squadId, squadPlayerId), cancellationToken);
+
     public Task<SquadDetailDto> ImportRosterAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         importRoster.Handle(new ImportRosterCommand(squadId), cancellationToken);
 
     public Task<SquadDetailDto> SetVisibilityAsync(Guid squadId, SquadVisibilityRequest request, CancellationToken cancellationToken = default) =>
         setVisibility.Handle(new SetSquadVisibilityCommand(squadId, request.Visibility), cancellationToken);
+
+    public Task<SquadDetailDto> SetCallUpSizeAsync(Guid squadId, SquadCallUpSizeRequest request, CancellationToken cancellationToken = default) =>
+        setCallUpSize.Handle(new SetSquadCallUpSizeCommand(squadId, request.Size), cancellationToken);
 
     public Task<SquadDetailDto> GeneratePlayerInviteCodeAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default) =>
         generatePlayerInviteCode.Handle(new GeneratePlayerInviteCodeCommand(squadId, squadPlayerId), cancellationToken);
@@ -93,6 +104,9 @@ internal sealed class SquadsRepository(
 
     public Task<SquadSeasonTableDto> GetSeasonTableAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         getSeasonTable.Handle(new GetSquadSeasonTableQuery(squadId), cancellationToken);
+
+    public Task<Application.Squads.Suspensions.SquadDisciplineDto> GetDisciplineAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        getDiscipline.Handle(new Application.Squads.Suspensions.GetSquadDisciplineQuery(squadId), cancellationToken);
 
     public Task<SquadStatsDto> GetStatsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         getStats.Handle(new GetSquadStatsQuery(squadId), cancellationToken);
@@ -126,6 +140,12 @@ internal sealed class SquadsRepository(
 
     public Task<IReadOnlyList<InjuryDto>> ReopenInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default) =>
         reopenInjury.Handle(new ReopenInjuryCommand(squadId, injuryId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryDto>> RecordRelapseAsync(Guid squadId, Guid injuryId, RelapseRequest request, CancellationToken cancellationToken = default) =>
+        recordRelapse.Handle(request.ToCommand(squadId, injuryId), cancellationToken);
+
+    public Task<PlayerInjuryHistoryDto> GetPlayerInjuryHistoryAsync(Guid squadId, Guid squadPlayerId, CancellationToken cancellationToken = default) =>
+        getPlayerInjuryHistory.Handle(new GetPlayerInjuryHistoryQuery(squadId, squadPlayerId), cancellationToken);
 
     public Task<IReadOnlyList<InjuryDto>> DeleteInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default) =>
         deleteInjury.Handle(new DeleteInjuryCommand(squadId, injuryId), cancellationToken);

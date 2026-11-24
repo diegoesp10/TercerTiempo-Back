@@ -33,6 +33,7 @@ internal sealed class GetTeamHandler(
     ICoachAppointmentStore appointments,
     ICoachStore coaches,
     Seasons.ISeasonContext seasons,
+    Squads.Suspensions.StaffDisciplineReader staffDiscipline,
     TimeProvider clock) : IQueryHandler<GetTeamQuery, TeamDetailDto>
 {
     public async Task<TeamDetailDto> Handle(GetTeamQuery query, CancellationToken cancellationToken)
@@ -75,7 +76,8 @@ internal sealed class GetTeamHandler(
     // club, solo para cuentas con sesión (como el perfil del técnico y el buscador).
     private async Task<TeamStaffDto> StaffAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken)
     {
-        var byMatch = (await matches.GetTeamMatchesAsync(seasonId, teamId, cancellationToken))
+        var season = await matches.GetTeamMatchesAsync(seasonId, teamId, cancellationToken);
+        var byMatch = season
             .Where(m => m.KickoffAt <= clock.GetUtcNow())
             .ToDictionary(m => m.Id);
         var rows = new List<SheetStaffEntry>();
@@ -100,7 +102,8 @@ internal sealed class GetTeamHandler(
                 a.Role, a.IsActiveOn(today));
         }).ToList();
 
-        return TeamStaffSummary.Build(rows, appointed, includeAppOnly: currentUser.IsAuthenticated, includeProfiles: currentUser.IsAuthenticated);
+        var discipline = rows.Count == 0 ? null : await staffDiscipline.LoadAsync(teamId, seasonId, season, cancellationToken);
+        return TeamStaffSummary.Build(rows, appointed, includeAppOnly: currentUser.IsAuthenticated, includeProfiles: currentUser.IsAuthenticated, discipline);
     }
 
     // futbolasturiano.es lleva de /?p={id} a la página del equipo (/equipo/{slug}/).

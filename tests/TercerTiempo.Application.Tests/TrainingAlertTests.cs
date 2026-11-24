@@ -1,6 +1,7 @@
 using System.Reflection;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Common;
+using TercerTiempo.Application.Sanctions;
 using TercerTiempo.Application.Squads.Suspensions;
 using TercerTiempo.Application.Trainings;
 using TercerTiempo.Domain.Alerts;
@@ -13,6 +14,7 @@ using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
+using TercerTiempo.Domain.Sanctions;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Domain.Trainings;
@@ -44,7 +46,7 @@ public class TrainingAlertTests
         Assert.Equal(AlertKind.MatchNotCalledUp, notCalled.Kind);
         Assert.StartsWith("No vas convocado", notCalled.Title);
         // Xuan no tiene cuenta: no hay a quién avisar, pero su línea queda marcada como notificada.
-        Assert.Equal(2, f.Alerts.Count);
+        Assert.Equal(2, f.PlayerAlerts.Count);
         Assert.All(f.CallUp.Entries, e => Assert.NotNull(e.NotifiedAt));
         Assert.Equal(1, f.Saves);
     }
@@ -79,13 +81,13 @@ public class TrainingAlertTests
         Assert.Equal(CallUpStatus.Draft, f.CallUp.Status);
 
         await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id], null, null, null, null, Publish: true), default);
-        Assert.Equal(2, f.Alerts.Count);
+        Assert.Equal(2, f.PlayerAlerts.Count);
 
         // Nel entra en la convocatoria: su aviso anterior («no vas») se resuelve y recibe el nuevo; Pelayo no vuelve a oír nada.
         f.Clock.Advance(TimeSpan.FromMinutes(10));
         await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id, f.Nel.Id], null, null, null, null, Publish: false), default);
 
-        Assert.Equal(3, f.Alerts.Count);
+        Assert.Equal(3, f.PlayerAlerts.Count);
         var nelAlerts = f.Alerts.Where(a => a.PlayerId == f.NelAccount.Id).OrderBy(a => a.CreatedAt).ToList();
         Assert.Equal([true, false], nelAlerts.Select(a => a.IsResolved));
         Assert.Equal(AlertKind.MatchCallUp, nelAlerts[1].Kind);
@@ -103,8 +105,8 @@ public class TrainingAlertTests
         Assert.Equal(CallUpResponse.Confirmed, mine.Mine.Response);
         Assert.True(Assert.Single(f.Alerts, a => a.PlayerId == f.PelayoAccount.Id).IsResolved);
         // Los partidos no llevan avisos del jugador: la firma se ve en la convocatoria, la campanita del staff no suena.
-        Assert.DoesNotContain(f.Alerts, a => a.CoachId == f.Coach.Id || a.ClubId == f.Club.Id);
-        Assert.Equal(2, f.Alerts.Count);
+        Assert.DoesNotContain(f.Alerts, a => (a.CoachId == f.Coach.Id || a.ClubId == f.Club.Id) && a.Kind != AlertKind.CallUpShort);
+        Assert.Equal(2, f.PlayerAlerts.Count);
     }
 
     [Fact]
@@ -147,6 +149,40 @@ public class TrainingAlertTests
         await f.Respond(f.PelayoUser).Handle(new(f.CallUp.Id, CallUpResponse.Confirmed), default);
         var staff = await f.Resend().Handle(new(f.Squad.Id, f.Upcoming.Id), default);
         Assert.Equal((2, 2), (staff.Counts.Sent, staff.Counts.Seen));
+    }
+
+    [Fact]
+    public async Task The_open_call_up_page_learns_from_a_light_stamp_when_someone_signs_or_opens_it()
+    {
+        var f = new Fixture();
+        Task<CallUpStampDto> Stamp(ICurrentUser user) => f.GetCallUpStamp(user).Handle(new(f.Squad.Id, f.Upcoming.Id), default);
+
+        // Sin enviar no hay nada que seguir: el borrador da la misma huella que no tener convocatoria.
+        var none = (await Stamp(f.CoachUser)).Stamp;
+        var draft = await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id], null, null, null, null, Publish: false), default);
+        Assert.Equal(none, draft.Stamp);
+        Assert.Equal(none, (await Stamp(f.PelayoUser)).Stamp);
+
+        var sent = await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id], null, null, null, null, Publish: true), default);
+        Assert.NotEqual(none, sent.Stamp);
+        Assert.Equal(sent.Stamp, (await Stamp(f.NelUser)).Stamp);
+
+        // Nel la abre: el doble check cambia lo que se ve.
+        f.Clock.Advance(TimeSpan.FromMinutes(5));
+        await f.MarkSeen(f.NelUser).Handle(new(f.CallUp.Id), default);
+        var seen = (await Stamp(f.CoachUser)).Stamp;
+        Assert.NotEqual(sent.Stamp, seen);
+
+        // Pelayo firma: la huella cambia y es la misma que trae la convocatoria entera.
+        await f.Respond(f.PelayoUser).Handle(new(f.CallUp.Id, CallUpResponse.Confirmed), default);
+        var signed = await f.GetCallUp(f.CoachUser).Handle(new(f.Squad.Id, f.Upcoming.Id), default);
+        Assert.NotEqual(seen, signed.Stamp);
+        Assert.Equal(signed.Stamp, (await Stamp(f.PelayoUser)).Stamp);
+
+        // Empieza el partido: cambia una vez más, para que la página la enseñe cerrada.
+        f.Clock.Advance(TimeSpan.FromDays(3));
+        Assert.NotEqual(signed.Stamp, (await Stamp(f.CoachUser)).Stamp);
+        await Assert.ThrowsAsync<ForbiddenException>(() => Stamp(f.StrangerUser));
     }
 
     [Fact]
@@ -377,7 +413,7 @@ public class TrainingAlertTests
     {
         var f = new Fixture();
         var session = (await f.Plan().Handle(new(f.Squad.Id, TrainingKind.Season, null, Now.AddDays(1), 90, null, null, [], [], null), default)).Single().Id;
-        var injury = f.Injure(f.Pelayo, InjuryType.AnkleSprain, "Pisó mal en el partido", Today.AddDays(-2), Today.AddDays(19));
+        var injury = f.Injure(f.Pelayo, InjuryTypeCodes.AnkleSprain, "Pisó mal en el partido", Today.AddDays(-2), Today.AddDays(19));
 
         var staff = await f.Get(f.CoachUser).Handle(new(f.Squad.Id, session), default);
         var line = staff.Attendance.Single(a => a.SquadPlayerId == f.Pelayo.Id);
@@ -408,7 +444,7 @@ public class TrainingAlertTests
     public async Task An_injured_player_cannot_go_called_up_and_the_staff_sees_his_injury_in_the_list()
     {
         var f = new Fixture();
-        f.Injure(f.Nel, InjuryType.MuscleTear, null, Today.AddDays(-1));
+        f.Injure(f.Nel, InjuryTypeCodes.MuscleTear, null, Today.AddDays(-1));
 
         var error = await Assert.ThrowsAsync<DomainException>(() =>
             f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id, f.Nel.Id], null, null, null, null, Publish: false), default));
@@ -470,11 +506,103 @@ public class TrainingAlertTests
     }
 
     [Fact]
+    public async Task With_four_yellows_in_the_cycle_a_player_arrives_warned_to_the_call_up()
+    {
+        var f = new Fixture();
+        f.Book(f.Pelayo, yellowCards: 1, redCard: false);
+        // Tres partidos más ya jugados antes del próximo (adelantados de otras jornadas), con una amarilla en cada uno.
+        foreach (var (matchday, daysAgo) in new[] { (3, 3), (4, 2), (5, 1) })
+        {
+            var played = Match.Schedule(f.Upcoming.SeasonId, matchday, f.Team.Id, f.Rival.Id, Now.AddDays(-daysAgo), "La Florida", null);
+            played.RecordResult(1, 0, Now.AddDays(-daysAgo).AddHours(2));
+            f.ExtraMatches.Add(played);
+            f.Performances.Add(PlayerMatchPerformance.Record(f.Squad, f.Pelayo, played, SquadEditor.Coach(f.Coach.Id),
+                new PerformanceStats(true, 90, 0, 0, 0, 0, 0, 0, 0, 0, 1, false, null), Now));
+        }
+
+        var callUp = await f.GetCallUp(f.CoachUser).Handle(new(f.Squad.Id, f.Upcoming.Id), default);
+
+        var pelayo = callUp.Entries.Single(e => e.SquadPlayerId == f.Pelayo.Id);
+        Assert.Equal((4, true, false), (pelayo.CycleYellows, pelayo.Warned, pelayo.Suspended));
+        Assert.DoesNotContain(callUp.Entries, e => e.SquadPlayerId != f.Pelayo.Id && e.Warned);
+        // El propio jugador lo ve igual en su convocatoria.
+        Assert.True((await f.GetCallUp(f.PelayoUser).Handle(new(f.Squad.Id, f.Upcoming.Id), default)).Mine!.Warned);
+    }
+
+    [Fact]
+    public async Task The_committee_decides_how_many_matches_a_sending_off_costs()
+    {
+        var f = new Fixture();
+        f.CloseOfficialSheet(new OfficialLineData(MatchSide.Home, 9, "FERNANDEZ, PELAYO", true, null, null, 60, 0, 0, 0, 0, true));
+        var third = Match.Schedule(f.Upcoming.SeasonId, 3, f.Rival.Id, f.Team.Id, Now.AddDays(10), "La Pixarra", null);
+        var fourth = Match.Schedule(f.Upcoming.SeasonId, 4, f.Team.Id, f.Rival.Id, Now.AddDays(17), "La Florida", null);
+        f.ExtraMatches.AddRange([third, fourth]);
+        f.Sanction("FERNANDEZ, PELAYO", 3);
+
+        var saved = await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Nel.Id], null, null, null, null, Publish: false), default);
+
+        var pelayo = saved.Entries.Single(e => e.SquadPlayerId == f.Pelayo.Id).Suspension!;
+        Assert.Equal((SuspensionCause.Committee, "Sanción del comité por la jornada 1: agredir a otro (1.º de 3 partidos)", 3, 1),
+            (pelayo.Cause, pelayo.Reason, pelayo.Matches, pelayo.Nth));
+        // El tercero de los tres partidos, en la jornada 4.
+        Assert.Equal(3, (await f.GetCallUp(f.CoachUser).Handle(new(f.Squad.Id, fourth.Id), default)).Entries.Single(e => e.SquadPlayerId == f.Pelayo.Id).Suspension!.Nth);
+    }
+
+    [Fact]
+    public async Task What_the_committee_puts_to_a_rival_with_the_same_name_is_not_ours()
+    {
+        var f = new Fixture();
+        f.CloseOfficialSheet(new OfficialLineData(MatchSide.Home, 9, "FERNANDEZ, PELAYO", true, null, null, 60, 0, 0, 0, 0, true));
+        f.Sanction("FERNANDEZ, PELAYO", 4, team: "Real Titánico");
+
+        var saved = await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Nel.Id], null, null, null, null, Publish: false), default);
+
+        // A Pelayo le sigue contando su roja: el mínimo, un partido.
+        Assert.Equal(SuspensionCause.RedCard, saved.Entries.Single(e => e.SquadPlayerId == f.Pelayo.Id).Suspension!.Cause);
+    }
+
+    [Fact]
+    public async Task A_committee_suspension_reaches_the_player_his_staff_and_his_club_once()
+    {
+        var f = new Fixture();
+        f.CloseOfficialSheet(new OfficialLineData(MatchSide.Home, 9, "FERNANDEZ, PELAYO", true, null, null, 60, 0, 0, 0, 0, true));
+        f.ExtraMatches.Add(Match.Schedule(f.Upcoming.SeasonId, 3, f.Rival.Id, f.Team.Id, Now.AddDays(10), "La Pixarra", null));
+        var resolution = f.Sanction("FERNANDEZ, PELAYO", 3);
+
+        var first = await f.SuspensionAlerts().Handle(new(), default);
+
+        Assert.Equal((1, 0), (first.Raised, first.Resolved));
+        var mine = Assert.Single(f.PlayerAlerts);
+        Assert.Equal((f.PelayoAccount.Id, AlertKind.LeagueSuspension, "Te han caído 3 partidos de suspensión"), (mine.PlayerId!.Value, mine.Kind, mine.Title));
+        Assert.Equal(
+            "El comité de competición te ha sancionado por la jornada 1 (CD Vallobín - Real Titánico): agredir a otro. " +
+            "No puedes jugar contra Real Titánico (19/10) ni contra Real Titánico (26/10).",
+            mine.Message);
+        Assert.Contains(f.Alerts, a => a.CoachId == f.Coach.Id && a.Title == "Pelayo Fernández: 3 partidos de suspensión");
+        Assert.Contains(f.Alerts, a => a.ClubId == f.Club.Id && a.Title == "Pelayo Fernández: 3 partidos de suspensión");
+
+        // Una vez por sanción.
+        Assert.Equal(0, (await f.SuspensionAlerts().Handle(new(), default)).Raised);
+
+        // Recurso estimado: se queda en uno. Aviso nuevo y los del anterior, resueltos.
+        resolution.Apply(null, [new CommitteeSanctionData("CD Vallobín", "FERNANDEZ, PELAYO", "105", "Agredir a otro", 1)], Now);
+        var appeal = await f.SuspensionAlerts().Handle(new(), default);
+        Assert.Equal((1, 3), (appeal.Raised, appeal.Resolved));
+        Assert.Equal("Te ha caído 1 partido de suspensión", Assert.Single(f.PlayerAlerts, a => !a.IsResolved).Title);
+
+        // Cumplida: ya no queda nada abierto.
+        f.Clock.Advance(TimeSpan.FromDays(4));
+        var served = await f.SuspensionAlerts().Handle(new(), default);
+        Assert.Equal((0, 3), (served.Raised, served.Resolved));
+        Assert.All(f.Alerts.Where(a => a.Kind == AlertKind.LeagueSuspension), a => Assert.True(a.IsResolved));
+    }
+
+    [Fact]
     public async Task The_agenda_shows_who_cannot_play_the_next_match()
     {
         var f = new Fixture();
         f.Book(f.Pelayo, yellowCards: 0, redCard: true);
-        f.Injure(f.Xuan, InjuryType.AnkleSprain, null, Today.AddDays(-1), Today.AddDays(20));
+        f.Injure(f.Xuan, InjuryTypeCodes.AnkleSprain, null, Today.AddDays(-1), Today.AddDays(20));
         var from = DateOnly.FromDateTime(Now.AddDays(-7).DateTime);
         var to = DateOnly.FromDateTime(Now.AddDays(7).DateTime);
 
@@ -488,6 +616,65 @@ public class TrainingAlertTests
         // Un compañero ve que Xuan está lesionado, pero no de qué.
         var mate = await f.Agenda(f.PelayoUser).Handle(new(f.Squad.Id, from, to), default);
         Assert.Equal("Lesionado", mate.Single(i => i.Match?.Id == f.Upcoming.Id).Unavailable!.Single(u => u.Kind == UnavailabilityKind.Injured).Reason);
+    }
+
+    [Fact]
+    public async Task A_call_up_sent_short_warns_the_staff_and_the_club_until_it_is_complete()
+    {
+        var f = new Fixture();
+        var extra = new[] { "Iyán García", "Telmo Álvarez", "Xurde López", "Roi Martínez", "Bruno Díaz" }
+            .Select(n => f.Squad.AddPlayer(n, Position.Midfielder, null, null, Now).Id).ToList();
+        List<Guid> five = [f.Pelayo.Id, f.Nel.Id, f.Xuan.Id, extra[0], extra[1]];
+
+        var sent = await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, five, null, null, null, null, Publish: true), default);
+
+        Assert.Equal((7, true), (sent.Size, sent.SizeFixed));
+        var coach = Assert.Single(f.Alerts, a => a.CoachId == f.Coach.Id);
+        var club = Assert.Single(f.Alerts, a => a.ClubId == f.Club.Id);
+        Assert.Equal((AlertKind.CallUpShort, AlertKind.CallUpShort), (coach.Kind, club.Kind));
+        Assert.StartsWith("Faltan 2 por convocar: CD Vallobín - Real Titánico", coach.Title);
+        Assert.Contains("es de 7 y se ha enviado con 5", coach.Message);
+        Assert.Equal($"/plantillas/{f.Squad.Id}/convocatorias/{f.Upcoming.Id}", coach.Link);
+
+        // Guardar sin cambiar cuántos faltan no repite el aviso.
+        await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, five, null, null, "Notas", null, Publish: true), default);
+        Assert.Single(f.Alerts, a => a.CoachId == f.Coach.Id);
+
+        // Falta uno: el aviso anterior se resuelve y llega el nuevo.
+        await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [.. five, extra[2]], null, null, null, null, Publish: true), default);
+        var coachAlerts = f.Alerts.Where(a => a.CoachId == f.Coach.Id).OrderBy(a => a.CreatedAt).ToList();
+        Assert.Equal([true, false], coachAlerts.Select(a => a.IsResolved));
+        Assert.StartsWith("Faltan 1 por convocar", coachAlerts[1].Title);
+
+        // Completa: nada abierto. Y nunca a más del número.
+        await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [.. five, extra[2], extra[3]], null, null, null, null, Publish: true), default);
+        Assert.All(f.Alerts.Where(a => a.Kind == AlertKind.CallUpShort), a => Assert.True(a.IsResolved));
+        var over = await Assert.ThrowsAsync<DomainException>(() =>
+            f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [.. five, .. extra.Skip(2)], null, null, null, null, Publish: true), default));
+        Assert.Equal(ErrorCode.CallUpOverSize, over.Code);
+    }
+
+    [Fact]
+    public async Task Without_a_fixed_number_each_call_up_asks_for_its_own_and_proposes_the_last_one()
+    {
+        var f = new Fixture();
+        f.Squad.SetCallUpSize(null);
+
+        var missing = await Assert.ThrowsAsync<DomainException>(() =>
+            f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id], null, null, null, null, Publish: false), default));
+        Assert.Equal(ErrorCode.CallUpSizeRequired, missing.Code);
+
+        var draft = await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id], null, null, null, null, Publish: false, Size: 9), default);
+        Assert.Equal((9, false), (draft.Size, draft.SizeFixed));
+        // Un borrador corto no avisa a nadie: el aviso es al enviarla.
+        Assert.Empty(f.Alerts);
+
+        // Al preguntar en otro partido se propone el número de la última; a los jugadores no se les enseña.
+        var next = Match.Schedule(f.Upcoming.SeasonId, 3, f.Team.Id, f.Rival.Id, Now.AddDays(10), "La Florida", null);
+        f.ExtraMatches.Add(next);
+        var other = await f.GetCallUp(f.CoachUser).Handle(new(f.Squad.Id, next.Id), default);
+        Assert.Equal(((int?)null, 9), (other.Size, other.SuggestedSize));
+        Assert.Null((await f.GetCallUp(f.PelayoUser).Handle(new(f.Squad.Id, next.Id), default)).SuggestedSize);
     }
 
     private sealed class Fixture
@@ -516,6 +703,10 @@ public class TrainingAlertTests
         public List<PlayerMatchPerformance> Performances { get; } = [];
         public List<OfficialMatchSheet> Sheets { get; } = [];
         public MatchCallUp CallUp => CallUps.Single();
+        // Los avisos de los jugadores; el cuerpo técnico y el club reciben además el de «faltan por convocar».
+        public List<Alert> PlayerAlerts => Alerts.Where(a => a.PlayerId is not null).ToList();
+        public List<Match> ExtraMatches { get; } = [];
+        public FakeCommitteeStore Committee { get; } = new();
         public int Saves { get; private set; }
 
         public ICurrentUser CoachUser => new Account(CoachId: Coach.Id, UserId: Coach.UserId, Type: AccountType.Coach);
@@ -528,6 +719,7 @@ public class TrainingAlertTests
             var seasonId = Guid.NewGuid();
             Club.AddTeam(Team.Id, Now);
             Squad = Squad.Create(Team.Id, seasonId, Coach.Id, Now);
+            Squad.SetCallUpSize(Squad.MinCallUpSize);
             Pelayo = Squad.AddPlayer("Pelayo Fernández", Position.Forward, 9, null, Now);
             Nel = Squad.AddPlayer("Nel Suárez", Position.Goalkeeper, 1, null, Now);
             Xuan = Squad.AddPlayer("Xuan Menéndez", Position.Defender, 4, null, Now);
@@ -570,6 +762,8 @@ public class TrainingAlertTests
 
         public GetMatchCallUpHandler GetCallUp(ICurrentUser user) => new(user, Squads, Clubs, Matches, Teams, CallUpStore, Grounds, InjuryStore, Suspensions, Clock);
 
+        public GetMatchCallUpStampHandler GetCallUpStamp(ICurrentUser user) => new(user, Squads, Clubs, Matches, CallUpStore, Clock);
+
         // Tarjetas en el acta interna del partido ya jugado.
         public void Book(SquadPlayer player, int yellowCards, bool redCard) =>
             Performances.Add(PlayerMatchPerformance.Record(Squad, player, Played, SquadEditor.Coach(Coach.Id),
@@ -583,7 +777,14 @@ public class TrainingAlertTests
             Sheets.Add(sheet);
         }
 
-        private SuspensionReader Suspensions => new(Matches, PerformanceStore, SheetStore, Clock);
+        private SuspensionReader Suspensions => new(Matches, PerformanceStore, SheetStore, Committee, Teams, Clock);
+
+        // Lo que publica el comité sobre el partido ya jugado, unos días después.
+        public CommitteeResolution Sanction(string name, int matches, string reason = "Agredir a otro", string team = "CD Vallobín", int daysAfter = 2) =>
+            Committee.Publish(Squad.SeasonId, Application.Trainings.CallUps.DayOf(Played.KickoffAt).AddDays(daysAfter), Played.Matchday,
+                new CommitteeSanctionData(team, name, "105", reason, matches));
+
+        public SyncSuspensionAlertsHandler SuspensionAlerts() => new(Committee, Squads, Matches, Teams, Clubs, AlertStore, Suspensions, Unit, Clock);
 
         private IPerformanceStore PerformanceStore => Stub<IPerformanceStore>((method, args) => method switch
         {
@@ -598,9 +799,9 @@ public class TrainingAlertTests
             _ => throw new NotSupportedException(method),
         });
 
-        public PlayerInjury Injure(SquadPlayer player, InjuryType type, string? reason, DateOnly from, DateOnly? expected = null)
+        public PlayerInjury Injure(SquadPlayer player, string type, string? reason, DateOnly from, DateOnly? expected = null)
         {
-            var injury = PlayerInjury.Create(Squad, player, SquadEditor.Coach(Coach.Id), type, reason, from, expected, Now);
+            var injury = PlayerInjury.Create(Squad, player, SquadEditor.Coach(Coach.Id), TestInjuryTypes.Of(type), reason, from, expected, Now);
             Injuries.Add(injury);
             return injury;
         }
@@ -617,6 +818,7 @@ public class TrainingAlertTests
         {
             nameof(ISquadStore.GetByIdAsync) => Task.FromResult((Guid)args![0]! == Squad.Id ? Squad : null),
             nameof(ISquadStore.GetByPlayerAsync) => Task.FromResult(Squad.IsMember((Guid)args![0]!) ? Squad : null),
+            nameof(ISquadStore.GetBySeasonAsync) => Task.FromResult<IReadOnlyList<Squad>>((Guid)args![0]! == Squad.SeasonId ? [Squad] : []),
             _ => throw new NotSupportedException(method),
         });
         private IClubStore Clubs => Stub<IClubStore>((method, args) => method switch
@@ -638,9 +840,9 @@ public class TrainingAlertTests
         });
         private IMatchStore Matches => Stub<IMatchStore>((method, args) => method switch
         {
-            nameof(IMatchStore.GetByIdAsync) => Task.FromResult((Guid)args![0]! == Upcoming.Id ? Upcoming : null),
+            nameof(IMatchStore.GetByIdAsync) => Task.FromResult((Guid)args![0]! == Upcoming.Id ? Upcoming : ExtraMatches.FirstOrDefault(m => m.Id == (Guid)args[0]!)),
             nameof(IMatchStore.GetByIdsAsync) => Task.FromResult<IReadOnlyList<Match>>([Upcoming]),
-            nameof(IMatchStore.GetTeamMatchesAsync) => Task.FromResult<IReadOnlyList<Match>>([Upcoming, Played]),
+            nameof(IMatchStore.GetTeamMatchesAsync) => Task.FromResult<IReadOnlyList<Match>>([Upcoming, Played, .. ExtraMatches]),
             _ => throw new NotSupportedException(method),
         });
         private ITeamStore Teams => Stub<ITeamStore>((method, args) => method switch
@@ -657,6 +859,7 @@ public class TrainingAlertTests
             nameof(ICallUpStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<MatchCallUp>>(CallUps.ToList()),
             nameof(ICallUpStore.GetBySquadAndMatchesAsync) => Task.FromResult<IReadOnlyList<MatchCallUp>>(CallUps
                 .Where(c => ((IEnumerable<Guid>)args![1]!).Contains(c.MatchId) && (!(bool)args[2]! || c.IsPublished)).ToList()),
+            nameof(ICallUpStore.GetLatestSizeAsync) => Task.FromResult(CallUps.Where(c => c.Size is not null).OrderByDescending(c => c.UpdatedAt).Select(c => c.Size).FirstOrDefault()),
             nameof(ICallUpStore.Add) => Run(() => CallUps.Add((MatchCallUp)args![0]!)),
             _ => throw new NotSupportedException(method),
         });
@@ -692,6 +895,8 @@ public class TrainingAlertTests
                     || (a.CoachId is { } c && ((IReadOnlyCollection<Guid>)args![2]!).Contains(c))
                     || (args![3] is Guid club && a.ClubId == club))
                 .ToList()),
+            nameof(IAlertStore.GetAllByKeyPrefixAsync) => Task.FromResult<IReadOnlyList<Alert>>(
+                Alerts.Where(a => a.Key.StartsWith((string)args![0]!, StringComparison.Ordinal)).ToList()),
             nameof(IAlertStore.Add) => Run(() => Alerts.Add((Alert)args![0]!)),
             _ => throw new NotSupportedException(method),
         });

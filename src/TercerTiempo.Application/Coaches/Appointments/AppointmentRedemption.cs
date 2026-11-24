@@ -9,7 +9,8 @@ using TercerTiempo.Domain.Common.Errors;
 
 namespace TercerTiempo.Application.Coaches.Appointments;
 
-internal sealed class AppointmentRedemption(ICoachAppointmentStore appointments, ISquadStore squads, ITeamStore teams, ILicenseGate licenses)
+internal sealed class AppointmentRedemption(
+    ICoachAppointmentStore appointments, ISquadStore squads, ITeamStore teams, ILicenseGate licenses, Squads.Injuries.InjuryCarryOver? carryOver = null)
 {
     public async Task<CoachAppointment> FindRedeemableAsync(string accessCode, CancellationToken cancellationToken)
     {
@@ -30,7 +31,7 @@ internal sealed class AppointmentRedemption(ICoachAppointmentStore appointments,
     {
         appointment.Redeem(coach.Id, now);
 
-        var squad = await SquadOpening.OpenAsync(squads, teams, appointment.TeamId, appointment.SeasonId, now, cancellationToken);
+        var squad = await SquadOpening.OpenAsync(squads, teams, appointment.TeamId, appointment.SeasonId, now, cancellationToken, carryOver);
         squad.AddStaff(coach.Id, appointment.Role, now, appointment.ValidUntil, appointment.Id);
         return squad;
     }

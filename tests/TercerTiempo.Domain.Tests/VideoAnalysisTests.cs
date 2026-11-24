@@ -22,7 +22,7 @@ public class VideoAnalysisTests
     }
 
     private static VideoAnalysisOutcome Outcome(decimal ball = 62.5m, decimal calibrated = 81m) =>
-        new("analysis/abc", "0.1.0", "balon: afinados/balon.pt", """{"equipos":[],"jugadores":[]}""", 1500, ball, calibrated, 300, 100m, 62m);
+        new("analysis/abc", "Ojeador", "0.1.0", "balon: afinados/balon.pt", """{"equipos":[],"jugadores":[]}""", 1500, ball, calibrated, 300, 100m, 62m);
 
     [Fact]
     public void Only_a_video_whose_file_will_not_change_is_analysed()
@@ -61,6 +61,7 @@ public class VideoAnalysisTests
 
         Assert.Equal((VideoAnalysisStatus.Ready, 100), (analysis.Status, analysis.Progress));
         Assert.Equal(("analysis/abc", "0.1.0", 1500, 62.5m, 81m, 300), (analysis.OutputPath, analysis.AnalyzerVersion, analysis.Frames, analysis.BallFramesPct, analysis.CalibratedFramesPct, analysis.AnalyzedSeconds));
+        Assert.Equal("Ojeador 0.1.0", analysis.Analyzer);
         Assert.Equal((100m, 62m), (analysis.PitchLengthM, analysis.PitchWidthM));
         Assert.False(analysis.LowQuality);
         Assert.False(analysis.IsActive);

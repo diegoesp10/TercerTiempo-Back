@@ -14,6 +14,9 @@ internal static class TestData
     public static readonly Guid HomeTeamId = Guid.NewGuid();
     public static readonly Guid AwayTeamId = Guid.NewGuid();
 
+    public static InjuryTypeDefinition InjuryType(string code, int? averageDays = 7) =>
+        InjuryTypeDefinition.Create(code, code, averageDays, 0, Now);
+
     public static Player NewPlayer(string name = "Pelayo Fernández", Position position = Position.Forward) =>
         Player.Register(Guid.NewGuid(), name, position, new DateOnly(1998, 4, 12), Now);
 

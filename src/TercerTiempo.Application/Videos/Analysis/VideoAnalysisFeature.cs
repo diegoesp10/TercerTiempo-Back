@@ -75,7 +75,8 @@ internal sealed class VideoAnalysisReader(
             IReadOnlySet<int> crops = analysis is { Status: VideoAnalysisStatus.Ready }
                 ? await analyses.GetCropTrackletsAsync(analysis.Id, cancellationToken)
                 : new HashSet<int>();
-            parts.Add(VideoAnalysisMapper.ToDto(scope.Squad, video, analysis, crops, hints));
+            // Con qué modelos se analizó (entrenamientos y huellas) es cosa del administrador.
+            parts.Add(VideoAnalysisMapper.ToDto(scope.Squad, video, analysis, crops, hints, showModels: currentUser.IsAdmin));
         }
 
         // Si nadie atiende la cola (no hay ningún analizador encendido) lo pendiente se quedaría «en cola» sin más: la
@@ -423,7 +424,7 @@ internal sealed class ApplyVideoAnalysisHandler(
 
         var existing = (await performances.GetBySquadAndMatchAsync(squad.Id, match.Id, cancellationToken)).ToDictionary(p => p.SquadPlayerId);
         var official = command.FillFromOfficialSheet
-            ? await reader.OfficialLinesAsync(scope, squad.Players.Where(p => p.IsActive || existing.ContainsKey(p.Id) || perPlayer.ContainsKey(p.Id)), cancellationToken)
+            ? await reader.OfficialLinesAsync(scope, squad.Players.Where(p => p.WasMemberAt(match.KickoffAt) || existing.ContainsKey(p.Id) || perPlayer.ContainsKey(p.Id)), cancellationToken)
             : new Dictionary<Guid, OfficialSheetLine>();
         var lines = new List<MatchSheetEntryInput>();
         var videoLines = 0;
@@ -453,7 +454,11 @@ internal sealed class ApplyVideoAnalysisHandler(
             throw new ConflictException(ErrorCode.VideoAnalysisOverwrite, VideoSheetMerge.Describe(overwritten));
 
         if (teamInput is not null)
-            await writer.WriteTeamStatsAsync(squad, match, editor, teamInput.ToData(), now, cancellationToken);
+        {
+            var written = await writer.WriteTeamStatsAsync(squad, match, editor, teamInput.ToData(), now, cancellationToken);
+            var analyzers = applied.Select(a => a.Analysis.Analyzer).OfType<string>().Distinct().ToList();
+            written.MarkFromVideo(analyzers.Count > 0 ? string.Join(" y ", analyzers) : null, now);
+        }
         if (lines.Count > 0)
             await writer.WriteLinesAsync(squad, match, editor, lines, now, cancellationToken,
                 perPlayer.Where(p => p.Value.Actions.HasSheetData).Select(p => p.Key).ToHashSet());

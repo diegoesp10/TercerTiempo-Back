@@ -19,7 +19,7 @@ internal sealed record RealDataTableChanges(string Table, int Inserted, int Upda
 //   - el escudo que sube un club (Teams.CrestFromClub), las medidas del campo que apunta y las fichas que gestiona
 //     (RosterEntries.ManagedByClub), con su foto y si están ocultas;
 //   - lo que ya no está en la base real solo se borra si nada del entorno lo usa (un partido con acta interna, un árbitro
-//     con notas…), y las ligas, temporadas y equipos nunca.
+//     con notas…), y los ámbitos, las ligas, temporadas y equipos nunca.
 // SeedAsync hace lo contrario una sola vez: llena una base real vacía con los datos reales de la base de este entorno.
 internal sealed class RealDataCopier(
     RealDataConnections connections,
@@ -36,7 +36,7 @@ internal sealed class RealDataCopier(
     private readonly Lock _markLock = new();
     private (string Mark, DateTimeOffset At)? _lastCopy;
 
-    private static readonly HashSet<string> NeverRemoved = ["SeasonYears", "Competitions", "Seasons", "Teams"];
+    private static readonly HashSet<string> NeverRemoved = ["SeasonYears", "Territories", "Competitions", "Seasons", "Teams"];
 
     private static readonly Dictionary<string, TableRule> Rules = new()
     {
@@ -48,6 +48,7 @@ internal sealed class RealDataCopier(
     private static readonly Dictionary<string, string> Labels = new()
     {
         ["SeasonYears"] = "temporadas",
+        ["Territories"] = "ámbitos",
         ["Competitions"] = "ligas",
         ["Seasons"] = "temporadas de liga",
         ["Teams"] = "equipos",
@@ -58,14 +59,17 @@ internal sealed class RealDataCopier(
         ["SeasonZones"] = "plazas de liga",
         ["Referees"] = "árbitros",
         ["MatchOfficials"] = "árbitros de partido",
+        ["RefereeDesignations"] = "árbitros designados",
         ["OfficialSheets"] = "actas",
         ["OfficialSheetLines"] = "líneas de acta",
         ["OfficialSheetEvents"] = "sucesos de acta",
         ["OfficialSheetStaff"] = "cuerpos técnicos de acta",
+        ["CommitteeResolutions"] = "resoluciones del comité",
+        ["CommitteeSanctions"] = "sanciones del comité",
     };
 
     private static readonly string[] IngestJobs =
-        [JobNames.FootballData, JobNames.OfficialSheets, JobNames.WeeklySheets, JobNames.MatchOfficials, JobNames.LeagueZones, JobNames.Grounds];
+        [JobNames.FootballData, JobNames.OfficialSheets, JobNames.WeeklySheets, JobNames.MatchOfficials, JobNames.LeagueZones, JobNames.Grounds, JobNames.CommitteeSanctions];
 
     // La copia de cada pocos minutos: si la base real no ha cambiado desde la última copia (misma marca), no se copia.
     // force: se ha pedido (a mano, tras una descarga o un cambio de la administración en este proceso) y se copia siempre.
@@ -156,6 +160,9 @@ internal sealed class RealDataCopier(
         {
             scope.ServiceProvider.GetRequiredService<TercerTiempo.Application.Search.SearchIndexHolder>().Invalidate();
             scope.ServiceProvider.GetRequiredService<TercerTiempo.Application.Common.PublicDataCache>().Invalidate();
+            // Sanciones nuevas o cambiadas del comité: los avisos salen ya, sin esperar a su hora.
+            if (changed.Any(c => c.Table is "CommitteeResolutions" or "CommitteeSanctions"))
+                scope.ServiceProvider.GetRequiredService<JobScheduler>().Launch(JobNames.SuspensionAlerts);
         }
         logger.LogInformation("Datos reales copiados: {Changes}", string.Join(", ", changed.Select(c => $"{c.Table} +{c.Inserted} ~{c.Updated} -{c.Deleted}")));
 
@@ -269,6 +276,7 @@ internal sealed class RealDataCopier(
             $"(SELECT CONVERT(nvarchar(40), MAX(FinishedAt), 127) FROM dbo.JobRuns WHERE Job IN ({jobs})), " +
             "(SELECT CONCAT(COUNT_BIG(*), '/', CONVERT(nvarchar(40), MAX(CheckedAt), 127)) FROM dbo.OfficialSheets), " +
             "(SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(BINARY_CHECKSUM(*))) FROM dbo.SeasonYears), " +
+            "(SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(BINARY_CHECKSUM(*))) FROM dbo.Territories), " +
             "(SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(BINARY_CHECKSUM(*))) FROM dbo.Competitions), " +
             "(SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(BINARY_CHECKSUM(*))) FROM dbo.Seasons), " +
             "(SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(BINARY_CHECKSUM(*))) FROM dbo.Teams);";

@@ -28,7 +28,9 @@ public sealed record TeamStaffMemberDto(
     [property: Description("Su perfil en la app (solo a cuentas con sesión); null si no tiene.")]
     Guid? CoachId,
     [property: Description("true si ya tiene perfil en la app (su club lo ha nombrado y ha canjeado el código); false si de momento solo figura en las actas.")]
-    bool HasProfile = false);
+    bool HasProfile = false,
+    [property: Description("Sus tarjetas de la temporada en las actas oficiales cerradas y cómo llega al próximo partido (apercibido o sancionado); null si solo está nombrado en la app.")]
+    TercerTiempo.Application.Squads.Suspensions.StaffDisciplineDto? Discipline = null);
 
 public sealed record SheetStaffEntry(Guid SheetId, DateTimeOffset KickoffAt, OfficialStaffRole Role, string RoleLabel, string FullName);
 
@@ -49,7 +51,8 @@ public static class TeamStaffSummary
     private static readonly HashSet<string> Particles = ["de", "del", "la", "las", "los", "y", "e", "da", "do"];
 
     public static TeamStaffDto Build(
-        IReadOnlyList<SheetStaffEntry> rows, IReadOnlyList<AppStaffEntry> appointed, bool includeAppOnly, bool includeProfiles)
+        IReadOnlyList<SheetStaffEntry> rows, IReadOnlyList<AppStaffEntry> appointed, bool includeAppOnly, bool includeProfiles,
+        TercerTiempo.Application.Squads.Suspensions.StaffDiscipline? discipline = null)
     {
         rows = rows.Where(r => !OfficialStaffRoles.NotAPerson(r.FullName)).ToList();
         var sheetDates = rows.GroupBy(r => r.SheetId).Select(g => g.First().KickoffAt).OrderByDescending(d => d).ToList();
@@ -94,7 +97,8 @@ public static class TeamStaffSummary
                 SpainTime.Today(last),
                 last >= recentFrom || app?.Active == true,
                 includeProfiles ? app?.CoachId : null,
-                app is not null));
+                app is not null,
+                discipline?.ForSheetName(personRows[0].FullName)?.ToDto()));
         }
 
         if (includeAppOnly)

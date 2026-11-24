@@ -21,7 +21,7 @@ public class MatchCallUpTests
     private static MatchCallUp Published(Squad squad, SquadEditor editor, Match match, params Guid[] called)
     {
         var callUp = MatchCallUp.Draft(squad, match, editor, TestData.Now);
-        callUp.Arrange(squad, called.ToHashSet(), match.KickoffAt.AddHours(-2), null, "Puerta del campo", null, TestData.Now);
+        callUp.Arrange(squad, 18, called.ToHashSet(), match.KickoffAt.AddHours(-2), null, "Puerta del campo", null, TestData.Now);
         callUp.Publish(TestData.Now);
         return callUp;
     }
@@ -64,7 +64,7 @@ public class MatchCallUpTests
         callUp.Respond(xuan.Id, CallUpResponse.Acknowledged, match, TestData.Now);
 
         // Nel se cae y Xuan entra; Pelayo sigue igual.
-        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, xuan.Id }, match.KickoffAt.AddHours(-2), null, "Puerta del campo", "Llevad las dos equipaciones", TestData.Now.AddHours(1));
+        var changed = callUp.Arrange(squad, 18, new HashSet<Guid> { pelayo.Id, xuan.Id }, match.KickoffAt.AddHours(-2), null, "Puerta del campo", "Llevad las dos equipaciones", TestData.Now.AddHours(1));
 
         Assert.Equal([nel.Id, xuan.Id], changed.Select(e => e.SquadPlayerId).OrderBy(id => Array.IndexOf([nel.Id, xuan.Id], id)));
         Assert.Equal(CallUpResponse.Confirmed, callUp.EntryOf(pelayo.Id)!.Response);
@@ -83,7 +83,7 @@ public class MatchCallUpTests
         callUp.Respond(pelayo.Id, CallUpResponse.Confirmed, match, TestData.Now);
         callUp.MarkSeen(nel.Id, TestData.Now);
 
-        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-1), null, "Puerta del campo", null, TestData.Now.AddHours(1));
+        var changed = callUp.Arrange(squad, 18, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-1), null, "Puerta del campo", null, TestData.Now.AddHours(1));
 
         Assert.Equal(new[] { pelayo.Id, nel.Id }.Order(), changed.Select(e => e.SquadPlayerId).Order());
         Assert.DoesNotContain(changed, e => e.SquadPlayerId == xuan.Id);
@@ -99,7 +99,7 @@ public class MatchCallUpTests
         var match = TestData.ScheduledMatch();
         var callUp = Published(squad, editor, match, pelayo.Id, nel.Id);
 
-        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), null, "Puerta del campo", "Notas nuevas", TestData.Now.AddHours(1));
+        var changed = callUp.Arrange(squad, 18, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), null, "Puerta del campo", "Notas nuevas", TestData.Now.AddHours(1));
 
         Assert.Empty(changed);
     }
@@ -114,14 +114,14 @@ public class MatchCallUpTests
         callUp.MarkSeen(nel.Id, TestData.Now);
         var ground = Guid.NewGuid();
 
-        var changed = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), ground, "Puerta del campo", null, TestData.Now.AddHours(1));
+        var changed = callUp.Arrange(squad, 18, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), ground, "Puerta del campo", null, TestData.Now.AddHours(1));
 
         Assert.Equal((ground, (string?)null), (callUp.MeetGroundId, callUp.MeetPlace));
         Assert.Equal(new[] { pelayo.Id, nel.Id }.Order(), changed.Select(e => e.SquadPlayerId).Order());
 
         // Mismo campo otra vez: nadie vuelve a enterarse. Volver a un sitio escrito (obras en el campo) sí avisa.
-        Assert.Empty(callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), ground, null, null, TestData.Now.AddHours(2)));
-        var moved = callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), null, "Campo de hierba artificial de al lado", null, TestData.Now.AddHours(3));
+        Assert.Empty(callUp.Arrange(squad, 18, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), ground, null, null, TestData.Now.AddHours(2)));
+        var moved = callUp.Arrange(squad, 18, new HashSet<Guid> { pelayo.Id, nel.Id }, match.KickoffAt.AddHours(-2), null, "Campo de hierba artificial de al lado", null, TestData.Now.AddHours(3));
         Assert.Equal(2, moved.Count);
         Assert.Equal(((Guid?)null, "Campo de hierba artificial de al lado"), (callUp.MeetGroundId, callUp.MeetPlace));
     }
@@ -134,7 +134,7 @@ public class MatchCallUpTests
 
         Assert.Equal(ErrorCode.CallUpNoPlayers, Assert.Throws<DomainException>(() => callUp.Publish(TestData.Now)).Code);
 
-        callUp.Arrange(squad, new HashSet<Guid> { pelayo.Id }, null, null, null, null, TestData.Now);
+        callUp.Arrange(squad, 18, new HashSet<Guid> { pelayo.Id }, null, null, null, null, TestData.Now);
         callUp.Publish(TestData.Now);
         callUp.Publish(TestData.Now.AddDays(1));
 
@@ -169,12 +169,67 @@ public class MatchCallUpTests
         var (squad, editor, pelayo, _, _) = SquadWithThreePlayers();
         var match = TestData.ScheduledMatch();
         var draft = MatchCallUp.Draft(squad, match, editor, TestData.Now);
-        draft.Arrange(squad, new HashSet<Guid> { pelayo.Id }, null, null, null, null, TestData.Now);
+        draft.Arrange(squad, 18, new HashSet<Guid> { pelayo.Id }, null, null, null, null, TestData.Now);
 
         Assert.Equal(ErrorCode.CallUpNotPublished, Assert.Throws<DomainException>(() => draft.Respond(pelayo.Id, CallUpResponse.Confirmed, match, TestData.Now)).Code);
 
         draft.Publish(TestData.Now);
         var late = Assert.Throws<DomainException>(() => draft.Respond(pelayo.Id, CallUpResponse.Confirmed, match, match.KickoffAt));
         Assert.Equal(ErrorCode.CallUpMatchStarted, late.Code);
+    }
+
+    private static (Squad Squad, SquadEditor Editor, List<SquadPlayer> Players) SquadWithNine()
+    {
+        var (squad, coachId) = TestData.NewSquad();
+        string[] names = ["Pelayo Fernández", "Nel Suárez", "Xuan Menéndez", "Iyán García", "Telmo Álvarez", "Xurde López", "Roi Martínez", "Bruno Díaz", "Hugo Prieto"];
+        var players = names.Select(n => squad.AddPlayer(n, Position.Midfielder, null, null, TestData.Now)).ToList();
+        return (squad, SquadEditor.Coach(coachId), players);
+    }
+
+    [Fact]
+    public void The_call_up_never_takes_more_than_its_number_and_says_how_many_are_missing()
+    {
+        var (squad, editor, players) = SquadWithNine();
+        var callUp = MatchCallUp.Draft(squad, TestData.ScheduledMatch(), editor, TestData.Now);
+
+        var over = Assert.Throws<DomainException>(() => callUp.Arrange(squad, 7, players.Take(8).Select(p => p.Id).ToHashSet(), null, null, null, null, TestData.Now));
+        Assert.Equal(ErrorCode.CallUpOverSize, over.Code);
+        Assert.Equal(new object[] { 7, 8, 1 }, over.Args);
+
+        callUp.Arrange(squad, 7, players.Take(5).Select(p => p.Id).ToHashSet(), null, null, null, null, TestData.Now);
+        Assert.Equal((7, 2), (callUp.Size, callUp.Missing(squad)));
+
+        callUp.Arrange(squad, 7, players.Take(7).Select(p => p.Id).ToHashSet(), null, null, null, null, TestData.Now);
+        Assert.Equal(0, callUp.Missing(squad));
+
+        // Quien causa baja deja de contar: vuelve a faltar uno.
+        squad.RemovePlayer(players[0].Id, TestData.Now);
+        Assert.Equal(1, callUp.Missing(squad));
+    }
+
+    [Fact]
+    public void A_fixed_number_in_the_squad_wins_and_without_it_the_number_has_to_be_said()
+    {
+        var (squad, editor, players) = SquadWithNine();
+        var match = TestData.ScheduledMatch();
+        var two = players.Take(2).Select(p => p.Id).ToHashSet();
+
+        squad.SetCallUpSize(8);
+        var fixedOne = MatchCallUp.Draft(squad, match, editor, TestData.Now);
+        Assert.Equal(8, fixedOne.Size);
+        fixedOne.Arrange(squad, 12, two, null, null, null, null, TestData.Now);
+        Assert.Equal(8, fixedOne.Size);
+
+        squad.SetCallUpSize(null);
+        var asked = MatchCallUp.Draft(squad, match, editor, TestData.Now);
+        Assert.Null(asked.Size);
+        Assert.Equal(ErrorCode.CallUpSizeRequired, Assert.Throws<DomainException>(() => asked.Arrange(squad, null, two, null, null, null, null, TestData.Now)).Code);
+        asked.Arrange(squad, 10, two, null, null, null, null, TestData.Now);
+        asked.Arrange(squad, null, two, null, null, null, null, TestData.Now);
+        Assert.Equal(10, asked.Size);
+
+        Assert.Equal(ErrorCode.CallUpSizeInvalid, Assert.Throws<DomainException>(() => asked.Arrange(squad, 6, two, null, null, null, null, TestData.Now)).Code);
+        Assert.Equal(ErrorCode.CallUpSizeInvalid, Assert.Throws<DomainException>(() => squad.SetCallUpSize(31)).Code);
+        Assert.Equal(ErrorCode.CallUpSizeInvalid, Assert.Throws<DomainException>(() => squad.SetCallUpSize(6)).Code);
     }
 }

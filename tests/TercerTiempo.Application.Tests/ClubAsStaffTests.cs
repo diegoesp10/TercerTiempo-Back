@@ -132,7 +132,7 @@ public class ClubAsStaffTests
         var called = f.Squad.ActivePlayers.Single();
         var before = f.Played.KickoffAt.AddDays(-1);
         var callUp = MatchCallUp.Draft(f.Squad, f.Played, SquadEditor.Club(f.Club), before);
-        callUp.Arrange(f.Squad, new HashSet<Guid> { called.Id }, null, null, null, null, before);
+        callUp.Arrange(f.Squad, 18, new HashSet<Guid> { called.Id }, null, null, null, null, before);
         f.CallUps.Add(callUp);
         var sheet = await f.Record(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id, [Line(called.Id)]), default);
 
@@ -163,7 +163,7 @@ public class ClubAsStaffTests
         var f = new Fixture();
 
         var error = await Assert.ThrowsAsync<ConflictException>(() =>
-            f.BeginUpload().Handle(new(f.Squad.Id, f.Upcoming.Id, VideoPart.Full, null, "partido.mp4", "video/mp4", 1_000_000), default));
+            f.BeginUpload().Handle(new(f.Squad.Id, f.Upcoming.Id, VideoPart.Full, "partido.mp4", "video/mp4", 1_000_000), default));
 
         Assert.Equal(ErrorCode.VideoMatchNotPlayed, error.Code);
         Assert.Equal(0, f.Saves);
@@ -181,7 +181,7 @@ public class ClubAsStaffTests
         Assert.True(await SquadAccess.IsInsiderAsync(f.Squad, admin, TimeProvider.System, noClubs, default));
         Assert.False(await SquadAccess.IsManagerAsync(f.Squad, admin, TimeProvider.System, noClubs, default));
 
-        var video = MatchVideo.Upload(f.Squad.Id, f.Team.Id, f.Played.Id, f.Squad.SeasonId, null, VideoPart.Full, null, "partido.mp4", "video/mp4",
+        var video = MatchVideo.Upload(f.Squad.Id, f.Team.Id, f.Played.Id, f.Squad.SeasonId, null, VideoPart.Full, "Partido", "partido.mp4", "video/mp4",
             50_000_000, "clave", Now, f.Club.Id);
         var level = VideoAccess.LevelFor(video, f.Squad, admin, MatchInsight.None, TimeProvider.System);
         Assert.Equal(VideoAccessLevel.Admin, level);
@@ -301,7 +301,7 @@ public class ClubAsStaffTests
             nameof(IOfficialSheetStore.GetAvailableLinesByMatchIdsAsync) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>([]),
             _ => throw new NotSupportedException(method),
         });
-        private SuspensionReader Suspensions => new(Matches, PerformanceStore, NoSheets, TimeProvider.System);
+        private SuspensionReader Suspensions => new(Matches, PerformanceStore, NoSheets, new FakeCommitteeStore(), Teams, TimeProvider.System);
         private static object? Run(Action action) { action(); return null; }
 
         public OpenClubSquadHandler Open()

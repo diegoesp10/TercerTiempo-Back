@@ -468,6 +468,14 @@ fichas de equipo, ni campos, ni escudos, porque bloquea la IP tras unas pocas pe
   del acta (`CodActa`), que se emparejan con los nuestros por parecido de nombres de equipo (`TeamNameSimilarity`:
   palabras significativas y letra del filial) y quedan guardados en `Match.OfficialRef` (y los códigos de equipo en
   `Team.OfficialRef`) para no volver a buscarlos.
+- **Árbitro designado** (`MatchOfficialsSync`, último paso del trabajo «Árbitros y cuerpos técnicos»): la misma página de
+  la jornada trae bajo cada partido `Árbitro: APELLIDOS, NOMBRE` en cuanto la federación lo designa. Para los partidos de
+  los próximos 6 días de las ligas que publica la federación se relee la jornada (como mucho una vez cada 6 horas:
+  `FederationHttpCache.FetchedAt`, dentro de los mismos límites) y se guarda en `RefereeDesignations` (base de datos
+  reales, copiada a cada entorno), aparte de `MatchOfficials`: una designación no es una actuación y no cuenta en las
+  cifras ni en las notas. Si cambia, se cambia; si desaparece, se retira. El acta pública la enseña en un partido por
+  jugar («Equipo arbitral designado» o «Aún sin designar»); en uno jugado, el equipo arbitral leído o, sin él, el
+  árbitro que trae el acta.
 - Lectura del acta (`AsturfutbolPages.ParseSheet`): titulares y suplentes por equipo con dorsal, sustituciones (fila
   "entra" / fila "sale" con el minuto), tarjetas (por la imagen `tarj_amar` / `tarj_roja`) y goles (tipo por el título
   del icono: normal, penalti, propia puerta; se atribuyen al equipo del goleador). Los minutos jugados se calculan:
@@ -541,7 +549,10 @@ uv run --frozen tt-analisis analizar <vídeo> --salida <Videos:Directory>/analys
   las líneas `##progreso N` del analizador y guardado cada pocos segundos) → `Ready`, o `Failed` con el motivo, o
   `Cancelled` si lo cancela el cuerpo técnico (en cola o a medias: el analizador lo nota al guardar el siguiente avance o
   latido, porque la fila cambió, y se para sin guardar nada). Guarda la
-  carpeta de salida, la versión del analizador, los pesos usados, `acta-propuesta.json` tal cual (compacto) y la
+  carpeta de salida, **quién analizó** (`AnalyzerName` + `AnalyzerVersion`, p. ej. «Ojeador 1.0.0», del bloque
+  `analizador` de `analisis.json`; los análisis anteriores, sin nombre, son «Ojeador 0.x»), los modelos con su
+  entrenamiento, motor y huella (`Weights`, que la API solo da al administrador), `acta-propuesta.json` tal cual
+  (compacto) y la
   **calidad**: fotogramas analizados, % con balón, % con el campo calibrado y % de fotogramas que se pudieron leer del
   archivo (`ReadFramesPct`, `pct_leido` del analizador; por debajo de 35 %, 50 % y 95 % la propuesta va con aviso, y por
   debajo de 50 % leído el análisis falla: el archivo está dañado o cortado). El mejor recorte de cada jugador seguido va a `MatchVideoAnalysisCrops` (JPEG de un par de KB), así la API

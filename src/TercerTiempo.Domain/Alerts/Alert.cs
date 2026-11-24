@@ -24,6 +24,14 @@ public enum AlertKind
     // Para el jugador: le citan a entrenar (una sesión o una serie semanal), o una sesión cambia o se anula. No se firma:
     // a los entrenamientos se cita a toda la plantilla y el jugador solo avisa si falta.
     TrainingCall = 7,
+
+    // Para el cuerpo técnico y el club: la convocatoria se ha enviado sin llegar al número de convocados. Se resuelve
+    // al completarla.
+    CallUpShort = 8,
+
+    // Para el jugador, su cuerpo técnico y su club: el comité de competición le ha puesto partidos de suspensión. Se
+    // resuelve al cumplirla o si el comité la cambia (llega otro con los partidos nuevos).
+    LeagueSuspension = 9,
 }
 
 // Aviso dentro de la app: la campanita del panel. Cada aviso tiene un solo destinatario: una cuenta de club, un jugador
@@ -124,6 +132,9 @@ public interface IAlertStore
     // Sin resolver y cuya clave empieza por keyPrefix, de cualquiera de esos destinatarios (con seguimiento, para resolverlos).
     Task<IReadOnlyList<Alert>> GetOpenByKeyPrefixAsync(
         string keyPrefix, IReadOnlyCollection<Guid> playerIds, IReadOnlyCollection<Guid> coachIds, Guid? clubId, CancellationToken cancellationToken = default);
+
+    // Todos los que empiezan por keyPrefix, resueltos o no y de cualquier destinatario (con seguimiento, para resolverlos).
+    Task<IReadOnlyList<Alert>> GetAllByKeyPrefixAsync(string keyPrefix, CancellationToken cancellationToken = default);
 
     // Marca como vistos de una vez (sin cargarlos) esos avisos de la cuenta; los de otra cuenta se ignoran.
     Task<int> MarkSeenAsync(Guid? clubId, Guid? playerId, Guid? coachId, IReadOnlyCollection<Guid> alertIds, DateTimeOffset now, CancellationToken cancellationToken = default);

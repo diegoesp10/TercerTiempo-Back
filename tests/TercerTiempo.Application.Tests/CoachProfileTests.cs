@@ -133,6 +133,40 @@ public class CoachProfileTests
         Assert.Contains(head.OfficialRole, new[] { "Entrenador", "2ºEntrenador" });
     }
 
+    [Fact]
+    public async Task The_current_team_says_whether_the_coach_is_warned_or_suspended_for_the_next_match()
+    {
+        var season = _competition.Seasons.Single(s => s.Label == "2026/2027");
+        var rival = Guid.NewGuid();
+        var games = Enumerable.Range(0, 4).Select(i => Played(season.Id, 2 + i, _first.Id, rival, -25 + i * 5, 1, 0)).ToList();
+        var next = Match.Schedule(season.Id, 6, rival, _first.Id, Now.AddDays(3), null, null);
+        _matches.AddRange([.. games, next]);
+        foreach (var game in games)
+            _sheets.Add(ClosedSheet(game, [new(MatchSide.Home, "Entrenador", "MENENDEZ CUETO, XURDE", YellowCards: 1), new(MatchSide.Away, "Entrenador", "OTRO PEREZ, JUAN")]));
+
+        var head = (await Handler(new Viewer()).Handle(new GetCoachProfileQuery(_coach.Id), default)).Teams.Single(t => t.Role == StaffRole.HeadCoach);
+        Assert.Equal((4, 0, 4, true), (head.Discipline!.YellowCards, head.Discipline.RedCards, head.Discipline.Next.CycleYellows, head.Discipline.Next.Warned));
+        Assert.Null(head.Discipline.Next.Suspension);
+
+        // Expulsado por doble amarilla en el último: no puede estar en el próximo, y esas dos no entran en el ciclo.
+        _sheets[^1] = ClosedSheet(games[^1], [new(MatchSide.Home, "Entrenador", "MENENDEZ CUETO, XURDE", YellowCards: 2, RedCard: true)]);
+        head = (await Handler(new Viewer()).Handle(new GetCoachProfileQuery(_coach.Id), default)).Teams.Single(t => t.Role == StaffRole.HeadCoach);
+        Assert.Equal((5, 1, 3), (head.Discipline!.YellowCards, head.Discipline.RedCards, head.Discipline.Next.CycleYellows));
+        Assert.Equal(SuspensionCause.SecondYellow, head.Discipline.Next.Suspension!.Cause);
+
+        // En los equipos que ya no lleva no se dice nada.
+        Assert.All(profileTeamsNotCurrent(await Handler(new Viewer()).Handle(new GetCoachProfileQuery(_coach.Id), default)), t => Assert.Null(t.Discipline));
+        static IEnumerable<CoachTeamDto> profileTeamsNotCurrent(CoachProfileDto profile) => profile.Teams.Where(t => !t.Current);
+    }
+
+    private static OfficialMatchSheet ClosedSheet(Match match, IReadOnlyList<OfficialStaffData> staff)
+    {
+        var sheet = OfficialMatchSheet.Create(match.Id, "asturfutbol", match.Id.ToString("N"), null, Now);
+        var line = new OfficialLineData(MatchSide.Home, 1, "PORTERO PEREZ, LUIS", true, 0, null, 90, 0, 0, 0, 0, false);
+        sheet.Apply(new OfficialSheetData(null, "Primero", "Rival", 1, 0, [line], [], Staff: staff), Now);
+        return sheet;
+    }
+
     private static OfficialMatchSheet Sheet(Match match, IReadOnlyList<OfficialStaffData> staff)
     {
         var sheet = OfficialMatchSheet.Create(match.Id, "asturfutbol", match.Id.ToString("N"), null, Now);
@@ -213,7 +247,11 @@ public class CoachProfileTests
         var sheets = Stub<IOfficialSheetStore>((method, args) => method == nameof(IOfficialSheetStore.GetStaffByMatchIdsAsync)
             ? Task.FromResult<IReadOnlyList<OfficialMatchSheet>>(_sheets.Where(s => ((IEnumerable<Guid>)args![0]!).Contains(s.MatchId)).ToList())
             : throw new NotSupportedException(method));
-        return new GetCoachProfileHandler(viewer, stores, matches, standings, sheets);
+        var committee = Stub<TercerTiempo.Domain.Sanctions.ICommitteeSanctionStore>((method, _) => method == nameof(TercerTiempo.Domain.Sanctions.ICommitteeSanctionStore.GetBySeasonAsync)
+            ? Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Sanctions.CommitteeResolution>>([])
+            : throw new NotSupportedException(method));
+        var discipline = new TercerTiempo.Application.Squads.Suspensions.StaffDisciplineReader(matches, sheets, committee, Stub<ITeamStore>(), TimeProvider.System);
+        return new GetCoachProfileHandler(viewer, stores, matches, standings, sheets, discipline);
     }
 
     private sealed record Viewer(Guid? CoachId = null, Guid? ClubId = null) : ICurrentUser

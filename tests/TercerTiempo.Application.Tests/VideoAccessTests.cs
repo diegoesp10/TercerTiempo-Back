@@ -14,7 +14,7 @@ public class VideoAccessTests
     private readonly MatchVideo _video;
 
     public VideoAccessTests() =>
-        _video = MatchVideo.Upload(_squad.Id, _squad.TeamId, Guid.NewGuid(), _squad.SeasonId, null, VideoPart.Full, null,
+        _video = MatchVideo.Upload(_squad.Id, _squad.TeamId, Guid.NewGuid(), _squad.SeasonId, null, VideoPart.Full, "Partido",
             "partido.mp4", "video/mp4", 50_000_000, "clave", Now, Guid.NewGuid());
 
     [Fact]

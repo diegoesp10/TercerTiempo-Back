@@ -52,9 +52,9 @@ public class SquadDuplicateTests
         var squad = Squad.Open(_teamId, _seasonId, Now);
         var shortCard = Entry("Lucas Paredes");
         var fullCard = Entry("Lucas Paredes Rivera");
+        squad.AddPlayer(fullCard.FullName, Position.Forward, null, fullCard.Id, Now);
         var gone = squad.AddPlayer(shortCard.FullName, Position.Forward, null, shortCard.Id, Now);
         squad.RemovePlayer(gone.Id, Now);
-        squad.AddPlayer(fullCard.FullName, Position.Forward, null, fullCard.Id, Now);
         squad.AddPlayer("Lucas", Position.Forward, null, null, Now);
 
         Assert.Empty(SquadDuplicates.Find(squad, RosterPeople.Group([shortCard, fullCard])));

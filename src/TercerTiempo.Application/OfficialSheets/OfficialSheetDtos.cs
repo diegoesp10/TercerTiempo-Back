@@ -1,7 +1,9 @@
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Application.Performances;
 using TercerTiempo.Application.Squads;
+using System.ComponentModel;
 using TercerTiempo.Domain.OfficialSheets;
+using TercerTiempo.Domain.Referees;
 
 namespace TercerTiempo.Application.OfficialSheets;
 
@@ -30,11 +32,25 @@ public sealed record OfficialSheetDto(
     string? SourceUrl,
     DateTimeOffset? CheckedAt,
     DateTimeOffset? FetchedAt,
-    string? Referee,
+    [property: Description("Quien pitó el partido (de las actas) o, si aún no se ha jugado, el designado por la federación; null si no se sabe ni se va a saber.")]
+    SheetRefereesDto? Referees,
     string? Message,
     OfficialTeamSheetDto? Home,
     OfficialTeamSheetDto? Away,
     IReadOnlyList<OfficialEventDto> Events);
+
+public sealed record SheetRefereesDto(
+    [property: Description("true: lo que ha designado la federación para un partido por jugar (puede cambiar hasta el día del partido); false: quien lo pitó.")]
+    bool Designated,
+    [property: Description("Del árbitro principal al cuarto árbitro; vacío si la federación aún no ha designado a nadie.")]
+    IReadOnlyList<SheetOfficialDto> Officials);
+
+public sealed record SheetOfficialDto(
+    OfficialRole Role,
+    [property: Description("Nombre en el orden natural («Nombre Apellidos»).")]
+    string Name,
+    [property: Description("Su ficha de árbitro en la app; null si solo se conoce el nombre del acta.")]
+    Guid? RefereeId);
 
 public sealed record OfficialTeamSheetDto(
     MatchSide Side,
@@ -53,7 +69,11 @@ public sealed record OfficialStaffDto(
     [property: System.ComponentModel.Description("Nombre como en el acta: «APELLIDOS, NOMBRE».")]
     string FullName,
     [property: System.ComponentModel.Description("Perfil del técnico en la app si el club lo ha nombrado en ese equipo y temporada con el mismo nombre; null si no.")]
-    Guid? CoachId = null);
+    Guid? CoachId = null,
+    [property: System.ComponentModel.Description("Amarillas que le enseñó el árbitro en el partido (0 a 2; van en la misma lista que las de los jugadores).")]
+    int YellowCards = 0,
+    [property: System.ComponentModel.Description("Expulsado: roja directa o doble amarilla.")]
+    bool RedCard = false);
 
 public sealed record OfficialLineDto(
     Guid Id,
@@ -130,7 +150,9 @@ internal static class OfficialSheetMapper
     public static IReadOnlyList<OfficialStaffDto> StaffOf(OfficialMatchSheet sheet, MatchSide side) =>
         sheet.StaffOf(side)
             .GroupBy(s => s.NormalizedName)
-            .Select(g => new OfficialStaffDto(g.Min(s => s.Role), string.Join(" · ", g.Select(s => s.RoleLabel).Distinct()), g.First().FullName))
+            .Select(g => new OfficialStaffDto(
+                g.Min(s => s.Role), string.Join(" · ", g.Select(s => s.RoleLabel).Distinct()), g.First().FullName,
+                YellowCards: g.Max(s => s.YellowCards), RedCard: g.Any(s => s.RedCard)))
             .OrderBy(s => s.Role)
             .ToList();
 
@@ -153,12 +175,18 @@ internal static class OfficialSheetMapper
     }
 
     public static OfficialSheetDto ToDto(OfficialMatchSheet sheet, Guid homeTeamId, Guid awayTeamId, OfficialSheetAvailability status, string? message) =>
-        new(sheet.MatchId, status, sheet.Provider, sheet.ExternalId, sheet.SourceUrl, sheet.CheckedAt, sheet.FetchedAt, sheet.Referee, message,
+        new(sheet.MatchId, status, sheet.Provider, sheet.ExternalId, sheet.SourceUrl, sheet.CheckedAt, sheet.FetchedAt, RefereeOf(sheet), message,
             Shows(sheet, status) ? ToTeamDto(sheet, MatchSide.Home, homeTeamId) : null,
             Shows(sheet, status) ? ToTeamDto(sheet, MatchSide.Away, awayTeamId) : null,
             sheet.Events.OrderBy(e => e.Order)
                 .Select(e => new OfficialEventDto(e.Side, e.Type, e.Minute, e.ExtraMinute, e.PlayerName, e.RelatedPlayerName))
                 .ToList());
+
+    // El árbitro que trae el acta; quien la lee completa después con el equipo arbitral entero si ya se ha leído.
+    private static SheetRefereesDto? RefereeOf(OfficialMatchSheet sheet) =>
+        string.IsNullOrWhiteSpace(sheet.Referee)
+            ? null
+            : new SheetRefereesDto(false, [new SheetOfficialDto(OfficialRole.Referee, Referee.DisplayName(sheet.Referee), null)]);
 
     // Las alineaciones de un acta provisional solo se enseñan como tal, nunca dentro de otro estado.
     private static bool Shows(OfficialMatchSheet sheet, OfficialSheetAvailability status) =>

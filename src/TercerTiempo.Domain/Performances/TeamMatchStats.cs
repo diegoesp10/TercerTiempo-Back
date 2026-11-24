@@ -74,6 +74,8 @@ public sealed record TeamMatchStatsData(
 
 public sealed class TeamMatchStats : AggregateRoot
 {
+    public const int MaxVideoAnalyzerLength = 200;
+
     public Guid SquadId { get; private set; }
     public Guid MatchId { get; private set; }
 
@@ -103,6 +105,11 @@ public sealed class TeamMatchStats : AggregateRoot
     public Guid? RecordedByCoachId { get; private set; }
     public Guid? RecordedByClubId { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+
+    // Si salieron del análisis del vídeo: con qué analizador («Ojeador 1.0.0») y cuándo se volcaron. Lo que se retoque a
+    // mano después lo dice UpdatedAt, que queda posterior.
+    public string? VideoAnalyzer { get; private set; }
+    public DateTimeOffset? FromVideoAt { get; private set; }
 
     private TeamMatchStats() { }
 
@@ -146,6 +153,13 @@ public sealed class TeamMatchStats : AggregateRoot
         RecordedByCoachId = editor.CoachId;
         RecordedByClubId = editor.ClubId;
         UpdatedAt = now;
+    }
+
+    public void MarkFromVideo(string? analyzer, DateTimeOffset at)
+    {
+        var name = string.IsNullOrWhiteSpace(analyzer) ? null : analyzer.Trim();
+        VideoAnalyzer = name is { Length: > MaxVideoAnalyzerLength } ? name[..MaxVideoAnalyzerLength] : name;
+        FromVideoAt = at;
     }
 }
 

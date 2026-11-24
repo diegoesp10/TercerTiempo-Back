@@ -57,6 +57,12 @@ internal sealed class AlertStore(AppDbContext db) : IAlertStore
         return found.Where(a => a.Key.StartsWith(keyPrefix, StringComparison.Ordinal)).ToList();
     }
 
+    public async Task<IReadOnlyList<Alert>> GetAllByKeyPrefixAsync(string keyPrefix, CancellationToken cancellationToken = default)
+    {
+        var found = await db.Set<Alert>().Where(a => a.Key.StartsWith(keyPrefix)).ToListAsync(cancellationToken);
+        return found.Where(a => a.Key.StartsWith(keyPrefix, StringComparison.Ordinal)).ToList();
+    }
+
     public Task<int> MarkSeenAsync(
         Guid? clubId, Guid? playerId, Guid? coachId, IReadOnlyCollection<Guid> alertIds, DateTimeOffset now, CancellationToken cancellationToken = default) =>
         (clubId is null && playerId is null && coachId is null) || alertIds.Count == 0

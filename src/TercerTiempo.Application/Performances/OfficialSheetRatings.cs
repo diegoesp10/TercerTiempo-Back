@@ -42,7 +42,7 @@ public sealed class OfficialSheetRatings(ISquadStore squads, IMatchStore matches
         var side = match.IsHome(squad.TeamId) ? MatchSide.Home : MatchSide.Away;
         var withLine = lines.Select(l => l.SquadPlayerId).ToHashSet();
         var official = sheet is not null
-            ? SheetMatcher.Match(squad.Players.Where(p => p.IsActive || withLine.Contains(p.Id)), sheet.LinesOf(side))
+            ? SheetMatcher.Match(squad.Players.Where(p => p.WasMemberAt(match.KickoffAt) || withLine.Contains(p.Id)), sheet.LinesOf(side))
             : new Dictionary<Guid, OfficialSheetLine>();
 
         var changed = 0;

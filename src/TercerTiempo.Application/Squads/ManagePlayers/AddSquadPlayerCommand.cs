@@ -35,6 +35,7 @@ internal sealed class AddSquadPlayerHandler(
     ICurrentUser currentUser,
     ISquadStore squads,
     IClubStore clubs,
+    Injuries.InjuryCarryOver carryOver,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<AddSquadPlayerCommand, SquadPlayerDto>
 {
@@ -43,6 +44,8 @@ internal sealed class AddSquadPlayerHandler(
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
 
         var player = squad.AddPlayer(command.FullName, command.Position, command.ShirtNumber, null, clock.GetUtcNow());
+        // Si viene de la temporada anterior del club con una lesión abierta, la trae.
+        await carryOver.IntoAsync(squad, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return SquadMapper.ToPlayerDto(player, null);

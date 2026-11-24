@@ -80,6 +80,8 @@ internal sealed class UploadInjuryDocumentHandler(
     {
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var injury = await InjuryAccess.InjuryOfAsync(squad, command.InjuryId, injuries, cancellationToken);
+        InjuryAccess.EnsurePlayerInSquad(squad, injury);
+        injury.EnsureNotContinued();
 
         if ((await documents.GetByInjuryIdsAsync([injury.Id], cancellationToken)).Count >= InjuryDocument.MaxPerInjury)
             throw new ConflictException(ErrorCode.InjuryDocumentLimit);

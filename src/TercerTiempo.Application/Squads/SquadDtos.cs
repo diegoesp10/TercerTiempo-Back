@@ -29,7 +29,12 @@ public sealed record SquadDetailDto(
     bool CanInvitePlayers,
     bool CanManage,
     IReadOnlyList<SquadStaffDto> Staff,
-    IReadOnlyList<SquadPlayerDto> Players);
+    [property: System.ComponentModel.Description("Los que están en la plantilla: solo con ellos se convoca, se entrena y se hacen actas.")]
+    IReadOnlyList<SquadPlayerDto> Players,
+    [property: System.ComponentModel.Description("Los que estuvieron y causaron baja (leftOn), los últimos primero: se consultan, pero ya no entran en nada nuevo.")]
+    IReadOnlyList<SquadPlayerDto> LeftPlayers,
+    [property: System.ComponentModel.Description("A cuántos se convoca siempre; null: se pregunta en cada convocatoria.")]
+    int? CallUpSize = null);
 
 public sealed record SquadStaffDto(Guid CoachId, string DisplayName, StaffRole Role, DateTimeOffset JoinedAt, DateOnly? ValidUntil, string? PhotoUrl = null);
 
@@ -46,7 +51,9 @@ public sealed record SquadPlayerDto(
     InjuryDto? Injury = null,
     string? InviteCode = null,
     [property: System.ComponentModel.Description("Foto de la ficha publicada por el club, si la ha subido.")]
-    string? PhotoUrl = null);
+    string? PhotoUrl = null,
+    [property: System.ComponentModel.Description("Día en que causó baja (hora de España); null si sigue en la plantilla.")]
+    DateOnly? LeftOn = null);
 
 public sealed record SquadMatchDto(MatchDto Match, int EntriesRecorded);
 

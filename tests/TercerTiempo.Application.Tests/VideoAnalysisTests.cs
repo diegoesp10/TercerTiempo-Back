@@ -384,7 +384,8 @@ public class UvVideoAnalyzerTests
             var run = UvVideoAnalyzer.ReadRun(folder, "analysis/abc");
 
             Assert.Equal("analysis/abc", run.OutputPath);
-            Assert.Equal("0.1.0", run.AnalyzerVersion);
+            // Un análisis de antes de que el analizador tuviera nombre: el mismo analizador, con las rutas de sus pesos.
+            Assert.Equal(("Ojeador", "0.1.0"), (run.AnalyzerName, run.AnalyzerVersion));
             Assert.Equal("jugadores: football-player-detection.pt · balon: afinados/balon.pt · campo: football-pitch-detection.pt", run.Weights);
             Assert.Equal((1500, 19.3m, 67.1m, 300), (run.Frames, run.BallFramesPct, run.CalibratedFramesPct, run.AnalyzedSeconds));
             Assert.Equal((100m, 62m), (run.PitchLengthM, run.PitchWidthM));
@@ -550,6 +551,32 @@ public class UvVideoAnalyzerOutputTests
         }
     }
 
+    [Fact]
+    public void The_analysis_says_which_analyzer_and_which_models_analyzed_the_video()
+    {
+        var analysis = VideoAnalysisSamples.Analysis.Replace(
+            "\"version\": \"0.1.0\",",
+            """
+            "version": "1.0.0",
+            "analizador": { "nombre": "Ojeador", "version": "1.0.0", "modelos": [
+              { "que": "jugadores", "modelo": "RF-DETR Medium", "entrenamiento": "rfdetr-jugadores-20261117", "motor": "TensorRT", "huella": "d5c932ba" },
+              { "que": "balon", "modelo": "RF-DETR Medium", "entrenamiento": "rfdetr-balon-20261117-v2", "motor": "TensorRT", "huella": "b46dbd49" },
+              { "que": "dorsales", "modelo": "PARSeq", "entrenamiento": "afinado con nuestros partidos", "motor": "PyTorch", "huella": "1a2b3c4d" },
+              { "que": "campo", "modelo": "RF-DETR Keypoint" } ] },
+            """);
+
+        WithOutput(VideoAnalysisSamples.Proposal, analysis, folder =>
+        {
+            var run = UvVideoAnalyzer.ReadRun(folder, "analysis/abc");
+
+            Assert.Equal(("Ojeador", "1.0.0"), (run.AnalyzerName, run.AnalyzerVersion));
+            Assert.Equal(
+                "Jugadores: RF-DETR Medium (rfdetr-jugadores-20261117, TensorRT, huella d5c932ba) · Balón: RF-DETR Medium (rfdetr-balon-20261117-v2, TensorRT, huella b46dbd49) · "
+                + "Dorsales: PARSeq (afinado con nuestros partidos, PyTorch, huella 1a2b3c4d) · Campo: RF-DETR Keypoint",
+                run.Weights);
+        });
+    }
+
     private static void WithOutput(string proposal, string analysis, Action<string> check)
     {
         var folder = Directory.CreateTempSubdirectory("tt-analisis-").FullName;
@@ -615,7 +642,7 @@ public class VideoAnalysisProcessorTests
         Assert.Equal(VideoAnalysisStatus.Ready, analysis.Status);
         Assert.Equal(100, analysis.Progress);
         Assert.Equal(VideoAnalysisSamples.Run().ProposalJson, analysis.ProposalJson);
-        Assert.Equal((19.3m, 67.1m, 1500, "0.1.0"), (analysis.BallFramesPct, analysis.CalibratedFramesPct, analysis.Frames, analysis.AnalyzerVersion));
+        Assert.Equal((19.3m, 67.1m, 1500, "Ojeador 0.1.0"), (analysis.BallFramesPct, analysis.CalibratedFramesPct, analysis.Frames, analysis.Analyzer));
         Assert.True(analysis.LowQuality);
         Assert.Equal([696, 781], world.Analyses.Crops[analysis.Id].Select(c => c.Tracklet));
 
@@ -970,7 +997,7 @@ internal static class VideoAnalysisSamples
         """;
 
     public static VideoAnalysisRun Run() => new(
-        "analysis/abc", "0.1.0", "balon: afinados/balon.pt", System.Text.Json.JsonSerializer.Serialize(System.Text.Json.JsonDocument.Parse(Proposal).RootElement),
+        "analysis/abc", "Ojeador", "0.1.0", "balon: afinados/balon.pt", System.Text.Json.JsonSerializer.Serialize(System.Text.Json.JsonDocument.Parse(Proposal).RootElement),
         1500, 19.3m, 67.1m, 300, 98.5m, 62m,
         new Dictionary<int, byte[]> { [696] = [0xFF, 0xD8, 0xFF, 0xD9], [781] = [0xFF, 0xD8, 0xFF, 0xD9] });
 }
@@ -1052,6 +1079,8 @@ internal sealed class FakeVideoStore : IMatchVideoStore
     public Task<IReadOnlyList<MatchVideo>> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<MatchVideo>>(Items.Where(v => v.MatchId == matchId && !v.IsDeleted).ToList());
     public Task<IReadOnlyList<MatchVideo>> GetBySquadsAsync(IEnumerable<Guid> squadIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<IReadOnlyList<MatchVideo>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<MatchVideo>>(Items.Where(v => !v.IsDeleted).ToList());
     public void Add(MatchVideo video) => Items.Add(video);
     public Task<MatchVideo?> GetNextPendingAsync(int maxAttempts, CancellationToken cancellationToken = default) =>
         Task.FromResult(Items.Where(v => v.AwaitsProcessing(maxAttempts)).OrderBy(v => v.UploadedAt).FirstOrDefault());

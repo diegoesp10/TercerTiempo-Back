@@ -50,7 +50,8 @@ internal static class MatchSheetBuilder
         var callUp = seesAllNotes ? await callUps.GetByMatchAsync(squad.Id, match.Id, cancellationToken) : null;
         var called = callUp?.Called.Select(e => e.SquadPlayerId).ToHashSet() ?? [];
 
-        var entries = SquadMapper.Ordered(squad.Players.Where(p => p.IsActive || recorded.ContainsKey(p.Id)))
+        // Quien era del equipo ese día (también si causó baja después) y quien ya tiene línea.
+        var entries = SquadMapper.Ordered(squad.Players.Where(p => p.WasMemberAt(match.KickoffAt) || recorded.ContainsKey(p.Id)))
             .Select(p => (Player: p, Suspension: suspensions.On(p.Id, match.Id)))
             .Select(x => new MatchSheetEntryDto(
                 SquadMapper.ToPlayerDto(x.Player, linkedMap),

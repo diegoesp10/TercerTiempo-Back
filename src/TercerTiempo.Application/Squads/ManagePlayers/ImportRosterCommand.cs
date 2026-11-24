@@ -32,6 +32,7 @@ internal sealed class ImportRosterHandler(
     IClubStore clubs,
     IPerformanceStore performances,
     IMatchStore matches,
+    Injuries.InjuryCarryOver carryOver,
     IUnitOfWork unitOfWork,
     TimeProvider clock) : ICommandHandler<ImportRosterCommand, SquadDetailDto>
 {
@@ -40,6 +41,7 @@ internal sealed class ImportRosterHandler(
         var squad = await Resolvers.SquadForManagerAsync(squads, currentUser, clubs, command.SquadId, clock, cancellationToken);
         var completed = SquadOpening.ImportRoster(squad, await teams.GetRosterAsync(squad.TeamId, squad.SeasonId, cancellationToken), clock.GetUtcNow());
         await SquadRosterReconciliation.RecalculateRatingsAsync(squad, completed, performances, matches, cancellationToken);
+        await carryOver.IntoAsync(squad, cancellationToken);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

@@ -35,9 +35,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<SquadStaff> SquadStaff => Set<SquadStaff>();
     public DbSet<SquadPlayer> SquadPlayers => Set<SquadPlayer>();
     public DbSet<PlayerInjury> PlayerInjuries => Set<PlayerInjury>();
+    public DbSet<InjuryTypeDefinition> InjuryTypes => Set<InjuryTypeDefinition>();
     public DbSet<InjuryDocument> InjuryDocuments => Set<InjuryDocument>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<RosterEntry> RosterEntries => Set<RosterEntry>();
+    public DbSet<Territory> Territories => Set<Territory>();
     public DbSet<Competition> Competitions => Set<Competition>();
     public DbSet<Season> Seasons => Set<Season>();
     public DbSet<Match> Matches => Set<Match>();
@@ -122,6 +124,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             // no es un error: se da por hecho y se guarda el resto.
             foreach (var entry in ex.Entries) entry.State = EntityState.Detached;
             result = await base.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 547 }
+            && ex.Entries.FirstOrDefault(e => e.Entity is InjuryTypeDefinition && e.State == EntityState.Deleted)?.Entity is InjuryTypeDefinition type)
+        {
+            // Alguien registró una lesión con ese tipo justo mientras el administrador lo borraba.
+            throw new ConflictException(ErrorCode.InjuryTypeInUse, type.Label, "algunas");
         }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 }
             && ex.Entries.Any(e => e.Entity is SquadPlayer { PlayerId: not null }))

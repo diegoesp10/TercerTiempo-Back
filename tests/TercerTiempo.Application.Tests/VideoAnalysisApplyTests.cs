@@ -140,7 +140,7 @@ public class VideoAnalysisApplyTests
         f.Videos.Items.Clear();
         Assert.Empty((await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default)).Videos);
 
-        var uploading = MatchVideo.Upload(f.Squad.Id, f.Team.Id, f.Played.Id, f.Squad.SeasonId, null, VideoPart.Full, null, "partido.mp4", "video/mp4",
+        var uploading = MatchVideo.Upload(f.Squad.Id, f.Team.Id, f.Played.Id, f.Squad.SeasonId, null, VideoPart.Full, "Partido", "partido.mp4", "video/mp4",
             50_000_000, "original.mp4", Now, f.Club.Id);
         f.Videos.Items.Add(uploading);
 
@@ -163,6 +163,10 @@ public class VideoAnalysisApplyTests
         var seen = await f.Get(admin).Handle(new(f.Squad.Id, f.Played.Id), default);
         Assert.False(seen.CanManage);
         Assert.Equal(VideoAnalysisState.Ready, Assert.Single(seen.Videos).State);
+        // Quién analizó lo ve todo el que ve la propuesta; con qué modelos, solo el administrador.
+        Assert.Equal(("Ojeador", "0.1.0", "balon: afinados/balon.pt"), (seen.Videos[0].AnalyzerName, seen.Videos[0].AnalyzerVersion, seen.Videos[0].Weights));
+        var staff = Assert.Single((await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default)).Videos);
+        Assert.Equal(("Ojeador", "0.1.0", (string?)null), (staff.AnalyzerName, staff.AnalyzerVersion, staff.Weights));
         Assert.Equal([0xFF, 0xD8, 0xFF, 0xD9], (await f.Crop(admin).Handle(new(f.Squad.Id, f.Played.Id, 696, null), default)).Content);
 
         Assert.Equal(ErrorCode.SquadManagersOnly, (await Assert.ThrowsAsync<ForbiddenException>(() => f.Request(admin).Handle(new(f.Squad.Id, f.Played.Id, null), default))).Code);
@@ -210,6 +214,9 @@ public class VideoAnalysisApplyTests
             (team.PossessionPct, team.ShotsFor, team.ShotsAgainst, team.ShotsOnTargetFor, team.ShotsOnTargetAgainst, team.CornersFor, team.CornersAgainst,
                 team.ThrowInsFor, team.ThrowInsAgainst, team.GoalKicksFor, team.GoalKicksAgainst));
         Assert.Equal(f.Club.Id, team.RecordedByClubId);
+        // Con qué analizador salieron del vídeo, también en el acta que se devuelve.
+        Assert.Equal(("Ojeador 0.1.0", team.UpdatedAt), (team.VideoAnalyzer, team.FromVideoAt));
+        Assert.Equal("Ojeador 0.1.0", result.Sheet.TeamStats!.VideoAnalyzer);
 
         // Los dos tramos de Pelayo se suman en su línea, que se crea con los minutos que se le ha visto.
         var line = Assert.Single(f.Performances);
@@ -449,7 +456,7 @@ public class VideoAnalysisApplyTests
             Pelayo = Squad.AddPlayer("Pelayo Fernández", Position.Forward, 9, null, Now);
             Squad.AddPlayer("Nel Suárez", Position.Goalkeeper, 1, null, Now);
 
-            Video = MatchVideo.Upload(Squad.Id, Team.Id, Played.Id, season.Id, null, VideoPart.Full, null, "partido.mp4", "video/mp4",
+            Video = MatchVideo.Upload(Squad.Id, Team.Id, Played.Id, season.Id, null, VideoPart.Full, "Partido", "partido.mp4", "video/mp4",
                 50_000_000, "original.mp4", Now.AddHours(-3), Club.Id);
             Video.StartProcessing(Now.AddHours(-3));
             Video.KeepOriginal(5782, 1080, Now.AddHours(-2));
@@ -463,7 +470,7 @@ public class VideoAnalysisApplyTests
             var analysis = MatchVideoAnalysis.Queue(Video, Now.AddHours(-2));
             analysis.Start(Now.AddHours(-2));
             var run = VideoAnalysisSamples.Run();
-            analysis.Complete(new VideoAnalysisOutcome(run.OutputPath, run.AnalyzerVersion, run.Weights, proposalJson ?? run.ProposalJson, run.Frames,
+            analysis.Complete(new VideoAnalysisOutcome(run.OutputPath, run.AnalyzerName, run.AnalyzerVersion, run.Weights, proposalJson ?? run.ProposalJson, run.Frames,
                 run.BallFramesPct, run.CalibratedFramesPct, run.AnalyzedSeconds, run.PitchLengthM, run.PitchWidthM), Now.AddHours(-1));
             Analyses.Items.Add(analysis);
             Analyses.Crops[analysis.Id] = run.Crops.Select(c => new VideoAnalysisCrop(analysis.Id, c.Key, c.Value)).ToList();
@@ -488,7 +495,7 @@ public class VideoAnalysisApplyTests
             nameof(IOfficialSheetStore.GetAvailableLinesByMatchIdsAsync) => Task.FromResult<IReadOnlyList<OfficialMatchSheet>>(new[] { Sheet }.OfType<OfficialMatchSheet>().ToList()),
             _ => throw new NotSupportedException(method),
         });
-        private SuspensionReader Suspensions => new(Matches, PerformanceStore, Sheets, TimeProvider.System);
+        private SuspensionReader Suspensions => new(Matches, PerformanceStore, Sheets, new FakeCommitteeStore(), Teams, TimeProvider.System);
         private ICoachStore Coaches => TestStub.Of<ICoachStore>((method, _) => throw new NotSupportedException(method));
         private IMatchStore Matches => TestStub.Of<IMatchStore>((method, args) => method switch
         {

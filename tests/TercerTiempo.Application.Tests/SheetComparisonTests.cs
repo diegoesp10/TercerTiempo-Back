@@ -54,9 +54,9 @@ public class SheetComparisonTests
         };
         var theirs = new List<OfficialFixture>
         {
-            new("S.D. Lenense Proinastur \"A\"", "4210", "Real Sporting de Gijón SAD \"C\"", "9602883", null, null, "25744773"),
-            new("C.D. Vallobin \"A\"", "3597", "Navarro C.F. Alusin Solar \"A\"", "1133", null, null, "25744780"),
-            new("Valdesoto C.F. \"A\"", "4284", "Candas C.F.", "1095", null, null, "25744771"),
+            new("S.D. Lenense Proinastur \"A\"", "4210", "Real Sporting de Gijón SAD \"C\"", "9602883", null, null, "25744773", []),
+            new("C.D. Vallobin \"A\"", "3597", "Navarro C.F. Alusin Solar \"A\"", "1133", null, null, "25744780", []),
+            new("Valdesoto C.F. \"A\"", "4284", "Candas C.F.", "1095", null, null, "25744771", []),
         };
 
         var pairs = OfficialSheetLocator.Pair(ours, theirs, teams).ToDictionary(p => p.Ours.Id, p => p.Theirs);

@@ -49,6 +49,8 @@ internal sealed class OfficialSheetStaffConfiguration : IEntityTypeConfiguration
         builder.Property(s => s.RoleLabel).HasMaxLength(60).IsRequired();
         builder.Property(s => s.FullName).HasMaxLength(150).IsRequired();
         builder.Property(s => s.NormalizedName).HasMaxLength(150).IsRequired();
+        builder.Property(s => s.YellowCards).HasDefaultValue(0);
+        builder.Property(s => s.RedCard).HasDefaultValue(false);
 
         builder.HasIndex(s => s.SheetId);
         builder.HasIndex(s => s.NormalizedName);

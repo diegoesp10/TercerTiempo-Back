@@ -47,20 +47,35 @@ internal static class SquadEndpoints
         group.MapDelete("/{squadId:guid}/players/{squadPlayerId:guid}", (Guid squadId, Guid squadPlayerId, ISquadsRepository squads, CancellationToken ct) => squads.RemovePlayerAsync(squadId, squadPlayerId, ct))
             .WithName("RemoveSquadPlayer")
             .WithSummary("Dar de baja una ficha")
-            .WithDescription("La ficha deja de estar activa pero conserva sus actas.")
+            .WithDescription("La ficha pasa a «De baja» (leftPlayers del detalle) con todo lo que hizo antes: actas, asistencia, convocatorias y lesiones. Desde ese día no entra en convocatorias, entrenamientos ni actas nuevas, no se edita, y sus avisos abiertos de entrenamientos y convocatorias se cierran.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapPost("/{squadId:guid}/players/{squadPlayerId:guid}/reinstate", (Guid squadId, Guid squadPlayerId, ISquadsRepository squads, CancellationToken ct) => squads.ReinstatePlayerAsync(squadId, squadPlayerId, ct))
+            .WithName("ReinstateSquadPlayer")
+            .WithSummary("Reincorporar una ficha dada de baja")
+            .WithDescription("Vuelve a la plantilla con su historial y, si tenía la cuenta vinculada, el jugador recupera el acceso. 422 si no estaba de baja o ya hay otra ficha activa de esa persona; 409 si con su cuenta juega ahora en otra plantilla.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/{squadId:guid}/players/import", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.ImportRosterAsync(squadId, ct))
             .WithName("ImportSquadRoster")
             .WithSummary("Importar la plantilla publicada por el proveedor")
-            .WithDescription("Añade las fichas de futbolasturiano.es que aún no estén en la plantilla.")
+            .WithDescription("Añade las fichas de futbolasturiano.es que aún no estén en la plantilla. Las que causaron baja no vuelven: se reincorporan a mano.")
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
         group.MapPut("/{squadId:guid}/visibility", (Guid squadId, SquadVisibilityRequest request, ISquadsRepository squads, CancellationToken ct) => squads.SetVisibilityAsync(squadId, request, ct))
             .WithName("SetSquadVisibility")
             .WithSummary("Cambiar la visibilidad de la plantilla")
             .WithDescription("Lo interno (actas internas, estadísticas y vídeos) solo lo ven el club, el cuerpo técnico y los jugadores vinculados. Private: nadie más puede pedirlo. Public: cualquier cuenta puede solicitar al club el acceso a un partido; nada se ve hasta que el club aprueba y la persona canjea su pase.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapPut("/{squadId:guid}/call-up-size", (Guid squadId, SquadCallUpSizeRequest request, ISquadsRepository squads, CancellationToken ct) => squads.SetCallUpSizeAsync(squadId, request, ct))
+            .WithName("SetSquadCallUpSize")
+            .WithSummary("Fijar a cuántos se convoca")
+            .WithDescription("Con un número (de 7 a 30), todas las convocatorias son de ese número exacto: no se puede marcar a más y, si se envía con menos, el cuerpo técnico y el club reciben un aviso de que faltan jugadores por convocar. Sin número (null), se pregunta en cada convocatoria.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
@@ -184,7 +199,7 @@ internal static class SquadEndpoints
         group.MapGet("/injury-types", (ISquadsRepository squads, CancellationToken ct) => squads.ListInjuryTypesAsync(ct))
             .WithName("ListInjuryTypes")
             .WithSummary("Tipos de lesión con su duración media orientativa")
-            .WithDescription("Catálogo fijo: el frontal propone la vuelta prevista sumando averageDays a la fecha de inicio.");
+            .WithDescription("Los que se pueden elegir del catálogo que mantiene el administrador (los retirados no salen, aunque sigan en las lesiones que ya los tienen). El frontal propone la vuelta prevista sumando averageDays a la fecha de inicio.");
 
         group.MapGet("/{squadId:guid}/injuries", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.ListInjuriesAsync(squadId, ct))
             .WithName("ListSquadInjuries")
@@ -212,16 +227,35 @@ internal static class SquadEndpoints
         group.MapPost("/{squadId:guid}/injuries/{injuryId:guid}/close", (Guid squadId, Guid injuryId, CloseInjuryRequest request, ISquadsRepository squads, CancellationToken ct) => squads.CloseInjuryAsync(squadId, injuryId, request, ct))
             .WithName("CloseInjury")
             .WithSummary("Dar el alta")
+            .WithDescription("Con el día del alta real (por defecto hoy; nunca posterior a hoy ni anterior al parte): de ahí salen los días que tardó en recuperarse.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapPost("/{squadId:guid}/injuries/{injuryId:guid}/reopen", (Guid squadId, Guid injuryId, ISquadsRepository squads, CancellationToken ct) => squads.ReopenInjuryAsync(squadId, injuryId, ct))
             .WithName("ReopenInjury")
-            .WithSummary("Anular el alta (recaída)")
+            .WithSummary("Deshacer un alta dada por error")
+            .WithDescription("La lesión vuelve a estar abierta como si no se hubiera dado el alta. Si la lesión ha vuelto después de un alta de verdad, se registra una recaída (POST …/relapse), que no borra esa alta. 409 injury.has_relapse si ya tiene una recaída detrás.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPost("/{squadId:guid}/injuries/{injuryId:guid}/relapse", (Guid squadId, Guid injuryId, RelapseRequest request, ISquadsRepository squads, CancellationToken ct) => squads.RecordRelapseAsync(squadId, injuryId, request, ct))
+            .WithName("RecordInjuryRelapse")
+            .WithSummary("Registrar una recaída de una lesión superada")
+            .WithDescription("Solo cuerpo técnico. Crea una lesión nueva del mismo tipo enlazada a la superada, que conserva su alta y sus días de baja. Devuelve todas las lesiones de la plantilla.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+
+        group.MapGet("/{squadId:guid}/players/{squadPlayerId:guid}/injuries", (Guid squadId, Guid squadPlayerId, ISquadsRepository squads, CancellationToken ct) => squads.GetPlayerInjuryHistoryAsync(squadId, squadPlayerId, ct))
+            .WithName("GetPlayerInjuryHistory")
+            .WithSummary("Historial de lesiones de un jugador en el club")
+            .WithDescription("Las de esta temporada y las de la misma persona en las plantillas de otras temporadas y equipos del club, con los días del parte al alta. El club, el cuerpo técnico y el propio jugador (403 injury.private para sus compañeros); el administrador, para leer.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapDelete("/{squadId:guid}/injuries/{injuryId:guid}", (Guid squadId, Guid injuryId, ISquadsRepository squads, CancellationToken ct) => squads.DeleteInjuryAsync(squadId, injuryId, ct))
             .WithName("DeleteInjury")
@@ -290,6 +324,13 @@ internal static class SquadEndpoints
             .WithName("GetSquadSeasonTable")
             .WithSummary("Temporada de cada jugador (tabla de la plantilla)")
             .WithDescription("Partidos, titularidades, minutos, goles, asistencias, tarjetas, faltas y nota media de cada ficha activa. Por partido cuenta el acta interna si existe y, si no, el acta oficial descargada de la federación (sin asistencias ni faltas). Indica cuántos partidos salen de cada fuente.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{squadId:guid}/discipline", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetDisciplineAsync(squadId, ct))
+            .WithName("GetSquadDiscipline")
+            .WithSummary("Apercibidos y sancionados para el próximo partido")
+            .WithDescription("Cómo llega cada uno al próximo partido de liga del equipo: los jugadores apercibidos (cuatro amarillas del ciclo de cinco) o sancionados (5.ª amarilla, expulsión o lo que publique el comité de competición), con el motivo, y el cuerpo técnico de la plantilla que figura en las actas oficiales con sus tarjetas de la temporada, apercibido o sancionado igual (también con las inhabilitaciones por días del comité). Se calcula al leer con las actas oficiales cerradas (y, para los jugadores, las internas mientras no llega la oficial). Misma visibilidad que la plantilla.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 

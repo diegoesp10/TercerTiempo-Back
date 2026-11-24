@@ -19,6 +19,8 @@ internal sealed class CompetitionConfiguration : IEntityTypeConfiguration<Compet
 
         builder.HasIndex(c => c.SortOrder);
 
+        builder.HasOne<Territory>().WithMany().HasForeignKey(c => c.TerritoryId).OnDelete(DeleteBehavior.Restrict);
+
         builder.OwnsExternalRef(c => c.ExternalRef);
 
         builder.HasMany(c => c.Seasons)
@@ -29,6 +31,23 @@ internal sealed class CompetitionConfiguration : IEntityTypeConfiguration<Compet
         builder.Navigation(c => c.Seasons)
             .UsePropertyAccessMode(PropertyAccessMode.Field)
             .AutoInclude();
+    }
+}
+
+internal sealed class TerritoryConfiguration : IEntityTypeConfiguration<Territory>
+{
+    public void Configure(EntityTypeBuilder<Territory> builder)
+    {
+        builder.ToTable("Territories");
+        builder.ConfigureAggregate();
+
+        builder.Property(t => t.Name).HasMaxLength(100).IsRequired();
+        builder.Property(t => t.Kind).HasConversion<string>().HasMaxLength(20);
+        builder.HasIndex(t => t.Name).IsUnique();
+
+        builder.HasData(
+            new { Id = Territory.NationalId, Name = Territory.NationalName, Kind = TerritoryKind.National },
+            new { Id = Territory.AsturiasId, Name = Territory.AsturiasName, Kind = TerritoryKind.Regional });
     }
 }
 

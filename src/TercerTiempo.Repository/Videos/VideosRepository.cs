@@ -11,7 +11,7 @@ public interface IVideosRepository
     Task<VideoStreamDto> OpenStreamAsync(Guid videoId, string ticket, bool download, CancellationToken cancellationToken = default);
     Task<bool> DeleteAsync(Guid videoId, CancellationToken cancellationToken = default);
 
-    Task<MatchVideoDto> UploadAsync(Guid squadId, Guid matchId, VideoPart part, string? title, VideoUpload file, CancellationToken cancellationToken = default);
+    Task<MatchVideoDto> UploadAsync(Guid squadId, Guid matchId, VideoPart part, VideoUpload file, CancellationToken cancellationToken = default);
     Task<VideoUploadDto> BeginUploadAsync(Guid squadId, Guid matchId, BeginVideoUploadRequest request, CancellationToken cancellationToken = default);
     Task<VideoUploadDto> GetUploadAsync(Guid squadId, Guid uploadId, CancellationToken cancellationToken = default);
     Task<VideoUploadDto> AppendChunkAsync(Guid squadId, Guid uploadId, int chunkIndex, long length, Stream content, CancellationToken cancellationToken = default);
@@ -39,8 +39,8 @@ internal sealed class VideosRepository(
     public Task<bool> DeleteAsync(Guid videoId, CancellationToken cancellationToken = default) =>
         delete.Handle(new DeleteVideoCommand(videoId), cancellationToken);
 
-    public Task<MatchVideoDto> UploadAsync(Guid squadId, Guid matchId, VideoPart part, string? title, VideoUpload file, CancellationToken cancellationToken = default) =>
-        upload.Handle(new UploadMatchVideoCommand(squadId, matchId, part, title, file), cancellationToken);
+    public Task<MatchVideoDto> UploadAsync(Guid squadId, Guid matchId, VideoPart part, VideoUpload file, CancellationToken cancellationToken = default) =>
+        upload.Handle(new UploadMatchVideoCommand(squadId, matchId, part, file), cancellationToken);
 
     public Task<VideoUploadDto> BeginUploadAsync(Guid squadId, Guid matchId, BeginVideoUploadRequest request, CancellationToken cancellationToken = default) =>
         beginUpload.Handle(request.ToCommand(squadId, matchId), cancellationToken);

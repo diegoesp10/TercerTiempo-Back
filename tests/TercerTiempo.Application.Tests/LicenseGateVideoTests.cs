@@ -30,7 +30,7 @@ public class LicenseGateVideoTests
     {
         _club.AddTeam(_teamId, Now);
         _squad = Squad.Open(_teamId, Guid.NewGuid(), Now);
-        _video = MatchVideo.Upload(_squad.Id, _teamId, Guid.NewGuid(), _squad.SeasonId, null, VideoPart.Full, null, "partido.mp4", "video/mp4",
+        _video = MatchVideo.Upload(_squad.Id, _teamId, Guid.NewGuid(), _squad.SeasonId, null, VideoPart.Full, "Partido", "partido.mp4", "video/mp4",
             50_000_000, "clave", Now, _club.Id);
     }
 

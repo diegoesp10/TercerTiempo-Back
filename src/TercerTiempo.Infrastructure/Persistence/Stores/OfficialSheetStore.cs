@@ -89,6 +89,9 @@ internal sealed class MatchVideoStore(AppDbContext db) : IMatchVideoStore
         return await db.MatchVideos.Where(v => list.Contains(v.SquadId) && v.DeletedAt == null).ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<MatchVideo>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        await db.MatchVideos.Where(v => v.DeletedAt == null).ToListAsync(cancellationToken);
+
     public void Add(MatchVideo video) => db.MatchVideos.Add(video);
 
     public Task<MatchVideo?> GetNextPendingAsync(int maxAttempts, CancellationToken cancellationToken = default) =>

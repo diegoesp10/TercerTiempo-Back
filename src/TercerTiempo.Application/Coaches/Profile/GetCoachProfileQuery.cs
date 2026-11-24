@@ -76,7 +76,9 @@ public sealed record CoachTeamDto(
     [property: Description("En cuántas de ellas figura con su nombre (mismo comparador de nombres que las plantillas).")]
     int OfficialAppearances = 0,
     [property: Description("Función con la que más figura en ellas, tal como la escribe la federación («Entrenador», «2ºEntrenador»…); null si no figura.")]
-    string? OfficialRole = null);
+    string? OfficialRole = null,
+    [property: Description("En el equipo actual: sus tarjetas de la temporada en las actas oficiales y cómo llega al próximo partido (apercibido o sancionado); null en los anteriores o si no figura en ningún acta.")]
+    TercerTiempo.Application.Squads.Suspensions.StaffDisciplineDto? Discipline = null);
 
 public sealed record GetCoachProfileQuery(Guid CoachId) : IQuery<CoachProfileDto>;
 
@@ -85,7 +87,8 @@ public sealed record GetCoachProfileQuery(Guid CoachId) : IQuery<CoachProfileDto
 // si el club le retiró el nombramiento después de que lo empezara, sale hasta ese día. Si se lo retiró antes de empezar (un
 // error al nombrarlo), no estuvo nunca en el equipo y no sale.
 internal sealed class GetCoachProfileHandler(
-    ICurrentUser currentUser, AccountStores stores, IMatchStore matches, IStandingStore standings, IOfficialSheetStore sheets)
+    ICurrentUser currentUser, AccountStores stores, IMatchStore matches, IStandingStore standings, IOfficialSheetStore sheets,
+    TercerTiempo.Application.Squads.Suspensions.StaffDisciplineReader staffDiscipline)
     : IQueryHandler<GetCoachProfileQuery, CoachProfileDto>
 {
     public async Task<CoachProfileDto> Handle(GetCoachProfileQuery query, CancellationToken cancellationToken)
@@ -125,6 +128,10 @@ internal sealed class GetCoachProfileHandler(
             var position = table.FirstOrDefault(s => s.TeamId == appointment.TeamId)?.Position;
             if (position is { } ranking) ranked[key] = ranking;
             var official = await OfficialAsync(coach.NormalizedName, appointment.TeamId, played, cancellationToken);
+            var discipline = status == AppointmentStatus.Active
+                ? (await staffDiscipline.LoadAsync(appointment.TeamId, appointment.SeasonId, seasonMatches, cancellationToken))
+                    .For([coach.NormalizedName, appointment.NormalizedCoachName])?.ToDto()
+                : null;
 
             teams.Add(new CoachTeamDto(
                 appointment.TeamId, team?.Name ?? "Equipo", team?.ShortName ?? string.Empty, team?.CrestLink(), club?.Name ?? "Club",
@@ -133,7 +140,7 @@ internal sealed class GetCoachProfileHandler(
                 Record(appointment.TeamId, played),
                 position,
                 position is null ? null : table.Count,
-                official.Sheets, official.Appearances, official.Role));
+                official.Sheets, official.Appearances, official.Role, discipline));
         }
 
         return new CoachProfileDto(

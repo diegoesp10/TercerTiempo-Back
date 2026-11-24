@@ -19,6 +19,9 @@ public sealed class Competition : AggregateRoot
 
     public string Region { get; private set; } = string.Empty;
 
+    // Quién la organiza (Nacional, Asturias…). Region dice dónde se juega: la 3ª RFEF · Grupo 2 es nacional y asturiana.
+    public Guid TerritoryId { get; private set; }
+
     public int SortOrder { get; private set; }
 
     public ExternalRef? ExternalRef { get; private set; }
@@ -32,7 +35,16 @@ public sealed class Competition : AggregateRoot
     {
         var competition = new Competition { Id = NewId(), ExternalRef = externalRef };
         competition.UpdateDetails(name, category, level, tier, group, region);
+        // Mientras la sincronización no diga otra cosa (PlaceIn), la de los ámbitos de serie.
+        competition.TerritoryId = Territory.IsNational(level, category) ? Territory.NationalId : Territory.AsturiasId;
         return competition;
+    }
+
+    public void PlaceIn(Guid territoryId)
+    {
+        if (territoryId == Guid.Empty)
+            throw new DomainException(ErrorCode.CommonRequired, "ámbito");
+        TerritoryId = territoryId;
     }
 
     public void UpdateDetails(string name, string category, CompetitionLevel level, int tier, string? group, string region)

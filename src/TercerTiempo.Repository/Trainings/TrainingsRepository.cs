@@ -75,7 +75,9 @@ public sealed record CallUpRequest(
     string? MeetPlace,
     string? Notes,
     [property: Description("true publica y avisa a la plantilla; false deja el borrador (si ya estaba publicada, se vuelve a publicar igualmente).")]
-    bool Publish);
+    bool Publish,
+    [property: Description("A cuántos se convoca (de 7 a 30). Si la plantilla tiene un número fijo, manda ese; si no, hay que decirlo. Nunca se puede marcar a más.")]
+    int? Size = null);
 
 public sealed record CallUpResponseRequest(
     [property: Description("Confirmed (firmo que voy) si vas convocado; Acknowledged (enterado) si no vas.")]
@@ -109,6 +111,7 @@ public interface ITrainingsRepository
     Task<IReadOnlyList<SquadAgendaItemDto>> AgendaAsync(Guid squadId, DateOnly from, DateOnly to, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CallUpSummaryDto>> ListCallUpsAsync(Guid squadId, CancellationToken cancellationToken = default);
     Task<MatchCallUpDto> GetCallUpAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
+    Task<CallUpStampDto> GetCallUpStampAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
     Task<MatchCallUpDto> SaveCallUpAsync(Guid squadId, Guid matchId, CallUpRequest request, CancellationToken cancellationToken = default);
     Task<SquadGroundsDto> GroundsAsync(Guid squadId, CancellationToken cancellationToken = default);
 
@@ -147,6 +150,7 @@ internal sealed class TrainingsRepository(
     IQueryHandler<ListSquadCallUpsQuery, IReadOnlyList<CallUpSummaryDto>> listCallUps,
     IQueryHandler<GetSquadGroundsQuery, SquadGroundsDto> grounds,
     IQueryHandler<GetMatchCallUpQuery, MatchCallUpDto> getCallUp,
+    IQueryHandler<GetMatchCallUpStampQuery, CallUpStampDto> getCallUpStamp,
     ICommandHandler<SaveMatchCallUpCommand, MatchCallUpDto> saveCallUp,
     IQueryHandler<ListMyTrainingsQuery, IReadOnlyList<MyTrainingDto>> myTrainings,
     ICommandHandler<ReportTrainingAbsenceCommand, TrainingSessionDto> reportAbsence,
@@ -223,8 +227,11 @@ internal sealed class TrainingsRepository(
     public Task<MatchCallUpDto> GetCallUpAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default) =>
         getCallUp.Handle(new GetMatchCallUpQuery(squadId, matchId), cancellationToken);
 
+    public Task<CallUpStampDto> GetCallUpStampAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default) =>
+        getCallUpStamp.Handle(new GetMatchCallUpStampQuery(squadId, matchId), cancellationToken);
+
     public Task<MatchCallUpDto> SaveCallUpAsync(Guid squadId, Guid matchId, CallUpRequest request, CancellationToken cancellationToken = default) =>
-        saveCallUp.Handle(new SaveMatchCallUpCommand(squadId, matchId, request.CalledSquadPlayerIds, request.MeetAt, request.MeetGroundId, request.MeetPlace, request.Notes, request.Publish), cancellationToken);
+        saveCallUp.Handle(new SaveMatchCallUpCommand(squadId, matchId, request.CalledSquadPlayerIds, request.MeetAt, request.MeetGroundId, request.MeetPlace, request.Notes, request.Publish, request.Size), cancellationToken);
 
     public Task<SquadGroundsDto> GroundsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         grounds.Handle(new GetSquadGroundsQuery(squadId), cancellationToken);

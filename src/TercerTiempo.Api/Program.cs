@@ -38,6 +38,9 @@ app.Services.ApplyCrestPolicy();
 // Las actas antiguas (o sin nota) reciben la nota calculada con sus datos.
 await app.Services.RecalculateMissingRatingsAsync();
 
+// Los vídeos subidos antes (o cuyo equipo ha cambiado de nombre) toman el nombre del partido.
+await app.Services.NameVideosAfterMatchAsync();
+
 app.UseSecurityHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages();

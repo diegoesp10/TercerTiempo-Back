@@ -12,15 +12,27 @@ internal static class SheetMatcher
 
     public sealed record Candidate(Guid Id, string NormalizedName, int? ShirtNumber);
 
+    public sealed record SheetName(Guid Id, string FullName, string NormalizedName, int? ShirtNumber);
+
     public static IReadOnlyDictionary<Guid, OfficialSheetLine> Match(IEnumerable<SquadPlayer> players, IEnumerable<OfficialSheetLine> lines) =>
         Match(players.Select(p => new Candidate(p.Id, p.NormalizedName, p.ShirtNumber)), lines);
 
     public static IReadOnlyDictionary<Guid, OfficialSheetLine> Match(IEnumerable<Candidate> players, IEnumerable<OfficialSheetLine> lines)
     {
+        var list = lines.ToList();
+        var byId = list.ToDictionary(l => l.Id);
+        return MatchNames(players, list.Select(l => new SheetName(l.Id, l.FullName, l.NormalizedName, l.ShirtNumber)))
+            .ToDictionary(kv => kv.Key, kv => byId[kv.Value.Id]);
+    }
+
+    // Lo mismo con cualquier lista de nombres de la federación ("APELLIDOS, NOMBRE"): las líneas de un acta o las
+    // sanciones del comité.
+    public static IReadOnlyDictionary<Guid, SheetName> MatchNames(IEnumerable<Candidate> players, IEnumerable<SheetName> lines)
+    {
         var playerTokens = players.Select(p => (Player: p, Tokens: Tokens(p.NormalizedName))).ToList();
         var lineTokens = lines.Select(l => (Line: l, Tokens: Tokens(l.NormalizedName))).ToList();
 
-        var candidates = new List<(double Score, Candidate Player, OfficialSheetLine Line)>();
+        var candidates = new List<(double Score, Candidate Player, SheetName Line)>();
 
         foreach (var (player, pTokens) in playerTokens)
         {
@@ -34,7 +46,7 @@ internal static class SheetMatcher
             }
         }
 
-        var result = new Dictionary<Guid, OfficialSheetLine>();
+        var result = new Dictionary<Guid, SheetName>();
         var usedLines = new HashSet<Guid>();
 
         foreach (var (_, player, line) in candidates.OrderByDescending(c => c.Score))

@@ -3,6 +3,7 @@ using TercerTiempo.Domain.Grounds;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Referees;
+using TercerTiempo.Domain.Sanctions;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
 using TercerTiempo.Infrastructure.Jobs;
@@ -22,15 +23,15 @@ internal static class RealDataModel
     // En orden de dependencias: cada tabla después de aquellas a las que apunta.
     public static readonly Type[] Copied =
     [
-        typeof(SeasonYear), typeof(Competition), typeof(Season), typeof(Team), typeof(RosterEntry), typeof(Match), typeof(Ground),
-        typeof(Standing), typeof(SeasonZone), typeof(Referee), typeof(MatchOfficial), typeof(OfficialMatchSheet),
-        typeof(OfficialSheetLine), typeof(OfficialSheetEvent), typeof(OfficialSheetStaff),
+        typeof(SeasonYear), typeof(Territory), typeof(Competition), typeof(Season), typeof(Team), typeof(RosterEntry), typeof(Match), typeof(Ground),
+        typeof(Standing), typeof(SeasonZone), typeof(Referee), typeof(MatchOfficial), typeof(RefereeDesignation), typeof(OfficialMatchSheet),
+        typeof(OfficialSheetLine), typeof(OfficialSheetEvent), typeof(OfficialSheetStaff), typeof(CommitteeResolution), typeof(CommitteeSanction),
     ];
 
     public static readonly Type[] SharedOnly =
     [
         typeof(FederationHttpCache), typeof(FederationRequestState), typeof(FootballSyncSettings), typeof(MatchOfficialLookup),
-        typeof(ScrapeRequest), typeof(SheetDownload), typeof(TeamCrestImage), typeof(RealDataIngester),
+        typeof(ScrapeRequest), typeof(SheetDownload), typeof(TeamCrestImage), typeof(RealDataIngester), typeof(CommitteeSanctionCheck),
     ];
 
     public static readonly HashSet<Type> Stored = [.. Copied, .. SharedOnly, typeof(JobRun)];

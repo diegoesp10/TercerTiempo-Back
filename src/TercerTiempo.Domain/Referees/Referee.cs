@@ -110,6 +110,43 @@ public sealed class MatchOfficial : Entity
     }
 }
 
+// Quien la federación designa para pitar un partido por jugar: sale en la página de la jornada unos días antes (de
+// momento solo el árbitro principal) y puede cambiar hasta el día del partido. No es una actuación: no cuenta en las
+// cifras de nadie y, jugado el partido, manda lo que diga el acta (MatchOfficial).
+public sealed class RefereeDesignation : Entity
+{
+    public Guid MatchId { get; private set; }
+    public Guid RefereeId { get; private set; }
+    public OfficialRole Role { get; private set; }
+    public string Source { get; private set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; private set; }
+
+    private RefereeDesignation() { }
+
+    public static RefereeDesignation Designate(Guid matchId, Guid refereeId, OfficialRole role, string source, DateTimeOffset now)
+    {
+        if (!Enum.IsDefined(role)) throw new DomainException(ErrorCode.RefereeRoleInvalid);
+        return new RefereeDesignation
+        {
+            Id = NewId(),
+            MatchId = Guard.NotEmpty(matchId, nameof(matchId)),
+            RefereeId = Guard.NotEmpty(refereeId, nameof(refereeId)),
+            Role = role,
+            Source = Guard.NotEmpty(source, "fuente", 40),
+            UpdatedAt = now,
+        };
+    }
+
+    // Devuelve si cambió: la federación sustituye al designado cuando hace falta.
+    public bool Change(Guid refereeId, DateTimeOffset now)
+    {
+        if (RefereeId == Guard.NotEmpty(refereeId, nameof(refereeId))) return false;
+        RefereeId = refereeId;
+        UpdatedAt = now;
+        return true;
+    }
+}
+
 // Cuándo se buscó en futbolasturiano.es el equipo arbitral de un partido sin él, para no pedir su página cada hora.
 public sealed class MatchOfficialLookup
 {
@@ -231,6 +268,10 @@ public interface IRefereeStore
     Task<IReadOnlyList<MatchOfficial>> GetAllOfficialsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OfficialAppearanceRow>> GetAllAppearancesAsync(CancellationToken cancellationToken = default);
     void AddOfficial(MatchOfficial official);
+
+    Task<IReadOnlyList<RefereeDesignation>> GetDesignationsAsync(Guid matchId, CancellationToken cancellationToken = default);
+    void AddDesignation(RefereeDesignation designation);
+    void RemoveDesignation(RefereeDesignation designation);
 
     // Partidos de esos equipos con equipo arbitral desde esa fecha (para pedir sus notas).
     Task<IReadOnlyList<Guid>> GetMatchesWithOfficialsAsync(IEnumerable<Guid> teamIds, DateTimeOffset since, CancellationToken cancellationToken = default);

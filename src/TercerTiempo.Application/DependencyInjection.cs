@@ -48,8 +48,10 @@ public static class DependencyInjection
         services.AddScoped<Performances.OfficialSheetRatings>();
         services.AddScoped<Squads.MatchSheet.MatchSheetWriter>();
         services.AddScoped<Squads.Suspensions.SuspensionReader>();
+        services.AddScoped<Squads.Suspensions.StaffDisciplineReader>();
         services.AddScoped<Squads.SquadPlayerMerger>();
         services.AddScoped<Squads.SquadRosterReconciliation>();
+        services.AddScoped<Squads.Injuries.InjuryCarryOver>();
         services.AddSingleton<OfficialSheets.OfficialSheetSyncMemory>();
         services.AddScoped<IPublicSheetSource, FederationSheetSource>();
         services.AddSingleton<Common.PublicDataCache>();

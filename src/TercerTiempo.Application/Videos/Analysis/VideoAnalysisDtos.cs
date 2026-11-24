@@ -62,8 +62,11 @@ public sealed record VideoAnalysisPartDto(
     DateTimeOffset? RequestedAt,
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
+    [property: Description("Nombre del analizador que analizó el vídeo (p. ej. «Ojeador»).")]
+    string? AnalyzerName,
+    [property: Description("Versión del analizador con la que se analizó.")]
     string? AnalyzerVersion,
-    [property: Description("Pesos de los detectores con los que se analizó (públicos o afinados).")]
+    [property: Description("Modelos con los que se analizó: arquitectura, entrenamiento, motor y huella de cada uno, separados por « · ». Solo para el administrador; null para los demás.")]
     string? Weights,
     VideoAnalysisQualityDto? Quality,
     [property: Description("Los dos equipos que ha separado el analizador por su equipación. No sabe cuál es cuál: lo dice el cuerpo técnico.")]
@@ -192,7 +195,8 @@ internal static class VideoAnalysisMapper
     public static string CropRoute(Guid squadId, Guid matchId, Guid videoId, int tracklet, DateTimeOffset? version) =>
         $"/api/squads/{squadId}/matches/{matchId}/video-analysis/crops/{tracklet}?videoId={videoId}&v={version?.ToUnixTimeSeconds() ?? 0}";
 
-    public static VideoAnalysisPartDto ToDto(Squad squad, MatchVideo video, MatchVideoAnalysis? analysis, IReadOnlySet<int> crops, VideoSheetHints? hints = null)
+    public static VideoAnalysisPartDto ToDto(
+        Squad squad, MatchVideo video, MatchVideoAnalysis? analysis, IReadOnlySet<int> crops, VideoSheetHints? hints = null, bool showModels = false)
     {
         hints ??= VideoSheetHints.None;
         var state = analysis?.Status switch
@@ -251,7 +255,7 @@ internal static class VideoAnalysisMapper
         return new VideoAnalysisPartDto(
             video.Id, video.Part, video.Title, video.Status, video.ProcessingProgress, video.DurationSeconds, state,
             analysis?.Progress ?? 0, analysis?.Error, analysis?.RequestedAt, analysis?.StartedAt, analysis?.FinishedAt,
-            analysis?.AnalyzerVersion, analysis?.Weights, quality, teams, analysis?.OurTeam, analysis?.AppliedAt, players,
+            analysis?.AnalyzerName, analysis?.AnalyzerVersion, showModels ? analysis?.Weights : null, quality, teams, analysis?.OurTeam, analysis?.AppliedAt, players,
             analysis is { IsActive: true } ? VideoAnalysisProcessor.ReadLive(analysis.LiveJson) : null,
             analysis is { IsActive: true } ? analysis.LiveAt : null,
             analysis is null ? [] : analysis.Log,

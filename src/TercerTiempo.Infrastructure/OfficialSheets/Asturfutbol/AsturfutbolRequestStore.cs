@@ -15,6 +15,8 @@ internal sealed class FederationHttpCache
     public string? ContentType { get; set; }
     public int? StatusCode { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
+    // Cuándo se descargó la copia guardada: hay páginas que se quieren más frescas que la caducidad general.
+    public DateTimeOffset? FetchedAt { get; set; }
     public DateTimeOffset? NextAttemptAt { get; set; }
     public Guid? LeaseId { get; set; }
     public DateTimeOffset? LeaseUntil { get; set; }
@@ -88,8 +90,9 @@ internal sealed record SourceLimits(
 internal interface IAsturfutbolRequestStore
 {
     // refresh: no se devuelve la copia guardada aunque siga vigente (todo lo demás, límites y tandas, igual).
-    Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct, bool refresh = false);
-    Task CompleteAsync(string provider, string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct);
+    // maxAge: la copia guardada solo sirve si se descargó hace menos de eso (aunque no haya caducado).
+    Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct, bool refresh = false, TimeSpan? maxAge = null);
+    Task CompleteAsync(string provider, string key, FederationResponse response, DateTimeOffset fetchedAt, DateTimeOffset expiresAt, CancellationToken ct);
     Task FailAsync(string provider, string key, int? status, DateTimeOffset retryAt, ProviderPause? pause, CancellationToken ct);
     Task<ProviderPause> RejectAsync(string provider, string key, int? status, string what, DateTimeOffset now, TimeSpan firstPause, TimeSpan maxPause, CancellationToken ct);
 
@@ -113,7 +116,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
         return cached is null ? null : (cached.Content!, cached.ContentType);
     }
 
-    public async Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct, bool refresh = false)
+    public async Task<FederationReservation> ReserveAsync(string key, string url, Guid lease, bool redirect, DateTimeOffset now, SourceLimits limits, CancellationToken ct, bool refresh = false, TimeSpan? maxAge = null)
     {
         using var scope = scopes.CreateRealDataScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -126,7 +129,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
                 .SingleOrDefaultAsync(ct);
             if (state is null) { state = new() { Id = limits.Provider }; db.Add(state); }
             var cached = await db.Set<FederationHttpCache>().SingleOrDefaultAsync(x => x.Key == key, ct);
-            if (!redirect && !refresh && cached is { StatusCode: 200 or 404 } && cached.ExpiresAt > now)
+            if (!redirect && !refresh && cached is { StatusCode: 200 or 404 } && cached.ExpiresAt > now && (maxAge is null || cached.FetchedAt > now - maxAge))
                 return new(Cached: new(cached.Content, cached.ContentType));
             if (!limits.Enabled) return new(RetryAt: now.AddHours(24));
             if (state.PausedUntil > now) return new(RetryAt: state.PausedUntil);
@@ -178,7 +181,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
         });
     }
 
-    public async Task CompleteAsync(string provider, string key, FederationResponse response, DateTimeOffset expiresAt, CancellationToken ct)
+    public async Task CompleteAsync(string provider, string key, FederationResponse response, DateTimeOffset fetchedAt, DateTimeOffset expiresAt, CancellationToken ct)
     {
         using var scope = scopes.CreateRealDataScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -186,6 +189,7 @@ internal sealed class SqlAsturfutbolRequestStore(IServiceScopeFactory scopes) : 
         cached.Content = response.Content;
         cached.ContentType = response.ContentType;
         cached.StatusCode = response.Content is null ? 404 : 200;
+        cached.FetchedAt = fetchedAt;
         cached.ExpiresAt = expiresAt;
         cached.NextAttemptAt = null;
         cached.LeaseId = null;

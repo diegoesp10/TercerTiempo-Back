@@ -23,7 +23,8 @@ public sealed record SquadPlayerRequest(
 public sealed record InjuryRequest(
     [property: Description("Jugador de la plantilla (solo al registrar; al editar se ignora).")]
     Guid? SquadPlayerId,
-    InjuryType Type,
+    [property: Description("Código del tipo (GET /api/squads/injury-types).")]
+    string Type,
     [property: Description("Motivo o detalle, opcional.")]
     string? Reason,
     DateOnly StartedOn,
@@ -44,12 +45,27 @@ public sealed record ResolveSuggestionRequest(
 }
 
 public sealed record CloseInjuryRequest(
-    [property: Description("Fecha del alta; por defecto hoy.")]
+    [property: Description("Fecha del alta; por defecto hoy. No puede ser posterior a hoy ni anterior al parte.")]
     DateOnly? ReturnedOn);
+
+public sealed record RelapseRequest(
+    [property: Description("Fecha del parte de la recaída: no antes del alta de la lesión anterior ni después de hoy.")]
+    DateOnly StartedOn,
+    [property: Description("Fecha prevista de vuelta; si no se indica se propone con la duración media del tipo.")]
+    DateOnly? ExpectedReturnOn,
+    [property: Description("Motivo o detalle, opcional (hasta 300 caracteres).")]
+    string? Reason)
+{
+    internal RecordRelapseCommand ToCommand(Guid squadId, Guid injuryId) => new(squadId, injuryId, StartedOn, ExpectedReturnOn, Reason);
+}
 
 public sealed record SquadVisibilityRequest(
     [property: Description("Private (solo cuerpo técnico y jugadores vinculados) o Public (cualquiera).")]
     SquadVisibility Visibility);
+
+public sealed record SquadCallUpSizeRequest(
+    [property: Description("A cuántos se convoca siempre (de 7 a 30); null: se pregunta en cada convocatoria.")]
+    int? Size);
 
 public sealed record MatchSheetRequest(IReadOnlyList<MatchSheetEntryInput> Entries)
 {

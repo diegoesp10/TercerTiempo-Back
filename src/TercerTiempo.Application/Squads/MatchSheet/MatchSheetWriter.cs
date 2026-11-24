@@ -42,6 +42,10 @@ internal sealed class MatchSheetWriter(IPerformanceStore performances, ITeamMatc
 
             if (current is null)
             {
+                // Quien causó baja antes del partido ya no era del equipo: no puede salir en su acta.
+                if (!player.WasMemberAt(match.KickoffAt))
+                    throw new DomainException(ErrorCode.SquadPlayerLeftBefore, player.FullName, player.LeftOn?.ToString("dd/MM/yyyy") ?? "");
+
                 // Un sancionado no pudo jugar ese partido: no se le abre línea. La que ya tuviera se conserva para no
                 // bloquear el acta si la sanción se supo después (el acta oficial puede tardar una semana).
                 sanctions ??= await suspensions.LoadAsync(squad, cancellationToken);

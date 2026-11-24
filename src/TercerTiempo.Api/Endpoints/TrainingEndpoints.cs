@@ -208,6 +208,14 @@ internal static class TrainingEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
+        group.MapGet("/{squadId:guid}/matches/{matchId:guid}/callup/stamp", (Guid squadId, Guid matchId, ITrainingsRepository trainings, CancellationToken ct) => trainings.GetCallUpStampAsync(squadId, matchId, ct))
+            .WithName("GetMatchCallUpStamp")
+            .WithSummary("Huella de la convocatoria de un partido, para seguirla en directo")
+            .WithDescription("Muy ligera: solo dice si ha cambiado algo de lo que se ve (alguien firma o la abre, el cuerpo técnico cambia a quién lleva o la cita, empieza el partido). Si no coincide con el stamp de la convocatoria que se tiene, se vuelve a pedir entera. Un borrador da la misma huella que no tener convocatoria. Mismos permisos que la convocatoria.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         MapCallUpResend(group);
     }
 

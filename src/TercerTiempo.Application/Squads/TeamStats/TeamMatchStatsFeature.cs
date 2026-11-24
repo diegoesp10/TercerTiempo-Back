@@ -41,7 +41,11 @@ public sealed record TeamMatchStatsDto(
     int ThrowInsFor,
     int ThrowInsAgainst,
     int GoalKicksFor = 0,
-    int GoalKicksAgainst = 0);
+    int GoalKicksAgainst = 0,
+    [property: Description("Con qué analizador del vídeo salieron (nombre y versión, p. ej. «Ojeador 1.0.0»), si se volcaron del análisis del vídeo; null si se apuntaron a mano.")]
+    string? VideoAnalyzer = null,
+    [property: Description("Cuándo se volcaron del vídeo; si UpdatedAt es posterior, se retocaron a mano después.")]
+    DateTimeOffset? FromVideoAt = null);
 
 // Lo que envía el cuerpo técnico; «For» es su equipo y «Against» el rival.
 public sealed record TeamMatchStatsInput(
@@ -117,7 +121,7 @@ internal static class TeamMatchStatsMapper
         s.PossessionPct, s.CornersFor, s.CornersAgainst, s.ShotsFor, s.ShotsAgainst, s.ShotsOnTargetFor, s.ShotsOnTargetAgainst,
         s.OffsidesFor, s.OffsidesAgainst, s.FoulsCommitted, s.FoulsReceived, s.SetPieceGoalsFor, s.SetPieceGoalsAgainst,
         s.Notes, s.UpdatedAt, s.PenaltiesFor, s.PenaltiesAgainst, s.PenaltyGoalsFor, s.PenaltyGoalsAgainst, s.ThrowInsFor, s.ThrowInsAgainst,
-        s.GoalKicksFor, s.GoalKicksAgainst);
+        s.GoalKicksFor, s.GoalKicksAgainst, s.VideoAnalyzer, s.FromVideoAt);
 
     public static TeamStatsAveragesDto? Averages(IReadOnlyCollection<TeamMatchStats> all)
     {
