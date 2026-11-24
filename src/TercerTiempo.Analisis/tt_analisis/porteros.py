@@ -30,7 +30,18 @@ Dos o más seguidas en medio también se quitan: o el seguidor saltó a otra per
 menos cinco veces y hasta 4 s) o es el portero agachado o borroso, que por el color no se distingue, y mejor sin
 identificar que con otro. Si el seguidor saltó a otra persona, las lecturas del dorsal de ese tracklet pueden ser de
 ella y no cuentan. Y al revés: del tracklet de un jugador de campo que empieza o acaba vistiendo como un portero, o
-pasa por él en medio, se quita ese rato (sin él, el portero de un equipo acababa en la ficha de un jugador del otro)."""
+pasa por él en medio, se quita ese rato (sin él, el portero de un equipo acababa en la ficha de un jugador del otro).
+
+**Nunca vestido como los de campo** (desde la 1.3.0). El portero viste distinto de los jugadores de campo de los dos
+equipos: el que el detector marca de portero solo lo es si tiene un rato en que viste más como el portero de esa
+portería que como nadie más y en él no viste como los jugadores de campo de ningún equipo ni como el árbitro (si se
+sabe cómo viste ese portero) o, si no se sabe, si no viste como ningún equipo; con muy pocas muestras de su equipación
+no se le puede comprobar y se queda sin equipo. Al portero por la equipación también se le mira su rato. Así un rival que remata en el área y el detector toma por portero no acaba en
+la línea de nuestro portero. Lo que se dice de cada portero (`Porteros.junto_a_su_porteria`, `momentos_de_portero`)
+sirve después para exigir que pase la mayor parte del tiempo junto a su portería (`identidades.PARTE_EN_PORTERIA`) y
+para enseñar de él solo un recorte en el que viste como él: en el J8 la línea del 1 del Vallobín salía con el recorte de
+un jugador del Real Titánico, de un rato de un tracklet suyo que ya se había quitado porque el seguidor había saltado al
+rival."""
 
 from __future__ import annotations
 
@@ -160,6 +171,11 @@ class Porteros:
     ratos: dict[int, tuple[float, float]] = field(default_factory=dict)
     huecos: dict[int, list[tuple[float, float]]] = field(default_factory=dict)
     mezclados: set[int] = field(default_factory=set)
+    # Con lo que se decidió: hacia dónde ataca cada equipo en cada parte, el campo y cómo visten los jugadores de campo
+    # de los dos equipos y el árbitro.
+    direcciones: dict[tuple[int, int], int] = field(default_factory=dict)
+    campo: Campo | None = None
+    ajenos: list[Modelo] = field(default_factory=list)
 
     def es_portero(self, tracklet: int) -> bool:
         return tracklet in self.equipo_de or tracklet in self.del_detector
@@ -172,6 +188,25 @@ class Porteros:
         if rato is not None and not rato[0] <= t <= rato[1]:
             return False
         return not any(a < t < b for a, b in self.huecos.get(tracklet, ()))
+
+    def junto_a_su_porteria(self, xy, equipo: int | None, mitad: int) -> bool | None:
+        """Si en esa parte está al lado o debajo de la portería que defiende ese equipo (en la zona del portero: a menos de
+        ZONA_FONDO_CM de su línea de gol y ZONA_ANCHO_CM del eje); None si no se sabe (sin campo calibrado o sin saber
+        hacia dónde ataca)."""
+        ataca = self.direcciones.get((equipo, mitad)) if equipo is not None else None
+        if xy is None or ataca is None:
+            return None
+        return bool(_en_zona(np.asarray([xy], dtype=np.float64), -ataca, self.campo or Campo())[0])
+
+    def viste_de_portero(self, equipo: int, rasgos) -> bool:
+        """Si una muestra de la equipación (la de un fotograma) es la del portero de ese equipo: dentro de su color (hasta
+        DISTANCIA_PORTERO) y a más de DISTANCIA_FUERA de los jugadores de campo de los dos equipos y del árbitro. Sin
+        saber cómo visten, no."""
+        modelo = self.modelos.get(equipo)
+        if modelo is None or rasgos is None or not self.ajenos:
+            return False
+        r = np.asarray(rasgos, dtype=np.float64)
+        return float(modelo.distancia(r)[0]) <= DISTANCIA_PORTERO and all(float(m.distancia(r)[0]) > DISTANCIA_FUERA for m in self.ajenos)
 
 
 def lados_de_porteros(instantes: list[Instante], mitad_de: list[int], porteros: set[int], campo: Campo | None = None) -> dict[tuple[int, int], int]:
@@ -321,7 +356,7 @@ def buscar_porteros(
     árbitros); `clases`: la clase que le da el detector por mayoría de votos."""
     campo = campo or Campo()
     tiempos = tiempos or {}
-    resultado = Porteros()
+    resultado = Porteros(direcciones=dict(direcciones), campo=campo)
     posiciones = _posiciones(instantes, mitad_de)
     series = {t: np.atleast_2d(np.asarray(x, dtype=np.float64)) for t, x in equipaciones.items() if x is not None and len(x)}
     muestras = {t: len(x) for t, x in series.items()}
@@ -397,12 +432,13 @@ def buscar_porteros(
             resultado.sin_equipo.add(tracklet)
 
     ajenos = [equipos[0], equipos[1]] + ([arbitro] if arbitro is not None else [])
+    resultado.ajenos = ajenos
 
     def recortar(tracklet: int, equipo: int) -> bool:
         """Deja en `ratos` y `huecos` el rato en que el tracklet viste como el portero de ese equipo. False si no lo hace
-        en ningún momento; con muy pocas muestras no se juzga."""
+        en ningún momento o si tiene muy pocas muestras para saberlo."""
         if muestras.get(tracklet, 0) < EQUIPACIONES_MINIMAS:
-            return True
+            return False
         rato = _rato_del_portero(series[tracklet], tiempos.get(tracklet), resultado.modelos[equipo], ajenos)
         if rato is None:
             return False
@@ -415,10 +451,30 @@ def buscar_porteros(
             resultado.huecos[tracklet] = huecos
         return True
 
+    def viste_en_su_rato(tracklet: int) -> bool:
+        """Si en el rato que se le da (la mediana de sus muestras en él, que ya visten más como su portero que como
+        nadie más) no viste como los jugadores de campo de ningún equipo ni como el árbitro. No se le pide el color
+        exacto del portero: con otra luz se sale de él sin parecerse a nadie más."""
+        serie = series[tracklet]
+        momentos = tiempos.get(tracklet)
+        if momentos is not None and len(momentos) == len(serie) and np.all(np.isfinite(momentos)):
+            dentro = np.array([resultado.en_su_rato(tracklet, float(t)) for t in momentos])
+            if dentro.any():
+                serie = serie[dentro]
+        return lejos_de_todos(np.median(serie, axis=0))
+
+    def descartar(tracklet: int) -> None:
+        """No es un portero que se pueda dar por bueno: sin equipo y sin recorte."""
+        resultado.equipo_de.pop(tracklet, None)
+        resultado.del_detector.discard(tracklet)
+        resultado.ratos.pop(tracklet, None)
+        resultado.huecos.pop(tracklet, None)
+        resultado.mezclados.discard(tracklet)
+        resultado.sin_equipo.add(tracklet)
+
     for tracklet, equipo in list(resultado.equipo_de.items()):
-        if not recortar(tracklet, equipo):
-            del resultado.equipo_de[tracklet]
-            resultado.sin_equipo.add(tracklet)
+        if not recortar(tracklet, equipo) or not viste_en_su_rato(tracklet):
+            descartar(tracklet)
 
     # Los que el detector marca de porteros y no son el portero por la equipación: si visten como un equipo, son un
     # jugador de ese equipo; si como el árbitro, el árbitro; si no se sabe, el equipo de la portería que defienden.
@@ -437,16 +493,23 @@ def buscar_porteros(
                 continue
         resultado.del_detector.add(tracklet)
     resultado.por_parte = asignar_porteros(instantes, mitad_de, direcciones, resultado.del_detector, campo)
-    # Si se sabe cómo viste el portero del equipo de esa portería, también el rato en que viste como él; el que no se le
-    # parece en ningún momento es un jugador de campo que el detector tomó por portero (lo que no se sabe, sin equipo).
+    # Si se sabe cómo viste el portero del equipo de esa portería, solo el rato en que viste como él; si no hay rato así,
+    # si en él viste como los jugadores de campo de algún equipo o como el árbitro, o si tiene muy pocas muestras para
+    # saberlo, no es su portero: un jugador de campo que el detector tomó por portero, como el rival que remata en el
+    # área, o alguien que no se puede comprobar. Si no se sabe cómo viste, al menos que no vista como los jugadores de
+    # campo de ningún equipo: el portero viste distinto de todos ellos.
     equipos_del_detector: dict[int, set[int]] = defaultdict(set)
     for (tracklet, _), equipo in resultado.por_parte.items():
         equipos_del_detector[tracklet].add(equipo)
     for tracklet, suyos in equipos_del_detector.items():
         equipo = next(iter(suyos))
-        if len(suyos) == 1 and equipo in resultado.modelos and not recortar(tracklet, equipo):
-            resultado.del_detector.discard(tracklet)
-            resultado.sin_equipo.add(tracklet)
+        if len(suyos) == 1 and equipo in resultado.modelos:
+            valido = recortar(tracklet, equipo) and viste_en_su_rato(tracklet)
+        else:
+            rasgos = fiables.get(tracklet)
+            valido = rasgos is None or all(float(equipos[e].distancia(rasgos)[0]) > DISTANCIA_FUERA for e in (0, 1))
+        if not valido:
+            descartar(tracklet)
             resultado.por_parte = {k: e for k, e in resultado.por_parte.items() if k[0] != tracklet}
 
     # Al revés: el jugador de campo cuyo tracklet empieza o acaba en un portero, o pasa por él en medio (el seguidor saltó
@@ -492,6 +555,23 @@ def colocar_porteros(instantes: list[Instante], mitad_de: list[int], memorias: d
     )
     aplicar_porteros(instantes, mitad_de, porteros)
     return porteros
+
+
+def momentos_de_portero(porteros: Porteros, equipo: int, tracklets, memorias: dict) -> list[tuple[float, int]]:
+    """(segundo del vídeo, tracklet) de cada muestra de la equipación de esos tracklets que viste claramente como el
+    portero de ese equipo y cae en el rato que es suyo: de esos momentos, y solo de esos, se enseña un recorte del
+    portero (nunca de alguien con quien el seguidor lo confundió). Vacío si no se sabe cómo viste."""
+    if equipo not in porteros.modelos:
+        return []
+    salida = []
+    for tid in tracklets:
+        memoria = memorias.get(tid)
+        if memoria is None:
+            continue
+        for rasgos, t in zip(memoria.equipaciones, memoria.tiempos_equipacion):
+            if np.isfinite(t) and porteros.en_su_rato(tid, t) and porteros.viste_de_portero(equipo, rasgos):
+                salida.append((float(t), tid))
+    return salida
 
 
 def describir_porteros(porteros: Porteros, instantes: list[Instante], dt: float) -> str:

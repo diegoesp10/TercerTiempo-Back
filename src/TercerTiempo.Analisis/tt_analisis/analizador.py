@@ -22,7 +22,7 @@ from .colores import rasgos_equipacion, tapados
 from .config import CLASE_ARBITRO, MARGEN_CAMPO_CM, Configuracion
 from .geometria import Campo
 from .deteccion import Detector
-from .dorsales import ColaDorsales, GuardaZonas, cargar_lector, zona_dorsal
+from .dorsales import ALTO_MIN_PX, ColaDorsales, GuardaZonas, cargar_lector, zona_dorsal
 from .identidades import Resolucion, Tramo, leer_plantillas, resolver
 from .equipos import ClasificadorEquipos, color_hex
 from .informes import acta_propuesta, escribir_json, escribir_mapas, escribir_posiciones, escribir_recortes, extraer_clips, resumen_markdown
@@ -35,9 +35,12 @@ from .oficial import leer_acta
 from .porteros import Porteros, colocar_porteros, describir_porteros
 from .seguimiento import MemoriaTracklet, Seguidor
 from .tipos import Instante, Persona, formato_minuto
-from .video import PCT_LEIDO_MINIMO, Lectura, fotograma_en, fotogramas, info_video, pct_leido, recortar
+from .video import PCT_LEIDO_MINIMO, Lectura, fotograma_en, fotogramas, fotogramas_elegidos, info_video, pct_leido, recortar
 
 RUTA_FFMPEG_WINGET = Path.home() / "AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe"
+# El recorte del portero: de pie (la caja al menos esto más alta que ancha) y el más nítido de los tantos más altos.
+PROPORCION_DE_PIE = 1.5
+RECORTES_PORTERO = 5
 
 
 def ruta_ffmpeg() -> str:
@@ -288,13 +291,15 @@ def analizar(config: Configuracion, informar=print) -> dict:
         guardar_para_porteros(config.salida / "porteros.pkl", instantes, mitad_de, descanso_previo, seguidor, datos_acta, config.saque)
     porteros = colocar_porteros(instantes, mitad_de, seguidor.memorias, campo)
     decir(describir_porteros(porteros, instantes, dt))
+    # Para el material del lector: en la pasada aún no se sabía quién era portero.
+    muestras_portero = muestras_de_porteros(instantes, porteros) if guarda is not None else []
 
     # Quién es quién: con el dorsal leído, los tracklets de un mismo jugador pasan a ser uno solo (y como mucho los que
     # jugaron por equipo) antes de contar toques, pases y acciones. Los minutos del acta necesitan el descanso.
     resolucion: Resolucion | None = None
     if cola is not None:
         plantillas = leer_plantillas(datos_acta, config.saque, descanso_previo) if datos_acta else []
-        tramos = tramos_de(instantes, seguidor, porteros)
+        tramos = tramos_de(instantes, seguidor, porteros, mitad_de)
         if os.environ.get("TT_GUARDAR_TRAMOS"):
             # Para afinar `identidades.resolver` sin repetir la pasada (solo en pruebas).
             import pickle
@@ -303,7 +308,11 @@ def analizar(config: Configuracion, informar=print) -> dict:
             (config.salida / "tramos.pkl").write_bytes(pickle.dumps({"tramos": tramos, "plantillas": plantillas, "mejores": mejores}))
         resolucion = resolver(tramos, plantillas)
         if guarda is not None:
-            escribir_etiquetas_dorsales(resolucion, tramos, plantillas, guarda, config)
+            etiquetas_portero: dict[str, dict] = {}
+            # Sin el acta, el dorsal del portero no es seguro: sus zonas no se guardan.
+            if plantillas and muestras_portero:
+                etiquetas_portero = guardar_zonas_porteros(muestras_portero, resolucion, lector, config, info, guarda, decir)
+            escribir_etiquetas_dorsales(resolucion, tramos, plantillas, guarda, config, etiquetas_portero)
         equipo_de = {x.id: x.equipo for x in resolucion.identidades}
         for inst in instantes:
             for persona in inst.personas:
@@ -358,7 +367,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
     t0 = time.time()
     recortes = escribir_recortes(seguidor.memorias, config.salida)
     if resolucion is not None:
-        recortes.update(escribir_recortes_jugadores(resolucion, seguidor, config.salida))
+        recortes.update(escribir_recortes_jugadores(resolucion, seguidor, config.salida, porteros, instantes, lambda t: fotograma_en(config.video, t)))
     mapas = escribir_mapas(resumenes, config.salida, config.nombres_equipos)
     posiciones = escribir_posiciones(instantes, config.salida)
     clips = 0
@@ -424,27 +433,40 @@ def analizar(config: Configuracion, informar=print) -> dict:
     return analisis
 
 
-def tramos_de(instantes: list[Instante], seguidor: Seguidor, porteros: Porteros | None = None) -> list[Tramo]:
+def tramos_de(instantes: list[Instante], seguidor: Seguidor, porteros: Porteros | None = None, mitad_de: list[int] | None = None) -> list[Tramo]:
     """Cada tracklet de jugador como tramo para `identidades.resolver`: equipo, primer y último sitio, alto y lecturas.
     El equipo, el de su camiseta; el de un portero y el del que el detector tomó por portero pero viste como un equipo,
     el que `porteros.aplicar_porteros` ya puso en cada fotograma (los fotogramas sin equipo no cuentan). De esos dos,
     todas las lecturas del dorsal: el color de la camiseta no dice bien de qué equipo son; pero ninguna del portero en
-    cuyo tracklet el seguidor saltó a otra persona, que pueden ser de ella."""
+    cuyo tracklet el seguidor saltó a otra persona, que pueden ser de ella. De los porteros, con las partes
+    (`mitad_de`, una por instante), en cuál empiezan y, en cada una, cuánto se les ve con el campo calibrado y cuánto de
+    eso al lado o debajo de la portería que defiende su equipo."""
     porteros = porteros or Porteros()
+    pasos = np.diff([inst.t for inst in instantes])
+    dt = float(np.median(pasos)) if len(pasos) else 0.0
     datos: dict[int, dict] = {}
-    for inst in instantes:
+    for i, inst in enumerate(instantes):
+        mitad = mitad_de[i] if mitad_de is not None and i < len(mitad_de) else None
         for p in inst.personas:
             if p.equipo is None or not p.es_jugador:
                 continue
             d = datos.get(p.tracklet)
             alto = p.caja[3] - p.caja[1]
             if d is None:
-                d = datos[p.tracklet] = {"equipos": {}, "t_ini": inst.t, "ini": p.xy_imagen, "ini_campo": p.xy_campo, "t_fin": inst.t, "fin": p.xy_imagen, "fin_campo": p.xy_campo, "altos": [alto]}
+                d = datos[p.tracklet] = {
+                    "equipos": {}, "t_ini": inst.t, "ini": p.xy_imagen, "ini_campo": p.xy_campo, "t_fin": inst.t, "fin": p.xy_imagen, "fin_campo": p.xy_campo,
+                    "altos": [alto], "mitad": mitad, "porteria": {},
+                }
             else:
                 d.update(t_fin=inst.t, fin=p.xy_imagen, fin_campo=p.xy_campo)
                 if len(d["altos"]) < 50:
                     d["altos"].append(alto)
             d["equipos"][p.equipo] = d["equipos"].get(p.equipo, 0) + 1
+            if mitad is not None and porteros.es_portero(p.tracklet):
+                junto = porteros.junto_a_su_porteria(p.xy_campo, p.equipo, mitad)
+                if junto is not None:
+                    segundos, cerca = d["porteria"].get(mitad, (0.0, 0.0))
+                    d["porteria"][mitad] = (segundos + dt, cerca + (dt if junto else 0.0))
     tramos = []
     for tid, d in datos.items():
         memoria = seguidor.memorias.get(tid)
@@ -456,7 +478,12 @@ def tramos_de(instantes: list[Instante], seguidor: Seguidor, porteros: Porteros 
         else:
             votos = memoria.votos_dorsal if memoria is not None and memoria.votos_dorsal is not None else np.zeros(99)
             equipo = memoria.equipo if memoria is not None and memoria.equipo is not None else visto
-        tramos.append(Tramo(tid, equipo, d["t_ini"], d["t_fin"], d["ini"], d["fin"], float(np.median(d["altos"])), votos, d["ini_campo"], d["fin_campo"], portero, porteros.por_equipacion(tid)))
+        tramos.append(
+            Tramo(
+                tid, equipo, d["t_ini"], d["t_fin"], d["ini"], d["fin"], float(np.median(d["altos"])), votos, d["ini_campo"], d["fin_campo"], portero,
+                porteros.por_equipacion(tid), d["mitad"], d["porteria"],
+            )
+        )
     return tramos
 
 
@@ -485,14 +512,89 @@ def guardar_para_porteros(ruta: Path, instantes: list[Instante], mitad_de: list[
     ruta.write_bytes(pickle.dumps(datos))
 
 
-def escribir_recortes_jugadores(resolucion: Resolucion, seguidor: Seguidor, salida: Path) -> dict[int, str]:
-    """De cada jugador identificado, el recorte en el que mejor se leyó su dorsal."""
+def recorte_de_portero(ident_id: int, momentos: list[tuple[float, int]], instantes: list[Instante], memorias: dict, leer=None) -> np.ndarray | None:
+    """El recorte del portero identificado `ident_id`, solo de uno de sus `momentos` (`porteros.momentos_de_portero`: viste
+    como él y cae en el rato en que su tracklet es él), leído del vídeo con `leer(t)`: de los RECORTES_PORTERO momentos en
+    que se le ve más alto y de pie (la caja más grande suele ser la del portero agachado o estirado, borroso), el más
+    nítido. Sin vídeo, uno de los que guardó el seguidor justo en uno de esos momentos. None si no hay ninguno: mejor sin
+    foto que con la de otro."""
     import cv2
+
+    cajas: dict[float, tuple] = {}
+    for inst in instantes:
+        for p in inst.personas:
+            if p.tracklet == ident_id:
+                cajas[round(inst.t, 3)] = p.caja
+    elegibles = [(t, tid, cajas[round(t, 3)]) for t, tid in momentos if round(t, 3) in cajas]
+    if not elegibles:
+        return None
+    de_pie = [x for x in elegibles if (x[2][3] - x[2][1]) >= PROPORCION_DE_PIE * max(1e-6, x[2][2] - x[2][0])]
+    elegibles = sorted(de_pie or elegibles, key=lambda x: -(x[2][3] - x[2][1]))
+    if leer is not None:
+        mejor: tuple[float, np.ndarray] | None = None
+        for t, _, caja in elegibles[:RECORTES_PORTERO]:
+            imagen = leer(t)
+            recorte = recortar(imagen, caja, margen=6) if imagen is not None else None
+            if recorte is None or not recorte.size:
+                continue
+            nitidez = float(cv2.Laplacian(cv2.cvtColor(recorte, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
+            if mejor is None or nitidez > mejor[0]:
+                mejor = (nitidez, recorte)
+        if mejor is not None:
+            return mejor[1]
+    justos = {(tid, round(t, 3)) for t, tid, _ in elegibles}
+    guardados = [
+        r
+        for tid in {tid for _, tid, _ in elegibles}
+        if tid in memorias
+        for lista in memorias[tid].recortes_por_equipo.values()
+        for r in lista
+        if (tid, round(r.t, 3)) in justos
+    ]
+    return max(guardados, key=lambda r: r.area).imagen if guardados else None
+
+
+def recorte_con_su_dorsal(dorsal: int, tracklets: list[int], memorias: dict, mezclados: set[int]) -> np.ndarray | None:
+    """Del portero sin ningún momento en que se le vea vestido como él (por ejemplo, si no se sabe cómo viste el portero
+    de su equipo): el recorte en el que mejor se le leyó su dorsal, de un tracklet en el que el seguidor no saltó a otra
+    persona. None si no se le leyó: mejor sin foto que con la de otro."""
+    leidos = [
+        m
+        for t in tracklets
+        if t in memorias and t not in mezclados
+        for m in memorias[t].mejor_dorsal_por_equipo.values()
+        if m[1] == dorsal
+    ]
+    return max(leidos, key=lambda m: m[0])[2] if leidos else None
+
+
+def escribir_recortes_jugadores(
+    resolucion: Resolucion, seguidor: Seguidor, salida: Path, porteros: Porteros | None = None, instantes: list[Instante] | None = None, leer=None
+) -> dict[int, str]:
+    """De cada jugador identificado, el recorte en el que mejor se leyó su dorsal. El del portero (su línea sale de los
+    tramos de un portero), solo de un momento en que viste claramente como él dentro del rato en que su tracklet es él
+    (`recorte_de_portero`) o, si no lo hay, uno en el que se le leyó su dorsal (`recorte_con_su_dorsal`); nunca uno
+    cualquiera de sus tracklets: los recortes que guarda el seguidor pueden ser de cuando saltó a otra persona, y en el
+    J8 la línea del 1 del Vallobín salía con un jugador del Real Titánico."""
+    import cv2
+
+    from .porteros import momentos_de_portero
 
     rutas: dict[int, str] = {}
     carpeta = salida / "recortes"
     carpeta.mkdir(parents=True, exist_ok=True)
     for ident in resolucion.identidades:
+        if ident.portero and porteros is not None:
+            de_portero = [t for t in ident.tracklets if porteros.es_portero(t)]
+            momentos = momentos_de_portero(porteros, ident.equipo, de_portero, seguidor.memorias)
+            imagen = recorte_de_portero(ident.id, momentos, instantes or [], seguidor.memorias, leer)
+            if imagen is None:
+                imagen = recorte_con_su_dorsal(ident.dorsal, de_portero, seguidor.memorias, porteros.mezclados)
+            if imagen is not None and imagen.size:
+                ruta = carpeta / f"jugador-{ident.id}.jpg"
+                cv2.imwrite(str(ruta), imagen, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+                rutas[ident.id] = str(ruta.relative_to(salida))
+            continue
         mejor = None
         for tid in ident.tracklets:
             m = seguidor.memorias.get(tid)
@@ -513,9 +615,87 @@ def escribir_recortes_jugadores(resolucion: Resolucion, seguidor: Seguidor, sali
     return rutas
 
 
-def escribir_etiquetas_dorsales(resolucion: Resolucion, tramos: list[Tramo], plantillas, guarda: GuardaZonas, config: Configuracion) -> None:
+def muestras_de_porteros(instantes: list[Instante], porteros: Porteros) -> list[tuple[float, int, int, tuple, bool]]:
+    """Para el material del lector (`--guardar-dorsales`): en cada fotograma, los porteros por la equipación dentro de su
+    rato (lo de fuera ya pasó a otro tracklet) con tamaño para leer el dorsal: segundo, tracklet, equipo, caja y si
+    alguien lo tapa."""
+    muestras = []
+    for inst in instantes:
+        suyos = [k for k, p in enumerate(inst.personas) if p.tracklet in porteros.equipo_de and p.caja[3] - p.caja[1] >= ALTO_MIN_PX]
+        if not suyos:
+            continue
+        tapada = tapados(np.array([p.caja for p in inst.personas], dtype=np.float64))
+        for k in suyos:
+            p = inst.personas[k]
+            muestras.append((inst.t, p.tracklet, porteros.equipo_de[p.tracklet], tuple(p.caja), bool(tapada[k])))
+    return muestras
+
+
+def guardar_zonas_porteros(muestras, resolucion: Resolucion, lector, config: Configuracion, info, guarda: GuardaZonas, decir=print) -> dict[str, dict]:
+    """Las zonas del dorsal de los porteros identificados, etiquetadas con su número o sin número
+    (`dorsales.etiquetar_portero`), en un bloque más del material de `entrenar-dorsales`. Devuelve las etiquetas de cada
+    rato (su «tracklet» en el material)."""
+    from collections import defaultdict
+
+    import cv2
+
+    from .dorsales import ALTO, ANCHO, PESOS_PARSEQ, TRACKLET_PORTERO_BASE, LectorDorsales, etiquetar_portero, nota_portero, ratos_portero
+
+    identidad = {x.id: x for x in resolucion.identidades}
+    suyas = []
+    for t, tracklet, equipo, caja, tapado in muestras:
+        ident = identidad.get(resolucion.asignacion.get(tracklet))
+        # Solo con el dorsal de la línea del portero de su equipo: con el de un jugador de campo, sus espaldas enseñarían
+        # el número de otro.
+        if ident is not None and ident.portero and ident.equipo == equipo and ident.dorsal:
+            suyas.append((t, equipo, ident.dorsal, caja, tapado))
+    # Los fotogramas otra vez, desde el principio del tramo como en la pasada para que cada índice sea el mismo.
+    por_indice: dict[int, list[int]] = defaultdict(list)
+    for k, muestra in enumerate(suyas):
+        por_indice[int(round(muestra[0] * info.fps))].append(k)
+    zonas: dict[int, np.ndarray] = {}
+    for indice, imagen in fotogramas_elegidos(info.ruta, por_indice, desde=int(config.segmento.inicio * info.fps)):
+        for k in por_indice[indice]:
+            zona = zona_dorsal(imagen, suyas[k][3])
+            if zona is not None:
+                zonas[k] = cv2.resize(zona, (ANCHO, ALTO), interpolation=cv2.INTER_CUBIC)
+    if not zonas:
+        return {}
+    validas = sorted(zonas)
+    imagenes = [zonas[k] for k in validas]
+    lectores = [lector]
+    publicado = config.modelos / PESOS_PARSEQ
+    if getattr(lector, "ruta", None) != publicado and publicado.exists():
+        lectores.append(LectorDorsales(publicado, lector.device))
+    lecturas = [x.leer(imagenes) for x in lectores]
+
+    elegidas, tracklets, equipos, dorsales, etiquetas, partes = [], [], [], [], {}, []
+    for equipo, dorsal in sorted({(suyas[k][1], suyas[k][2]) for k in validas}):
+        posiciones = [i for i, k in enumerate(validas) if suyas[k][1:3] == (equipo, dorsal)]
+        t = np.array([suyas[validas[i]][0] for i in posiciones])
+        nota = nota_portero([[ls[i] for i in posiciones] for ls in lecturas], dorsal)
+        etiqueta = etiquetar_portero(t, nota, [suyas[validas[i]][4] for i in posiciones])
+        for i, e, r in zip(posiciones, etiqueta, ratos_portero(t)):
+            if e < 0:
+                continue
+            # Los ratos de más allá del 999 van juntos, para no pisar los del dorsal siguiente.
+            tracklet = TRACKLET_PORTERO_BASE + equipo * 100_000 + dorsal * 1_000 + min(int(r), 999)
+            elegidas.append(imagenes[i])
+            tracklets.append(tracklet)
+            equipos.append(equipo)
+            dorsales.append(dorsal if e > 0 else 0)
+            etiquetas[str(tracklet)] = {"dorsal": dorsal, "equipo": equipo, "confianza": 1.0, "parte_tracklet": 1.0}
+        partes.append(f"el {dorsal} (equipo {equipo}), {int(np.sum(etiqueta == 1))} de espaldas y {int(np.sum(etiqueta == 0))} sin número")
+    if elegidas:
+        guarda.guardar_porteros(np.stack(elegidas), np.array(tracklets), np.array(equipos), np.array(dorsales))
+    decir(f"Zonas de los porteros para afinar el lector: {'; '.join(partes)}.")
+    return etiquetas
+
+
+def escribir_etiquetas_dorsales(resolucion: Resolucion, tramos: list[Tramo], plantillas, guarda: GuardaZonas, config: Configuracion, porteros: dict[str, dict] | None = None) -> None:
     """Las etiquetas de las zonas guardadas: el dorsal de cada tracklet identificado, con lo que se fía uno de él (la parte
-    de las lecturas de su identidad que dicen ese número y la del propio tracklet, entre los dorsales permitidos)."""
+    de las lecturas de su identidad que dicen ese número y la del propio tracklet, entre los dorsales permitidos), y las
+    de los ratos de los porteros (`guardar_zonas_porteros`)."""
     import json as _json
 
     identidad = {x.id: x for x in resolucion.identidades}
@@ -532,5 +712,6 @@ def escribir_etiquetas_dorsales(resolucion: Resolucion, tramos: list[Tramo], pla
             "confianza": ident.confianza,
             "parte_tracklet": round(float(t.votos[ident.dorsal - 1]) / total, 3) if total > 0 else 0.0,
         }
+    por_tracklet.update(porteros or {})
     datos = {"video": str(config.video), "segmento": [config.segmento.inicio, config.segmento.fin], "acta": bool(plantillas), "tracklets": por_tracklet}
     guarda.carpeta.joinpath("etiquetas.json").write_text(_json.dumps(datos, ensure_ascii=False), encoding="utf-8")

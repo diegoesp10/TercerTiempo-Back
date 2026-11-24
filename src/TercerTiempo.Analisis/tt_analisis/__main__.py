@@ -51,6 +51,7 @@ def construir_parser() -> argparse.ArgumentParser:
     ed.add_argument("--lote", type=int, default=128)
     ed.add_argument("--lr", type=float, default=3e-5)
     ed.add_argument("--maximo-por-dorsal", type=int, default=2500, help="Como mucho tantas zonas de cada dorsal (para que no manden los que más se ven).")
+    ed.add_argument("--minimo-por-dorsal", type=int, default=300, help="Al menos tantas, repitiendo las de los dorsales que casi nunca se ven de espaldas (el del portero).")
     ed.add_argument("--device", default="cuda")
 
     c = sub.add_parser("comparar", help="Compara varias pasadas (carpetas con analisis.json): balón, calibración, posesión y su estabilidad.")
@@ -320,7 +321,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.orden == "entrenar-dorsales":
         from .entrenar_dorsales import entrenar_dorsales
 
-        return entrenar_dorsales(args.carpetas, args.modelos, epocas=args.epocas, lote=args.lote, lr=args.lr, maximo_por_dorsal=args.maximo_por_dorsal, device=args.device)
+        return entrenar_dorsales(args.carpetas, args.modelos, epocas=args.epocas, lote=args.lote, lr=args.lr, maximo_por_dorsal=args.maximo_por_dorsal, device=args.device,
+                                 minimo_por_dorsal=args.minimo_por_dorsal)
 
     if args.orden == "descargar-modelos":
         from .modelos import descargar_modelos

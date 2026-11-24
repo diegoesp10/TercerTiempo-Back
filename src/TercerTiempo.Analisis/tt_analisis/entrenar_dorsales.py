@@ -7,7 +7,9 @@ jugador y del acta, no de esa lectura suelta. Solo cuentan los tracklets en los 
 de sus lecturas dicen ese número) y las zonas en las que el lector veía un número: las que leía bien y, de las que leía
 mal, solo las que veía claras (en una zona borrosa la etiqueta enseña a adivinar el número del jugador, no a leerlo).
 Además entran zonas sin número (las que el lector publicado veía de frente) con la respuesta vacía, para que no
-olvide que ahí no hay número.
+olvide que ahí no hay número. Y las de los porteros (`analizador.guardar_zonas_porteros`): su espalda con su número y
+su delantera sin número, porque el escudo del pecho se leía como un número y a él casi nunca se le ve de espaldas;
+los números con pocas zonas se repiten hasta `minimo_por_dorsal` para que cuenten.
 
 Se separa una parte de los tracklets para validar (nunca se entrena con ellos) y se compara el acierto del lector
 publicado con el del afinado sobre esa parte. Los pesos quedan en modelos/afinados/dorsales.pt, que el analizador usa
@@ -34,6 +36,9 @@ PESO_LEGIBLE = 0.6
 PESO_NEGATIVA = 0.08
 PARTE_NEGATIVAS = 0.3
 PARTE_VALIDACION = 0.12
+# Un dorsal con una o dos zonas (que pueden estar mal etiquetadas) no se repite tanto como para pesar como uno que se ve
+# cientos de veces: como mucho tantas veces cada zona (en el J8, el 1 del portero, el que más, ×42).
+REPETICIONES_MAX = 50
 
 
 def cargar(carpetas: list[Path]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -68,6 +73,30 @@ def cargar(carpetas: list[Path]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np
     if not imagenes:
         return np.zeros((0, ALTO, ANCHO, 3), np.uint8), np.zeros(0, int), np.zeros(0, int), np.zeros(0, int)
     return np.stack(imagenes), np.array(dorsales), np.array(grupos), np.array(leidos)
+
+
+def elegir_entreno(dorsales: np.ndarray, indices: list[int], rnd: random.Random, maximo_por_dorsal: int, minimo_por_dorsal: int) -> tuple[list[int], dict[int, int]]:
+    """Las zonas de cada época: como mucho `maximo_por_dorsal` de cada número, para que no manden los que más se ven, y al
+    menos `minimo_por_dorsal`, repitiendo (cada vez con otra variación, y cada zona como mucho REPETICIONES_MAX veces)
+    las de los que casi nunca se ven de espaldas, como el del portero: unas pocas zonas entre miles no se aprenden. Y sin
+    número, al azar, PARTE_NEGATIVAS del total.
+    Devuelve también cuántas veces va cada dorsal repetido."""
+    por_dorsal: dict[int, list[int]] = {}
+    for i in indices:
+        por_dorsal.setdefault(int(dorsales[i]), []).append(i)
+    positivos: list[int] = []
+    repetidos: dict[int, int] = {}
+    for d, lista in sorted(por_dorsal.items()):
+        if d == 0:
+            continue
+        elegidos = rnd.sample(lista, min(len(lista), maximo_por_dorsal))
+        veces = min(REPETICIONES_MAX, max(1, minimo_por_dorsal // len(elegidos)))
+        if veces > 1:
+            repetidos[d] = veces
+        positivos += elegidos * veces
+    tope = int(len(positivos) * PARTE_NEGATIVAS / (1 - PARTE_NEGATIVAS))
+    negativas = por_dorsal.get(0, [])
+    return positivos + rnd.sample(negativas, min(len(negativas), tope)), repetidos
 
 
 def aumentar(img: np.ndarray, rnd: random.Random) -> np.ndarray:
@@ -114,7 +143,8 @@ def texto(a: tuple[float, float, float]) -> str:
     return f"con número {100 * a[0]:.1f} % bien leídos, sin número {100 * a[1]:.1f} % (peso medio {a[2]:.2f})"
 
 
-def entrenar_dorsales(carpetas: list[Path], modelos: Path, epocas: int = 4, lote: int = 128, lr: float = 3e-5, maximo_por_dorsal: int = 2500, device: str = "cuda", semilla: int = 7) -> int:
+def entrenar_dorsales(carpetas: list[Path], modelos: Path, epocas: int = 4, lote: int = 128, lr: float = 3e-5, maximo_por_dorsal: int = 2500, device: str = "cuda", semilla: int = 7,
+                      minimo_por_dorsal: int = 300) -> int:
     import torch
 
     rnd = random.Random(semilla)
@@ -127,19 +157,14 @@ def entrenar_dorsales(carpetas: list[Path], modelos: Path, epocas: int = 4, lote
     rnd.shuffle(unicos)
     validacion = set(unicos[: max(1, int(len(unicos) * PARTE_VALIDACION))])
     en_val = np.array([g in validacion for g in grupos])
-    entreno = np.where(~en_val)[0].tolist()
-    # Como mucho `maximo_por_dorsal` de cada número, para que no manden los que más se ven.
-    por_dorsal: dict[int, list[int]] = {}
-    for i in entreno:
-        por_dorsal.setdefault(int(dorsales[i]), []).append(i)
-    positivos = [i for d, lista in por_dorsal.items() if d > 0 for i in rnd.sample(lista, min(len(lista), maximo_por_dorsal))]
-    negativas = por_dorsal.get(0, [])
-    tope = int(len(positivos) * PARTE_NEGATIVAS / (1 - PARTE_NEGATIVAS))
-    entreno = positivos + rnd.sample(negativas, min(len(negativas), tope))
+    entreno, repetidos = elegir_entreno(dorsales, np.where(~en_val)[0].tolist(), rnd, maximo_por_dorsal, minimo_por_dorsal)
+    sin_numero = sum(1 for i in entreno if dorsales[i] == 0)
     val_img, val_d = imagenes[en_val], dorsales[en_val]
     con = dorsales > 0
     print(f"Zonas etiquetadas: {int(con.sum())} con número de {len(set(dorsales[con].tolist()))} dorsales y {int((~con).sum())} sin número, "
-          f"de {len(unicos)} tracklets; entreno {len(entreno)} ({len(entreno) - len(positivos)} sin número), validación {len(val_img)} ({len(validacion)} tracklets).")
+          f"de {len(unicos)} tracklets; entreno {len(entreno)} ({sin_numero} sin número), validación {len(val_img)} ({len(validacion)} tracklets).")
+    if repetidos:
+        print("Repetidos por verse poco: " + ", ".join(f"el {d} ×{v}" for d, v in repetidos.items()) + ".")
     if not (~con).any():
         print("Aviso: no hay zonas sin número (guardadas con una versión anterior): el afinado tenderá a leer un número en todo.")
     print(f"El lector publicado ya coincidía con la etiqueta en el {100 * float(np.mean(leidos[con] == dorsales[con])):.1f} % de las zonas con número.")
@@ -195,7 +220,7 @@ def entrenar_dorsales(carpetas: list[Path], modelos: Path, epocas: int = 4, lote
         "carpetas": [str(c) for c in carpetas], "zonas": len(imagenes), "entreno": len(entreno), "validacion": len(val_img),
         "acierto_publicado": {"con_numero": round(base[0], 4), "sin_numero": round(base[1], 4), "peso_sin_numero": round(base[2], 4)},
         "acierto_afinado": {"con_numero": round(mejor_acierto[0], 4), "sin_numero": round(mejor_acierto[1], 4), "peso_sin_numero": round(mejor_acierto[2], 4)},
-        "epocas": epocas, "lr": lr,
+        "epocas": epocas, "lr": lr, "minimo_por_dorsal": minimo_por_dorsal,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Guardado {destino}: validación de «{texto(base)}» a «{texto(mejor_acierto)}».")
     return 0

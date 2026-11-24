@@ -117,6 +117,71 @@ class GuardaZonas:
         self.guardadas += len(self.imagenes)
         self.imagenes, self.datos = [], []
 
+    def guardar_porteros(self, zonas: np.ndarray, tracklets: np.ndarray, equipos: np.ndarray, dorsales: np.ndarray) -> None:
+        """Un bloque con las zonas de los porteros ya etiquetadas (`etiquetar_portero`), estiradas como las demás:
+        `dorsales`, su número en las de espaldas y 0 en las sin número. Va como si el lector hubiera leído su número con
+        peso 1 o nada, que es como `entrenar_dorsales.cargar` las toma por buenas o por sin número."""
+        self.vaciar()
+        dorsales = np.asarray(dorsales, dtype=np.int64)
+        np.savez_compressed(
+            self.carpeta / f"zonas-{self.bloques:04d}.npz",
+            imagenes=np.asarray(zonas, dtype=np.uint8), tracklet=np.asarray(tracklets, dtype=np.int64),
+            equipo=np.asarray(equipos, dtype=np.int64), leido=dorsales, peso=(dorsales > 0).astype(np.float32),
+        )
+        self.bloques += 1
+        self.guardadas += len(dorsales)
+
+
+# Zonas del portero para afinar el lector (`analizar --guardar-dorsales`). Al portero casi nunca se le ve de espaldas lo
+# bastante grande (en el J8, 17 veces el 13 y 8 el 1 en todo el partido: las porterías quedan lejos de la cámara) y de
+# frente el escudo del pecho se lee como un número (el 8, el 3 o el 6 en el morado del Real Titánico): sin zonas suyas,
+# el afinado ni lee su número ni aprende que ahí no hay ninguno, y el lector afinado el 16-11 le leía el 13 en el 3 % de
+# sus votos y el 1, nunca. De quién es el tracklet no hay duda (la equipación, su portería y el acta), así que su número
+# se busca con los dos lectores, el publicado y el del análisis: de espaldas, la zona en la que alguno se lo lee con nota
+# (probabilidad × peso) de al menos NOTA_PORTERO_ESPALDA; sin número, la que ninguno pasa de NOTA_PORTERO_SIN y está a
+# más de VENTANA_PORTERO_S de cualquiera con algo de su número (puede ser la espalda de lado o borrosa). Con alguien
+# delante, ninguna: la zona puede ser la del otro. Mirado a ojo en el J8: las 17 espaldas del 13 enseñan el 13, y de 96
+# sin número al azar, ninguna su número.
+NOTA_PORTERO_ESPALDA = 0.35
+NOTA_PORTERO_SIN = 0.1
+VENTANA_PORTERO_S = 4.0
+# Cada rato seguido del portero (sin huecos de más de RATO_PORTERO_S) es un «tracklet» del material, para que la
+# validación del afinado no se quede con fotogramas pegados a los del entreno.
+RATO_PORTERO_S = 2.0
+TRACKLET_PORTERO_BASE = 7_000_000
+
+
+def nota_portero(lecturas: list[list[Lectura]], dorsal: int) -> np.ndarray:
+    """La nota de `dorsal` en cada zona: lo más que se lo lee alguno de los lectores (una lista de lecturas por lector)."""
+    return np.max([[peso_lectura(l) * float(l.probabilidades[dorsal - 1]) for l in ls] for ls in lecturas], axis=0)
+
+
+def etiquetar_portero(t, nota, tapado) -> np.ndarray:
+    """De las zonas de un portero (su segundo, la nota de su número y si alguien lo tapaba): 1 de espaldas con su número,
+    0 sin número y -1 las que no se guardan."""
+    t, nota, tapado = np.asarray(t, dtype=np.float64), np.asarray(nota, dtype=np.float64), np.asarray(tapado, dtype=bool)
+    con_algo = np.sort(t[nota >= NOTA_PORTERO_SIN])
+    lejos = np.ones(len(t), dtype=bool)
+    if len(con_algo):
+        j = np.searchsorted(con_algo, t)
+        antes = t - con_algo[np.clip(j - 1, 0, len(con_algo) - 1)]
+        despues = con_algo[np.clip(j, 0, len(con_algo) - 1)] - t
+        lejos = np.minimum(np.abs(antes), np.abs(despues)) > VENTANA_PORTERO_S
+    etiqueta = np.full(len(t), -1, dtype=np.int64)
+    etiqueta[(nota < NOTA_PORTERO_SIN) & ~tapado & lejos] = 0
+    etiqueta[(nota >= NOTA_PORTERO_ESPALDA) & ~tapado] = 1
+    return etiqueta
+
+
+def ratos_portero(t) -> np.ndarray:
+    """El rato seguido de cada zona (0, 1, …), sin huecos de más de RATO_PORTERO_S."""
+    t = np.asarray(t, dtype=np.float64)
+    rato = np.zeros(len(t), dtype=np.int64)
+    if len(t) > 1:
+        orden = np.argsort(t, kind="stable")
+        rato[orden] = np.concatenate([[0], np.cumsum(np.diff(t[orden]) > RATO_PORTERO_S)])
+    return rato
+
 
 class ColaDorsales:
     """Junta las zonas de los dorsales de varios fotogramas y las lee de golpe (en la GPU, por lotes)."""

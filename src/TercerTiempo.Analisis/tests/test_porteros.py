@@ -1,9 +1,13 @@
+import cv2
 import numpy as np
 
+from tt_analisis.analizador import escribir_recortes_jugadores, recorte_de_portero
 from tt_analisis.config import CLASE_ARBITRO, CLASE_JUGADOR, CLASE_PORTERO
 from tt_analisis.geometria import Campo
+from tt_analisis.identidades import Identidad, Resolucion
 from tt_analisis.porteros import (
     TRACKLET_RESTO_BASE,
+    Porteros,
     aplicar_porteros,
     asignar_porteros,
     buscar_porteros,
@@ -11,8 +15,9 @@ from tt_analisis.porteros import (
     describir_porteros,
     equipo_que_defiende,
     lados_de_porteros,
+    momentos_de_portero,
 )
-from tt_analisis.seguimiento import MemoriaTracklet
+from tt_analisis.seguimiento import MemoriaTracklet, Recorte, Seguidor
 from tt_analisis.tipos import Instante, Persona
 
 from conftest import instante, portero
@@ -358,3 +363,139 @@ def test_el_portero_que_el_detector_toma_por_el_arbitro_es_el_portero():
     aplicar_porteros(partido.instantes, partido.mitad_de, p)
     assert clases_de(partido.instantes, 24) == {CLASE_PORTERO} and equipos_de(partido.instantes, 24) == {1}
     assert clases_de(partido.instantes, 300) == {CLASE_ARBITRO} and equipos_de(partido.instantes, 300) == {None}
+
+
+def test_un_rival_que_el_detector_toma_por_portero_en_nuestra_area_sin_poder_comprobarlo_no_es_nuestro_portero():
+    # Como en el J8: un jugador del equipo 0 (rayas rojas y blancas) remata en el área del equipo 1, el detector lo toma
+    # por portero y apenas se le ve la equipación (2 muestras) ni el dorsal. Hasta la 1.2.0 era del equipo 1 por la
+    # portería que defiende y acababa en la línea de su portero.
+    partido = Partido().con_equipos().con_porteros()
+    partido.tracklet(43, RAYAS, 11300, 62, 66, clase=CLASE_PORTERO, muestras=2)
+    p = partido.buscar()
+    assert 43 in p.sin_equipo and not p.es_portero(43) and not any(k[0] == 43 for k in p.por_parte)
+    aplicar_porteros(partido.instantes, partido.mitad_de, p)
+    assert {e for _, _, e in de(partido.instantes, 43)} == {None}
+
+
+def test_del_portero_se_sabe_si_esta_junto_a_la_porteria_que_defiende_su_equipo_en_cada_parte():
+    p = Partido().con_equipos().con_porteros().buscar()
+    # El equipo 0 defiende la izquierda en la primera parte y la derecha en la segunda; la zona del portero llega a 22 m
+    # de su línea de gol y a 25 m del eje del campo.
+    assert p.junto_a_su_porteria((500.0, 3500.0), 0, 1) is True
+    assert p.junto_a_su_porteria((3500.0, 3500.0), 0, 1) is False
+    assert p.junto_a_su_porteria((500.0, 6500.0), 0, 1) is False
+    assert p.junto_a_su_porteria((11500.0, 3500.0), 0, 2) is True
+    assert p.junto_a_su_porteria((500.0, 3500.0), 1, 1) is False
+    # Sin campo calibrado o sin saber hacia dónde ataca, no se sabe.
+    assert p.junto_a_su_porteria(None, 0, 1) is None and p.junto_a_su_porteria((500.0, 3500.0), 0, 3) is None
+
+
+def test_el_recorte_del_portero_es_de_un_momento_en_que_viste_como_el_y_nunca_del_rival_con_el_que_lo_confundio(tmp_path):
+    # Como en el J8: el seguidor salta del portero del equipo 1 a un jugador del equipo 0 que pasa pegado a la cámara, así
+    # que las cajas más grandes del tracklet son las del rival. Una muestra de la equipación por segundo, como los
+    # instantes.
+    partido = Partido().con_equipos().con_porteros()
+    partido.tracklet(23, LIMA, 11600, 50, 90, camiseta=0, serie=[LIMA] * 28 + [RAYAS] * 12)
+    for inst in partido.instantes:
+        for persona in inst.personas:
+            if persona.tracklet == 23:
+                crece = int(inst.t) - 50
+                persona.caja = (0, 0, 10 + crece, 20 + 2 * crece)
+    p = colocar_porteros(partido.instantes, partido.mitad_de, partido.memorias, Campo())
+    hasta = partido.memorias[23].tiempos_equipacion[27]
+    assert p.equipo_de[23] == 1 and p.ratos[23] == (-np.inf, hasta)
+    momentos = momentos_de_portero(p, 1, [20, 21, 22, 23], partido.memorias)
+    assert momentos and all(t <= hasta for t, tid in momentos if tid == 23)
+    assert momentos_de_portero(p, 0, [23], partido.memorias) == []
+    # La línea del portero, como la deja `resolver`: sus tracklets pasan a ser el jugador identificado.
+    rueda = Identidad(1, 1, "RUEDA", [20, 21, 22, 23], 0.0, 0.0, por_descarte=True, portero=True)
+    for inst in partido.instantes:
+        for persona in inst.personas:
+            if persona.tracklet in rueda.tracklets:
+                persona.tracklet = rueda.id
+    leidos = []
+
+    def leer(t):
+        leidos.append(t)
+        return np.full((300, 300, 3), int(t), np.uint8)
+
+    # Del vídeo, de los momentos en que viste como él y se le ve más alto (aquí todos igual de nítidos), el primero: el
+    # último de su rato. Nunca uno del rival, que se ve aún más grande.
+    recorte = recorte_de_portero(rueda.id, momentos, partido.instantes, partido.memorias, leer)
+    assert leidos[0] == hasta and all(t <= hasta for t in leidos) and int(recorte[0, 0, 0]) == int(hasta)
+    # Sin vídeo, nunca el recorte guardado del rival (el más grande del tracklet): solo uno de un momento en que viste
+    # como él o ninguno.
+    partido.memorias[23].recortes_por_equipo[0] = [Recorte(88.0, 1e6, 0.9, np.full((50, 30, 3), 255, np.uint8), 0)]
+    assert recorte_de_portero(rueda.id, momentos, partido.instantes, partido.memorias) is None
+    partido.memorias[23].recortes_por_equipo[-1] = [Recorte(60.0, 10.0, 0.9, np.full((20, 10, 3), 60, np.uint8), -1)]
+    assert int(recorte_de_portero(rueda.id, momentos, partido.instantes, partido.memorias)[0, 0, 0]) == 60
+    # Y lo que se escribe para la línea del portero en el análisis.
+    resolucion = Resolucion({t: rueda.id for t in rueda.tracklets}, [rueda], {0: None, 1: None}, 1, {0: 0.0, 1: 0.0})
+    rutas = escribir_recortes_jugadores(resolucion, Seguidor(memorias=partido.memorias), tmp_path, p, partido.instantes, leer)
+    imagen = cv2.imread(str(tmp_path / rutas[rueda.id]))
+    assert abs(int(imagen[0, 0, 0]) - int(hasta)) <= 2
+
+
+def test_el_recorte_del_portero_es_de_pie_y_el_mas_nitido():
+    # Tres momentos en que viste como él: agachado (la caja más grande, más ancha que alta), de pie y borroso, y de pie y
+    # nítido.
+    cajas = [(0, 0, 80, 60), (0, 0, 20, 50), (0, 0, 20, 50)]
+    instantes = [Instante(k, float(k), [Persona(900_001, CLASE_PORTERO, 1, (0.0, 0.0), None, caja, 0.9)], None, None, True) for k, caja in enumerate(cajas)]
+
+    def leer(t):
+        imagen = np.full((100, 100, 3), 128, np.uint8)
+        if t == 2.0:
+            imagen[::2] = 0
+        return imagen
+
+    recorte = recorte_de_portero(900_001, [(0.0, 5), (1.0, 5), (2.0, 5)], instantes, {}, leer)
+    assert recorte.shape[:2] == (56, 26) and recorte.std() > 0
+
+
+def lectura(dorsal: int) -> np.ndarray:
+    probabilidades = np.zeros(99)
+    probabilidades[dorsal - 1] = 1.0
+    return probabilidades
+
+
+def gris(valor: int) -> np.ndarray:
+    return np.full((40, 20, 3), valor, np.uint8)
+
+
+def foto(carpeta, rutas, ident) -> int:
+    return int(cv2.imread(str(carpeta / rutas[ident.id]))[0, 0, 0])
+
+
+def test_el_jugador_de_campo_con_un_tracklet_que_el_detector_tomo_por_portero_sale_con_su_recorte(tmp_path):
+    # El detector tomó un rato por portero al 7 (tracklet 31), que acaba en su línea como jugador de campo: su foto es la
+    # de su dorsal, como la de cualquier jugador de campo, y no se queda sin ella por no vestir como un portero.
+    memorias = {30: MemoriaTracklet(30), 31: MemoriaTracklet(31)}
+    memorias[30].votos_clase[CLASE_JUGADOR] += 10
+    memorias[30].votos_equipo[0] += 5.0
+    memorias[30].sumar_dorsal(lectura(7), 1.0, gris(70), 0)
+    memorias[31].votos_clase[CLASE_PORTERO] += 10
+    siete = Identidad(0, 7, "SIETE", [30, 31], 3.0, 0.9)
+    resolucion = Resolucion({30: siete.id, 31: siete.id}, [siete], {0: None, 1: None}, 2, {0: 0.0, 1: 0.0})
+    rutas = escribir_recortes_jugadores(resolucion, Seguidor(memorias=memorias), tmp_path, Porteros(del_detector={31}), [], lambda t: None)
+    assert abs(foto(tmp_path, rutas, siete) - 70) <= 2
+
+
+def test_del_portero_sin_saber_como_viste_su_portero_la_foto_es_una_en_que_se_le_leyo_su_dorsal(tmp_path):
+    # Sin saber cómo viste el portero de su equipo no hay momentos comprobados por la equipación: la foto es la del
+    # recorte en que mejor se le leyó su número, nunca el recorte más grande de sus tracklets ni el del 8 rival con el que
+    # lo confundió el seguidor, ni uno del tracklet en que el seguidor saltó a otra persona; si no se le leyó, sin foto.
+    memorias = {40: MemoriaTracklet(40), 41: MemoriaTracklet(41)}
+    for m in memorias.values():
+        m.votos_clase[CLASE_PORTERO] += 10
+    memorias[40].recortes_por_equipo[0] = [Recorte(5.0, 1e6, 0.9, np.full((80, 40, 3), 255, np.uint8), 0)]
+    memorias[40].sumar_dorsal(lectura(8), 2.0, gris(200), 0)
+    memorias[40].sumar_dorsal(lectura(13), 1.0, gris(90), -1)
+    memorias[41].sumar_dorsal(lectura(13), 3.0, gris(30), -1)
+    porteros = Porteros(del_detector={40, 41}, mezclados={41})
+    carcedo = Identidad(0, 13, "CARCEDO", [40, 41], 1.0, 0.3, portero=True)
+    resolucion = Resolucion({40: carcedo.id, 41: carcedo.id}, [carcedo], {0: None, 1: None}, 1, {0: 0.0, 1: 0.0})
+    rutas = escribir_recortes_jugadores(resolucion, Seguidor(memorias=memorias), tmp_path, porteros, [], lambda t: None)
+    assert abs(foto(tmp_path, rutas, carcedo) - 90) <= 2
+    del memorias[40].mejor_dorsal_por_equipo[-1]
+    rutas = escribir_recortes_jugadores(resolucion, Seguidor(memorias=memorias), tmp_path / "sin", porteros, [], lambda t: None)
+    assert carcedo.id not in rutas

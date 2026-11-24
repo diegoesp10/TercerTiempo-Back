@@ -108,6 +108,31 @@ def fotogramas(config: Configuracion, info: InfoVideo, paso: int | None = None, 
         cap.release()
 
 
+def fotogramas_elegidos(ruta: Path, indices, desde: int = 0) -> Iterator[tuple[int, np.ndarray]]:
+    """Esos fotogramas (por su índice), leyendo seguido desde `desde` y decodificando solo esos: para muchos repartidos
+    por el tramo, saltar a cada uno es más lento. Con `desde` en el principio del tramo, como `fotogramas`, cada índice es
+    el mismo fotograma que vio la pasada."""
+    quedan = sorted({int(i) for i in indices if int(i) >= desde})
+    if not quedan:
+        return
+    cap = cv2.VideoCapture(str(ruta))
+    if not cap.isOpened():
+        raise FileNotFoundError(f"No se puede abrir el vídeo {ruta}")
+    try:
+        if desde > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, desde)
+        indice, k = desde, 0
+        while k < len(quedan) and cap.grab():
+            if indice == quedan[k]:
+                ok, imagen = cap.retrieve()
+                if ok:
+                    yield indice, imagen
+                k += 1
+            indice += 1
+    finally:
+        cap.release()
+
+
 def fotogramas_en(ruta: Path, tiempos: list[float]) -> Iterator[tuple[float, np.ndarray]]:
     """Fotogramas sueltos en esos segundos, saltando (para pocos fotogramas repartidos por todo el vídeo)."""
     cap = cv2.VideoCapture(str(ruta))

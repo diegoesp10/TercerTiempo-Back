@@ -10,7 +10,13 @@ como mucho 16 por equipo (once y los cambios). Para juntarlos:
    dicen con claridad jugadores que se ven a la vez que el portero no es el suyo (en el J8 al 13 morado del Real
    Titánico se le leía sobre todo el 8 y el 6, sus defensas). Si las lecturas no bastan y está el acta, por descarte: el
    único de su equipo que jugó todos los minutos en que se ve al portero y no es ninguno de los jugadores de campo
-   identificados (al verde lima del Vallobín casi no se le lee el 1); si queda más de uno, ninguno.
+   identificados (al verde lima del Vallobín casi no se le lee el 1); si queda más de uno, ninguno. Desde la 1.3.0:
+   el portero pasa la mayor parte del tiempo al lado o debajo de la portería que defiende su equipo, y la parte en la
+   que no (con el campo calibrado un rato) no es suya; su dorsal se compara con el acta (solo los de su equipo que
+   estaban en el campo y, si el acta dice quién es portero, solo esos); y sin leerle el número, el descarte solo vale
+   si la equipación y la posición lo confirman con claridad: tramos reconocidos por la equipación, no solo por el
+   detector, y vistos junto a su portería con el campo calibrado un minuto como poco. Mejor sin identificar que con el
+   nombre de otro.
 1. **Cadenas**: el tramo que empieza justo donde y cuando acaba otro del mismo equipo es el mismo jugador (se enlazan
    de menor a mayor salto, cada tramo con un solo antecesor y un solo sucesor, y nunca dos que ya dicen dorsales
    distintos con claridad).
@@ -81,6 +87,16 @@ OCUPADO_MIN_S = 60.0
 COBERTURA_LEIDO = 0.4
 COBERTURA_DESCARTE = 0.95
 PORTERO_MIN_S = 60.0
+# El portero pasa la mayor parte del tiempo al lado o debajo de la portería que defiende su equipo: en cada parte en la
+# que se le ve con el campo calibrado al menos CALIBRADO_PARTE_S, al menos PARTE_EN_PORTERIA de ese tiempo en la zona del
+# portero (`porteros.ZONA_FONDO_CM` de su línea de gol y `porteros.ZONA_ANCHO_CM` del eje). En el J8 los dos porteros
+# pasan ahí del 84 al 98 % de cada parte (salen a sacar faltas hasta a 40 m y la calibración a veces se va lejos); la
+# parte que no llega no es suya.
+PARTE_EN_PORTERIA = 0.7
+CALIBRADO_PARTE_S = 20.0
+# Sin leerle el dorsal, por descarte solo si la equipación y la posición lo confirman con claridad: sus tramos por la
+# equipación (no los que solo marca el detector) y vistos junto a su portería con el campo calibrado al menos esto.
+CALIBRADO_DESCARTE_S = 60.0
 
 
 def id_jugador(equipo: int, dorsal: int) -> int:
@@ -113,6 +129,10 @@ class Tramo:
     # Portero por la equipación (`porteros.py`), no solo porque lo diga el detector: es el portero aunque una lectura
     # suelta diga otro número.
     por_equipacion: bool = False
+    # Del portero: la parte del partido en la que empieza y, por parte, los segundos con el campo calibrado y, de ellos,
+    # los que está al lado o debajo de la portería que defiende su equipo (`porteros.Porteros.junto_a_su_porteria`).
+    mitad: int | None = None
+    porteria: dict[int, tuple[float, float]] = field(default_factory=dict)
 
     @property
     def duracion(self) -> float:
@@ -126,6 +146,8 @@ class JugadorActa:
     # Segundos del vídeo en los que pudo estar en el campo (None: desde el principio / hasta el final).
     desde_s: float | None = None
     hasta_s: float | None = None
+    # Si el acta (o la ficha) dice que es portero: si en un equipo hay alguno, su portero solo puede ser uno de ellos.
+    portero: bool = False
 
     def en_juego(self, t_ini: float, t_fin: float, margen: float = MARGEN_MINUTOS_S) -> bool:
         if self.desde_s is not None and t_fin < self.desde_s - margen:
@@ -143,6 +165,9 @@ class Plantilla:
 
     def dorsales(self) -> set[int]:
         return {j.dorsal for j in self.jugadores}
+
+    def porteros(self) -> set[int]:
+        return {j.dorsal for j in self.jugadores if j.portero}
 
 
 @dataclass
@@ -183,6 +208,9 @@ class Identidad:
     por_continuidad: int = 0
     # Portero cuyo dorsal sale del acta por descarte, no de las lecturas.
     por_descarte: bool = False
+    # Su línea sale de los tramos de un portero (`_porteros`), no solo de los de campo: un tracklet que el detector tomó
+    # por portero y acabó en un jugador de campo no lo hace portero.
+    portero: bool = False
 
     @property
     def id(self) -> int:
@@ -445,15 +473,36 @@ def _ocupados(cadenas: list[Cadena], asignada: dict[int, tuple[int, float, float
     return ocupados, contados
 
 
+def _partes_lejos_de_porteria(tramos: list[Tramo]) -> set[int]:
+    """Las partes en las que los tramos del portero de un equipo, vistos con el campo calibrado al menos
+    CALIBRADO_PARTE_S, no pasan ni PARTE_EN_PORTERIA de ese tiempo al lado o debajo de la portería que defiende su equipo:
+    en esa parte no es su portero. Se mide sobre toda la parte y no tramo a tramo: el portero sale a sacar faltas y la
+    calibración a veces se va lejos un momento."""
+    calibrado: dict[int, float] = defaultdict(float)
+    junto: dict[int, float] = defaultdict(float)
+    for t in tramos:
+        for mitad, (segundos, cerca) in t.porteria.items():
+            calibrado[mitad] += segundos
+            junto[mitad] += cerca
+    return {m for m, s in calibrado.items() if s >= CALIBRADO_PARTE_S and junto[m] < PARTE_EN_PORTERIA * s}
+
+
+def _junto_a_su_porteria(tramos: list[Tramo]) -> float:
+    """Segundos con el campo calibrado en que los tramos están al lado o debajo de la portería que defiende su equipo."""
+    return sum(cerca for t in tramos for _, cerca in t.porteria.values())
+
+
 def _mejor_portero(tramos: list[Tramo], votos: dict[int, np.ndarray], plantilla: Plantilla | None, fuera: set[int]) -> tuple[int, float, float] | None:
     """El dorsal del portero por las lecturas: el que más se lee de los que pueden ser (ni otro portero ya identificado ni
-    un número ocupado por un jugador de campo), contando solo los tramos de los minutos en que estuvo en el campo (si lo
-    cambiaron, el titular y el que entró se reparten las lecturas del partido) y, con el acta, solo si estuvo en el campo
-    al menos COBERTURA_LEIDO del tiempo en que se ve al portero."""
+    un número ocupado por un jugador de campo, y si el acta dice quiénes son porteros, uno de ellos), contando solo los
+    tramos de los minutos en que estuvo en el campo (si lo cambiaron, el titular y el que entró se reparten las lecturas
+    del partido) y, con el acta, solo si estuvo en el campo al menos COBERTURA_LEIDO del tiempo en que se ve al
+    portero."""
+    marcados = plantilla.porteros() if plantilla is not None else set()
     mejor: tuple[int, float, float] | None = None
     for indice in np.flatnonzero(np.sum([votos[t.tracklet] for t in tramos], axis=0) > 0):
         dorsal = int(indice) + 1
-        if dorsal in fuera:
+        if dorsal in fuera or (marcados and dorsal not in marcados):
             continue
         jugador = _jugador(plantilla, dorsal)
         suyos = [votos[t.tracklet] for t in tramos if jugador is None or jugador.en_juego(t.t_ini, t.t_fin)]
@@ -470,10 +519,19 @@ def _mejor_portero(tramos: list[Tramo], votos: dict[int, np.ndarray], plantilla:
 
 def _por_descarte(tramos: list[Tramo], votos: dict[int, np.ndarray], plantilla: Plantilla, fuera: set[int]) -> tuple[int, float, float] | None:
     """Si las lecturas no bastan, con el acta: el único de su equipo que estuvo en el campo todo el tiempo en que se ve al
-    portero y no es otro portero ni un jugador de campo identificado. Solo si se ha visto al portero un buen rato."""
-    if sum(t.duracion for t in tramos) < PORTERO_MIN_S:
+    portero y no es otro portero ni un jugador de campo identificado (si el acta dice quiénes son porteros, uno de ellos).
+    Sin leerle el número, solo si la equipación y la posición lo confirman con claridad: cuentan solo sus tramos por la
+    equipación (no los que solo marca el detector), que tienen que sumar PORTERO_MIN_S y estar al menos
+    CALIBRADO_DESCARTE_S, con el campo calibrado, al lado o debajo de su portería."""
+    de_equipacion = [t for t in tramos if t.por_equipacion]
+    if sum(t.duracion for t in de_equipacion) < PORTERO_MIN_S or _junto_a_su_porteria(de_equipacion) < CALIBRADO_DESCARTE_S:
         return None
-    candidatos = [j.dorsal for j in plantilla.jugadores if j.dorsal not in fuera and _cobertura(tramos, j) >= COBERTURA_DESCARTE]
+    marcados = plantilla.porteros()
+    candidatos = [
+        j.dorsal
+        for j in plantilla.jugadores
+        if j.dorsal not in fuera and (not marcados or j.dorsal in marcados) and _cobertura(de_equipacion, j) >= COBERTURA_DESCARTE
+    ]
     if len(candidatos) != 1:
         return None
     dorsal = candidatos[0]
@@ -497,8 +555,11 @@ def _porteros(
     Los tramos del portero por la equipación van delante. Los del detector se quedan para los de campo si coinciden en el
     tiempo con otro de su equipo ya aceptado (dos porteros a la vez no puede ser) o si dicen con claridad otro número (un
     jugador que el detector tomó por portero); el del portero por la equipación es el portero aunque se le lea otro
-    número. Con el acta, solo cuentan los dorsales de su equipo que estaban en el campo en cada tramo; y si cambian al
-    portero, el que entra sale de los tramos que quedan fuera de los minutos del primero."""
+    número. En la parte en la que no pasan la mayor parte del tiempo junto a la portería que defiende su equipo
+    (`_partes_lejos_de_porteria`) ninguno es su portero. Con el acta, solo cuentan los dorsales de su equipo que estaban en
+    el campo en cada tramo; y si cambian al portero, el que entra sale de los tramos que quedan fuera de los minutos del
+    primero. El portero que sale por descarte solo se queda con sus tramos por la equipación: los que solo marca el
+    detector, sin número que lo diga, se resuelven como los de campo."""
     identificados: list[tuple[Cadena, tuple[int, float, float], bool]] = []
     sueltos: list[Tramo] = []
     perdidos: list[Tramo] = []
@@ -509,6 +570,12 @@ def _porteros(
                 (perdidos if t.por_equipacion else sueltos).append(t)
             else:
                 aceptados.append(t)
+        lejos = _partes_lejos_de_porteria(aceptados)
+        if lejos:
+            for t in aceptados:
+                if t.mitad in lejos:
+                    (perdidos if t.por_equipacion else sueltos).append(t)
+            aceptados = [t for t in aceptados if t.mitad not in lejos]
         plantilla = plantilla_de.get(equipo)
         votos = {t.tracklet: _votos_permitidos(t, plantilla) for t in aceptados}
         pendientes = sorted(aceptados, key=lambda t: t.t_ini)
@@ -531,6 +598,9 @@ def _porteros(
             for t in pendientes:
                 if jugador is not None and not jugador.en_juego(t.t_ini, t.t_fin):
                     resto.append(t)
+                elif descarte and not t.por_equipacion:
+                    # Sin leerle el número, solo es él lo que confirma la equipación.
+                    sueltos.append(t)
                 elif t.por_equipacion or _claro(votos[t.tracklet]) in (None, dorsal):
                     suyos.append(t)
                 else:
@@ -609,6 +679,8 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
             ident.por_continuidad += 1
         if i in por_descarte:
             ident.por_descarte = True
+        if i >= de_campo_hasta:
+            ident.portero = True
         for t in c.tramos:
             asignacion[t.tracklet] = ident.id
     for ident in identidades.values():
@@ -700,9 +772,10 @@ def minuto_a_segundos(minuto: float, saque_s: float, descanso_s: float | None, p
 
 def leer_plantillas(datos: dict, saque_s: float = 0.0, descanso_s: float | None = None) -> list[Plantilla]:
     """Las plantillas del acta oficial que pasa la app: `{"equipos": [{"lado", "nombre", "jugadores": [{"dorsal",
-    "nombre", "titular", "entra", "sale"}]}], "parte", "minutos_parte"}` con los minutos de entrada y salida (null: todo
-    el partido), de qué parte es el vídeo («partido», «primera» o «segunda») y cuánto dura cada parte. Solo los que
-    jugaron (titulares o que entraron) y, con una sola parte, los que estuvieron en ella."""
+    "nombre", "titular", "entra", "sale", "portero"}]}], "parte", "minutos_parte"}` con los minutos de entrada y salida
+    (null: todo el partido), si es portero (si no viene, no se sabe), de qué parte es el vídeo («partido», «primera» o
+    «segunda») y cuánto dura cada parte. Solo los que jugaron (titulares o que entraron) y, con una sola parte, los que
+    estuvieron en ella."""
     parte = datos.get("parte") if datos.get("parte") in ("partido", "primera", "segunda") else "partido"
     mitad = float(datos.get("minutos_parte") or 45)
 
@@ -726,7 +799,7 @@ def leer_plantillas(datos: dict, saque_s: float = 0.0, descanso_s: float | None 
             desde = None if titular or not entra else segundo(entra)
             if parte == "segunda" and desde is not None and float(entra) <= mitad:
                 desde = None
-            jugadores.append(JugadorActa(dorsal, j.get("nombre") or "", desde, None if sale is None else segundo(sale)))
+            jugadores.append(JugadorActa(dorsal, j.get("nombre") or "", desde, None if sale is None else segundo(sale), j.get("portero") is True))
         if jugadores:
             plantillas.append(Plantilla(equipo.get("lado") or "", equipo.get("nombre") or "", jugadores))
     return plantillas
