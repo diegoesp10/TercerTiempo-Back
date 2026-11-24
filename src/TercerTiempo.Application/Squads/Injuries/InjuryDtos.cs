@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Squads.Injuries;
@@ -8,7 +8,32 @@ public sealed record InjuryTypeDto(
     string Type,
     string Label,
     [property: Description("Duración media orientativa en días; null si no hay referencia (Otra).")]
-    int? AverageDays);
+    int? AverageDays,
+    [property: Description("Sin sitio fijo, qué se pregunta de dónde fue: cualquier sitio de esta clase (Zone incluye las articulaciones) o, si Sites no está vacía, solo esos. null si hay sitio fijo o no se pregunta (Enfermedad).")]
+    BodySiteKind? SiteKind,
+    [property: Description("Sitio fijo del tipo (Ankle en el esguince de tobillo): se guarda si no se precisa más y de él sale el lado. null si no tiene.")]
+    string? BaseSite,
+    [property: Description("Con sitio fijo, lo que lo precisa si se sabe (sus ligamentos); sin él, los únicos sitios de su clase que se ofrecen (vacía: todos). Códigos de GET /api/squads/body-sites.")]
+    IReadOnlyList<string> Sites,
+    [property: Description("Se pregunta el grado: I distensión, II rotura parcial, III rotura completa.")]
+    bool Graded,
+    [property: Description("false = retirado: no se ofrece para lesiones nuevas; sale para corregir las que ya lo tienen y sus recaídas.")]
+    bool Active = true);
+
+public sealed record BodySiteDto(
+    string Code,
+    string Label,
+    BodySiteKind Kind,
+    [property: Description("Zona del cuerpo, de la cabeza a los pies: agrupa los sitios al elegirlos.")]
+    BodyRegion Region,
+    [property: Description("Grupo al que pertenece (el bíceps femoral, a los isquiotibiales); null si no está en ninguno.")]
+    string? Parent,
+    [property: Description("Tiene izquierdo y derecho: se pregunta el lado.")]
+    bool Paired,
+    [property: Description("Cómo se escribe el lado con él: Masculine «izquierdo», Feminine «izquierda», MasculinePlural «izquierdos», FemininePlural «izquierdas».")]
+    BodySiteAgreement Agreement,
+    [property: Description("false = retirado: no se ofrece para lesiones nuevas, pero sigue en las que ya lo tienen.")]
+    bool Active);
 
 public sealed record InjuryDto(
     Guid Id,
@@ -47,7 +72,21 @@ public sealed record InjuryDto(
     [property: Description("Viene de la temporada anterior: es la misma lesión, que seguía abierta al cambiar de temporada, y conserva su parte (los días se cuentan desde él).")]
     Guid? ContinuesInjuryId = null,
     [property: Description("Día en que pasó sin el alta a la temporada siguiente: aquí es historial (sus días cuentan hasta entonces) y se lleva desde la plantilla de esa temporada; null si no pasó.")]
-    DateOnly? ContinuedOn = null);
+    DateOnly? ContinuedOn = null,
+    [property: Description("Dónde se lesionó: el partido o el entrenamiento, con su día; null si fue en otro sitio o no se sabe.")]
+    InjuryOccasionDto? Occasion = null,
+    [property: Description("Sitio del cuerpo (código de GET /api/squads/body-sites); null en las lesiones de antes de que se preguntara.")]
+    string? Site = null,
+    [property: Description("Nombre del sitio del cuerpo, sin el lado.")]
+    string? SiteLabel = null,
+    [property: Description("Lado, si el sitio tiene dos: Left, Right o Both.")]
+    BodySide? Side = null,
+    [property: Description("Dónde fue, escrito: «Bíceps femoral izquierdo», «Menisco interno, rodilla derecha»; null si no se sabe.")]
+    string? Location = null,
+    [property: Description("Grado, en los tipos que lo llevan: I distensión, II rotura parcial, III rotura completa; null si no se sabe.")]
+    InjuryGrade? Grade = null,
+    [property: Description("Cómo se produjo: Contact (choque o entrada), NonContact (sin que nadie le tocara) u Overuse (sobrecarga); null si no se sabe.")]
+    InjuryMechanism? Mechanism = null);
 
 public sealed record InjuryDocumentDto(
     Guid Id,
@@ -64,7 +103,11 @@ public sealed record InjuryDocumentDto(
 
 internal static class InjuryMapper
 {
-    public static InjuryTypeDto ToDto(InjuryTypeDefinition type) => new(type.Code, type.Label, type.AverageDays);
+    public static InjuryTypeDto ToDto(InjuryTypeDefinition type) =>
+        new(type.Code, type.Label, type.AverageDays, type.SiteKind, type.BaseSiteCode, type.SiteCodes, type.Graded, type.Active);
+
+    public static BodySiteDto ToDto(BodySite site) =>
+        new(site.Code, site.Label, site.Kind, site.Region, site.ParentCode, site.Paired, site.Agreement, site.Active);
 
     public static InjuryDto ToDto(PlayerInjury injury, SquadPlayer? player, DateOnly today, IEnumerable<InjuryDocument>? documents = null)
     {
@@ -84,7 +127,14 @@ internal static class InjuryMapper
             DaysLeft: injury.IsActive && injury.ExpectedReturnOn is { } expected ? expected.DayNumber - today.DayNumber : null,
             RelapseOfInjuryId: injury.RelapseOfInjuryId,
             ContinuesInjuryId: injury.ContinuesInjuryId,
-            ContinuedOn: injury.ContinuedOn);
+            ContinuedOn: injury.ContinuedOn,
+            Occasion: InjuryOccasions.ToDto(injury.Occasion),
+            Site: injury.SiteCode,
+            SiteLabel: injury.Site?.Label,
+            Side: injury.Side,
+            Location: injury.Location,
+            Grade: injury.Grade,
+            Mechanism: injury.Mechanism);
     }
 
     public static InjuryDocumentDto ToDto(InjuryDocument document) => new(

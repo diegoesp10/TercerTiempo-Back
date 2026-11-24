@@ -24,6 +24,9 @@ public interface IAdminRepository
     Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> GetInjuryTypesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> SaveInjuryTypeAsync(TercerTiempo.Application.Squads.Injuries.SaveInjuryTypeCommand command, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> DeleteInjuryTypeAsync(string code, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminBodySiteDto>> GetBodySitesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminBodySiteDto>> SaveBodySiteAsync(TercerTiempo.Application.Squads.Injuries.SaveBodySiteCommand command, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminBodySiteDto>> DeleteBodySiteAsync(string code, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TercerTiempo.Application.Seasons.SeasonYearDto>> SetCurrentSeasonAsync(Guid seasonYearId, CancellationToken cancellationToken = default);
     Task<FootballSyncSettingsDto> GetFootballSyncSettingsAsync(CancellationToken cancellationToken = default);
     Task<FootballSyncSettingsDto> UpdateFootballSyncSettingsAsync(UpdateFootballSyncSettingsCommand command, CancellationToken cancellationToken = default);

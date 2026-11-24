@@ -10,6 +10,8 @@ public interface IInjuryStore
     Task<IReadOnlyList<PlayerInjury>> GetOpenAsync(IReadOnlyCollection<Guid>? squadIds = null, CancellationToken cancellationToken = default);
     // La de la temporada siguiente que continúa esta; null si no pasó o se borró allí.
     Task<PlayerInjury?> GetContinuationAsync(Guid injuryId, CancellationToken cancellationToken = default);
+    // Las que se hicieron en ese entrenamiento.
+    Task<IReadOnlyList<PlayerInjury>> GetByTrainingSessionAsync(Guid trainingSessionId, CancellationToken cancellationToken = default);
     void Add(PlayerInjury injury);
     void Remove(PlayerInjury injury);
 }

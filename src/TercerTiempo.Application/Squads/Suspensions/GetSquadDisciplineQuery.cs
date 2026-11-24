@@ -20,9 +20,22 @@ public sealed record SquadDisciplineDto(
     [property: Description("Los jugadores apercibidos (cuatro amarillas del ciclo) o sancionados para ese partido; los demás no salen.")]
     IReadOnlyList<PlayerDisciplineDto> Players,
     [property: Description("El cuerpo técnico de la plantilla que figura en las actas oficiales, con sus tarjetas de la temporada.")]
-    IReadOnlyList<SquadStaffDisciplineDto> Staff);
+    IReadOnlyList<SquadStaffDisciplineDto> Staff,
+    [property: Description("Las amarillas del ciclo con que llega cada jugador a ese partido y por qué; quien no ha visto ninguna amarilla no sale.")]
+    IReadOnlyList<PlayerYellowCycleDto> Cycles);
 
 public sealed record PlayerDisciplineDto(Guid SquadPlayerId, DisciplineDto Next);
+
+public sealed record PlayerYellowCycleDto(
+    Guid SquadPlayerId,
+    [property: Description("Amarillas del ciclo de cinco antes del próximo partido (0 a 4): con 4 está apercibido.")]
+    int InCycle,
+    [property: Description("La jornada de cada amarilla del ciclo, en orden (una por amarilla).")]
+    IReadOnlyList<int> CycleMatchdays,
+    [property: Description("Jornadas en que cumplió ciclo (la 5.ª amarilla, la 10.ª…): después se empieza de cero.")]
+    IReadOnlyList<int> CompletedAt,
+    [property: Description("Jornadas en que le expulsaron por doble amarilla: esas dos amarillas no cuentan para el ciclo.")]
+    IReadOnlyList<int> SecondYellowMatchdays);
 
 public sealed record SquadStaffDisciplineDto(Guid CoachId, StaffDisciplineDto Discipline);
 
@@ -47,15 +60,21 @@ internal sealed class GetSquadDisciplineHandler(
 
         var season = await matches.GetTeamMatchesAsync(squad.SeasonId, squad.TeamId, cancellationToken);
         var next = StaffDisciplineReader.NextMatch(season, clock.GetUtcNow());
-        if (next is null) return new SquadDisciplineDto(null, null, null, [], []);
+        if (next is null) return new SquadDisciplineDto(null, null, null, [], [], []);
 
         var calendar = await suspensions.LoadAsync(squad, season, cancellationToken);
-        var players = squad.Players
-            .Where(p => p.LeftOn is null)
+        var active = squad.Players.Where(p => p.LeftOn is null).ToList();
+        var players = active
             .Select(p => new PlayerDisciplineDto(
                 p.Id,
                 new DisciplineDto(calendar.YellowsBefore(p.Id, next.Id), calendar.On(p.Id, next.Id) is { } due ? SuspensionReader.Brief(due) : null)))
             .Where(p => p.Next.Suspension is not null || p.Next.Warned)
+            .ToList();
+        // El mismo ciclo que da «Apercibido», con su porqué: la tabla de la temporada cuenta todas las amarillas del acta.
+        var cycles = active
+            .Select(p => (p.Id, Cycle: calendar.CycleBefore(p.Id, next.Id)))
+            .Where(c => !c.Cycle.IsEmpty)
+            .Select(c => new PlayerYellowCycleDto(c.Id, c.Cycle.InCycle, c.Cycle.CycleMatchdays, c.Cycle.CompletedAt, c.Cycle.SecondYellowMatchdays))
             .ToList();
 
         var staff = new List<SquadStaffDisciplineDto>();
@@ -79,6 +98,6 @@ internal sealed class GetSquadDisciplineHandler(
             }
         }
 
-        return new SquadDisciplineDto(next.Id, next.KickoffAt, next.Matchday, players, staff);
+        return new SquadDisciplineDto(next.Id, next.KickoffAt, next.Matchday, players, staff, cycles);
     }
 }

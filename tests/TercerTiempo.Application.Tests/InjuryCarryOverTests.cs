@@ -238,7 +238,14 @@ public class InjuryCarryOverTests
         public GetPlayerInjuryHistoryHandler History() => new(ClubUser, SquadStore, Clubs, InjuryStore, DocumentStore, Teams, Competitions, Clock);
         public CloseInjuryHandler Close() => new(ClubUser, SquadStore, Clubs, InjuryStore, DocumentStore, Unit, Clock);
         public ReopenInjuryHandler Reopen() => new(ClubUser, SquadStore, Clubs, InjuryStore, DocumentStore, Unit, Clock);
-        public DeleteInjuryHandler Delete() => new(ClubUser, SquadStore, Clubs, InjuryStore, DocumentStore, Storage, Unit, Clock);
+        public DeleteInjuryHandler Delete() => new(ClubUser, SquadStore, Clubs, InjuryStore, DocumentStore, Storage, ProposalStore, Unit, Clock);
+
+        // Sin propuestas de las crónicas: ninguna lesión vino de una.
+        private static IInjuryProposalStore ProposalStore => Stub<IInjuryProposalStore>((method, _) => method switch
+        {
+            nameof(IInjuryProposalStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<InjuryProposal>>([]),
+            _ => throw new NotSupportedException(method),
+        });
 
         private static TimeProvider Clock => new FixedClock();
 

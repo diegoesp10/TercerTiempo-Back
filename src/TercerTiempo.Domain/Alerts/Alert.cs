@@ -32,6 +32,10 @@ public enum AlertKind
     // Para el jugador, su cuerpo técnico y su club: el comité de competición le ha puesto partidos de suspensión. Se
     // resuelve al cumplirla o si el comité la cambia (llega otro con los partidos nuevos).
     LeagueSuspension = 9,
+
+    // Para el cuerpo técnico y el club: la crónica de un partido cuenta que un jugador se lesionó. Se registra la lesión
+    // o se descarta; se resuelve al decidirlo.
+    InjuryProposal = 10,
 }
 
 // Aviso dentro de la app: la campanita del panel. Cada aviso tiene un solo destinatario: una cuenta de club, un jugador

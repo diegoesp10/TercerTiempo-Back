@@ -3,14 +3,17 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Medical;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Squads.Injuries;
+using TercerTiempo.Domain.Alerts;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
+using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Teams;
+using TercerTiempo.Domain.Trainings;
 
 namespace TercerTiempo.Application.Tests;
 
@@ -169,9 +172,11 @@ public class InjuryHistoryTests
         public GetPlayerInjuryHistoryHandler History(ICurrentUser user) => new(user, Squads, Clubs, InjuryStore, DocumentStore, Teams, Competitions, Clock);
         public CloseInjuryHandler Close() => new(CoachUser, Squads, Clubs, InjuryStore, DocumentStore, Unit, Clock);
         public ReopenInjuryHandler Reopen() => new(CoachUser, Squads, Clubs, InjuryStore, DocumentStore, Unit, Clock);
-        public RecordRelapseHandler Relapse() => new(CoachUser, Squads, Coaches, Clubs, InjuryStore, DocumentStore, Unit, Clock);
-        public DeleteInjuryHandler Delete() => new(CoachUser, Squads, Clubs, InjuryStore, DocumentStore, Storage, Unit, Clock);
-        public RecordInjuryHandler Record() => new(CoachUser, Squads, Coaches, Clubs, InjuryStore, Types, DocumentStore, Unit, Clock);
+        public RecordRelapseHandler Relapse() =>
+            new(CoachUser, Squads, Coaches, Clubs, InjuryStore, DocumentStore, ProposalStore, AlertStore, Matches, Teams, Trainings, Unit, Clock, new MemoryBodySites());
+        public DeleteInjuryHandler Delete() => new(CoachUser, Squads, Clubs, InjuryStore, DocumentStore, Storage, ProposalStore, Unit, Clock);
+        public RecordInjuryHandler Record() =>
+            new(CoachUser, Squads, Coaches, Clubs, InjuryStore, Types, DocumentStore, ProposalStore, AlertStore, Matches, Teams, Trainings, Unit, Clock, new MemoryBodySites());
 
         private static TimeProvider Clock => new FixedClock();
 
@@ -231,6 +236,18 @@ public class InjuryHistoryTests
             Injuries.Add(injury);
             return null;
         }
+
+        // Sin propuestas de las crónicas: se registra desde el formulario.
+        private static IInjuryProposalStore ProposalStore => Stub<IInjuryProposalStore>((method, _) => method switch
+        {
+            nameof(IInjuryProposalStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<InjuryProposal>>([]),
+            _ => throw new NotSupportedException(method),
+        });
+        private static IAlertStore AlertStore => Stub<IAlertStore>((method, _) => throw new NotSupportedException(method));
+
+        // Sin decir dónde se lesionó: no se busca ningún partido ni entrenamiento.
+        private static IMatchStore Matches => Stub<IMatchStore>((method, _) => throw new NotSupportedException(method));
+        private static ITrainingStore Trainings => Stub<ITrainingStore>((method, _) => throw new NotSupportedException(method));
 
         private static IInjuryDocumentStore DocumentStore => Stub<IInjuryDocumentStore>((method, _) => method switch
         {

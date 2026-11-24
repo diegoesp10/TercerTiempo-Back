@@ -36,6 +36,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<SquadPlayer> SquadPlayers => Set<SquadPlayer>();
     public DbSet<PlayerInjury> PlayerInjuries => Set<PlayerInjury>();
     public DbSet<InjuryTypeDefinition> InjuryTypes => Set<InjuryTypeDefinition>();
+    public DbSet<BodySite> BodySites => Set<BodySite>();
     public DbSet<InjuryDocument> InjuryDocuments => Set<InjuryDocument>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<RosterEntry> RosterEntries => Set<RosterEntry>();
@@ -130,6 +131,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             // Alguien registró una lesión con ese tipo justo mientras el administrador lo borraba.
             throw new ConflictException(ErrorCode.InjuryTypeInUse, type.Label, "algunas");
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 547 }
+            && ex.Entries.FirstOrDefault(e => e.Entity is BodySite && e.State == EntityState.Deleted)?.Entity is BodySite site)
+        {
+            // Una lesión, un tipo o un sitio de su grupo lo empezó a usar justo mientras el administrador lo borraba.
+            throw new ConflictException(ErrorCode.BodySiteInUse, site.Label, "algo que se acaba de guardar");
         }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 }
             && ex.Entries.Any(e => e.Entity is SquadPlayer { PlayerId: not null }))

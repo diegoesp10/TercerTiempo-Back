@@ -24,6 +24,10 @@ public interface IFootballDataProvider
     // Equipo arbitral de un partido según la web del proveedor: vacío si no lo publica, null si no se ha podido leer.
     Task<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken);
 
+    // Crónicas de esos partidos en la web del proveedor, ya en texto: solo las de los partidos que la tienen publicada;
+    // null si no se han podido leer.
+    Task<IReadOnlyList<MatchReportSnapshot>?> GetMatchReportsAsync(IReadOnlyCollection<string> matchExternalIds, CancellationToken cancellationToken);
+
     // Las siguientes llamadas leen esa temporada de la web («2025/2026») en vez de la actual. Se elige antes de la primera.
     void UseSeason(string seasonLabel);
 }

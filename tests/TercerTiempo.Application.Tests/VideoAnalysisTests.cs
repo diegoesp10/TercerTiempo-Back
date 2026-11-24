@@ -214,14 +214,14 @@ public class VideoSheetMergeTests
     {
         var id = Guid.NewGuid();
         var current = new MatchSheetEntryInput(id, true, true, 90, Goals: 2, Assists: 1, Shots: 5, ShotsOnTarget: 3, KeyPasses: 2, Tackles: 4,
-            Interceptions: 1, Saves: 0, YellowCards: 1, RedCard: false, Notes: "Muy activo", ShirtNumber: 9, Fouls: 2);
+            Interceptions: 1, Saves: 0, YellowCards: 1, RedCard: false, Notes: "Muy activo", Fouls: 2);
         var overwritten = new List<string>();
 
         var line = VideoSheetMerge.MergeLine(id, "Pelayo", current, new VideoPlayerActions(3, 1, 0, 0, 4, 0, 18, 23, 31), 14, overwritten)!;
 
         // Los goles no se tocan (el vídeo no vio ninguno), los tiros van con sus tiros a puerta y los minutos son los del acta.
         Assert.Equal((90, true, 2, 1, 3, 1), (line.MinutesPlayed, line.Started, line.Goals, line.Assists, line.Shots, line.ShotsOnTarget));
-        Assert.Equal((4, 18, 23, 4, 1, "Muy activo", 9), (line.Recoveries, line.PassesCompleted, line.PassesAttempted, line.Tackles, line.YellowCards, line.Notes, line.ShirtNumber));
+        Assert.Equal((4, 18, 23, 4, 1, "Muy activo"), (line.Recoveries, line.PassesCompleted, line.PassesAttempted, line.Tackles, line.YellowCards, line.Notes));
         Assert.Equal(["tiros de Pelayo (5 → 3)", "tiros a puerta de Pelayo (3 → 1)"], overwritten);
         line.ToStats().EnsureValid();
     }

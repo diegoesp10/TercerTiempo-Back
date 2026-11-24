@@ -66,10 +66,11 @@ internal sealed class RealDataCopier(
         ["OfficialSheetStaff"] = "cuerpos técnicos de acta",
         ["CommitteeResolutions"] = "resoluciones del comité",
         ["CommitteeSanctions"] = "sanciones del comité",
+        ["MatchInjuryMentions"] = "lesiones de las crónicas",
     };
 
     private static readonly string[] IngestJobs =
-        [JobNames.FootballData, JobNames.OfficialSheets, JobNames.WeeklySheets, JobNames.MatchOfficials, JobNames.LeagueZones, JobNames.Grounds, JobNames.CommitteeSanctions];
+        [JobNames.FootballData, JobNames.OfficialSheets, JobNames.WeeklySheets, JobNames.MatchOfficials, JobNames.LeagueZones, JobNames.Grounds, JobNames.CommitteeSanctions, JobNames.MatchReports];
 
     // La copia de cada pocos minutos: si la base real no ha cambiado desde la última copia (misma marca), no se copia.
     // force: se ha pedido (a mano, tras una descarga o un cambio de la administración en este proceso) y se copia siempre.
@@ -163,6 +164,9 @@ internal sealed class RealDataCopier(
             // Sanciones nuevas o cambiadas del comité: los avisos salen ya, sin esperar a su hora.
             if (changed.Any(c => c.Table is "CommitteeResolutions" or "CommitteeSanctions"))
                 scope.ServiceProvider.GetRequiredService<JobScheduler>().Launch(JobNames.SuspensionAlerts);
+            // Lo mismo con las lesiones que cuentan las crónicas: las propuestas salen ya.
+            if (changed.Any(c => c.Table is "MatchInjuryMentions"))
+                scope.ServiceProvider.GetRequiredService<JobScheduler>().Launch(JobNames.InjuryProposals);
         }
         logger.LogInformation("Datos reales copiados: {Changes}", string.Join(", ", changed.Select(c => $"{c.Table} +{c.Inserted} ~{c.Updated} -{c.Deleted}")));
 

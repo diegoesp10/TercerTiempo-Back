@@ -183,7 +183,7 @@ internal static class CallUps
         await StaffAlerts.RaiseAsync(squad, clubs, alerts, AlertKind.CallUpShort, key,
             $"Faltan {missing} por convocar: {Fixture(match)}",
             $"La convocatoria del partido del {When(match.KickoffAt)} es de {size} y se ha enviado con {size - missing}. Convoca {more} para completarla.",
-            $"/plantillas/{squad.Id}/convocatorias/{callUp.MatchId}", DayOf(match.KickoffAt), clock, cancellationToken);
+            $"/plantillas/{squad.Id}/partidos/{callUp.MatchId}?tab=convocatoria", DayOf(match.KickoffAt), clock, cancellationToken);
     }
 
     // Avisa a cada jugador con cuenta de lo que le toca: va o no va. Un aviso anterior de la misma convocatoria se da
@@ -305,7 +305,7 @@ internal sealed class SaveMatchCallUpHandler(
         var calendar = new InjuryCalendar(await injuries.GetBySquadAsync(squad.Id, cancellationToken));
         var matchDay = CallUps.DayOf(match.KickoffAt);
         foreach (var id in command.CalledSquadPlayerIds.Distinct())
-            if (calendar.On(id, matchDay) is not null)
+            if (calendar.On(id, matchDay, match.Id) is not null)
                 throw new DomainException(ErrorCode.CallUpPlayerInjured, squad.Players.First(p => p.Id == id).FullName);
 
         // Ni un sancionado: la 5.ª amarilla o una expulsión en un partido anterior le dejan fuera de este.
@@ -372,7 +372,7 @@ internal sealed class RespondCallUpHandler(
         var sanctions = await suspensions.LoadAsync(squad, cancellationToken);
         return new MyCallUpDto(callUp.Id, squad.Id, team?.Name ?? "Tu equipo", dto, callUp.MeetAt, ground is null ? null : GroundDto.From(ground), callUp.MeetPlace,
             callUp.Notes, callUp.PublishedAt ?? now, match.KickoffAt <= now,
-            TrainingMapper.WithSuspension(TrainingMapper.WithInjury(TrainingMapper.ToDto(line, entry), match.KickoffAt, own), match.Id, sanctions));
+            TrainingMapper.WithSuspension(TrainingMapper.WithInjury(TrainingMapper.ToDto(line, entry), match.KickoffAt, match.Id, own), match.Id, sanctions));
     }
 }
 
@@ -469,7 +469,7 @@ internal sealed class ListMyCallUpsHandler(
             .Select(x => new MyCallUpDto(x.CallUp.Id, squad.Id, teamName, MatchMapper.ToDto(x.Match, teamMap), x.CallUp.MeetAt,
                 x.CallUp.MeetGroundId is { } g && groundMap.TryGetValue(g, out var ground) ? GroundDto.From(ground) : null, x.CallUp.MeetPlace, x.CallUp.Notes,
                 x.CallUp.PublishedAt ?? x.CallUp.UpdatedAt, x.Match.KickoffAt <= now,
-                TrainingMapper.WithSuspension(TrainingMapper.WithInjury(TrainingMapper.ToDto(x.Line!, entry), x.Match.KickoffAt, own), x.Match.Id, sanctions)))
+                TrainingMapper.WithSuspension(TrainingMapper.WithInjury(TrainingMapper.ToDto(x.Line!, entry), x.Match.KickoffAt, x.Match.Id, own), x.Match.Id, sanctions)))
             .ToList();
     }
 }

@@ -20,6 +20,7 @@ internal sealed class FutbolAsturianoFootballDataProvider(
 {
     private const int MaxRetries = 3;
     private const int MaxBlockExtensions = 20;
+    private const int ReportBatch = 20;
     private const string TeamFields = "_fields=id,slug,title,abbreviation,featured_media,_embedded,_links&_embed=wp:featuredmedia";
 
     private static readonly TimeSpan RefreshBehind = TimeSpan.FromDays(2);
@@ -486,6 +487,61 @@ internal sealed class FutbolAsturianoFootballDataProvider(
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning("futbolasturiano.es: timeout leyendo el equipo arbitral del partido {Id}", id);
+            return null;
+        }
+    }
+
+    // La crónica es el contenido de la entrada del partido: se piden de ReportBatch en ReportBatch en una sola petición.
+    // Los partidos que no salen en la respuesta no tienen la entrada publicada.
+    public async Task<IReadOnlyList<MatchReportSnapshot>?> GetMatchReportsAsync(IReadOnlyCollection<string> matchExternalIds, CancellationToken cancellationToken)
+    {
+        var ids = matchExternalIds
+            .Select(e => int.TryParse(e, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : 0)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
+        if (ids.Count == 0) return [];
+
+        var reports = new List<MatchReportSnapshot>();
+        try
+        {
+            foreach (var chunk in ids.Chunk(ReportBatch))
+            {
+                var include = string.Join(',', chunk.Select(id => id.ToString(CultureInfo.InvariantCulture)));
+                using var response = await SendAsync(
+                    $"wp/v2/sp_event?include={include}&per_page={chunk.Length}&_fields=id,link,modified_gmt,content",
+                    "application/json", allowNotFound: true, cancellationToken);
+                if (response is null) continue;
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                if (json.RootElement.ValueKind != JsonValueKind.Array) continue;
+                foreach (var item in json.RootElement.EnumerateArray())
+                {
+                    if (Json.GetInt(item, "id") is not { } id) continue;
+                    var html = item.TryGetProperty("content", out var content) ? Json.GetString(content, "rendered") : null;
+                    reports.Add(new MatchReportSnapshot(
+                        id.ToString(CultureInfo.InvariantCulture),
+                        Json.GetString(item, "link") ?? string.Empty,
+                        Json.GetUtcDate(item, "modified_gmt"),
+                        ReportText.FromHtml(html)));
+                }
+            }
+            return reports;
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "futbolasturiano.es: no se pudieron leer las crónicas de {Count} partidos", ids.Count);
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "futbolasturiano.es: respuesta no válida al leer las crónicas");
+            return null;
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("futbolasturiano.es: timeout leyendo las crónicas de {Count} partidos", ids.Count);
             return null;
         }
     }

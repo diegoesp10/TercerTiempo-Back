@@ -48,6 +48,7 @@ internal sealed class PerformanceStore(AppDbContext db) : IPerformanceStore
     public async Task<IReadOnlyList<PlayerMatchPerformance>> GetWithOfficialSheetDataAsync(CancellationToken cancellationToken = default) =>
         await db.Performances
             .Where(p => p.GoalsConcededOnPitch != null
+                || p.ShirtNumber != null
                 || db.OfficialSheets.Any(s => s.MatchId == p.MatchId && s.Status == Domain.OfficialSheets.OfficialSheetStatus.Available))
             .ToListAsync(cancellationToken);
 

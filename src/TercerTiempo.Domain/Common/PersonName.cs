@@ -67,6 +67,7 @@ public static class PersonName
         ["tony"] = ["antonio"], ["tono"] = ["antonio"], ["lucho"] = ["luis"], ["alex"] = ["alejandro", "alexander", "alexis"],
         ["edu"] = ["eduardo"], ["willy"] = ["guillermo"], ["moi"] = ["moises"], ["charly"] = ["carlos"], ["kiko"] = ["francisco", "enrique"],
         ["fito"] = ["adolfo", "rodolfo"], ["tete"] = ["jose"], ["pachi"] = ["francisco"], ["rulo"] = ["raul"],
+        ["fonsi"] = ["alfonso"], ["fer"] = ["fernando"],
     };
 
     private static int EditDistance(string a, string b)

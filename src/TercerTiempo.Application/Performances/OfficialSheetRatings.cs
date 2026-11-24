@@ -6,9 +6,9 @@ using TercerTiempo.Domain.Squads;
 
 namespace TercerTiempo.Application.Performances;
 
-// Lleva a las actas internas lo que dice el acta oficial cerrada y no se apunta a mano: los goles que encajó el equipo con
-// cada jugador en el campo, que cuentan en su nota (y en su portería a cero). Se hace al escribir el acta interna, tras
-// cada copia de los datos reales (el acta oficial puede llegar o cambiar después) y al arrancar.
+// Lleva a las actas internas lo que dice el acta oficial y no se apunta a mano: el dorsal con el que jugó cada uno y los
+// goles que encajó el equipo con él en el campo, que cuentan en su nota (y en su portería a cero). Se hace al escribir el
+// acta interna, tras cada copia de los datos reales (el acta oficial puede llegar o cambiar después) y al arrancar.
 public sealed class OfficialSheetRatings(ISquadStore squads, IMatchStore matches, IOfficialSheetStore sheets, IPerformanceStore performances)
 {
     // Todas las líneas con acta oficial en su partido (o que ya tomaron algo de ella). Devuelve cuántas cambiaron.
@@ -37,13 +37,19 @@ public sealed class OfficialSheetRatings(ISquadStore squads, IMatchStore matches
         return Apply(squad, match, sheet is { IsAvailable: true } ? sheet : null, lines);
     }
 
+    // La línea del acta oficial de cada jugador de la plantilla en ese partido: de quien era del equipo ese día y de quien
+    // ya tiene línea en el acta interna. Vacío sin acta oficial.
+    public static IReadOnlyDictionary<Guid, OfficialSheetLine> LinesByPlayer(Squad squad, Match match, OfficialMatchSheet? sheet, IReadOnlySet<Guid>? withLine = null)
+    {
+        if (sheet is not { IsAvailable: true }) return new Dictionary<Guid, OfficialSheetLine>();
+        var side = match.IsHome(squad.TeamId) ? MatchSide.Home : MatchSide.Away;
+        return SheetMatcher.Match(squad.Players.Where(p => p.WasMemberAt(match.KickoffAt) || (withLine?.Contains(p.Id) ?? false)), sheet.LinesOf(side));
+    }
+
     private static int Apply(Squad squad, Match match, OfficialMatchSheet? sheet, IReadOnlyCollection<PlayerMatchPerformance> lines)
     {
         var side = match.IsHome(squad.TeamId) ? MatchSide.Home : MatchSide.Away;
-        var withLine = lines.Select(l => l.SquadPlayerId).ToHashSet();
-        var official = sheet is not null
-            ? SheetMatcher.Match(squad.Players.Where(p => p.WasMemberAt(match.KickoffAt) || withLine.Contains(p.Id)), sheet.LinesOf(side))
-            : new Dictionary<Guid, OfficialSheetLine>();
+        var official = LinesByPlayer(squad, match, sheet, lines.Select(l => l.SquadPlayerId).ToHashSet());
 
         var changed = 0;
         foreach (var line in lines)
@@ -51,10 +57,11 @@ public sealed class OfficialSheetRatings(ISquadStore squads, IMatchStore matches
             var player = squad.Players.FirstOrDefault(p => p.Id == line.SquadPlayerId);
             if (player is null) continue;
 
-            var conceded = sheet is not null && official.TryGetValue(player.Id, out var officialLine)
+            var officialLine = official.GetValueOrDefault(player.Id);
+            var conceded = sheet is not null && officialLine is not null
                 ? GoalsOnPitch.Conceded(sheet, side, officialLine, match.GoalsAgainst(squad.TeamId))
                 : null;
-            if (line.SetGoalsConcededOnPitch(conceded, player, match)) changed++;
+            if (line.SetGoalsConcededOnPitch(conceded, player, match) | line.SetOfficialShirtNumber(officialLine?.ShirtNumber)) changed++;
         }
 
         return changed;

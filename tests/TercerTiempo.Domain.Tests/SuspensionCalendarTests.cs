@@ -53,6 +53,40 @@ public class SuspensionCalendarTests
     }
 
     [Fact]
+    public void The_cycle_says_which_yellows_count_and_why()
+    {
+        var season = Season(10);
+        // Pelayo: amarillas en la J1 y la J2, doble amarilla en la J3 (cumple en la J4) y amarillas en la J5, J6, J7 y J9.
+        // Nel: solo una doble amarilla.
+        var calendar = SuspensionCalendar.Build(season, Cards(
+            (season[0], Pelayo, 1, false), (season[1], Pelayo, 1, false), (season[2], Pelayo, 2, true),
+            (season[4], Pelayo, 1, false), (season[5], Pelayo, 1, false), (season[6], Pelayo, 1, false),
+            (season[8], Pelayo, 1, false), (season[1], Nel, 2, true)));
+
+        // Llega apercibido a la J7 con las de la J1, J2, J5 y J6: las dos de la doble amarilla no cuentan.
+        var warned = calendar.CycleBefore(Pelayo, season[6].Id);
+        Assert.Equal([1, 2, 5, 6], warned.CycleMatchdays);
+        Assert.Equal([3], warned.SecondYellowMatchdays);
+        Assert.Empty(warned.CompletedAt);
+        Assert.Equal(4, calendar.YellowsBefore(Pelayo, season[6].Id));
+        Assert.Equal(SuspensionCause.SecondYellow, calendar.On(Pelayo, season[3].Id)!.Cause);
+
+        // La de la J7 es la 5.ª: cumple ciclo, no juega la J8 y a la J10 llega con la de la J9.
+        Assert.Equal((SuspensionCause.YellowCards, 5), (calendar.On(Pelayo, season[7].Id)!.Cause, calendar.On(Pelayo, season[7].Id)!.Yellows));
+        var last = calendar.CycleBefore(Pelayo, season[9].Id);
+        Assert.Equal([9], last.CycleMatchdays);
+        Assert.Equal([7], last.CompletedAt);
+        Assert.Equal([3], last.SecondYellowMatchdays);
+        Assert.Equal(1, calendar.YellowsBefore(Pelayo, season[9].Id));
+
+        // Con solo una doble amarilla no lleva ninguna en el ciclo, pero sí el porqué; quien no ha visto ninguna, nada.
+        var nel = calendar.CycleBefore(Nel, season[9].Id);
+        Assert.Equal((0, false), (nel.InCycle, nel.IsEmpty));
+        Assert.Equal([2], nel.SecondYellowMatchdays);
+        Assert.True(calendar.CycleBefore(Guid.NewGuid(), season[9].Id).IsEmpty);
+    }
+
+    [Fact]
     public void A_straight_red_costs_the_next_match_and_a_yellow_before_it_still_counts()
     {
         var season = Season(4);

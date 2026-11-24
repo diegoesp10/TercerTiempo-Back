@@ -68,7 +68,11 @@ public sealed record TrainingAttendanceDto(
     [property: Description("La lesión que se lo impide; solo para el club, el cuerpo técnico y el propio jugador (los compañeros ven solo Injured).")]
     InjuryBriefDto? Injury = null,
     [property: Description("Causó baja en la plantilla después de esta sesión: su línea es historial.")]
-    bool Left = false);
+    bool Left = false,
+    [property: Description("Se lesionó en esta sesión: estuvo (se le pasa lista como a los demás) y desde aquí está de baja. Solo para quien ve sus lesiones.")]
+    bool InjuredHere = false,
+    [property: Description("La lesión que se hizo aquí, para verla o corregirla; solo para el club, el cuerpo técnico y el propio jugador.")]
+    InjuryBriefDto? HereInjury = null);
 
 public sealed record AttendanceCountsDto(
     int Expected,
@@ -274,18 +278,22 @@ internal static class TrainingMapper
 
     public static DateOnly DayOf(TrainingSession session) => CallUps.DayOf(session.StartsAt);
 
-    // El que estaba lesionado ese día no entrena: su línea dice por qué y no cuenta como esperado, vino ni faltó.
-    public static TrainingAttendanceDto WithInjury(TrainingAttendanceDto line, TrainingSession session, InjuryView injuries) =>
-        line.SquadPlayerId is { } id && injuries.On(id, DayOf(session)) is { } injury
-            ? line with { Injured = true, Injury = injuries.BriefFor(id, injury), Status = AttendanceStatus.Expected, Reason = null, Warned = false }
-            : line;
+    // El que estaba lesionado ese día no entrena: su línea dice por qué y no cuenta como esperado, vino ni faltó. El que se
+    // lesionó en esta misma sesión sí estaba: su línea sigue como la pasaron y dice que se lesionó aquí.
+    public static TrainingAttendanceDto WithInjury(TrainingAttendanceDto line, TrainingSession session, InjuryView injuries)
+    {
+        if (line.SquadPlayerId is not { } id) return line;
+        if (injuries.On(id, DayOf(session), session.Id) is { } injury)
+            return line with { Injured = true, Injury = injuries.BriefFor(id, injury), Status = AttendanceStatus.Expected, Reason = null, Warned = false };
+        return injuries.BriefFor(id, injuries.At(id, session.Id)) is { } here ? line with { InjuredHere = true, HereInjury = here } : line;
+    }
 
     public static AttendanceCountsDto Counts(TrainingSession session, Squad squad, DateTimeOffset now, InjuryView? injuries = null)
     {
         var done = session.IsDone(now);
         var day = DayOf(session);
         var rows = Rows(session, squad)
-            .Select(r => (Injured: r.Player is { } p && injuries?.On(p.Id, day) is not null, Status: TrainingSession.Settled(r.Line?.Status ?? AttendanceStatus.Expected, done)))
+            .Select(r => (Injured: r.Player is { } p && injuries?.On(p.Id, day, session.Id) is not null, Status: TrainingSession.Settled(r.Line?.Status ?? AttendanceStatus.Expected, done)))
             .ToList();
         var statuses = rows.Where(r => !r.Injured).Select(r => r.Status).ToList();
         return new AttendanceCountsDto(
@@ -354,8 +362,9 @@ internal static class TrainingMapper
             entries.Count(e => e.SentAt is not null),
             entries.Count(e => e.SeenAt is not null));
 
-    public static CallUpEntryDto WithInjury(CallUpEntryDto entry, DateTimeOffset kickoffAt, InjuryView injuries) =>
-        injuries.On(entry.SquadPlayerId, CallUps.DayOf(kickoffAt)) is { } injury
+    // Sin contar la que se hizo en ese mismo partido: hasta lesionarse, jugó.
+    public static CallUpEntryDto WithInjury(CallUpEntryDto entry, DateTimeOffset kickoffAt, Guid matchId, InjuryView injuries) =>
+        injuries.On(entry.SquadPlayerId, CallUps.DayOf(kickoffAt), matchId) is { } injury
             ? entry with { Injured = true, Injury = injuries.BriefFor(entry.SquadPlayerId, injury) }
             : entry;
 
@@ -377,7 +386,7 @@ internal static class TrainingMapper
             ? squad.ActivePlayers.Select(p => new CallUpEntryDto(Guid.Empty, p.Id, p.FullName, p.ShirtNumber, p.IsLinked, false, CallUpResponse.Pending, null, null, null)).ToList()
             : Members(callUp.Entries, players, match.KickoffAt).Select(e => ToDto(e, players[e.SquadPlayerId])).ToList();
         entries = entries
-            .Select(e => WithSuspension(WithInjury(e, match.KickoffAt, injuries), match.Id, suspensions))
+            .Select(e => WithSuspension(WithInjury(e, match.KickoffAt, match.Id, injuries), match.Id, suspensions))
             .OrderByDescending(e => e.Called).ThenBy(e => e.PlayerName).ToList();
         var mine = viewerSquadPlayerId is { } me ? entries.FirstOrDefault(e => e.SquadPlayerId == me) : null;
 

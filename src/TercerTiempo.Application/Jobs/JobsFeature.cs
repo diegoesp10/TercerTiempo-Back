@@ -26,6 +26,12 @@ public static class JobNames
     // Lesiones abiertas al cambiar de temporada, a la plantilla nueva (no llama a nada de fuera).
     public const string InjuryCarryOver = "injury-carry-over";
 
+    // Crónicas de los partidos (futbolasturiano.es): las frases de las lesiones, a la base de datos reales.
+    public const string MatchReports = "match-reports";
+
+    // Propuestas de lesión de esas crónicas para las plantillas, con su aviso (no llama a nada de fuera).
+    public const string InjuryProposals = "injury-proposals";
+
     // Lo ejecuta el servicio de vídeo (otro proceso), una ejecución por vídeo subido.
     public const string VideoTranscode = "video-transcode";
 

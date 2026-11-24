@@ -315,6 +315,40 @@ public class VideoAnalysisApplyTests
         }
     }
 
+    [Fact]
+    public async Task The_shirt_number_in_the_internal_sheet_is_always_the_one_in_the_official_sheet()
+    {
+        var f = new Fixture();
+        var nel = f.Squad.ActivePlayers.Single(p => p.Id != f.Pelayo.Id);
+        RecordMatchSheetCommand Both() => new(f.Squad.Id, f.Played.Id, [PlayedLine(f.Pelayo.Id), PlayedLine(nel.Id)]);
+
+        // Sin acta oficial no hay dorsal: no se escribe a mano.
+        var before = await f.Record(f.ClubUser).Handle(Both(), default);
+        Assert.All(f.Performances, p => Assert.Null(p.ShirtNumber));
+        Assert.False(before.OfficialSheet);
+        Assert.All(before.Entries, e => Assert.Null(e.OfficialShirtNumber));
+
+        // Con ella, el de cada uno en el acta aunque su ficha diga otro: Pelayo (el 9 en la ficha) jugó con el 14.
+        f.Sheet = OfficialMatchSheet.Create(f.Played.Id, "test", "1", null, Now);
+        f.Sheet.Apply(new OfficialSheetData(null, "CD Vallobín", "Real Titánico", 2, 1,
+        [
+            new(MatchSide.Home, 14, "FERNANDEZ, PELAYO", true, 0, 70, 70, 1, 0, 0, 0, false),
+            new(MatchSide.Home, 13, "SUAREZ, NEL", true, 0, null, 90, 0, 0, 0, 0, false),
+            new(MatchSide.Away, 9, "GARCIA, JUAN", true, 0, null, 90, 1, 0, 0, 0, false),
+        ], [new(MatchSide.Away, OfficialEventType.Goal, 80, null, "GARCIA, JUAN", null)]), Now, true);
+
+        var after = await f.Record(f.ClubUser).Handle(Both(), default);
+
+        Assert.Equal((14, 13), (f.Performances.Single(p => p.SquadPlayerId == f.Pelayo.Id).ShirtNumber, f.Performances.Single(p => p.SquadPlayerId == nel.Id).ShirtNumber));
+        Assert.True(after.OfficialSheet);
+        var pelayo = after.Entries.Single(e => e.Player.Id == f.Pelayo.Id);
+        Assert.Equal((14, 14), (pelayo.OfficialShirtNumber, pelayo.Performance!.MatchShirtNumber));
+    }
+
+    private static MatchSheetEntryInput PlayedLine(Guid squadPlayerId) =>
+        new(squadPlayerId, Played: true, Started: true, MinutesPlayed: 90, Goals: 0, Assists: 0, Shots: 0, ShotsOnTarget: 0,
+            KeyPasses: 0, Tackles: 0, Interceptions: 0, Saves: 0, YellowCards: 0, RedCard: false, Notes: null);
+
     private static OfficialMatchSheet ClosedSheet(Fixture f, bool closed)
     {
         var sheet = OfficialMatchSheet.Create(f.Played.Id, "test", "1", null, Now);
@@ -547,11 +581,11 @@ public class VideoAnalysisApplyTests
         public RecordMatchSheetHandler Record(ICurrentUser user) =>
             new(user, Coaches, Clubs, SquadStore, Matches, Teams, Competitions, Players, PerformanceStore, TeamStatsStore,
                 new MatchSheetWriter(PerformanceStore, TeamStatsStore, new OfficialSheetRatings(SquadStore, Matches, Sheets, PerformanceStore), Suspensions), Unit, NoCallUps,
-                Suspensions, TimeProvider.System);
+                Suspensions, Sheets, TimeProvider.System);
 
         public ApplyVideoAnalysisHandler Apply(ICurrentUser user) =>
             new(Reader(user), user, Coaches, Clubs, Teams, Competitions, Players, PerformanceStore, TeamStatsStore,
                 new MatchSheetWriter(PerformanceStore, TeamStatsStore, new OfficialSheetRatings(SquadStore, Matches, Sheets, PerformanceStore), Suspensions), Unit, NoCallUps,
-                Suspensions, TimeProvider.System);
+                Suspensions, Sheets, TimeProvider.System);
     }
 }

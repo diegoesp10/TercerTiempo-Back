@@ -9,6 +9,7 @@ using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
@@ -39,8 +40,6 @@ public sealed record MatchSheetEntryInput(
     bool RedCard,
     [property: Description("Opcional, máximo 1000 caracteres.")]
     string? Notes,
-    [property: Description("Dorsal con el que jugó este partido si fue distinto del de su ficha (1-99); vacío = el de la ficha.")]
-    int? ShirtNumber = null,
     [property: Description("Faltas cometidas.")]
     int Fouls = 0,
     [property: Description("Pérdidas de balón.")]
@@ -61,7 +60,7 @@ public sealed record MatchSheetEntryInput(
 
     public static MatchSheetEntryInput From(PlayerMatchPerformance p) => new(
         p.SquadPlayerId, true, p.Started, p.MinutesPlayed, p.Goals, p.Assists, p.Shots, p.ShotsOnTarget, p.KeyPasses,
-        p.Tackles, p.Interceptions, p.Saves, p.YellowCards, p.RedCard, p.Notes, p.ShirtNumber, p.Fouls,
+        p.Tackles, p.Interceptions, p.Saves, p.YellowCards, p.RedCard, p.Notes, p.Fouls,
         p.BallLosses, p.Recoveries, p.PassesCompleted, p.PassesAttempted, p.Clearances);
 }
 
@@ -102,7 +101,6 @@ internal sealed class RecordMatchSheetValidator : AbstractValidator<RecordMatchS
                 entry.RuleFor(e => e.PassesCompleted).GreaterThanOrEqualTo(0).LessThanOrEqualTo(e => e.PassesAttempted)
                     .WithCatalogMessage(ErrorCode.SheetPassesCompleted);
                 entry.RuleFor(e => e.Notes).MaximumLength(PerformanceStats.MaxNotesLength);
-                entry.RuleFor(e => e.ShirtNumber).InclusiveBetween(1, 99).When(e => e.ShirtNumber.HasValue);
             });
         });
     }
@@ -123,6 +121,7 @@ internal sealed class RecordMatchSheetHandler(
     IUnitOfWork unitOfWork,
     ICallUpStore callUps,
     SuspensionReader suspensions,
+    IOfficialSheetStore sheets,
     TimeProvider clock) : ICommandHandler<RecordMatchSheetCommand, MatchSheetDto>
 {
     public async Task<MatchSheetDto> Handle(RecordMatchSheetCommand command, CancellationToken cancellationToken)
@@ -137,6 +136,6 @@ internal sealed class RecordMatchSheetHandler(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, callUps,
-            await suspensions.LoadAsync(squad, cancellationToken), cancellationToken);
+            await suspensions.LoadAsync(squad, cancellationToken), sheets, cancellationToken);
     }
 }

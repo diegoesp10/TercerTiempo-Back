@@ -298,6 +298,93 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.ToTable("Grounds", (string)null);
                 });
 
+            modelBuilder.Entity("TercerTiempo.Domain.MatchReports.MatchInjuryMention", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("DetectedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Excerpt")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("nvarchar(600)");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("Minute")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Phrase")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("PlayerName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("ShirtNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Side")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UpdatedAt");
+
+                    b.HasIndex("MatchId", "Side", "NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("MatchInjuryMentions", (string)null);
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.MatchReports.MatchReportCheck", b =>
+                {
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("Done")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("FoundAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("MatchId");
+
+                    b.ToTable("MatchReportChecks", (string)null);
+                });
+
             modelBuilder.Entity("TercerTiempo.Domain.Matches.Match", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1336,6 +1423,24 @@ namespace TercerTiempo.Infrastructure.Persistence.RealDataMigrations
                     b.HasOne("TercerTiempo.Domain.Competitions.Season", null)
                         .WithMany()
                         .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.MatchReports.MatchInjuryMention", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TercerTiempo.Domain.MatchReports.MatchReportCheck", b =>
+                {
+                    b.HasOne("TercerTiempo.Domain.Matches.Match", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

@@ -6,6 +6,7 @@ using TercerTiempo.Application.Squads.Suspensions;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Performances;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Squads;
@@ -29,6 +30,7 @@ internal static class MatchSheetBuilder
         IClubStore clubs,
         ICallUpStore callUps,
         SuspensionCalendar suspensions,
+        IOfficialSheetStore sheets,
         CancellationToken cancellationToken)
     {
         var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
@@ -50,6 +52,10 @@ internal static class MatchSheetBuilder
         var callUp = seesAllNotes ? await callUps.GetByMatchAsync(squad.Id, match.Id, cancellationToken) : null;
         var called = callUp?.Called.Select(e => e.SquadPlayerId).ToHashSet() ?? [];
 
+        // El dorsal de cada uno es el del acta oficial del partido, también el de quien aún no tiene línea.
+        var official = await sheets.GetByMatchAsync(match.Id, cancellationToken);
+        var officialLines = OfficialSheetRatings.LinesByPlayer(squad, match, official, recorded.Keys.ToHashSet());
+
         // Quien era del equipo ese día (también si causó baja después) y quien ya tiene línea.
         var entries = SquadMapper.Ordered(squad.Players.Where(p => p.WasMemberAt(match.KickoffAt) || recorded.ContainsKey(p.Id)))
             .Select(p => (Player: p, Suspension: suspensions.On(p.Id, match.Id)))
@@ -60,12 +66,14 @@ internal static class MatchSheetBuilder
                     : null,
                 called.Contains(x.Player.Id),
                 x.Suspension is not null,
-                x.Suspension is null ? null : SuspensionReader.Brief(x.Suspension)))
+                x.Suspension is null ? null : SuspensionReader.Brief(x.Suspension),
+                officialLines.GetValueOrDefault(x.Player.Id)?.ShirtNumber is int number and >= 1 and <= 99 ? number : null))
             .ToList();
 
         var canEdit = match.Status == MatchStatus.Played && isManager;
         var team = await teamStats.GetAsync(squad.Id, match.Id, cancellationToken);
 
-        return new MatchSheetDto(summary, matchDto, canEdit, entries, team is null ? null : TeamStats.TeamMatchStatsMapper.ToDto(team), called.Count > 0);
+        return new MatchSheetDto(summary, matchDto, canEdit, entries, team is null ? null : TeamStats.TeamMatchStatsMapper.ToDto(team), called.Count > 0,
+            official is { IsAvailable: true });
     }
 }

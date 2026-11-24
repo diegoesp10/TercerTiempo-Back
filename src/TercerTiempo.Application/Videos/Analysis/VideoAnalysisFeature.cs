@@ -359,6 +359,7 @@ internal sealed class ApplyVideoAnalysisHandler(
     IUnitOfWork unitOfWork,
     ICallUpStore callUps,
     Squads.Suspensions.SuspensionReader suspensions,
+    IOfficialSheetStore sheets,
     TimeProvider clock) : ICommandHandler<ApplyVideoAnalysisCommand, ApplyVideoAnalysisResultDto>
 {
     public async Task<ApplyVideoAnalysisResultDto> Handle(ApplyVideoAnalysisCommand command, CancellationToken cancellationToken)
@@ -474,7 +475,7 @@ internal sealed class ApplyVideoAnalysisHandler(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var sheet = await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, callUps,
-            await suspensions.LoadAsync(squad, cancellationToken), cancellationToken);
+            await suspensions.LoadAsync(squad, cancellationToken), sheets, cancellationToken);
         return new ApplyVideoAnalysisResultDto(
             sheet, await reader.BuildAsync(scope, cancellationToken), teamInput is null ? 0 : teamWritten, lines.Count, perPlayer.Count - videoLines, sheetLines);
     }

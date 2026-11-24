@@ -65,7 +65,9 @@ public sealed record MatchSheetDto(
     [property: System.ComponentModel.Description("Datos del equipo en el partido (córners, posesión, tiros…); null si el cuerpo técnico no los ha apuntado.")]
     global::TercerTiempo.Application.Squads.TeamStats.TeamMatchStatsDto? TeamStats = null,
     [property: System.ComponentModel.Description("El partido tiene convocatoria con algún convocado (solo para el club y el cuerpo técnico): el acta se prepara con esos jugadores.")]
-    bool HasCallUp = false);
+    bool HasCallUp = false,
+    [property: System.ComponentModel.Description("Ya está el acta oficial del partido: de ella salen los dorsales (sin ella no hay).")]
+    bool OfficialSheet = false);
 
 public sealed record MatchSheetEntryDto(
     SquadPlayerDto Player,
@@ -74,7 +76,9 @@ public sealed record MatchSheetEntryDto(
     bool CalledUp = false,
     [property: System.ComponentModel.Description("Estaba sancionado para este partido: no puede salir como que jugó (la línea que ya tuviera se conserva).")]
     bool Suspended = false,
-    global::TercerTiempo.Application.Squads.Suspensions.SuspensionBriefDto? Suspension = null);
+    global::TercerTiempo.Application.Squads.Suspensions.SuspensionBriefDto? Suspension = null,
+    [property: System.ComponentModel.Description("Su dorsal en este partido según el acta oficial; null si aún no está o no sale en ella. No se cambia a mano.")]
+    int? OfficialShirtNumber = null);
 
 public sealed record SquadStatsDto(
     SquadSummaryDto Squad,

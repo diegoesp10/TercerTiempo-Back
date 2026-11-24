@@ -119,7 +119,7 @@ public class TrainingHistoryTests
         var slots = sessions.Select(s => new TrainingSlot(s.Id, squad.Id, s.StartsAt, s.DurationMinutes)).ToList();
 
         var tally = TrainingTally.For(pelayo, squad.Id, slots, new Dictionary<(Guid, Guid), AttendanceStatus>(), Tomorrow.AddDays(10),
-            at => calendar.On(pelayo.Id, DateOnly.FromDateTime(at.UtcDateTime)) is not null);
+            slot => calendar.On(pelayo.Id, DateOnly.FromDateTime(slot.StartsAt.UtcDateTime)) is not null);
 
         Assert.Equal(new PlayerTrainingTally(Sessions: 2, Attended: 2, Missed: 0, Warned: 0, AttendedMinutes: 180, Injured: 2), tally);
     }
@@ -141,7 +141,7 @@ public class TrainingHistoryTests
             [(sessions[1].Id, pelayo.Id)] = AttendanceStatus.WillMiss,
             [(sessions[2].Id, pelayo.Id)] = AttendanceStatus.Missed,
         };
-        Func<DateTimeOffset, bool> injuredAt = at => calendar.On(pelayo.Id, DateOnly.FromDateTime(at.UtcDateTime)) is not null;
+        Func<TrainingSlot, bool> injuredAt = slot => calendar.On(pelayo.Id, DateOnly.FromDateTime(slot.StartsAt.UtcDateTime)) is not null;
 
         var days = TrainingTally.Days(pelayo, squad.Id, slots, marks, now, injuredAt);
 

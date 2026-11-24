@@ -22,7 +22,7 @@ internal static class AlertEndpoints
         group.MapGet("/", (IAlertsRepository alerts, CancellationToken ct) => alerts.GetMineAsync(ct))
             .WithName($"GetMyAlerts{suffix}")
             .WithSummary("Avisos de la cuenta")
-            .WithDescription("La campanita de cualquier cuenta: los últimos avisos del más reciente al más antiguo y cuántos siguen vigentes sin leer. Club: caducidad de la licencia y solicitudes de pases. Jugador: convocatorias (vas o no vas, para contestar). Cuerpo técnico y club: convocados que no pueden ir y jugadores que avisan de que faltan a un entrenamiento.")
+            .WithDescription("La campanita de cualquier cuenta: los últimos avisos del más reciente al más antiguo y cuántos siguen vigentes sin leer. Club: caducidad de la licencia y solicitudes de pases. Jugador: convocatorias (vas o no vas, para contestar). Cuerpo técnico y club: convocados que no pueden ir, jugadores que avisan de que faltan a un entrenamiento y posibles lesiones que cuentan las crónicas de los partidos.")
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
         group.MapPost("/{alertId:guid}/read", (Guid alertId, IAlertsRepository alerts, CancellationToken ct) => alerts.MarkReadAsync(alertId, ct))

@@ -22,6 +22,18 @@ public sealed record MatchCards(int YellowCards, bool RedCard)
     public int CycleYellows => SecondYellow ? 0 : Math.Max(0, YellowCards);
 }
 
+// Las amarillas del ciclo que lleva un jugador antes de un partido y por qué: la jornada de cada una, en orden; las
+// jornadas en que cumplió ciclo (la 5.ª, la 10.ª…), tras las que se empieza de cero; y las de expulsión por doble
+// amarilla, cuyas dos amarillas no cuentan.
+public sealed record YellowCycle(IReadOnlyList<int> CycleMatchdays, IReadOnlyList<int> CompletedAt, IReadOnlyList<int> SecondYellowMatchdays)
+{
+    public static readonly YellowCycle None = new([], [], []);
+
+    public int InCycle => CycleMatchdays.Count;
+
+    public bool IsEmpty => CycleMatchdays.Count == 0 && CompletedAt.Count == 0 && SecondYellowMatchdays.Count == 0;
+}
+
 // Matches y Nth: de cuántos partidos es la sanción y cuál de ellos se cumple en este (las de las tarjetas son de uno).
 // Detail y DecidedOn: el motivo que da el comité y el día de su reunión.
 public sealed record Suspension(
@@ -51,17 +63,23 @@ public sealed class SuspensionCalendar
     public const int YellowsPerSuspension = 5;
 
     private readonly Dictionary<(Guid Player, Guid Match), Suspension> _suspensions;
-    private readonly Dictionary<(Guid Player, Guid Match), int> _yellowsBefore;
+    private readonly Dictionary<Guid, int> _order;
+    private readonly Dictionary<Guid, List<CardEntry>> _cards;
 
-    public static readonly SuspensionCalendar Empty = new([], [], new Dictionary<Guid, CommitteeDecision>());
+    public static readonly SuspensionCalendar Empty = new([], [], [], new Dictionary<Guid, CommitteeDecision>());
 
     private SuspensionCalendar(
-        Dictionary<(Guid, Guid), Suspension> suspensions, Dictionary<(Guid, Guid), int> yellowsBefore, IReadOnlyDictionary<Guid, CommitteeDecision> decisions)
+        Dictionary<(Guid, Guid), Suspension> suspensions, Dictionary<Guid, int> order, Dictionary<Guid, List<CardEntry>> cards,
+        IReadOnlyDictionary<Guid, CommitteeDecision> decisions)
     {
         _suspensions = suspensions;
-        _yellowsBefore = yellowsBefore;
+        _order = order;
+        _cards = cards;
         Decisions = decisions;
     }
+
+    // Lo que cuenta para el ciclo de un jugador en un partido (o lo explica, la doble amarilla), por orden de partido.
+    private sealed record CardEntry(int Order, int Matchday, int CycleYellows, bool SecondYellow);
 
     // Lo que ha decidido el comité en cada partido que ya ha visto (por partido).
     public IReadOnlyDictionary<Guid, CommitteeDecision> Decisions { get; }
@@ -74,7 +92,27 @@ public sealed class SuspensionCalendar
     public IReadOnlyCollection<Suspension> All => _suspensions.Values;
 
     // Amarillas del ciclo que lleva el jugador al empezar ese partido (de 0 a 4): con 4, la siguiente le cuesta un partido.
-    public int YellowsBefore(Guid squadPlayerId, Guid matchId) => _yellowsBefore.GetValueOrDefault((squadPlayerId, matchId));
+    public int YellowsBefore(Guid squadPlayerId, Guid matchId) => CycleBefore(squadPlayerId, matchId).InCycle;
+
+    // Las mismas, con su porqué (ver YellowCycle). Un partido aplazado o suspendido no tiene ciclo.
+    public YellowCycle CycleBefore(Guid squadPlayerId, Guid matchId)
+    {
+        if (!_order.TryGetValue(matchId, out var at) || !_cards.TryGetValue(squadPlayerId, out var entries)) return YellowCycle.None;
+
+        var counted = new List<int>();
+        var completed = new List<int>();
+        var secondYellows = new List<int>();
+        foreach (var entry in entries.TakeWhile(e => e.Order < at))
+        {
+            if (entry.SecondYellow) secondYellows.Add(entry.Matchday);
+            for (var i = 0; i < entry.CycleYellows; i++)
+            {
+                counted.Add(entry.Matchday);
+                if (counted.Count % YellowsPerSuspension == 0) completed.Add(entry.Matchday);
+            }
+        }
+        return new YellowCycle([.. counted.TakeLast(counted.Count % YellowsPerSuspension)], completed, secondYellows);
+    }
 
     public static SuspensionCalendar Build(
         IEnumerable<Match> matches,
@@ -86,17 +124,14 @@ public sealed class SuspensionCalendar
             .OrderBy(m => m.KickoffAt)
             .ThenBy(m => m.Matchday)
             .ToList();
+        var order = ordered.Select((m, i) => (m.Id, i)).ToDictionary(x => x.Id, x => x.i);
         var pending = new Dictionary<Guid, Queue<Suspension>>();
         var yellows = new Dictionary<Guid, int>();
         var suspensions = new Dictionary<(Guid, Guid), Suspension>();
-        var yellowsBefore = new Dictionary<(Guid, Guid), int>();
+        var history = new Dictionary<Guid, List<CardEntry>>();
 
         foreach (var match in ordered)
         {
-            foreach (var (player, total) in yellows)
-                if (total % YellowsPerSuspension is var inCycle and > 0)
-                    yellowsBefore[(player, match.Id)] = inCycle;
-
             // Primero se cumple lo pendiente: cada partido del equipo cuenta, juegue o no el sancionado.
             foreach (var (player, queue) in pending)
                 if (queue.TryDequeue(out var due))
@@ -108,6 +143,13 @@ public sealed class SuspensionCalendar
             {
                 foreach (var (player, card) in cards)
                 {
+                    if (card.CycleYellows > 0 || card.SecondYellow)
+                    {
+                        if (!history.TryGetValue(player, out var entries))
+                            history[player] = entries = [];
+                        entries.Add(new CardEntry(order[match.Id], match.Matchday, card.CycleYellows, card.SecondYellow));
+                    }
+
                     var ruled = decision?.ByPlayer.ContainsKey(player) == true;
                     if (card.RedCard && !ruled)
                         Enqueue(player, new Suspension(player, Guid.Empty, card.SecondYellow ? SuspensionCause.SecondYellow : SuspensionCause.RedCard, match.Id, match.Matchday, 0));
@@ -128,7 +170,7 @@ public sealed class SuspensionCalendar
                             player, Guid.Empty, SuspensionCause.Committee, match.Id, match.Matchday, 0, penalty.Matches, nth, penalty.Reason, penalty.DecidedOn));
         }
 
-        return new SuspensionCalendar(suspensions, yellowsBefore, committee ?? new Dictionary<Guid, CommitteeDecision>());
+        return new SuspensionCalendar(suspensions, order, history, committee ?? new Dictionary<Guid, CommitteeDecision>());
 
         void Enqueue(Guid player, Suspension suspension)
         {

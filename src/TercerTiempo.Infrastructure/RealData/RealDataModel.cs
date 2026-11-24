@@ -1,5 +1,6 @@
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Grounds;
+using TercerTiempo.Domain.MatchReports;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Referees;
@@ -26,12 +27,14 @@ internal static class RealDataModel
         typeof(SeasonYear), typeof(Territory), typeof(Competition), typeof(Season), typeof(Team), typeof(RosterEntry), typeof(Match), typeof(Ground),
         typeof(Standing), typeof(SeasonZone), typeof(Referee), typeof(MatchOfficial), typeof(RefereeDesignation), typeof(OfficialMatchSheet),
         typeof(OfficialSheetLine), typeof(OfficialSheetEvent), typeof(OfficialSheetStaff), typeof(CommitteeResolution), typeof(CommitteeSanction),
+        typeof(MatchInjuryMention),
     ];
 
     public static readonly Type[] SharedOnly =
     [
         typeof(FederationHttpCache), typeof(FederationRequestState), typeof(FootballSyncSettings), typeof(MatchOfficialLookup),
         typeof(ScrapeRequest), typeof(SheetDownload), typeof(TeamCrestImage), typeof(RealDataIngester), typeof(CommitteeSanctionCheck),
+        typeof(MatchReportCheck),
     ];
 
     public static readonly HashSet<Type> Stored = [.. Copied, .. SharedOnly, typeof(JobRun)];

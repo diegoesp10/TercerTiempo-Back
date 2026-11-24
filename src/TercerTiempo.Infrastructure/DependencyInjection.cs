@@ -107,6 +107,8 @@ public static class DependencyInjection
         services.AddHostedService<TercerTiempo.Infrastructure.Referees.MatchOfficialsWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.Sanctions.CommitteeSanctionsWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.Sanctions.SuspensionAlertsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.MatchReports.MatchReportsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.MatchReports.InjuryProposalsWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.FootballData.LeagueZonesWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.Grounds.GroundsWorker>();
 
@@ -153,6 +155,7 @@ public static class DependencyInjection
         services.AddScoped<ISquadStore, SquadStore>();
         services.AddScoped<IInjuryStore, InjuryStore>();
         services.AddScoped<IInjuryTypeStore, InjuryTypeStore>();
+        services.AddScoped<IBodySiteStore, BodySiteStore>();
         services.AddScoped<IInjuryDocumentStore, InjuryDocumentStore>();
         services.AddScoped<ITeamMatchStatsStore, TeamMatchStatsStore>();
         services.AddScoped<ITeamStore, TeamStore>();
@@ -167,6 +170,8 @@ public static class DependencyInjection
         services.AddScoped<ICoachAppointmentStore, CoachAppointmentStore>();
         services.AddScoped<IOfficialSheetStore, OfficialSheetStore>();
         services.AddScoped<TercerTiempo.Domain.Sanctions.ICommitteeSanctionStore, TercerTiempo.Infrastructure.Sanctions.CommitteeSanctionStore>();
+        services.AddScoped<TercerTiempo.Domain.MatchReports.IMatchReportStore, TercerTiempo.Infrastructure.MatchReports.MatchReportStore>();
+        services.AddScoped<TercerTiempo.Domain.Squads.IInjuryProposalStore, TercerTiempo.Infrastructure.Squads.InjuryProposalStore>();
         services.AddScoped<IMatchVideoStore, MatchVideoStore>();
         services.AddScoped<IMatchVideoAnalysisStore, MatchVideoAnalysisStore>();
         services.AddScoped<IVideoAnalyzerHeartbeatStore, VideoAnalyzerHeartbeatStore>();

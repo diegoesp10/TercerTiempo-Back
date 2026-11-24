@@ -253,7 +253,7 @@ internal static class TrainingAccess
         var calendar = new InjuryCalendar(await injuries.GetBySquadAsync(squad.Id, cancellationToken));
         var day = TrainingMapper.DayOf(session);
         foreach (var id in ids)
-            if (calendar.On(id, day) is not null)
+            if (calendar.On(id, day, session.Id) is not null)
                 throw new DomainException(ErrorCode.TrainingPlayerInjured, squad.Players.FirstOrDefault(p => p.Id == id)?.FullName ?? "El jugador");
     }
 }
@@ -425,6 +425,9 @@ internal sealed class UpdateTrainingHandler(
         var now = clock.GetUtcNow();
         var (previousStart, previousLocation) = (session.StartsAt, session.Location);
         session.Update(command.Kind, command.Title, command.StartsAt, command.DurationMinutes, command.Location, command.Notes, now);
+        // Si alguien se lesionó en ella (está en curso), su lesión copia el título y la hora de ahora.
+        foreach (var injury in await injuries.GetByTrainingSessionAsync(session.Id, cancellationToken))
+            injury.RefreshOccasion(InjuryOccasions.Of(session), now);
         // Solo se avisa si cambia lo que el jugador necesita para llegar (día, hora o sitio) y aún no ha pasado.
         if ((session.StartsAt != previousStart || session.Location != previousLocation) && !session.HasStarted(now) && previousStart > now)
             await TrainingCalls.MovedAsync(squad, session, previousStart, alerts, now, cancellationToken);
@@ -478,7 +481,8 @@ internal sealed class SetAttendanceHandler(ICurrentUser currentUser, ISquadStore
 }
 
 internal sealed class DeleteTrainingHandler(
-    ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, IAlertStore alerts, IUnitOfWork unitOfWork, TimeProvider clock)
+    ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, ITrainingStore trainings, IAlertStore alerts, IInjuryStore injuries, IUnitOfWork unitOfWork,
+    TimeProvider clock)
     : ICommandHandler<DeleteTrainingCommand, bool>
 {
     public async Task<bool> Handle(DeleteTrainingCommand command, CancellationToken cancellationToken)
@@ -489,6 +493,9 @@ internal sealed class DeleteTrainingHandler(
         // Se borra de una en una y solo lo que no ha acabado: lo ya entrenado es historia (y cuenta en la asistencia).
         var now = clock.GetUtcNow();
         session.EnsureEditable(now);
+        // Si alguien se lesionó en ella (estaba en curso), la lesión se queda, ya sin saber dónde fue.
+        foreach (var injury in await injuries.GetByTrainingSessionAsync(session.Id, cancellationToken))
+            injury.ForgetOccasion(now);
         trainings.Remove(session);
 
         // Anular una sesión en curso no le cambia nada al jugador: solo se avisa si aún no había empezado.

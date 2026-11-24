@@ -634,7 +634,7 @@ public class TrainingAlertTests
         Assert.Equal((AlertKind.CallUpShort, AlertKind.CallUpShort), (coach.Kind, club.Kind));
         Assert.StartsWith("Faltan 2 por convocar: CD Vallobín - Real Titánico", coach.Title);
         Assert.Contains("es de 7 y se ha enviado con 5", coach.Message);
-        Assert.Equal($"/plantillas/{f.Squad.Id}/convocatorias/{f.Upcoming.Id}", coach.Link);
+        Assert.Equal($"/plantillas/{f.Squad.Id}/partidos/{f.Upcoming.Id}?tab=convocatoria", coach.Link);
 
         // Guardar sin cambiar cuántos faltan no repite el aviso.
         await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, five, null, null, "Notas", null, Publish: true), default);
@@ -749,7 +749,7 @@ public class TrainingAlertTests
 
         public UpdateTrainingHandler Update() => new(CoachUser, Squads, Clubs, TrainingStore, TrialStore, AlertStore, Unit, InjuryStore, Clock);
 
-        public DeleteTrainingHandler Delete() => new(CoachUser, Squads, Clubs, TrainingStore, AlertStore, Unit, Clock);
+        public DeleteTrainingHandler Delete() => new(CoachUser, Squads, Clubs, TrainingStore, AlertStore, InjuryStore, Unit, Clock);
 
         public ReportTrainingAbsenceHandler ReportAbsence(ICurrentUser user) =>
             new(user, Players, Squads, Clubs, TrainingStore, TrialStore, Teams, AlertStore, Unit, InjuryStore, Clock);
@@ -809,6 +809,8 @@ public class TrainingAlertTests
         private IInjuryStore InjuryStore => Stub<IInjuryStore>((method, args) => method switch
         {
             nameof(IInjuryStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<PlayerInjury>>(Injuries.Where(i => i.SquadId == (Guid)args![0]!).ToList()),
+            nameof(IInjuryStore.GetByTrainingSessionAsync) => Task.FromResult<IReadOnlyList<PlayerInjury>>(
+                Injuries.Where(i => i.TrainingSessionId == (Guid)args![0]!).ToList()),
             _ => throw new NotSupportedException(method),
         });
 

@@ -21,6 +21,9 @@ internal sealed class AdminRepository(
     IQueryHandler<TercerTiempo.Application.Squads.Injuries.ListAdminInjuryTypesQuery, IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> injuryTypes,
     ICommandHandler<TercerTiempo.Application.Squads.Injuries.SaveInjuryTypeCommand, IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> saveInjuryType,
     ICommandHandler<TercerTiempo.Application.Squads.Injuries.DeleteInjuryTypeCommand, IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> deleteInjuryType,
+    IQueryHandler<TercerTiempo.Application.Squads.Injuries.ListAdminBodySitesQuery, IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminBodySiteDto>> bodySites,
+    ICommandHandler<TercerTiempo.Application.Squads.Injuries.SaveBodySiteCommand, IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminBodySiteDto>> saveBodySite,
+    ICommandHandler<TercerTiempo.Application.Squads.Injuries.DeleteBodySiteCommand, IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminBodySiteDto>> deleteBodySite,
     IRealData realData,
     IQueryHandler<TercerTiempo.Application.Presence.GetPresenceQuery, TercerTiempo.Application.Presence.PresenceOverviewDto> presence,
     IQueryHandler<TercerTiempo.Application.Licensing.ListPaymentEventsQuery, IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> paymentEvents,
@@ -102,6 +105,15 @@ internal sealed class AdminRepository(
 
     public Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminInjuryTypeDto>> DeleteInjuryTypeAsync(string code, CancellationToken cancellationToken = default) =>
         deleteInjuryType.Handle(new TercerTiempo.Application.Squads.Injuries.DeleteInjuryTypeCommand(code), cancellationToken);
+
+    public Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminBodySiteDto>> GetBodySitesAsync(CancellationToken cancellationToken = default) =>
+        bodySites.Handle(new TercerTiempo.Application.Squads.Injuries.ListAdminBodySitesQuery(), cancellationToken);
+
+    public Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminBodySiteDto>> SaveBodySiteAsync(TercerTiempo.Application.Squads.Injuries.SaveBodySiteCommand command, CancellationToken cancellationToken = default) =>
+        saveBodySite.Handle(command, cancellationToken);
+
+    public Task<IReadOnlyList<TercerTiempo.Application.Squads.Injuries.AdminBodySiteDto>> DeleteBodySiteAsync(string code, CancellationToken cancellationToken = default) =>
+        deleteBodySite.Handle(new TercerTiempo.Application.Squads.Injuries.DeleteBodySiteCommand(code), cancellationToken);
 
     public Task<IReadOnlyList<TercerTiempo.Application.Licensing.PaymentEventDto>> GetPaymentEventsAsync(Guid? licenseId, int? max, CancellationToken cancellationToken = default) =>
         paymentEvents.Handle(new TercerTiempo.Application.Licensing.ListPaymentEventsQuery(licenseId, max ?? 100), cancellationToken);

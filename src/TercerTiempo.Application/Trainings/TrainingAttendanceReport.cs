@@ -99,9 +99,10 @@ internal static class TrainingAttendanceReport
         return (from, to, start, end);
     }
 
-    // Lesionado a la hora de esa sesión (en el día de los campos asturianos).
-    public static Func<DateTimeOffset, bool> InjuredAt(InjuryCalendar calendar, Guid squadPlayerId) =>
-        at => calendar.On(squadPlayerId, CallUps.DayOf(at)) is not null;
+    // Lesionado a la hora de esa sesión (en el día de los campos asturianos), sin contar la lesión que se hizo en ella: a esa
+    // vino.
+    public static Func<TrainingSlot, bool> InjuredAt(InjuryCalendar calendar, Guid squadPlayerId) =>
+        slot => calendar.On(squadPlayerId, CallUps.DayOf(slot.StartsAt), slot.SessionId) is not null;
 
     public static IReadOnlyList<InjuryBriefDto> InjuriesIn(InjuryCalendar calendar, Guid squadPlayerId, DateOnly? from, DateOnly? to, DateOnly today) =>
         calendar.Of(squadPlayerId).Where(i => i.Overlaps(from, to)).Select(i => InjuryView.Brief(i, today)).ToList();

@@ -54,4 +54,7 @@ internal sealed class JsonFileFootballDataProvider(IOptions<FootballDataOptions>
 
     public Task<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<TercerTiempo.Domain.Referees.MatchOfficialData>?>([]);
+
+    public Task<IReadOnlyList<MatchReportSnapshot>?> GetMatchReportsAsync(IReadOnlyCollection<string> matchExternalIds, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<MatchReportSnapshot>?>([]);
 }

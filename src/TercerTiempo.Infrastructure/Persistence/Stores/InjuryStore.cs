@@ -36,6 +36,9 @@ internal sealed class InjuryStore(AppDbContext db) : IInjuryStore
     public Task<PlayerInjury?> GetContinuationAsync(Guid injuryId, CancellationToken cancellationToken = default) =>
         db.PlayerInjuries.FirstOrDefaultAsync(i => i.ContinuesInjuryId == injuryId, cancellationToken);
 
+    public async Task<IReadOnlyList<PlayerInjury>> GetByTrainingSessionAsync(Guid trainingSessionId, CancellationToken cancellationToken = default) =>
+        await db.PlayerInjuries.Where(i => i.TrainingSessionId == trainingSessionId).ToListAsync(cancellationToken);
+
     public void Add(PlayerInjury injury) => db.PlayerInjuries.Add(injury);
 
     public void Remove(PlayerInjury injury) => db.PlayerInjuries.Remove(injury);

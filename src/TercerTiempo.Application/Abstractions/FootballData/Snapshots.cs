@@ -49,3 +49,6 @@ public sealed record StandingSnapshot(
     int Points);
 
 public sealed record RosterEntrySnapshot(string? ExternalId, string FullName, Position? Position);
+
+// Crónica de un partido: un párrafo por línea, sin etiquetas ni imágenes.
+public sealed record MatchReportSnapshot(string ExternalId, string Url, DateTimeOffset? ModifiedAt, string Text);

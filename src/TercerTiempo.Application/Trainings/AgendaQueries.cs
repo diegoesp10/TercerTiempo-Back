@@ -101,9 +101,11 @@ internal sealed class GetSquadAgendaHandler(
         {
             if (suspensions.On(player.Id, match.Id) is { } suspension)
                 list.Add(new(player.Id, player.FullName, UnavailabilityKind.Suspended, SuspensionReader.Reason(suspension)));
-            else if (injuries.On(player.Id, day) is { } injury)
+            else if (injuries.On(player.Id, day, match.Id) is { } injury)
                 list.Add(new(player.Id, player.FullName, UnavailabilityKind.Injured,
-                    injuries.BriefFor(player.Id, injury) is { } brief ? $"Lesionado: {brief.TypeLabel.ToLowerInvariant()}" : "Lesionado"));
+                    injuries.BriefFor(player.Id, injury) is { } brief
+                        ? $"Lesionado: {brief.TypeLabel.ToLowerInvariant()}{(brief.Location is { } where ? $" ({Domain.Squads.BodySite.Lower(where)})" : string.Empty)}"
+                        : "Lesionado"));
         }
         return list.OrderBy(u => u.Kind).ThenBy(u => u.PlayerName).ToList();
     }

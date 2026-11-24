@@ -148,7 +148,14 @@ public class InjuryDocumentTests
         public UploadInjuryDocumentHandler Upload(ICurrentUser user) => new(user, Squads, Coaches, Clubs, InjuryStore, DocumentStore, Storage, Unit, Clock);
         public OpenInjuryDocumentHandler Open(ICurrentUser user) => new(user, Squads, Clubs, InjuryStore, DocumentStore, Storage, Clock);
         public DeleteInjuryDocumentHandler DeleteDocument() => new(CoachUser, Squads, Clubs, InjuryStore, DocumentStore, Storage, Unit, Clock);
-        public DeleteInjuryHandler DeleteInjury() => new(CoachUser, Squads, Clubs, InjuryStore, DocumentStore, Storage, Unit, Clock);
+        public DeleteInjuryHandler DeleteInjury() => new(CoachUser, Squads, Clubs, InjuryStore, DocumentStore, Storage, ProposalStore, Unit, Clock);
+
+        // Sin propuestas de las crónicas: ninguna lesión vino de una.
+        private static IInjuryProposalStore ProposalStore => Stub<IInjuryProposalStore>((method, _) => method switch
+        {
+            nameof(IInjuryProposalStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<InjuryProposal>>([]),
+            _ => throw new NotSupportedException(method),
+        });
 
         private static TimeProvider Clock => new FixedClock();
 

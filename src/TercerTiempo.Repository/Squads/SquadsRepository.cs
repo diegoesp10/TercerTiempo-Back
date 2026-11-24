@@ -40,6 +40,7 @@ internal sealed class SquadsRepository(
     IQueryHandler<GetSquadPlayerProfileQuery, SquadPlayerProfileDto> getPlayerProfile,
     IQueryHandler<GetSquadTimelineQuery, SquadTimelineDto> getTimeline,
     IQueryHandler<ListInjuryTypesQuery, IReadOnlyList<InjuryTypeDto>> listInjuryTypes,
+    IQueryHandler<ListBodySitesQuery, IReadOnlyList<BodySiteDto>> listBodySites,
     IQueryHandler<ListSquadInjuriesQuery, IReadOnlyList<InjuryDto>> listInjuries,
     ICommandHandler<RecordInjuryCommand, IReadOnlyList<InjuryDto>> recordInjury,
     ICommandHandler<UpdateInjuryCommand, IReadOnlyList<InjuryDto>> updateInjury,
@@ -51,6 +52,10 @@ internal sealed class SquadsRepository(
     ICommandHandler<UploadInjuryDocumentCommand, IReadOnlyList<InjuryDto>> uploadInjuryDocument,
     ICommandHandler<DeleteInjuryDocumentCommand, IReadOnlyList<InjuryDto>> deleteInjuryDocument,
     IQueryHandler<OpenInjuryDocumentQuery, InjuryDocumentFile> openInjuryDocument,
+    IQueryHandler<ListInjuryProposalsQuery, IReadOnlyList<InjuryProposalDto>> listInjuryProposals,
+    ICommandHandler<DismissInjuryProposalCommand, IReadOnlyList<InjuryProposalDto>> dismissInjuryProposal,
+    IQueryHandler<ListMatchInjuriesQuery, IReadOnlyList<MatchInjuryDto>> listMatchInjuries,
+    IQueryHandler<ListInjuryOccasionsQuery, IReadOnlyList<InjuryOccasionDto>> listInjuryOccasions,
     ICommandHandler<RecordTeamMatchStatsCommand, TeamMatchStatsDto> recordTeamStats,
     IQueryHandler<GetSquadTeamStatsQuery, SquadTeamStatsDto> getTeamStats) : ISquadsRepository
 {
@@ -126,6 +131,9 @@ internal sealed class SquadsRepository(
     public Task<IReadOnlyList<InjuryTypeDto>> ListInjuryTypesAsync(CancellationToken cancellationToken = default) =>
         listInjuryTypes.Handle(new ListInjuryTypesQuery(), cancellationToken);
 
+    public Task<IReadOnlyList<BodySiteDto>> ListBodySitesAsync(CancellationToken cancellationToken = default) =>
+        listBodySites.Handle(new ListBodySitesQuery(), cancellationToken);
+
     public Task<IReadOnlyList<InjuryDto>> ListInjuriesAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         listInjuries.Handle(new ListSquadInjuriesQuery(squadId), cancellationToken);
 
@@ -149,6 +157,18 @@ internal sealed class SquadsRepository(
 
     public Task<IReadOnlyList<InjuryDto>> DeleteInjuryAsync(Guid squadId, Guid injuryId, CancellationToken cancellationToken = default) =>
         deleteInjury.Handle(new DeleteInjuryCommand(squadId, injuryId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryProposalDto>> ListInjuryProposalsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        listInjuryProposals.Handle(new ListInjuryProposalsQuery(squadId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryProposalDto>> DismissInjuryProposalAsync(Guid squadId, Guid proposalId, CancellationToken cancellationToken = default) =>
+        dismissInjuryProposal.Handle(new DismissInjuryProposalCommand(squadId, proposalId), cancellationToken);
+
+    public Task<IReadOnlyList<MatchInjuryDto>> ListMatchInjuriesAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default) =>
+        listMatchInjuries.Handle(new ListMatchInjuriesQuery(squadId, matchId), cancellationToken);
+
+    public Task<IReadOnlyList<InjuryOccasionDto>> ListInjuryOccasionsAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        listInjuryOccasions.Handle(new ListInjuryOccasionsQuery(squadId), cancellationToken);
 
     public Task<IReadOnlyList<InjuryDto>> UploadInjuryDocumentAsync(
         Guid squadId, Guid injuryId, InjuryDocumentKind kind, string? note, CrestUpload file, CancellationToken cancellationToken = default) =>

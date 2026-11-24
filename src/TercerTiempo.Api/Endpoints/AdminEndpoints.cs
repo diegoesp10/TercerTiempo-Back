@@ -43,7 +43,7 @@ internal static class AdminEndpoints
         group.MapPut("/injury-types/{code}", (string code, SaveInjuryTypeCommand command, IAdminRepository admin, CancellationToken ct) => admin.SaveInjuryTypeAsync(command with { Code = code }, ct))
             .WithName("UpdateInjuryType")
             .WithSummary("Cambiar un tipo de lesión")
-            .WithDescription("Nombre, duración media, orden y si se ofrece (active = false lo retira: deja de salir al registrar lesiones nuevas, pero las que ya lo tienen lo conservan). El nombre nuevo se ve también en las lesiones ya guardadas. Solo administradores.")
+            .WithDescription("Nombre, duración media, orden, si se ofrece (active = false lo retira: deja de salir al registrar lesiones nuevas, pero las que ya lo tienen lo conservan) y lo que pregunta: sitio fijo (baseSite) con lo que lo precisa (sites), o clase de sitio (siteKind) con todos los de la clase o solo los de sites; y si lleva grado. El nombre nuevo se ve también en las lesiones ya guardadas; las lesiones ya guardadas conservan su sitio aunque el tipo deje de ofrecerlo. Solo administradores.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
@@ -52,6 +52,33 @@ internal static class AdminEndpoints
             .WithName("DeleteInjuryType")
             .WithSummary("Borrar un tipo de lesión")
             .WithDescription("Solo si ninguna lesión guardada lo usa (409 si alguna lo tiene: entonces se retira). Solo administradores.")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapGet("/body-sites", (IAdminRepository admin, CancellationToken ct) => admin.GetBodySitesAsync(ct))
+            .WithName("GetAdminBodySites")
+            .WithSummary("Catálogo de sitios del cuerpo")
+            .WithDescription("Todos, también los retirados, con su clase, zona, grupo, lado y orden, y cuántas lesiones, tipos de lesión y sitios de su grupo los usan. Solo administradores.");
+
+        group.MapPost("/body-sites", (SaveBodySiteCommand command, IAdminRepository admin, CancellationToken ct) => admin.SaveBodySiteAsync(command with { Code = null }, ct))
+            .WithName("CreateBodySite")
+            .WithSummary("Añadir un sitio del cuerpo")
+            .WithDescription("El código sale del nombre y no cambia aunque luego se renombre. El grupo es otro sitio de la misma clase que no esté a su vez en un grupo. 409 si ya hay uno con ese nombre. Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapPut("/body-sites/{code}", (string code, SaveBodySiteCommand command, IAdminRepository admin, CancellationToken ct) => admin.SaveBodySiteAsync(command with { Code = code }, ct))
+            .WithName("UpdateBodySite")
+            .WithSummary("Cambiar un sitio del cuerpo")
+            .WithDescription("Nombre, clase, zona, grupo, si tiene lado y cómo concuerda, orden y si se ofrece (active = false lo retira: deja de salir en las lesiones nuevas, pero las que ya lo tienen lo conservan). Un sitio que es grupo de otros no entra en otro grupo ni cambia de clase. Solo administradores.")
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapDelete("/body-sites/{code}", (string code, IAdminRepository admin, CancellationToken ct) => admin.DeleteBodySiteAsync(code, ct))
+            .WithName("DeleteBodySite")
+            .WithSummary("Borrar un sitio del cuerpo")
+            .WithDescription("Solo si no lo usa ninguna lesión, ningún tipo de lesión ni ningún sitio de su grupo (409 si no: entonces se retira). Solo administradores.")
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 

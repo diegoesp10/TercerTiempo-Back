@@ -199,7 +199,12 @@ internal static class SquadEndpoints
         group.MapGet("/injury-types", (ISquadsRepository squads, CancellationToken ct) => squads.ListInjuryTypesAsync(ct))
             .WithName("ListInjuryTypes")
             .WithSummary("Tipos de lesión con su duración media orientativa")
-            .WithDescription("Los que se pueden elegir del catálogo que mantiene el administrador (los retirados no salen, aunque sigan en las lesiones que ya los tienen). El frontal propone la vuelta prevista sumando averageDays a la fecha de inicio.");
+            .WithDescription("El catálogo que mantiene el administrador. Los retirados (active = false) salen marcados: no se ofrecen para lesiones nuevas, pero sí para corregir las que ya los tienen. El frontal propone la vuelta prevista sumando averageDays a la fecha de inicio. Cada uno dice lo que se pregunta de la lesión: un sitio fijo (baseSite, el tobillo en el esguince de tobillo) con lo que lo precisa si se sabe (sites), o una clase de sitio (siteKind: qué músculo, qué hueso...) con todos los de esa clase o solo los de sites; y si lleva grado (graded).");
+
+        group.MapGet("/body-sites", (ISquadsRepository squads, CancellationToken ct) => squads.ListBodySitesAsync(ct))
+            .WithName("ListBodySites")
+            .WithSummary("Catálogo de sitios del cuerpo para las lesiones")
+            .WithDescription("Músculos (con su grupo: el bíceps femoral en los isquiotibiales), huesos, tendones, ligamentos, articulaciones, cartílagos y zonas, de la cabeza a los pies, con si tienen lado (paired) y cómo concuerda el lado con su nombre (agreement). Salen también los retirados (active = false): no se ofrecen para lesiones nuevas, pero las que ya los tienen los enseñan.");
 
         group.MapGet("/{squadId:guid}/injuries", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.ListInjuriesAsync(squadId, ct))
             .WithName("ListSquadInjuries")
@@ -211,7 +216,7 @@ internal static class SquadEndpoints
         group.MapPost("/{squadId:guid}/injuries", (Guid squadId, InjuryRequest request, ISquadsRepository squads, CancellationToken ct) => squads.RecordInjuryAsync(squadId, request, ct))
             .WithName("RecordInjury")
             .WithSummary("Poner a un jugador en estado de lesionado")
-            .WithDescription("Solo cuerpo técnico. Un jugador solo puede tener una lesión abierta. Si no se indica la vuelta prevista se calcula con la duración media del tipo. Devuelve todas las lesiones de la plantilla.")
+            .WithDescription("Solo cuerpo técnico. Un jugador solo puede tener una lesión abierta. Si no se indica la vuelta prevista se calcula con la duración media del tipo. Con matchId o trainingSessionId queda dicho dónde se lesionó (el parte, de ese día o de después); si es un partido, la posible lesión de su crónica para ese jugador queda registrada con ella. Devuelve todas las lesiones de la plantilla.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -220,6 +225,7 @@ internal static class SquadEndpoints
         group.MapPut("/{squadId:guid}/injuries/{injuryId:guid}", (Guid squadId, Guid injuryId, InjuryRequest request, ISquadsRepository squads, CancellationToken ct) => squads.UpdateInjuryAsync(squadId, injuryId, request, ct))
             .WithName("UpdateInjury")
             .WithSummary("Corregir una lesión")
+            .WithDescription("También dónde se lesionó (matchId, trainingSessionId o ninguno): enlazarla a un partido registra la posible lesión de su crónica para ese jugador, y llevarla a otro sitio descarta la que se registró con ella.")
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
@@ -261,6 +267,36 @@ internal static class SquadEndpoints
             .WithName("DeleteInjury")
             .WithSummary("Borrar una lesión registrada por error")
             .WithDescription("Solo cuerpo técnico. Se borran también sus pruebas e informes.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{squadId:guid}/injury-proposals", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.ListInjuryProposalsAsync(squadId, ct))
+            .WithName("ListInjuryProposals")
+            .WithSummary("Posibles lesiones sacadas de las crónicas de los partidos")
+            .WithDescription("Club, cuerpo técnico y administrador (solo para leer). Las que nadie ha registrado ni descartado, con la frase de la crónica, el minuto en que el jugador dejó el campo según el acta oficial y el tipo de lesión que encaja. Ninguna es una lesión hasta que se registra con POST /injuries y su proposalId.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{squadId:guid}/injury-proposals/{proposalId:guid}/dismiss", (Guid squadId, Guid proposalId, ISquadsRepository squads, CancellationToken ct) => squads.DismissInjuryProposalAsync(squadId, proposalId, ct))
+            .WithName("DismissInjuryProposal")
+            .WithSummary("Descartar una posible lesión")
+            .WithDescription("Club o cuerpo técnico. No se registra nada y su aviso queda resuelto. Devuelve las posibles lesiones que quedan.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        group.MapGet("/{squadId:guid}/matches/{matchId:guid}/injuries", (Guid squadId, Guid matchId, ISquadsRepository squads, CancellationToken ct) => squads.ListMatchInjuriesAsync(squadId, matchId, ct))
+            .WithName("ListMatchInjuries")
+            .WithSummary("Lesiones de la plantilla en un partido")
+            .WithDescription("Para los sucesos del partido. Las que se hicieron en él (confirmed), para quien ve las lesiones de la plantilla (un jugador, solo las suyas), y las posibles de la crónica de quien no tiene ya una de ese partido, solo para el club, el cuerpo técnico y el administrador.")
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{squadId:guid}/injury-occasions", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.ListInjuryOccasionsAsync(squadId, ct))
+            .WithName("ListInjuryOccasions")
+            .WithSummary("Partidos y entrenamientos en que se pudo lesionar un jugador")
+            .WithDescription("Para el «¿Dónde se lesionó?» del formulario de lesión: los partidos de liga del equipo en esta temporada y los entrenamientos de la plantilla que ya han empezado, los más recientes primero. Club, cuerpo técnico y administrador (solo para leer).")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
@@ -323,7 +359,7 @@ internal static class SquadEndpoints
         group.MapGet("/{squadId:guid}/season-table", (Guid squadId, ISquadsRepository squads, CancellationToken ct) => squads.GetSeasonTableAsync(squadId, ct))
             .WithName("GetSquadSeasonTable")
             .WithSummary("Temporada de cada jugador (tabla de la plantilla)")
-            .WithDescription("Partidos, titularidades, minutos, goles, asistencias, tarjetas, faltas y nota media de cada ficha activa. Por partido cuenta el acta interna si existe y, si no, el acta oficial descargada de la federación (sin asistencias ni faltas). Indica cuántos partidos salen de cada fuente.")
+            .WithDescription("Partidos, titularidades, minutos, goles, asistencias, tarjetas, faltas y nota media de cada ficha activa. Por partido cuenta el acta interna si existe y, si no, el acta oficial descargada de la federación (sin asistencias ni faltas). Indica cuántos partidos salen de cada fuente. A quien es de la plantilla le dice además quién sigue lesionado; el detalle de la lesión, solo al club, al cuerpo técnico, al administrador y al propio jugador.")
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
 

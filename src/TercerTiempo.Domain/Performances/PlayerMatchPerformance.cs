@@ -55,12 +55,14 @@ public sealed class PlayerMatchPerformance : AggregateRoot
 
     public int GoalContributions => Goals + Assists;
 
-    public void SetShirtNumber(int? shirtNumber)
+    // El dorsal del partido es el del acta oficial y no se escribe a mano: sin acta, o si el jugador no sale en ella, no
+    // hay dorsal. Uno fuera de 1-99 en el acta se toma como que no se sabe.
+    public bool SetOfficialShirtNumber(int? shirtNumber)
     {
-        if (shirtNumber is < 1 or > 99)
-            throw new DomainException(ErrorCode.PlayerShirtNumberRange);
-
-        ShirtNumber = shirtNumber;
+        var number = shirtNumber is >= 1 and <= 99 ? shirtNumber : null;
+        if (ShirtNumber == number) return false;
+        ShirtNumber = number;
+        return true;
     }
 
     private PlayerMatchPerformance() { }

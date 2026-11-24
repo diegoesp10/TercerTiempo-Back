@@ -15,6 +15,7 @@ public sealed class SquadPlayerMerger(
     IPerformanceStore performances,
     IPerformanceSuggestionStore suggestions,
     IInjuryStore injuries,
+    IInjuryProposalStore injuryProposals,
     ICallUpStore callUps,
     ITrainingStore trainings,
     ITrialPlayerStore trialPlayers,
@@ -30,6 +31,15 @@ public sealed class SquadPlayerMerger(
         var now = time.GetUtcNow();
 
         var moving = await MovablePerformancesAsync(keepId, duplicateId, cancellationToken);
+        // Una posible lesión por jugador y partido: si las dos fichas tienen la del mismo partido, se queda la de la otra.
+        var proposals = await injuryProposals.GetBySquadAsync(squad.Id, cancellationToken);
+        var keptMatches = proposals.Where(p => p.SquadPlayerId == keepId).Select(p => p.MatchId).ToHashSet();
+        var movingProposals = new List<InjuryProposal>();
+        foreach (var proposal in proposals.Where(p => p.SquadPlayerId == duplicateId))
+        {
+            if (keptMatches.Contains(proposal.MatchId)) injuryProposals.Remove(proposal);
+            else movingProposals.Add(proposal);
+        }
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var matchMap = (await matches.GetByIdsAsync(moving.Select(l => l.MatchId), cancellationToken)).ToDictionary(m => m.Id);
@@ -43,6 +53,8 @@ public sealed class SquadPlayerMerger(
             suggestion.MoveToSquadPlayer(keepId);
         foreach (var injury in (await injuries.GetBySquadAsync(squad.Id, cancellationToken)).Where(i => i.SquadPlayerId == duplicateId))
             injury.MoveToSquadPlayer(keepId);
+        foreach (var proposal in movingProposals)
+            proposal.MoveToSquadPlayer(keepId);
         foreach (var trial in (await trialPlayers.GetBySquadAsync(squad.Id, cancellationToken)).Where(t => t.PromotedSquadPlayerId == duplicateId))
             trial.MovePromotionTo(keepId);
         foreach (var callUp in await callUps.GetBySquadAsync(squad.Id, cancellationToken))

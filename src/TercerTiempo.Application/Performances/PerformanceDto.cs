@@ -12,9 +12,9 @@ public sealed record PerformanceDto(
     Guid SquadPlayerId,
     string PlayerName,
     Position? Position,
-    [property: System.ComponentModel.Description("Dorsal con el que jugó: el de este partido si se registró, si no el de su ficha.")]
+    [property: System.ComponentModel.Description("Dorsal con el que jugó: el del acta oficial del partido si ya está, si no el de su ficha.")]
     int? ShirtNumber,
-    [property: System.ComponentModel.Description("Dorsal registrado solo para este partido (null = el de la ficha).")]
+    [property: System.ComponentModel.Description("Dorsal de este partido según el acta oficial (null si aún no está o no sale en ella). No se escribe a mano.")]
     int? MatchShirtNumber,
     Guid TeamId,
     bool Started,

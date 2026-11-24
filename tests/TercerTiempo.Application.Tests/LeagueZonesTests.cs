@@ -88,6 +88,7 @@ public class LeagueZonesTests
         public Task<IReadOnlyList<StandingSnapshot>> GetStandingsAsync(string competitionExternalId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<RosterEntrySnapshot>> GetRosterAsync(string teamExternalId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<MatchOfficialData>?> GetMatchOfficialsAsync(string matchExternalId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IReadOnlyList<MatchReportSnapshot>?> GetMatchReportsAsync(IReadOnlyCollection<string> matchExternalIds, CancellationToken cancellationToken) => throw new NotSupportedException();
         public void UseSeason(string seasonLabel) => throw new NotSupportedException();
     }
 

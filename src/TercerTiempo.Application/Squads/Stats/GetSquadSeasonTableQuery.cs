@@ -3,6 +3,7 @@ using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.OfficialSheets;
+using TercerTiempo.Application.Squads.Injuries;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Competitions;
@@ -33,7 +34,11 @@ public sealed record SquadSeasonRowDto(
     [property: Description("Partidos contados con el acta interna del cuerpo técnico.")]
     int FromInternal,
     [property: Description("Partidos contados con el acta oficial de la federación (sin acta interna de ese partido).")]
-    int FromOfficial);
+    int FromOfficial,
+    [property: Description("Sigue lesionado hoy. Solo para quien es de la plantilla (club, cuerpo técnico, jugadores vinculados) y el administrador.")]
+    bool Injured = false,
+    [property: Description("Su lesión abierta; solo para el club, el cuerpo técnico, el administrador y el propio jugador (los compañeros ven solo Injured).")]
+    InjuryBriefDto? Injury = null);
 
 public sealed record SquadSeasonTableDto(
     SquadSummaryDto Squad,
@@ -58,6 +63,7 @@ internal sealed class GetSquadSeasonTableHandler(
     IPerformanceStore performances,
     IOfficialSheetStore sheets,
     IClubStore clubs,
+    IInjuryStore injuries,
     TimeProvider clock) : IQueryHandler<GetSquadSeasonTableQuery, SquadSeasonTableDto>
 {
     public async Task<SquadSeasonTableDto> Handle(GetSquadSeasonTableQuery query, CancellationToken cancellationToken)
@@ -96,6 +102,13 @@ internal sealed class GetSquadSeasonTableHandler(
         var linkedMap = (await players.GetByIdsAsync(linkedIds, cancellationToken)).ToDictionary(p => p.Id);
         var photos = await SquadMapper.PhotoLinksAsync(squad, teams, cancellationToken);
 
+        // Quién está lesionado lo ve toda la plantilla, como en la convocatoria; el detalle (qué tiene, hasta cuándo), solo
+        // el club, el cuerpo técnico, el administrador y el propio jugador. Nadie de fuera.
+        var injuryView = await SquadAccess.IsInsiderAsync(squad, currentUser, clock, clubs, cancellationToken)
+            ? await InjuryView.LoadAsync(squad, currentUser, clock, clubs, injuries, cancellationToken)
+            : InjuryView.None;
+        var today = SquadAccess.Today(clock);
+
         var rows = new List<SquadSeasonRowDto>();
         foreach (var player in SquadMapper.Ordered(roster))
         {
@@ -133,11 +146,13 @@ internal sealed class GetSquadSeasonTableHandler(
             // De los que causaron baja, solo quien llegó a jugar.
             if (!player.IsActive && games == 0) continue;
 
+            var injury = player.IsActive ? injuryView.On(player.Id, today) : null;
             rows.Add(new SquadSeasonRowDto(
                 SquadMapper.WithPhoto(SquadMapper.ToPlayerDto(player, linkedMap), player, photos, linkedMap),
                 games, starts, minutes, goals, assists, yellows, reds, fouls,
                 ratings.Count == 0 ? null : Math.Round(ratings.Average(), 2),
-                fromInternal, fromOfficial));
+                fromInternal, fromOfficial,
+                injury is not null, injuryView.BriefFor(player.Id, injury)));
         }
 
         return new SquadSeasonTableDto(summary, played.Count, internalMatches.Count,

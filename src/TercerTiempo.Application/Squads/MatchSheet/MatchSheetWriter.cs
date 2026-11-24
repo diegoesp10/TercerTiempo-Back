@@ -60,12 +60,12 @@ internal sealed class MatchSheetWriter(IPerformanceStore performances, ITeamMatc
                 current.Update(stats, player, match, editor, now);
             }
 
-            current.SetShirtNumber(input.ShirtNumber);
             if (videoActions is null || videoActions.Contains(player.Id))
                 current.MarkActionsFromVideo(videoActions is not null, player, match);
             written.Add(current);
         }
 
+        // El dorsal y los goles encajados en el campo salen del acta oficial, no de lo que llega.
         await officialRatings.SyncAsync(squad, match, written, cancellationToken);
     }
 

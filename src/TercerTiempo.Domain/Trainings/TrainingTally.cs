@@ -38,10 +38,10 @@ public static class TrainingTally
 {
     // Solo cuentan las sesiones ya acabadas de su plantilla. Le tocaba ir si era de la plantilla a esa hora; si no tiene
     // línea en la lista, contaba con venir (y vino). Una línea de quien ya se había ido solo cuenta si el cuerpo técnico
-    // marcó a mano que vino o que faltó. Si ese día estaba lesionado (injuredAt), la sesión no le tocaba: cuenta aparte.
+    // marcó a mano que vino o que faltó. Si estaba lesionado en esa sesión (injuredAt), no le tocaba: cuenta aparte.
     public static IReadOnlyList<TrainingDay> Days(
         SquadPlayer player, Guid squadId, IEnumerable<TrainingSlot> slots, IReadOnlyDictionary<(Guid SessionId, Guid SquadPlayerId), AttendanceStatus> marks,
-        DateTimeOffset now, Func<DateTimeOffset, bool>? injuredAt = null)
+        DateTimeOffset now, Func<TrainingSlot, bool>? injuredAt = null)
     {
         var days = new List<TrainingDay>();
         foreach (var slot in slots.OrderBy(s => s.StartsAt))
@@ -64,7 +64,7 @@ public static class TrainingTally
                 continue;
             }
 
-            var outcome = injuredAt?.Invoke(slot.StartsAt) == true ? TrainingDayOutcome.Injured
+            var outcome = injuredAt?.Invoke(slot) == true ? TrainingDayOutcome.Injured
                 : TrainingSession.Settled(raw, true) == AttendanceStatus.Attended ? TrainingDayOutcome.Attended
                 : raw == AttendanceStatus.WillMiss ? TrainingDayOutcome.Warned
                 : TrainingDayOutcome.Missed;
@@ -102,6 +102,6 @@ public static class TrainingTally
 
     public static PlayerTrainingTally For(
         SquadPlayer player, Guid squadId, IEnumerable<TrainingSlot> slots, IReadOnlyDictionary<(Guid SessionId, Guid SquadPlayerId), AttendanceStatus> marks,
-        DateTimeOffset now, Func<DateTimeOffset, bool>? injuredAt = null) =>
+        DateTimeOffset now, Func<TrainingSlot, bool>? injuredAt = null) =>
         Sum(Days(player, squadId, slots, marks, now, injuredAt));
 }
