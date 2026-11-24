@@ -492,7 +492,7 @@ def tramos_de(
         tramos.append(
             Tramo(
                 tid, equipo, d["t_ini"], d["t_fin"], d["ini"], d["fin"], float(np.median(d["altos"])), votos, d["ini_campo"], d["fin_campo"], portero,
-                porteros.por_equipacion(tid), d["mitad"], d["porteria"],
+                porteros.por_equipacion(tid), d["mitad"], d["porteria"], vestido_de_portero=porteros.vestido_de_portero(tid),
             )
         )
     return tramos

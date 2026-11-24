@@ -133,6 +133,9 @@ class Tramo:
     # los que está al lado o debajo de la portería que defiende su equipo (`porteros.Porteros.junto_a_su_porteria`).
     mitad: int | None = None
     porteria: dict[int, tuple[float, float]] = field(default_factory=dict)
+    # Viste como el portero de su equipo: por la equipación o, de los que solo marca el detector, en su rato
+    # (`porteros.Porteros.vestido_de_portero`). Si no es de ningún portero identificado, se queda sin identificar.
+    vestido_de_portero: bool = False
 
     @property
     def duracion(self) -> float:
@@ -549,32 +552,37 @@ def _porteros(
     con_acta: dict[int, bool],
 ) -> tuple[list[tuple[Cadena, tuple[int, float, float], bool]], list[Tramo], list[Tramo]]:
     """Cada portero identificado (todos sus tramos, su dorsal y si sale por descarte); los tramos de portero que se quedan
-    para resolverse como los de campo; y los del portero por la equipación que no son de ningún portero identificado, que
-    se quedan sin identificar (como jugadores de campo sus dorsales mal leídos los juntarían con los defensas).
+    para resolverse como los de campo; y los que visten como su portero (por la equipación o, de los que solo marca el
+    detector, en su rato) y no son de ningún portero identificado, que se quedan sin identificar: como jugadores de campo,
+    sus dorsales mal leídos los juntarían con los defensas, o la continuidad con el que pasaba a su lado.
 
     Los tramos del portero por la equipación van delante. Los del detector se quedan para los de campo si coinciden en el
     tiempo con otro de su equipo ya aceptado (dos porteros a la vez no puede ser) o si dicen con claridad otro número (un
-    jugador que el detector tomó por portero); el del portero por la equipación es el portero aunque se le lea otro
-    número. En la parte en la que no pasan la mayor parte del tiempo junto a la portería que defiende su equipo
-    (`_partes_lejos_de_porteria`) ninguno es su portero. Con el acta, solo cuentan los dorsales de su equipo que estaban en
-    el campo en cada tramo; y si cambian al portero, el que entra sale de los tramos que quedan fuera de los minutos del
-    primero. El portero que sale por descarte solo se queda con sus tramos por la equipación: los que solo marca el
-    detector, sin número que lo diga, se resuelven como los de campo."""
+    jugador que el detector tomó por portero), salvo si visten como su portero; el del portero por la equipación es el
+    portero aunque se le lea otro número. En la parte en la que no pasan la mayor parte del tiempo junto a la portería
+    que defiende su equipo (`_partes_lejos_de_porteria`) ninguno es su portero. Con el acta, solo cuentan los dorsales de
+    su equipo que estaban en el campo en cada tramo; y si cambian al portero, el que entra sale de los tramos que quedan
+    fuera de los minutos del primero. El portero que sale por descarte solo se queda con sus tramos por la equipación:
+    los que solo marca el detector, sin número que lo diga, no son suyos."""
     identificados: list[tuple[Cadena, tuple[int, float, float], bool]] = []
     sueltos: list[Tramo] = []
     perdidos: list[Tramo] = []
+
+    def apartar(t: Tramo) -> None:
+        (perdidos if t.por_equipacion or t.vestido_de_portero else sueltos).append(t)
+
     for equipo in (0, 1):
         aceptados: list[Tramo] = []
         for t in sorted((t for t in tramos if t.equipo == equipo), key=lambda t: (not t.por_equipacion, -t.duracion)):
             if any(min(t.t_fin, a.t_fin) - max(t.t_ini, a.t_ini) > SOLAPE_MAX_S for a in aceptados):
-                (perdidos if t.por_equipacion else sueltos).append(t)
+                apartar(t)
             else:
                 aceptados.append(t)
         lejos = _partes_lejos_de_porteria(aceptados)
         if lejos:
             for t in aceptados:
                 if t.mitad in lejos:
-                    (perdidos if t.por_equipacion else sueltos).append(t)
+                    apartar(t)
             aceptados = [t for t in aceptados if t.mitad not in lejos]
         plantilla = plantilla_de.get(equipo)
         votos = {t.tracklet: _votos_permitidos(t, plantilla) for t in aceptados}
@@ -600,11 +608,11 @@ def _porteros(
                     resto.append(t)
                 elif descarte and not t.por_equipacion:
                     # Sin leerle el número, solo es él lo que confirma la equipación.
-                    sueltos.append(t)
+                    apartar(t)
                 elif t.por_equipacion or _claro(votos[t.tracklet]) in (None, dorsal):
                     suyos.append(t)
                 else:
-                    sueltos.append(t)
+                    apartar(t)
             pendientes = resto
             if suyos:
                 suma = np.sum([votos[t.tracklet] for t in suyos], axis=0)
@@ -612,7 +620,7 @@ def _porteros(
                 evidencia = float(suma[dorsal - 1])
                 identificados.append((Cadena(suyos), (dorsal, evidencia, evidencia / total if total > 0 else 0.0), descarte))
         for t in pendientes:
-            (perdidos if t.por_equipacion else sueltos).append(t)
+            apartar(t)
     return identificados, sueltos, perdidos
 
 
@@ -627,7 +635,7 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
     plantilla_de = {e: de_equipo[e] or comun for e in (0, 1)}
 
     # Los porteros primero, con los jugadores de campo resueltos solos para saber qué dorsales ya llevan otros; los tramos
-    # de portero del detector que no son de ninguno se resuelven como los de campo.
+    # de portero del detector que no son de ninguno ni visten como su portero se resuelven como los de campo.
     ocupados: dict[int, set[int]] = {0: set(), 1: set()}
     contados: dict[int, set[int]] = {0: set(), 1: set()}
     if del_portero:

@@ -164,8 +164,8 @@ class Porteros:
     """Lo que se decide de cada tracklet: el portero (por la equipación) y su equipo para todo el partido; el de los que
     solo marca el detector, por parte; los que el detector marca de porteros pero visten como un equipo; los que no se
     pueden colocar; el rato en que es quien es (el portero mientras viste como él, el jugador de campo mientras no viste
-    como un portero; fuera, otra persona) y los huecos de en medio en que el portero no viste como él; y en qué
-    tracklets de portero el seguidor saltó a otra persona."""
+    como un portero; fuera, otra persona) y los huecos de en medio en que el portero no viste como él; en qué
+    tracklets de portero el seguidor saltó a otra persona; y cuáles de los del detector visten como su portero."""
 
     equipo_de: dict[int, int] = field(default_factory=dict)
     por_parte: dict[tuple[int, int], int] = field(default_factory=dict)
@@ -176,6 +176,9 @@ class Porteros:
     ratos: dict[int, tuple[float, float]] = field(default_factory=dict)
     huecos: dict[int, list[tuple[float, float]]] = field(default_factory=dict)
     mezclados: set[int] = field(default_factory=set)
+    # De los que solo marca el detector, los que en su rato visten como el portero de su equipo (comprobado con el color
+    # de ese portero).
+    vestidos: set[int] = field(default_factory=set)
     # Con lo que se decidió: hacia dónde ataca cada equipo en cada parte, el campo y cómo visten los jugadores de campo
     # de los dos equipos y el árbitro.
     direcciones: dict[tuple[int, int], int] = field(default_factory=dict)
@@ -187,6 +190,11 @@ class Porteros:
 
     def por_equipacion(self, tracklet: int) -> bool:
         return tracklet in self.equipo_de
+
+    def vestido_de_portero(self, tracklet: int) -> bool:
+        """Si el tracklet viste como el portero de su equipo: por la equipación o, de los que solo marca el detector, en
+        su rato."""
+        return tracklet in self.equipo_de or tracklet in self.vestidos
 
     def en_su_rato(self, tracklet: int, t: float) -> bool:
         rato = self.ratos.get(tracklet)
@@ -487,6 +495,7 @@ def buscar_porteros(
         resultado.ratos.pop(tracklet, None)
         resultado.huecos.pop(tracklet, None)
         resultado.mezclados.discard(tracklet)
+        resultado.vestidos.discard(tracklet)
         resultado.sin_equipo.add(tracklet)
 
     for tracklet, equipo in list(resultado.equipo_de.items()):
@@ -522,6 +531,8 @@ def buscar_porteros(
         equipo = next(iter(suyos))
         if len(suyos) == 1 and equipo in resultado.modelos:
             valido = recortar(tracklet, equipo) and viste_en_su_rato(tracklet)
+            if valido:
+                resultado.vestidos.add(tracklet)
         else:
             rasgos = fiables.get(tracklet)
             valido = rasgos is None or all(float(equipos[e].distancia(rasgos)[0]) > DISTANCIA_FUERA for e in (0, 1))

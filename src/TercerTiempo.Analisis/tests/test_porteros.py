@@ -298,6 +298,8 @@ def test_el_que_el_detector_marca_de_portero_solo_cuenta_el_rato_en_que_viste_co
     assert 41 in p.sin_equipo and not p.es_portero(41) and not any(k[0] == 41 for k in p.por_parte)
     assert 42 in p.del_detector and p.por_parte[(42, 1)] == 1
     assert p.ratos[42] == (-np.inf, partido.memorias[42].tiempos_equipacion[11]) and 42 in p.mezclados
+    # En su rato viste como el portero del equipo 1: si no se le identifica, sin identificar y nunca como uno de campo.
+    assert p.vestidos == {42} and p.vestido_de_portero(42) and p.vestido_de_portero(20) and not p.vestido_de_portero(41)
     aplicar_porteros(partido.instantes, partido.mitad_de, p)
     assert {e for _, _, e in de(partido.instantes, 41)} == {None}
     assert {e for _, _, e in de(partido.instantes, 42)} == {1}

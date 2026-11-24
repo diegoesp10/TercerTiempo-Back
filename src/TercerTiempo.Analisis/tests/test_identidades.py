@@ -366,6 +366,22 @@ def test_un_rival_sin_dorsal_que_el_detector_toma_por_portero_no_entra_en_la_lin
     assert rueda.por_descarte and sorted(rueda.tracklets) == [20, 22]
 
 
+def test_el_tramo_del_detector_que_viste_como_su_portero_no_acaba_en_la_linea_de_un_jugador_de_campo():
+    # Como en el 20:00-30:00 del J8: al 13 no se le identifica, y 5 s suyos que solo marca el detector, pero en los que
+    # viste de morado como él, siguen justo donde acaba un tramo del 17.
+    diecisiete = tramo(1, 0, 0, 100, 1000, 1400, dorsal=17)
+
+    def portero(vestido: bool) -> Tramo:
+        return Tramo(2, 0, 100.4, 105.4, (1400.0, 500.0), (1450.0, 500.0), 100.0, np.zeros(99), None, None, True, vestido_de_portero=vestido)
+
+    r = resolver([diecisiete, portero(True)])
+    assert asignados(r, 1, 2) == [id_jugador(0, 17), None]
+    assert r.segundos_sin_identificar[0] == 5.0
+    # El que no viste como el portero (o no se sabe) se resuelve como uno de campo: un jugador que el detector tomó por
+    # portero.
+    assert asignados(resolver([diecisiete, portero(False)]), 1, 2) == [id_jugador(0, 17)] * 2
+
+
 def test_en_la_parte_en_que_no_esta_junto_a_su_porteria_no_es_su_portero():
     # El 13 del equipo 0 pasa la primera parte junto a su portería; en la segunda, lo que se tomó por él solo está ahí el
     # 30 % del tiempo con el campo calibrado: esa parte no es suya (en el J8 los porteros pasan ahí del 84 al 98 %).
