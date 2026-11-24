@@ -1,5 +1,7 @@
 """De qué equipo es cada jugador: el color de la camiseta de cada recorte (`colores.py`), con el clasificador ajustado
-con recortes repartidos por todo el tramo. Los porteros van con el equipo cuyo grueso tienen más cerca."""
+con recortes repartidos por todo el tramo. Los porteros no: visten distinto que los suyos y quien tienen más cerca es,
+cuando atacan los rivales, el rival. Su equipo se decide al final, por la portería que defienden en cada parte
+(`porteros.py`)."""
 
 from __future__ import annotations
 
@@ -9,7 +11,7 @@ import numpy as np
 import supervision as sv
 
 from .colores import ClasificadorColor, rasgos_camiseta
-from .config import CLASE_JUGADOR, CLASE_PORTERO, Configuracion
+from .config import CLASE_JUGADOR, Configuracion
 from .modelos import Modelos
 from .video import InfoVideo, fotogramas, fotogramas_en, recortar
 
@@ -74,8 +76,9 @@ class ClasificadorEquipos:
         return len(self._rasgos)
 
     def clasificar(self, imagen: np.ndarray, personas: sv.Detections) -> tuple[np.ndarray, np.ndarray]:
-        """Equipo (0/1) de cada persona seguida, -1 para árbitros o sin decidir, y el peso de cada decisión (0 a 1: lo
-        claro que está el color; los porteros, colocados por cercanía, pesan la mitad)."""
+        """Equipo (0/1) de cada jugador de campo seguido y el peso de cada decisión (0 a 1: lo claro que está el color);
+        -1 y peso 0 para árbitros, porteros (`porteros.py`) y los que no se deciden. Sin voto, al portero tampoco se le
+        parte el tracklet cada vez que cambia quién tiene más cerca."""
         equipos = np.full(len(personas), -1, dtype=int)
         pesos = np.zeros(len(personas), dtype=np.float32)
         if len(personas) == 0:
@@ -89,29 +92,7 @@ class ClasificadorEquipos:
                 puntuaciones = self.clasificador.puntuar([r for r in rasgos if r is not None])
                 equipos[indices[validos]] = (puntuaciones > 0).astype(int)
                 pesos[indices[validos]] = np.minimum(1.0, np.abs(puntuaciones))
-        es_portero = personas.class_id == CLASE_PORTERO
-        if es_portero.any():
-            equipos[es_portero] = self._porteros(personas, equipos, es_portero)
-            pesos[es_portero] = np.where(equipos[es_portero] >= 0, 0.5, 0.0)
         return equipos, pesos
-
-    @staticmethod
-    def _porteros(personas: sv.Detections, equipos: np.ndarray, es_portero: np.ndarray) -> np.ndarray:
-        xy = personas.get_anchors_coordinates(sv.Position.BOTTOM_CENTER)
-        centroides = {}
-        for equipo in (0, 1):
-            puntos = xy[equipos == equipo]
-            if len(puntos):
-                centroides[equipo] = puntos.mean(axis=0)
-        salida = []
-        for punto in xy[es_portero]:
-            if len(centroides) < 2:
-                salida.append(-1)
-                continue
-            d0 = np.linalg.norm(punto - centroides[0])
-            d1 = np.linalg.norm(punto - centroides[1])
-            salida.append(0 if d0 < d1 else 1)
-        return np.array(salida, dtype=int)
 
 
 def color_hex(rgb: tuple[int, int, int]) -> str:

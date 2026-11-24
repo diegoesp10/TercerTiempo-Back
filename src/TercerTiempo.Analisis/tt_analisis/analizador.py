@@ -14,10 +14,11 @@ import numpy as np
 import supervision as sv
 from tqdm import tqdm
 
-from . import __version__
+from . import NOMBRE, __version__
 from .avance import Avance
 from .balon import cobertura, limpiar_trayectoria
 from .campo import Calibrador, configurar_campo
+from .colores import rasgos_equipacion, tapados
 from .config import CLASE_ARBITRO, MARGEN_CAMPO_CM, Configuracion
 from .geometria import Campo
 from .deteccion import Detector
@@ -27,10 +28,12 @@ from .equipos import ClasificadorEquipos, color_hex
 from .informes import acta_propuesta, escribir_json, escribir_mapas, escribir_posiciones, escribir_recortes, extraer_clips, resumen_markdown
 from .llm import crear_modelo
 from .llm.revision import confirmar_eventos, leer_dorsales, redactar_resumen
-from .modelos import cargar_modelos, describir_gpu, exigir_gpu
+from .modelos import cargar_modelos, describir_gpu, describir_modelos, exigir_gpu
 from .jugadas import analizar_jugadas, buscar_descanso
+from .mitades import mitades
 from .oficial import leer_acta
-from .seguimiento import Seguidor
+from .porteros import Porteros, colocar_porteros, describir_porteros
+from .seguimiento import MemoriaTracklet, Seguidor
 from .tipos import Instante, Persona, formato_minuto
 from .video import PCT_LEIDO_MINIMO, Lectura, fotograma_en, fotogramas, info_video, pct_leido, recortar
 
@@ -70,6 +73,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
     progreso.fase("equipos", 0, 1)
     fin_s = min(config.segmento.fin, info.duracion_s) if config.segmento.fin is not None else info.duracion_s
     decir(f"Vídeo: {info.ancho}×{info.alto} a {info.fps:.0f} fps, {formato_minuto(info.duracion_s)}. Tramo {formato_minuto(config.segmento.inicio)} – {formato_minuto(fin_s)}.")
+    decir(f"Analizador: {NOMBRE} {__version__}.")
     decir(f"GPU: {describir_gpu()}")
 
     if config.campo:
@@ -82,6 +86,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
         decir(f"Lector de dorsales: {lector.nombre}.")
     elif config.dorsales:
         decir("Aviso: falta el lector de dorsales (modelos/parseq-bb5792a6.pt; `tt-analisis descargar-modelos`): cada tracklet queda suelto.")
+    # Quién analiza el partido: el nombre y la versión del analizador y cada modelo, con su entrenamiento y su huella.
+    analizador = {"nombre": NOMBRE, "version": __version__, "modelos": describir_modelos(modelos, config.modelos, lector)}
     guarda = GuardaZonas(config.guardar_dorsales) if lector is not None and config.guardar_dorsales is not None else None
     cola = ColaDorsales(lector, guardar=guarda) if lector is not None else None
     paso = max(1, round(info.fps / config.fps_muestreo))
@@ -172,6 +178,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
 
         equipos, pesos = clasificador.clasificar(imagen, seguidas)
         seguidas = seguidor.votar_equipos(seguidas, equipos, pesos)
+        tapada = tapados(seguidas.xyxy) if len(seguidas) else np.zeros(0, dtype=bool)
 
         personas = []
         for i in range(len(seguidas)):
@@ -179,6 +186,11 @@ def analizar(config: Configuracion, informar=print) -> dict:
             memoria = seguidor.memorias[tid]
             clase = memoria.clase
             caja = tuple(float(v) for v in seguidas.xyxy[i])
+            if not tapada[i]:
+                # El color de la equipación, para encontrar a los porteros aunque el detector los tome por jugadores.
+                rasgos = rasgos_equipacion(imagen, caja)
+                if rasgos is not None:
+                    memoria.sumar_equipacion(rasgos, fotograma.t)
             personas.append(
                 Persona(
                     tracklet=tid,
@@ -264,14 +276,25 @@ def analizar(config: Configuracion, informar=print) -> dict:
         datos_acta = _json.loads(config.plantillas.read_text(encoding="utf-8"))
     acta_oficial = leer_acta(datos_acta)
 
+    # Las dos partes y, con ellas, los porteros: quién es portero, por la equipación que no es de ningún equipo ni del
+    # árbitro y vive pegada a una portería, y de qué equipo, por la portería que defiende en esa parte (en el descanso
+    # cambian de campo), no por quién tiene más cerca. Hacia dónde ataca cada equipo lo dicen sus jugadores de campo. Un
+    # vídeo de una sola parte no tiene descanso que buscar.
+    duracion_tramo = fin_s - config.segmento.inicio
+    una_parte = acta_oficial is not None and acta_oficial.parte != "partido"
+    descanso_previo = buscar_descanso(instantes, dt, duracion_tramo, config.descanso, una_parte)
+    mitad_de = mitades(instantes, descanso_previo)
+    if os.environ.get("TT_GUARDAR_TRAMOS"):
+        guardar_para_porteros(config.salida / "porteros.pkl", instantes, mitad_de, descanso_previo, seguidor, datos_acta, config.saque)
+    porteros = colocar_porteros(instantes, mitad_de, seguidor.memorias, campo)
+    decir(describir_porteros(porteros, instantes, dt))
+
     # Quién es quién: con el dorsal leído, los tracklets de un mismo jugador pasan a ser uno solo (y como mucho los que
-    # jugaron por equipo) antes de contar toques, pases y acciones. Los minutos del acta necesitan el descanso: se
-    # busca antes con los tracklets sueltos.
+    # jugaron por equipo) antes de contar toques, pases y acciones. Los minutos del acta necesitan el descanso.
     resolucion: Resolucion | None = None
     if cola is not None:
-        descanso_previo = buscar_descanso(instantes, dt, fin_s - config.segmento.inicio, config.descanso)
         plantillas = leer_plantillas(datos_acta, config.saque, descanso_previo) if datos_acta else []
-        tramos = tramos_de(instantes, seguidor)
+        tramos = tramos_de(instantes, seguidor, porteros)
         if os.environ.get("TT_GUARDAR_TRAMOS"):
             # Para afinar `identidades.resolver` sin repetir la pasada (solo en pruebas).
             import pickle
@@ -281,9 +304,13 @@ def analizar(config: Configuracion, informar=print) -> dict:
         resolucion = resolver(tramos, plantillas)
         if guarda is not None:
             escribir_etiquetas_dorsales(resolucion, tramos, plantillas, guarda, config)
+        equipo_de = {x.id: x.equipo for x in resolucion.identidades}
         for inst in instantes:
             for persona in inst.personas:
                 persona.tracklet = resolucion.asignacion.get(persona.tracklet, persona.tracklet)
+                # Un jugador identificado es de su equipo en todos sus fotogramas, también en los que el voto de la
+                # camiseta aún no se había decidido.
+                persona.equipo = equipo_de.get(persona.tracklet, persona.equipo)
         por_equipo = {e: sum(1 for x in resolucion.identidades if x.equipo == e) for e in (0, 1)}
         decir(
             f"Dorsales: {cola.leidas} lecturas; {len(tramos)} tracklets en {resolucion.cadenas} cadenas; "
@@ -292,7 +319,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
         )
         progreso.estado(forzar=True, jugadores_identificados=por_equipo[0] + por_equipo[1])
 
-    jugadas = analizar_jugadas(instantes, dt, fin_s - config.segmento.inicio, config.descanso, acta_oficial, resolucion.lado_de_equipo if resolucion is not None else None, saque_s=config.saque)
+    # Con el mismo descanso con el que se colocó a los porteros.
+    jugadas = analizar_jugadas(instantes, dt, duracion_tramo, descanso_previo, acta_oficial, resolucion.lado_de_equipo if resolucion is not None else None, saque_s=config.saque, una_parte=una_parte)
     toques, resumenes, resultado_eventos = jugadas.toques, jugadas.resumenes, jugadas.eventos
     descanso, direcciones, posesion, secs, acciones = jugadas.descanso, jugadas.direcciones, jugadas.posesion, jugadas.secuencias, jugadas.acciones
     if seguidor.cortes:
@@ -346,6 +374,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
     calibrados = sum(1 for i in instantes if i.calibrado)
     analisis = {
         "version": __version__,
+        "analizador": analizador,
         "video": {"ruta": str(config.video), "ancho": info.ancho, "alto": info.alto, "fps": info.fps, "duracion_s": round(info.duracion_s, 1), "tramo_inicio_s": config.segmento.inicio, "tramo_fin_s": round(fin_s, 1)},
         "parametros": {"fps_muestreo": round(fps_real, 2), "device": modelos.device, "camara": config.camara, "seguidor": detector.rastreador.nombre, "motor_jugadores": modelos.jugadores.motor, "motor_balon": modelos.balon.motor, "motor_campo": modelos.campo.motor, "llm": llm.nombre if llm else None, "modelos": modelos.rutas, "campo_m": [campo.largo / 100, campo.ancho / 100]},
         "llm": llm.nombre if llm else None,
@@ -373,7 +402,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
             "lado_de_equipo": {str(e): lado for e, lado in resolucion.lado_de_equipo.items()},
             "segundos_sin_identificar": {str(e): s for e, s in resolucion.segundos_sin_identificar.items()},
             "jugadores": [
-                {"id": x.id, "equipo": x.equipo, "dorsal": x.dorsal, "nombre": x.nombre, "tracklets": len(x.tracklets), "evidencia": round(x.evidencia, 2), "confianza": x.confianza, "por_continuidad": x.por_continuidad}
+                {"id": x.id, "equipo": x.equipo, "dorsal": x.dorsal, "nombre": x.nombre, "tracklets": len(x.tracklets), "evidencia": round(x.evidencia, 2), "confianza": x.confianza, "por_continuidad": x.por_continuidad, "por_descarte": x.por_descarte}
                 for x in resolucion.identidades
             ],
         },
@@ -395,8 +424,13 @@ def analizar(config: Configuracion, informar=print) -> dict:
     return analisis
 
 
-def tramos_de(instantes: list[Instante], seguidor: Seguidor) -> list[Tramo]:
-    """Cada tracklet de jugador como tramo para `identidades.resolver`: equipo, primer y último sitio, alto y lecturas."""
+def tramos_de(instantes: list[Instante], seguidor: Seguidor, porteros: Porteros | None = None) -> list[Tramo]:
+    """Cada tracklet de jugador como tramo para `identidades.resolver`: equipo, primer y último sitio, alto y lecturas.
+    El equipo, el de su camiseta; el de un portero y el del que el detector tomó por portero pero viste como un equipo,
+    el que `porteros.aplicar_porteros` ya puso en cada fotograma (los fotogramas sin equipo no cuentan). De esos dos,
+    todas las lecturas del dorsal: el color de la camiseta no dice bien de qué equipo son; pero ninguna del portero en
+    cuyo tracklet el seguidor saltó a otra persona, que pueden ser de ella."""
+    porteros = porteros or Porteros()
     datos: dict[int, dict] = {}
     for inst in instantes:
         for p in inst.personas:
@@ -405,18 +439,50 @@ def tramos_de(instantes: list[Instante], seguidor: Seguidor) -> list[Tramo]:
             d = datos.get(p.tracklet)
             alto = p.caja[3] - p.caja[1]
             if d is None:
-                datos[p.tracklet] = {"equipo": p.equipo, "t_ini": inst.t, "ini": p.xy_imagen, "ini_campo": p.xy_campo, "t_fin": inst.t, "fin": p.xy_imagen, "fin_campo": p.xy_campo, "altos": [alto], "portero": p.es_portero}
+                d = datos[p.tracklet] = {"equipos": {}, "t_ini": inst.t, "ini": p.xy_imagen, "ini_campo": p.xy_campo, "t_fin": inst.t, "fin": p.xy_imagen, "fin_campo": p.xy_campo, "altos": [alto]}
             else:
                 d.update(t_fin=inst.t, fin=p.xy_imagen, fin_campo=p.xy_campo)
                 if len(d["altos"]) < 50:
                     d["altos"].append(alto)
+            d["equipos"][p.equipo] = d["equipos"].get(p.equipo, 0) + 1
     tramos = []
     for tid, d in datos.items():
         memoria = seguidor.memorias.get(tid)
-        votos = memoria.votos_dorsal if memoria is not None and memoria.votos_dorsal is not None else np.zeros(99)
-        equipo = memoria.equipo if memoria is not None and memoria.equipo is not None else d["equipo"]
-        tramos.append(Tramo(tid, equipo, d["t_ini"], d["t_fin"], d["ini"], d["fin"], float(np.median(d["altos"])), votos, d["ini_campo"], d["fin_campo"], d["portero"]))
+        visto = max(d["equipos"], key=d["equipos"].get)
+        portero = porteros.es_portero(tid)
+        if portero or tid in porteros.de_campo:
+            votos = np.zeros(99) if tid in porteros.mezclados else _todas_las_lecturas(memoria)
+            equipo = visto
+        else:
+            votos = memoria.votos_dorsal if memoria is not None and memoria.votos_dorsal is not None else np.zeros(99)
+            equipo = memoria.equipo if memoria is not None and memoria.equipo is not None else visto
+        tramos.append(Tramo(tid, equipo, d["t_ini"], d["t_fin"], d["ini"], d["fin"], float(np.median(d["altos"])), votos, d["ini_campo"], d["fin_campo"], portero, porteros.por_equipacion(tid)))
     return tramos
+
+
+def _todas_las_lecturas(memoria: MemoriaTracklet | None) -> np.ndarray:
+    if memoria is None or not memoria.votos_dorsal_por_equipo:
+        return np.zeros(99)
+    return np.sum(list(memoria.votos_dorsal_por_equipo.values()), axis=0)
+
+
+def guardar_para_porteros(ruta: Path, instantes: list[Instante], mitad_de: list[int], descanso: float | None, seguidor: Seguidor, datos_acta: dict | None, saque: float) -> None:
+    """Para afinar la búsqueda de los porteros y `identidades.resolver` sin repetir la pasada (solo en pruebas): los
+    instantes antes de ponerles portero, y de cada tracklet sus votos, su equipación y su recorte más grande."""
+    import pickle
+
+    import cv2
+
+    memorias = {}
+    for tid, m in seguidor.memorias.items():
+        recorte = m.recortes[0].imagen if m.recortes else None
+        jpeg = cv2.imencode(".jpg", recorte, [int(cv2.IMWRITE_JPEG_QUALITY), 85])[1].tobytes() if recorte is not None and recorte.size else None
+        memorias[tid] = {
+            "clase": m.clase, "votos_clase": dict(m.votos_clase), "equipo": m.equipo, "votos_equipo": dict(m.votos_equipo),
+            "votos_dorsal_por_equipo": dict(m.votos_dorsal_por_equipo), "equipaciones": list(m.equipaciones), "tiempos_equipacion": list(m.tiempos_equipacion), "recorte": jpeg,
+        }
+    datos = {"instantes": instantes, "mitad_de": mitad_de, "descanso": descanso, "memorias": memorias, "datos_acta": datos_acta, "saque": saque}
+    ruta.write_bytes(pickle.dumps(datos))
 
 
 def escribir_recortes_jugadores(resolucion: Resolucion, seguidor: Seguidor, salida: Path) -> dict[int, str]:

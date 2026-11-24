@@ -6,7 +6,7 @@ import pytest
 import supervision as sv
 
 from tt_analisis import equipos
-from tt_analisis.config import CLASE_JUGADOR, Configuracion, Segmento
+from tt_analisis.config import CLASE_ARBITRO, CLASE_JUGADOR, CLASE_PORTERO, Configuracion, Segmento
 from tt_analisis.equipos import ClasificadorEquipos, instantes_muestra
 from tt_analisis.video import info_video
 
@@ -83,3 +83,24 @@ def test_en_un_tramo_corto_lee_seguido(tmp_path, monkeypatch, dos_camisetas):
 
     # Uno de cada int(60 / 8) = 7 fotogramas desde el principio del tramo.
     assert jugadores.vistos == list(range(100, 160, 7))
+
+
+def test_ni_los_porteros_ni_los_arbitros_votan_equipo_por_la_camiseta(monkeypatch):
+    # El portero viste distinto que los suyos: su equipo sale de la portería que defiende, no del color.
+    monkeypatch.setattr(equipos, "rasgos_camiseta", lambda recorte: np.zeros(8, dtype=np.float32))
+    puntuados = []
+
+    def puntuar(rasgos):
+        puntuados.append(len(rasgos))
+        return np.array([0.8, -0.6])
+
+    clasificador = ClasificadorEquipos(SimpleNamespace(), SimpleNamespace(), clasificador=SimpleNamespace(puntuar=puntuar))
+    gente = sv.Detections(
+        xyxy=np.array([[10, 10, 30, 60], [40, 10, 60, 60], [70, 10, 90, 60], [100, 10, 120, 60]], dtype=float),
+        class_id=np.array([CLASE_JUGADOR, CLASE_PORTERO, CLASE_JUGADOR, CLASE_ARBITRO]),
+        confidence=np.full(4, 0.9),
+    )
+    equipo, peso = clasificador.clasificar(np.zeros((80, 140, 3), dtype=np.uint8), gente)
+    assert puntuados == [2]
+    assert equipo.tolist() == [1, -1, 0, -1]
+    assert peso.tolist() == pytest.approx([0.8, 0.0, 0.6, 0.0])

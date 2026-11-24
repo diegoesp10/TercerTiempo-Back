@@ -1,3 +1,4 @@
+from tt_analisis.jugadas import buscar_descanso
 from tt_analisis.mitades import cambio_de_campo, detectar_descanso
 
 from conftest import instante, persona
@@ -31,3 +32,11 @@ def test_sin_cambio_de_campo_no_hay_descanso():
     assert cambio_de_campo(_partido(80)) is None
     # Con un tramo corto no se busca.
     assert cambio_de_campo(_partido(10, minutos=15)) is None
+
+
+def test_en_un_video_de_una_sola_parte_no_se_busca_el_descanso():
+    instantes = _partido(46)
+    assert buscar_descanso(instantes, 2.0, 90 * 60) == 46 * 60
+    assert buscar_descanso(instantes, 2.0, 90 * 60, una_parte=True) is None
+    # El que da quien lanza el análisis se usa tal cual.
+    assert buscar_descanso(instantes, 2.0, 90 * 60, 1500.0, una_parte=True) == 1500.0

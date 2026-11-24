@@ -131,3 +131,192 @@ def test_con_un_video_de_una_sola_parte_solo_cuentan_los_que_estuvieron_en_ella(
     segunda = leer_plantillas({"parte": "segunda", "minutos_parte": 40, "equipos": [{"lado": "local", "nombre": "V", "jugadores": jugadores}]}, saque_s=0)[0]
     # El 18 ya no estaba; el 15 está desde el principio y el 7 entra a los 20 minutos de la segunda parte.
     assert [(j.dorsal, j.desde_s, j.hasta_s) for j in segunda.jugadores] == [(15, None, None), (7, 20 * 60.0, None)]
+
+
+def tramo_portero(tid: int, equipo: int, t_ini: float, t_fin: float, x: float, dorsal: int | None = None, peso: float = 0.5) -> Tramo:
+    return Tramo(tid, equipo, t_ini, t_fin, (x, 3500.0), (x, 3500.0), 100.0, votos(dorsal, peso), None, None, True)
+
+
+def asignados(r, *tracklets) -> list[int | None]:
+    return [r.asignacion.get(t) for t in tracklets]
+
+
+def test_los_tramos_del_portero_de_las_dos_partes_son_uno_y_su_dorsal_sale_de_todos_juntos():
+    # El portero del equipo 0 en la portería de la izquierda en la primera parte y en la de la derecha en la segunda: de
+    # lejos se le lee poco el número (0,5 por tramo, ninguno llega solo) y en dos tramos no se le lee.
+    tramos = [
+        tramo_portero(10, 0, 0, 600, 400, dorsal=13),
+        tramo_portero(11, 0, 620, 1500, 400),
+        tramo_portero(12, 0, 1600, 2700, 400, dorsal=13),
+        tramo_portero(13, 0, 3000, 4000, 11600, dorsal=13),
+        tramo_portero(14, 0, 4100, 5400, 11600),
+        tramo_portero(20, 1, 0, 1300, 11600, dorsal=1, peso=0.6),
+        tramo_portero(21, 1, 1400, 2700, 11600, dorsal=1, peso=0.6),
+        tramo_portero(22, 1, 3000, 5400, 400, dorsal=1, peso=0.6),
+    ]
+    r = resolver(tramos)
+    assert asignados(r, 10, 11, 12, 13, 14) == [id_jugador(0, 13)] * 5
+    assert asignados(r, 20, 21, 22) == [id_jugador(1, 1)] * 3
+    assert [(x.equipo, x.dorsal, sorted(x.tracklets)) for x in r.identidades] == [(0, 13, [10, 11, 12, 13, 14]), (1, 1, [20, 21, 22])]
+
+
+def test_con_el_acta_el_portero_solo_puede_ser_de_los_de_su_equipo():
+    # Un tramo del portero en el que se lee con fuerza un 18, que es del rival: sin el acta gana esa mala lectura.
+    tramos = [
+        tramo(1, 0, 0, 30, 5000, 5100, dorsal=8),
+        tramo(2, 1, 0, 30, 7000, 7100, dorsal=18),
+        tramo_portero(10, 0, 0, 900, 400, dorsal=18, peso=2.0),
+        tramo_portero(11, 0, 1000, 2000, 400, dorsal=13, peso=0.8),
+        tramo_portero(12, 0, 3000, 4000, 11600, dorsal=13, peso=0.8),
+    ]
+    plantillas = [
+        Plantilla("local", "Vallobín", [JugadorActa(13, "PORTERO"), JugadorActa(8, "OCHO")]),
+        Plantilla("visitante", "Rival", [JugadorActa(18, "DIECIOCHO"), JugadorActa(1, "UNO")]),
+    ]
+    assert asignados(resolver(tramos), 10, 11, 12) == [id_jugador(0, 18)] * 3
+    r = resolver(tramos, plantillas)
+    assert asignados(r, 10, 11, 12) == [id_jugador(0, 13)] * 3
+    assert next(x for x in r.identidades if x.id == id_jugador(0, 13)).nombre == "PORTERO"
+    assert r.asignacion[2] == id_jugador(1, 18)
+
+
+def test_dos_porteros_del_mismo_equipo_a_la_vez_no_puede_ser_y_el_mas_corto_se_resuelve_como_jugador_de_campo():
+    # Mientras el portero está en su portería, el detector toma por portero a un jugador de campo: sin número leído (12)
+    # o con el suyo, el 7 (13).
+    tramos = [
+        tramo_portero(10, 0, 0, 2000, 400, dorsal=13, peso=1.0),
+        tramo_portero(11, 0, 2100, 2700, 400, dorsal=13, peso=0.6),
+        tramo_portero(12, 0, 500, 560, 3000),
+        tramo_portero(13, 0, 1200, 1260, 3000, dorsal=7, peso=1.2),
+    ]
+    r = resolver(tramos)
+    assert asignados(r, 10, 11, 12, 13) == [id_jugador(0, 13), id_jugador(0, 13), None, id_jugador(0, 7)]
+
+
+def test_un_tramo_de_portero_que_dice_con_claridad_otro_numero_no_es_del_portero():
+    tramos = [
+        tramo_portero(10, 0, 0, 900, 400, dorsal=13, peso=1.0),
+        tramo_portero(11, 0, 1000, 2000, 400, dorsal=13, peso=1.0),
+        tramo_portero(12, 0, 2100, 2200, 400, dorsal=5, peso=1.5),
+        tramo_portero(13, 0, 3000, 4000, 11600, dorsal=13, peso=1.0),
+    ]
+    r = resolver(tramos)
+    assert asignados(r, 10, 11, 13) == [id_jugador(0, 13)] * 3
+    assert r.asignacion[12] == id_jugador(0, 5)
+
+
+def test_si_cambian_al_portero_cada_uno_se_queda_con_los_tramos_de_sus_minutos():
+    # El 1 juega hasta el segundo 3000 y el 13 desde ahí (con el margen del reloj, hasta 5 min antes o después).
+    tramos = [
+        tramo(1, 0, 0, 30, 5000, 5100, dorsal=8),
+        tramo(2, 1, 0, 30, 7000, 7100, dorsal=9),
+        tramo_portero(10, 0, 0, 1000, 400, dorsal=1, peso=0.8),
+        tramo_portero(11, 0, 1100, 2600, 400, dorsal=1, peso=0.8),
+        tramo_portero(12, 0, 3400, 4400, 11600, dorsal=13, peso=0.8),
+        tramo_portero(13, 0, 4500, 5400, 11600, dorsal=13, peso=0.8),
+        tramo_portero(14, 0, 5500, 6000, 11600),
+    ]
+    plantillas = [
+        Plantilla("local", "Vallobín", [JugadorActa(1, "UNO", hasta_s=3000.0), JugadorActa(13, "TRECE", desde_s=3000.0), JugadorActa(8, "OCHO")]),
+        Plantilla("visitante", "Rival", [JugadorActa(9, "NUEVE")]),
+    ]
+    r = resolver(tramos, plantillas)
+    assert asignados(r, 10, 11) == [id_jugador(0, 1)] * 2
+    assert asignados(r, 12, 13, 14) == [id_jugador(0, 13)] * 3
+
+
+def test_un_jugador_de_campo_con_el_dorsal_del_portero_a_la_vez_que_el_prueba_con_su_segundo_numero():
+    # El 20 se lee como 13 (y algo como 4) mientras el portero 13 está en su portería; el 21, también tomado como jugador
+    # de campo, cae en un hueco en el que al portero no se le ve: es el portero.
+    otro = votos(13, 1.2)
+    otro[3] = 0.9
+    tramos = [
+        tramo_portero(10, 0, 0, 1000, 400, dorsal=13, peso=0.8),
+        tramo_portero(11, 0, 2000, 2700, 400, dorsal=13, peso=0.8),
+        Tramo(20, 0, 500, 600, (5000.0, 3000.0), (5100.0, 3000.0), 100.0, otro),
+        Tramo(21, 0, 1200, 1800, (400.0, 3500.0), (420.0, 3500.0), 100.0, votos(13, 1.0)),
+    ]
+    r = resolver(tramos)
+    assert r.asignacion[20] == id_jugador(0, 4)
+    assert asignados(r, 10, 11, 21) == [id_jugador(0, 13)] * 3
+
+
+def tramo_equipacion(tid: int, equipo: int, t_ini: float, t_fin: float, x: float, lecturas: dict[int, float]) -> Tramo:
+    """Un tramo del portero por la equipación, con sus lecturas del dorsal (dorsal → peso)."""
+    v = np.zeros(99)
+    for dorsal, peso in lecturas.items():
+        v[dorsal - 1] = peso
+    return Tramo(tid, equipo, t_ini, t_fin, (x, 3500.0), (x, 3500.0), 100.0, v, None, None, True, True)
+
+
+def test_el_dorsal_que_lleva_un_jugador_de_campo_mientras_se_ve_al_portero_no_es_el_del_portero():
+    # Como el 13 del Real Titánico en el J8: se le lee sobre todo un 8, el de un defensa que se ve a la vez que él.
+    tramos = [
+        tramo(1, 0, 0, 600, 1500, 2500, dorsal=8),
+        tramo_equipacion(10, 0, 0, 900, 400, {8: 2.0, 13: 0.5}),
+        tramo_equipacion(11, 0, 1000, 2000, 400, {8: 1.0, 13: 0.6}),
+        tramo_equipacion(12, 0, 3000, 4000, 11600, {13: 0.6, 6: 0.4}),
+        # Un tramo que solo el detector marca de portero, a la vez que el portero: se resuelve como uno de campo.
+        Tramo(13, 0, 100, 160, (3000.0, 3500.0), (3100.0, 3500.0), 100.0, votos(5, 1.5), None, None, True),
+    ]
+    r = resolver(tramos)
+    # Aunque en el tramo 10 se lea con claridad el 8: es el portero por la equipación.
+    assert asignados(r, 10, 11, 12) == [id_jugador(0, 13)] * 3
+    assert asignados(r, 1, 13) == [id_jugador(0, 8), id_jugador(0, 5)]
+    portero = next(x for x in r.identidades if x.dorsal == 13)
+    assert not portero.por_descarte and portero.confianza < 0.5
+
+
+def test_si_se_sabe_como_viste_el_portero_ningun_jugador_de_campo_lleva_su_dorsal():
+    # Por la equipación, ningún tracklet de campo es el portero 13: ni el defensa al que se lee 13 (y algo de 4) cuando
+    # al portero no se le ve, ni el que solo dice 13, ni el que sigue justo donde acaba el último tramo del portero.
+    defensa = votos(13, 1.2)
+    defensa[3] = 0.9
+    tramos = [
+        tramo_equipacion(10, 0, 0, 1000, 400, {13: 2.0}),
+        tramo_equipacion(11, 0, 2000, 2700, 400, {13: 1.0}),
+        Tramo(20, 0, 1200, 1800, (400.0, 3500.0), (420.0, 3500.0), 100.0, defensa),
+        Tramo(22, 0, 1850, 1950, (5000.0, 3500.0), (5100.0, 3500.0), 100.0, votos(13, 1.5)),
+        Tramo(21, 0, 2700, 2750, (400.0, 3500.0), (600.0, 3500.0), 100.0, np.zeros(99)),
+    ]
+    r = resolver(tramos)
+    assert asignados(r, 10, 11) == [id_jugador(0, 13)] * 2
+    assert asignados(r, 20, 22, 21) == [id_jugador(0, 4), None, None]
+
+    # Si solo lo marca el detector, como hasta ahora: el que cae en un hueco del portero con su dorsal es él.
+    solo_detector = [tramo_portero(10, 0, 0, 1000, 400, dorsal=13, peso=2.0), tramo_portero(11, 0, 2000, 2700, 400, dorsal=13, peso=1.0)]
+    r = resolver(solo_detector + tramos[2:])
+    assert asignados(r, 10, 11, 20, 22) == [id_jugador(0, 13)] * 4
+
+
+def test_si_las_lecturas_no_bastan_el_portero_sale_del_acta_por_descarte():
+    # Como el 1 del Vallobín en el J8: casi no se le lee el número y lo poco que se lee es de otros (el 9, que es un
+    # jugador de campo, y el 6 y el 21, que no jugaron en su equipo).
+    de_campo = [
+        tramo(1, 1, 0, 600, 1500, 2500, dorsal=4),
+        tramo(2, 1, 0, 600, 3000, 3500, dorsal=9),
+        tramo(3, 1, 1000, 1500, 3000, 3500, dorsal=5),
+        tramo(4, 1, 3500, 4000, 3000, 3500, dorsal=12),
+        tramo(5, 0, 0, 600, 7000, 7100, dorsal=7),
+    ]
+    porteros = [
+        tramo_equipacion(20, 1, 0, 1200, 11600, {9: 0.8, 6: 0.5}),
+        tramo_equipacion(21, 1, 1300, 2700, 11600, {21: 0.7}),
+        tramo_equipacion(22, 1, 3000, 5400, 400, {9: 0.4}),
+    ]
+    vallobin = Plantilla("local", "Vallobín", [JugadorActa(1, "UNO"), JugadorActa(4, "CUATRO"), JugadorActa(5, "CINCO", hasta_s=3000.0), JugadorActa(9, "NUEVE"), JugadorActa(12, "DOCE", desde_s=3000.0)])
+    rival = Plantilla("visitante", "Rival", [JugadorActa(7, "SIETE")])
+    r = resolver(de_campo + porteros, [vallobin, rival])
+    assert asignados(r, 20, 21, 22) == [id_jugador(1, 1)] * 3
+    portero = next(x for x in r.identidades if x.id == id_jugador(1, 1))
+    assert portero.por_descarte and portero.nombre == "UNO"
+    assert asignados(r, 1, 2, 3, 4) == [id_jugador(1, 4), id_jugador(1, 9), id_jugador(1, 5), id_jugador(1, 12)]
+
+    # Sin el acta no hay descarte posible y, sin dorsal, sus tramos no se juntan con ningún jugador de campo (el 9).
+    r = resolver(de_campo + porteros)
+    assert asignados(r, 20, 21, 22) == [None] * 3
+    assert r.segundos_sin_identificar[1] >= 5000
+
+    # Si queda más de uno que jugó todo el partido sin identificar (aquí el 4), tampoco: mejor sin identificar.
+    r = resolver(de_campo[1:] + porteros, [vallobin, rival])
+    assert asignados(r, 20, 21, 22) == [None] * 3

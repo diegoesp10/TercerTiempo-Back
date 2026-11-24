@@ -3,6 +3,14 @@
 El seguidor da otro número cada vez que pierde a un jugador (en un partido entero, unos 20.000), pero en el campo hay
 como mucho 16 por equipo (once y los cambios). Para juntarlos:
 
+0. **Porteros**: en el campo hay uno por equipo a la vez y no sale de su portería. Su equipo ya viene de la portería
+   que defiende en cada parte (`porteros.py`), así que todos los tramos de portero de un equipo, los de las dos partes
+   (cada una en un lado), son la misma persona mientras no lo cambien: su dorsal sale de las lecturas de todos juntos (de
+   lejos se le lee poco el número) y se le dan todos. Antes se resuelven los jugadores de campo solos: el dorsal que
+   dicen con claridad jugadores que se ven a la vez que el portero no es el suyo (en el J8 al 13 morado del Real
+   Titánico se le leía sobre todo el 8 y el 6, sus defensas). Si las lecturas no bastan y está el acta, por descarte: el
+   único de su equipo que jugó todos los minutos en que se ve al portero y no es ninguno de los jugadores de campo
+   identificados (al verde lima del Vallobín casi no se le lee el 1); si queda más de uno, ninguno.
 1. **Cadenas**: el tramo que empieza justo donde y cuando acaba otro del mismo equipo es el mismo jugador (se enlazan
    de menor a mayor salto, cada tramo con un solo antecesor y un solo sucesor, y nunca dos que ya dicen dorsales
    distintos con claridad).
@@ -17,6 +25,7 @@ Lo que no se resuelve queda «sin identificar»: cuenta para el equipo (posesió
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -57,6 +66,21 @@ VENTAJA_CONTINUIDAD = 0.5
 # Minutos del acta: margen (s) por el desfase entre el reloj del partido y el del vídeo.
 MARGEN_MINUTOS_S = 300.0
 MAXIMO_POR_EQUIPO = 16
+# El dorsal de un portero da mucho tiempo de partido de una vez: pide más evidencia que el de una cadena. Por equipo, el
+# titular y, si lo cambian, el que entra.
+EVIDENCIA_PORTERO = 1.5
+PORTEROS_POR_EQUIPO = 2
+# Un dorsal está ocupado (no puede ser el del portero) si las cadenas de campo que lo dicen con claridad se ven a la vez
+# que el portero al menos SOLAPE_OCUPADO_S: dos personas con el mismo número a la vez no puede ser. Para el descarte basta
+# con que se vean en total al menos OCUPADO_MIN_S (ese número ya es de un jugador de campo).
+SOLAPE_OCUPADO_S = 15.0
+OCUPADO_MIN_S = 60.0
+# Con el acta, el dorsal leído tiene que haber estado en el campo en al menos esta parte del tiempo en que se ve al
+# portero (el resto es del otro portero si lo cambiaron); y el que sale por descarte, en todo ese tiempo, y solo si se
+# ha visto al portero al menos PORTERO_MIN_S.
+COBERTURA_LEIDO = 0.4
+COBERTURA_DESCARTE = 0.95
+PORTERO_MIN_S = 60.0
 
 
 def id_jugador(equipo: int, dorsal: int) -> int:
@@ -86,6 +110,9 @@ class Tramo:
     ini_campo: Punto | None = None
     fin_campo: Punto | None = None
     portero: bool = False
+    # Portero por la equipación (`porteros.py`), no solo porque lo diga el detector: es el portero aunque una lectura
+    # suelta diga otro número.
+    por_equipacion: bool = False
 
     @property
     def duracion(self) -> float:
@@ -154,6 +181,8 @@ class Identidad:
     confianza: float
     # Cadenas que se le dieron por continuidad, sin leerle el dorsal.
     por_continuidad: int = 0
+    # Portero cuyo dorsal sale del acta por descarte, no de las lecturas.
+    por_descarte: bool = False
 
     @property
     def id(self) -> int:
@@ -299,21 +328,77 @@ def _dorsal_de_cadena(votos: np.ndarray, permitidos: np.ndarray, excluidos: set[
 
 
 def _solapan(a: Cadena, b: Cadena) -> bool:
-    return min(a.t_fin, b.t_fin) - max(a.t_ini, b.t_ini) > SOLAPE_MAX_S
+    """Si están a la vez más de SOLAPE_MAX_S, tramo a tramo: los de un portero dejan huecos cuando no se le ve."""
+    if min(a.t_fin, b.t_fin) - max(a.t_ini, b.t_ini) <= SOLAPE_MAX_S:
+        return False
+    total = 0.0
+    i = j = 0
+    while i < len(a.tramos) and j < len(b.tramos):
+        x, y = a.tramos[i], b.tramos[j]
+        total += max(0.0, min(x.t_fin, y.t_fin) - max(x.t_ini, y.t_ini))
+        if total > SOLAPE_MAX_S:
+            return True
+        if x.t_fin < y.t_fin:
+            i += 1
+        else:
+            j += 1
+    return False
 
 
-def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, maximo: int = MAXIMO_POR_EQUIPO) -> Resolucion:
-    plantillas = plantillas or []
-    cadenas = enlazar(tramos)
-    de_equipo = _emparejar_plantillas(cadenas, plantillas)
-    lado_de_equipo = {e: (p.lado if p is not None else None) for e, p in de_equipo.items()}
-    comun = _union(plantillas) if plantillas and any(p is None for p in de_equipo.values()) else None
-    plantilla_de = {e: de_equipo[e] or comun for e in (0, 1)}
+def _votos_permitidos(tramo: Tramo, plantilla: Plantilla | None) -> np.ndarray:
+    return np.where(_permitidos(Cadena([tramo]), plantilla), tramo.votos, 0.0)
 
-    asignada: dict[int, tuple[int, float, float]] = {}
-    excluidos: dict[int, set[int]] = {i: set() for i in range(len(cadenas))}
-    pendientes = list(range(len(cadenas)))
-    # Por equipo y dorsal, las cadenas que lo tienen; se resuelven los choques hasta que no quede ninguno.
+
+def _jugador(plantilla: Plantilla | None, dorsal: int) -> JugadorActa | None:
+    return next((j for j in plantilla.jugadores if j.dorsal == dorsal), None) if plantilla is not None else None
+
+
+def _intervalos(tramos: list[Tramo]) -> list[tuple[float, float]]:
+    """Los ratos en que se ve alguno de los tramos, juntos y en orden."""
+    juntos: list[list[float]] = []
+    for t in sorted(tramos, key=lambda t: t.t_ini):
+        if juntos and t.t_ini <= juntos[-1][1]:
+            juntos[-1][1] = max(juntos[-1][1], t.t_fin)
+        else:
+            juntos.append([t.t_ini, t.t_fin])
+    return [(a, b) for a, b in juntos]
+
+
+def _a_la_vez(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> float:
+    """Segundos en que coinciden dos listas de ratos de `_intervalos`."""
+    total = 0.0
+    i = j = 0
+    while i < len(a) and j < len(b):
+        total += max(0.0, min(a[i][1], b[j][1]) - max(a[i][0], b[j][0]))
+        if a[i][1] < b[j][1]:
+            i += 1
+        else:
+            j += 1
+    return total
+
+
+def _cobertura(tramos: list[Tramo], jugador: JugadorActa | None) -> float:
+    """La parte del tiempo de los tramos en que el jugador del acta estaba en el campo (sin acta, todo)."""
+    total = sum(t.duracion for t in tramos)
+    if jugador is None or total <= 0:
+        return 1.0
+    return sum(t.duracion for t in tramos if jugador.en_juego(t.t_ini, t.t_fin)) / total
+
+
+def _dorsales(
+    cadenas: list[Cadena],
+    fijas: dict[int, tuple[int, float, float]],
+    plantilla_de: dict[int, Plantilla | None],
+    vetados: dict[int, set[int]] | None = None,
+) -> dict[int, tuple[int, float, float]]:
+    """El dorsal de cada cadena y, por equipo y dorsal, los choques resueltos hasta que no quede ninguno: si dos cadenas
+    lo dicen a la vez, se queda la que más lo dice y la otra prueba con su segundo número. Las `fijas` (los porteros) ya
+    traen su dorsal y van delante: lo dicen las lecturas de todos sus tramos y no salen de su portería. Los `vetados` de
+    cada equipo no son de ninguna de sus otras cadenas, que prueban con su segundo número."""
+    vetados = vetados or {}
+    asignada = dict(fijas)
+    excluidos: dict[int, set[int]] = {i: set() if i in fijas else set(vetados.get(cadenas[i].equipo, ())) for i in range(len(cadenas))}
+    pendientes = [i for i in range(len(cadenas)) if i not in fijas]
     for _ in range(4):
         for i in pendientes:
             c = cadenas[i]
@@ -327,7 +412,7 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
         for i, (d, _, _) in asignada.items():
             por_dorsal.setdefault((cadenas[i].equipo, d), []).append(i)
         for (e, d), lista in por_dorsal.items():
-            lista.sort(key=lambda i: -asignada[i][1])
+            lista.sort(key=lambda i: (i not in fijas, -asignada[i][1]))
             aceptadas: list[int] = []
             for i in lista:
                 if any(_solapan(cadenas[i], cadenas[k]) for k in aceptadas):
@@ -339,6 +424,158 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
             break
     for i in pendientes:
         asignada.pop(i, None)
+    return asignada
+
+
+def _ocupados(cadenas: list[Cadena], asignada: dict[int, tuple[int, float, float]], porteros: list[Tramo]) -> tuple[dict[int, set[int]], dict[int, set[int]]]:
+    """Con los jugadores de campo resueltos sin los porteros, los dorsales que no pueden ser del portero de cada equipo:
+    los que dicen con claridad cadenas que se ven a la vez que él (para elegir por las lecturas) y, además, los de los
+    jugadores de campo que se ven un buen rato (para elegir por descarte)."""
+    ratos = {e: _intervalos([t for t in porteros if t.equipo == e]) for e in (0, 1)}
+    a_la_vez: dict[tuple[int, int], float] = defaultdict(float)
+    vistos: dict[tuple[int, int], float] = defaultdict(float)
+    for i, (d, _, _) in asignada.items():
+        c = cadenas[i]
+        if c.equipo not in ratos or _claro(c.votos) != d:
+            continue
+        a_la_vez[(c.equipo, d)] += _a_la_vez(_intervalos(c.tramos), ratos[c.equipo])
+        vistos[(c.equipo, d)] += c.duracion
+    ocupados = {e: {d for (x, d), s in a_la_vez.items() if x == e and s >= SOLAPE_OCUPADO_S} for e in (0, 1)}
+    contados = {e: ocupados[e] | {d for (x, d), s in vistos.items() if x == e and s >= OCUPADO_MIN_S} for e in (0, 1)}
+    return ocupados, contados
+
+
+def _mejor_portero(tramos: list[Tramo], votos: dict[int, np.ndarray], plantilla: Plantilla | None, fuera: set[int]) -> tuple[int, float, float] | None:
+    """El dorsal del portero por las lecturas: el que más se lee de los que pueden ser (ni otro portero ya identificado ni
+    un número ocupado por un jugador de campo), contando solo los tramos de los minutos en que estuvo en el campo (si lo
+    cambiaron, el titular y el que entró se reparten las lecturas del partido) y, con el acta, solo si estuvo en el campo
+    al menos COBERTURA_LEIDO del tiempo en que se ve al portero."""
+    mejor: tuple[int, float, float] | None = None
+    for indice in np.flatnonzero(np.sum([votos[t.tracklet] for t in tramos], axis=0) > 0):
+        dorsal = int(indice) + 1
+        if dorsal in fuera:
+            continue
+        jugador = _jugador(plantilla, dorsal)
+        suyos = [votos[t.tracklet] for t in tramos if jugador is None or jugador.en_juego(t.t_ini, t.t_fin)]
+        if not suyos or _cobertura(tramos, jugador) < COBERTURA_LEIDO:
+            continue
+        suma = np.sum(suyos, axis=0)
+        for d in fuera:
+            suma[d - 1] = 0.0
+        evidencia, total = float(suma[indice]), float(suma.sum())
+        if evidencia >= EVIDENCIA_PORTERO and evidencia / total >= PARTE_MIN and (mejor is None or evidencia > mejor[1]):
+            mejor = (dorsal, evidencia, evidencia / total)
+    return mejor
+
+
+def _por_descarte(tramos: list[Tramo], votos: dict[int, np.ndarray], plantilla: Plantilla, fuera: set[int]) -> tuple[int, float, float] | None:
+    """Si las lecturas no bastan, con el acta: el único de su equipo que estuvo en el campo todo el tiempo en que se ve al
+    portero y no es otro portero ni un jugador de campo identificado. Solo si se ha visto al portero un buen rato."""
+    if sum(t.duracion for t in tramos) < PORTERO_MIN_S:
+        return None
+    candidatos = [j.dorsal for j in plantilla.jugadores if j.dorsal not in fuera and _cobertura(tramos, j) >= COBERTURA_DESCARTE]
+    if len(candidatos) != 1:
+        return None
+    dorsal = candidatos[0]
+    suma = np.sum([votos[t.tracklet] for t in tramos], axis=0)
+    total = float(suma.sum())
+    evidencia = float(suma[dorsal - 1])
+    return dorsal, evidencia, evidencia / total if total > 0 else 0.0
+
+
+def _porteros(
+    tramos: list[Tramo],
+    plantilla_de: dict[int, Plantilla | None],
+    ocupados: dict[int, set[int]],
+    contados: dict[int, set[int]],
+    con_acta: dict[int, bool],
+) -> tuple[list[tuple[Cadena, tuple[int, float, float], bool]], list[Tramo], list[Tramo]]:
+    """Cada portero identificado (todos sus tramos, su dorsal y si sale por descarte); los tramos de portero que se quedan
+    para resolverse como los de campo; y los del portero por la equipación que no son de ningún portero identificado, que
+    se quedan sin identificar (como jugadores de campo sus dorsales mal leídos los juntarían con los defensas).
+
+    Los tramos del portero por la equipación van delante. Los del detector se quedan para los de campo si coinciden en el
+    tiempo con otro de su equipo ya aceptado (dos porteros a la vez no puede ser) o si dicen con claridad otro número (un
+    jugador que el detector tomó por portero); el del portero por la equipación es el portero aunque se le lea otro
+    número. Con el acta, solo cuentan los dorsales de su equipo que estaban en el campo en cada tramo; y si cambian al
+    portero, el que entra sale de los tramos que quedan fuera de los minutos del primero."""
+    identificados: list[tuple[Cadena, tuple[int, float, float], bool]] = []
+    sueltos: list[Tramo] = []
+    perdidos: list[Tramo] = []
+    for equipo in (0, 1):
+        aceptados: list[Tramo] = []
+        for t in sorted((t for t in tramos if t.equipo == equipo), key=lambda t: (not t.por_equipacion, -t.duracion)):
+            if any(min(t.t_fin, a.t_fin) - max(t.t_ini, a.t_ini) > SOLAPE_MAX_S for a in aceptados):
+                (perdidos if t.por_equipacion else sueltos).append(t)
+            else:
+                aceptados.append(t)
+        plantilla = plantilla_de.get(equipo)
+        votos = {t.tracklet: _votos_permitidos(t, plantilla) for t in aceptados}
+        pendientes = sorted(aceptados, key=lambda t: t.t_ini)
+        vistos: set[int] = set()
+        for _ in range(PORTEROS_POR_EQUIPO):
+            if not pendientes:
+                break
+            descarte = False
+            elegido = _mejor_portero(pendientes, votos, plantilla, vistos | ocupados.get(equipo, set()))
+            if elegido is None and con_acta.get(equipo) and plantilla is not None:
+                elegido = _por_descarte(pendientes, votos, plantilla, vistos | contados.get(equipo, set()))
+                descarte = elegido is not None
+            if elegido is None:
+                break
+            dorsal = elegido[0]
+            vistos.add(dorsal)
+            jugador = _jugador(plantilla, dorsal)
+            suyos: list[Tramo] = []
+            resto: list[Tramo] = []
+            for t in pendientes:
+                if jugador is not None and not jugador.en_juego(t.t_ini, t.t_fin):
+                    resto.append(t)
+                elif t.por_equipacion or _claro(votos[t.tracklet]) in (None, dorsal):
+                    suyos.append(t)
+                else:
+                    sueltos.append(t)
+            pendientes = resto
+            if suyos:
+                suma = np.sum([votos[t.tracklet] for t in suyos], axis=0)
+                total = float(suma.sum())
+                evidencia = float(suma[dorsal - 1])
+                identificados.append((Cadena(suyos), (dorsal, evidencia, evidencia / total if total > 0 else 0.0), descarte))
+        for t in pendientes:
+            (perdidos if t.por_equipacion else sueltos).append(t)
+    return identificados, sueltos, perdidos
+
+
+def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, maximo: int = MAXIMO_POR_EQUIPO) -> Resolucion:
+    plantillas = plantillas or []
+    de_campo = [t for t in tramos if not t.portero]
+    del_portero = [t for t in tramos if t.portero]
+    cadenas_campo = enlazar(de_campo)
+    de_equipo = _emparejar_plantillas(cadenas_campo, plantillas)
+    lado_de_equipo = {e: (p.lado if p is not None else None) for e, p in de_equipo.items()}
+    comun = _union(plantillas) if plantillas and any(p is None for p in de_equipo.values()) else None
+    plantilla_de = {e: de_equipo[e] or comun for e in (0, 1)}
+
+    # Los porteros primero, con los jugadores de campo resueltos solos para saber qué dorsales ya llevan otros; los tramos
+    # de portero del detector que no son de ninguno se resuelven como los de campo.
+    ocupados: dict[int, set[int]] = {0: set(), 1: set()}
+    contados: dict[int, set[int]] = {0: set(), 1: set()}
+    if del_portero:
+        ocupados, contados = _ocupados(cadenas_campo, _dorsales(cadenas_campo, {}, plantilla_de), del_portero)
+    porteros, sueltos, perdidos = _porteros(del_portero, plantilla_de, ocupados, contados, {e: de_equipo[e] is not None for e in (0, 1)})
+    cadenas = enlazar(de_campo + sueltos) if sueltos else cadenas_campo
+    de_campo_hasta = len(cadenas)
+    cadenas = cadenas + [c for c, _, _ in porteros]
+    fijas = {de_campo_hasta + k: r for k, (_, r, _) in enumerate(porteros)}
+    por_descarte = {de_campo_hasta + k for k, (_, _, descarte) in enumerate(porteros) if descarte}
+    # El portero que se reconoce por la equipación no está en ninguna cadena de campo (por la equipación no son él): su
+    # dorsal no pasa a ninguna otra de su equipo, ni por las lecturas ni por continuidad. Un defensa al que se lee su
+    # número cuando al portero no se le ve acabaría en su línea.
+    vetados: dict[int, set[int]] = defaultdict(set)
+    for c, (d, _, _), _ in porteros:
+        if any(t.por_equipacion for t in c.tramos):
+            vetados[c.equipo].add(d)
+    asignada = _dorsales(cadenas, fijas, plantilla_de, vetados)
 
     # Sin acta: solo los dorsales con más evidencia, como mucho `maximo` por equipo.
     for e in (0, 1):
@@ -350,7 +587,7 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
         for i in [i for i, (d, _, _) in asignada.items() if cadenas[i].equipo == e and d in sobran]:
             del asignada[i]
 
-    por_continuidad = _continuidad(cadenas, asignada)
+    por_continuidad = _continuidad(cadenas, asignada, vetados)
 
     nombres: dict[tuple[int, int], str] = {}
     for e in (0, 1):
@@ -370,6 +607,8 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
         ident.evidencia += ev
         if i in por_continuidad:
             ident.por_continuidad += 1
+        if i in por_descarte:
+            ident.por_descarte = True
         for t in c.tramos:
             asignacion[t.tracklet] = ident.id
     for ident in identidades.values():
@@ -381,12 +620,17 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
     for i, c in enumerate(cadenas):
         if i not in asignada and c.equipo in sin:
             sin[c.equipo] += c.duracion
+    for t in perdidos:
+        if t.equipo in sin:
+            sin[t.equipo] += t.duracion
     orden = sorted(identidades.values(), key=lambda x: (x.equipo, x.dorsal))
     return Resolucion(asignacion, orden, lado_de_equipo, len(cadenas), {e: round(s, 1) for e, s in sin.items()})
 
 
-def _continuidad(cadenas: list[Cadena], asignada: dict[int, tuple[int, float, float]]) -> set[int]:
-    """Da su jugador a las cadenas sin dorsal que caben en el hueco de uno solo. Devuelve las que se rellenaron."""
+def _continuidad(cadenas: list[Cadena], asignada: dict[int, tuple[int, float, float]], vetados: dict[int, set[int]] | None = None) -> set[int]:
+    """Da su jugador a las cadenas sin dorsal que caben en el hueco de uno solo (nunca uno de los `vetados` de su
+    equipo). Devuelve las que se rellenaron."""
+    vetados = vetados or {}
     rellenadas: set[int] = set()
     for _ in range(3):
         cambios = 0
@@ -400,7 +644,7 @@ def _continuidad(cadenas: list[Cadena], asignada: dict[int, tuple[int, float, fl
                 continue
             posibles: list[tuple[float, int]] = []
             for (e, d), lista in por_jugador.items():
-                if e != c.equipo or any(_solapan(c, cadenas[k]) for k in lista):
+                if e != c.equipo or d in vetados.get(e, ()) or any(_solapan(c, cadenas[k]) for k in lista):
                     continue
                 antes = [k for k in lista if cadenas[k].t_fin <= c.t_ini]
                 despues = [k for k in lista if cadenas[k].t_ini >= c.t_fin]

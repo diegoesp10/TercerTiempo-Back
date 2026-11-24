@@ -233,5 +233,6 @@ def cargar_lector(carpeta: Path, device: str, afinados: bool = True) -> "LectorD
     if ruta is None:
         return None
     lector = LectorDorsales(ruta, device)
+    lector.ruta = ruta
     lector.nombre = f"PARSeq ({ruta.relative_to(carpeta).as_posix()})"
     return lector

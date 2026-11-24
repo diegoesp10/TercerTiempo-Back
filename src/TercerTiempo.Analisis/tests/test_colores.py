@@ -1,6 +1,6 @@
 import numpy as np
 
-from tt_analisis.colores import ClasificadorColor, lab_a_rgb, pixeles_camiseta, rasgos_camiseta
+from tt_analisis.colores import ClasificadorColor, lab_a_rgb, pixeles_camiseta, rasgos_camiseta, rasgos_equipacion, tapados
 from tt_analisis.equipos import color_hex
 
 CESPED = (40, 120, 60)  # BGR: verde de césped
@@ -72,3 +72,47 @@ def test_los_colores_se_convierten_a_hex():
     assert color_hex((255, 0, 16)) == "#ff0010"
     r, g, b = lab_a_rgb(np.array([255, 128, 128], dtype=np.float32))
     assert (r, g, b) == (255, 255, 255)
+
+
+def escena(torso_bgr, pantalon_bgr, luz=1.0, alto=80, ancho=30):
+    """Un jugador de pie en medio de un trozo de césped, con su caja: camiseta y pantalón lisos."""
+    imagen = np.empty((alto + 20, ancho * 3, 3), dtype=np.uint8)
+    imagen[:] = CESPED
+    x1, y1 = ancho, 10
+    imagen[y1 + int(0.15 * alto):y1 + int(0.5 * alto), x1 + int(0.1 * ancho):x1 + int(0.9 * ancho)] = torso_bgr
+    imagen[y1 + int(0.5 * alto):y1 + int(0.75 * alto), x1 + int(0.15 * ancho):x1 + int(0.85 * ancho)] = pantalon_bgr
+    ruido = RNG.integers(-6, 7, size=imagen.shape)
+    return np.clip(imagen.astype(int) * luz + ruido, 0, 255).astype(np.uint8), (x1, y1, x1 + ancho, y1 + alto)
+
+
+def test_la_equipacion_de_un_portero_verde_lima_no_se_la_come_el_cesped():
+    lima, blanco = (40, 230, 180), (235, 235, 235)
+    rasgos = rasgos_equipacion(*escena(lima, lima))
+    assert rasgos is not None and rasgos.shape == (6,)
+    # Más clara que el césped, verde (a < 128) y amarillenta (b > 128): el torso es la camiseta, no el césped.
+    assert rasgos[0] > 40 and rasgos[1] < 110 and rasgos[2] > 150
+    # Con menos luz sigue muy por encima del césped y igual de verde.
+    oscura = rasgos_equipacion(*escena(lima, lima, luz=0.7))
+    assert oscura[0] > 40 and oscura[1] < 110
+    assert rasgos_equipacion(*escena(blanco, blanco)) is not None
+
+
+def test_el_pantalon_separa_al_arbitro_de_un_portero_con_una_camiseta_parecida():
+    menta, negro, lima = (170, 230, 150), (25, 25, 25), (40, 230, 180)
+    arbitro = rasgos_equipacion(*escena(menta, negro))
+    portero = rasgos_equipacion(*escena(lima, lima))
+    assert portero[3] - arbitro[3] > 100
+
+
+def test_una_persona_muy_pequena_no_da_equipacion():
+    imagen, _ = escena((40, 230, 180), (40, 230, 180))
+    assert rasgos_equipacion(imagen, (30, 10, 40, 30)) is None
+
+
+def test_la_equipacion_de_quien_esta_tapado_por_otro_que_esta_delante_no_cuenta():
+    # El 1 tapa el cuerpo del 0 y está delante (sus pies, más abajo); el 2 está solo.
+    cajas = np.array([[0, 0, 30, 80], [10, 10, 40, 95], [200, 0, 230, 80]], dtype=float)
+    assert tapados(cajas).tolist() == [True, False, False]
+    # Si el que se cruza está detrás, el tapado es él.
+    assert tapados(np.array([[0, 0, 30, 80], [10, 10, 40, 70]], dtype=float)).tolist() == [False, True]
+    assert tapados(np.zeros((1, 4))).tolist() == [False]

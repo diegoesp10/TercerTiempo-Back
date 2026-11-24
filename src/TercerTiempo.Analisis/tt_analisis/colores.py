@@ -174,3 +174,84 @@ class ClasificadorColor:
         """Un grupo con menos de la quinta parte de los recortes: el reparto no parece de dos equipos."""
         total = sum(self.reparto)
         return total > 0 and min(self.reparto) < total / 5
+
+
+# La equipación entera, para encontrar a los porteros (`porteros.py`): el color del torso y el del pantalón. Sin la
+# máscara de césped de `rasgos_camiseta`, que se come una camiseta verde (en el J8 del Vallobín, la del portero, verde
+# lima, quedaba casi sin píxeles y caía en el equipo rival): el centro del torso y del pantalón es casi todo tela. El
+# pantalón separa al portero del árbitro cuando las camisetas se parecen (verde lima frente a verde menta con pantalón
+# negro). La claridad, respecto al césped de los lados de la caja, como en `rasgos_camiseta`.
+EQUIPACION_TORSO = ((0.20, 0.50), (0.30, 0.70))
+EQUIPACION_PANTALON = ((0.52, 0.68), (0.30, 0.70))
+# Franjas de césped a cada lado de la caja (parte del ancho) y desde qué parte del alto (a la altura de las piernas).
+EQUIPACION_CESPED_ANCHO = 0.3
+EQUIPACION_CESPED_DESDE = 0.5
+EQUIPACION_ALTO_MIN = 32
+EQUIPACION_PIXELES_MIN = 12
+# Una persona tapa a otra si su caja cubre más de esta parte del torso y el pantalón de la otra y está delante (sus pies,
+# más abajo en la imagen).
+TAPADO_PARTE = 0.25
+RASGOS_EQUIPACION = 6
+
+
+def rasgos_equipacion(imagen: np.ndarray, caja) -> np.ndarray | None:
+    """[L del torso respecto al césped, a, b, L del pantalón respecto al césped, a, b] (medianas en Lab), o None si la
+    persona es muy pequeña o se sale de la imagen."""
+    x1, y1, x2, y2 = (float(v) for v in caja)
+    alto, ancho = y2 - y1, x2 - x1
+    if alto < EQUIPACION_ALTO_MIN or ancho < 8:
+        return None
+    h, w = imagen.shape[:2]
+    margen = EQUIPACION_CESPED_ANCHO * ancho
+    xa, xb = max(0, int(x1 - margen)), min(w, int(np.ceil(x2 + margen)))
+    ya, yb = max(0, int(y1)), min(h, int(np.ceil(y2)))
+    if xb - xa < 8 or yb - ya < EQUIPACION_ALTO_MIN:
+        return None
+    lab = cv2.cvtColor(imagen[ya:yb, xa:xb], cv2.COLOR_BGR2LAB)
+
+    def zona(filas: tuple[float, float], columnas: tuple[float, float]) -> np.ndarray | None:
+        fa, fb = int(y1 + filas[0] * alto) - ya, int(y1 + filas[1] * alto) - ya
+        ca, cb = int(x1 + columnas[0] * ancho) - xa, int(x1 + columnas[1] * ancho) - xa
+        pixeles = lab[max(0, fa):max(0, fb), max(0, ca):max(0, cb)].reshape(-1, 3)
+        return pixeles if len(pixeles) >= EQUIPACION_PIXELES_MIN else None
+
+    torso = zona(*EQUIPACION_TORSO)
+    pantalon = zona(*EQUIPACION_PANTALON)
+    if torso is None or pantalon is None:
+        return None
+    desde = max(0, int(y1 + EQUIPACION_CESPED_DESDE * alto) - ya)
+    izquierda = max(0, int(x1) - xa)
+    derecha = max(0, xb - int(np.ceil(x2)))
+    franjas = []
+    if izquierda:
+        franjas.append((imagen[ya + desde:yb, xa:xa + izquierda], lab[desde:, :izquierda]))
+    if derecha:
+        franjas.append((imagen[ya + desde:yb, xb - derecha:xb], lab[desde:, lab.shape[1] - derecha:]))
+    claros = [franja_lab[..., 0][_mascara_cesped(franja)] for franja, franja_lab in franjas if franja.size]
+    claros = np.concatenate(claros) if claros else np.empty(0)
+    referencia = float(np.median(claros)) if len(claros) >= MIN_PIXELES_CESPED else L_CESPED_TIPICA
+    t = np.median(torso, axis=0).astype(np.float32)
+    p = np.median(pantalon, axis=0).astype(np.float32)
+    return np.array([t[0] - referencia, t[1], t[2], p[0] - referencia, p[1], p[2]], dtype=np.float32)
+
+
+def tapados(cajas: np.ndarray) -> np.ndarray:
+    """Qué personas están tapadas por otra que está delante: su equipación no vale en ese fotograma."""
+    n = len(cajas)
+    salida = np.zeros(n, dtype=bool)
+    if n < 2:
+        return salida
+    c = np.asarray(cajas, dtype=np.float64)
+    alto, ancho = c[:, 3] - c[:, 1], c[:, 2] - c[:, 0]
+    zona = np.stack([
+        c[:, 0] + EQUIPACION_TORSO[1][0] * ancho, c[:, 1] + EQUIPACION_TORSO[0][0] * alto,
+        c[:, 0] + EQUIPACION_TORSO[1][1] * ancho, c[:, 1] + EQUIPACION_PANTALON[0][1] * alto,
+    ], axis=1)
+    area = np.maximum(1e-6, (zona[:, 2] - zona[:, 0]) * (zona[:, 3] - zona[:, 1]))
+    # cubierto[i, j]: parte de la zona de i que tapa la caja de j.
+    ix = np.clip(np.minimum(zona[:, None, 2], c[None, :, 2]) - np.maximum(zona[:, None, 0], c[None, :, 0]), 0, None)
+    iy = np.clip(np.minimum(zona[:, None, 3], c[None, :, 3]) - np.maximum(zona[:, None, 1], c[None, :, 1]), 0, None)
+    cubierto = ix * iy / area[:, None]
+    delante = c[None, :, 3] > c[:, None, 3]
+    np.fill_diagonal(cubierto, 0.0)
+    return ((cubierto > TAPADO_PARTE) & delante).any(axis=1)

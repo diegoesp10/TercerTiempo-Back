@@ -185,6 +185,8 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                 "dorsal": ident.dorsal if ident else None,
                 "nombreActa": ident.nombre if ident else None,
                 "confianzaDorsal": ident.confianza if ident else None,
+                # Portero cuyo dorsal sale del acta por descarte, no de leerlo (la confianza del dorsal sale baja).
+                "dorsalPorDescarte": bool(ident and ident.por_descarte),
                 "tramos": len(ident.tracklets) if ident else 1,
                 "minutosALaVista": int(round(r.segundos / 60)),
                 # Del acta oficial cerrada, por descarte (sin cambio, el partido entero); None si no está en ella o
@@ -237,6 +239,7 @@ def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str
     lineas = [
         f"# Análisis del vídeo: {Path(v['ruta']).name}",
         "",
+        *([f"Analizado con {analisis['analizador']['nombre']} {analisis['analizador']['version']}.", ""] if analisis.get("analizador") else []),
         f"Tramo analizado: {formato_minuto(v['tramo_inicio_s'])} – {formato_minuto(v['tramo_fin_s'])} · {v['ancho']}×{v['alto']} a {v['fps']:.0f} fps · "
         f"{analisis['parametros']['fps_muestreo']} fotogramas/s analizados · {analisis['tiempos']['total_s'] / 60:.1f} min de cálculo en {analisis['parametros']['device']}.",
         "",

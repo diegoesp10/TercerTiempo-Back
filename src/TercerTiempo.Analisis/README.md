@@ -9,6 +9,19 @@ recortes de cada jugador seguido, `posiciones.csv.gz` y clips de los eventos. Op
 con visión (la API de Claude o un modelo local vía Ollama) confirma los eventos con tres fotogramas, lee dorsales en
 los recortes y redacta el resumen.
 
+Se llama **Ojeador** y lleva versión (`tt_analisis/__init__.py`, la misma que `pyproject.toml` y `uv.lock`; lo comprueba
+`tests/test_version.py`). Cada análisis deja en `analisis.json` el bloque `analizador`: nombre, versión y cada modelo con
+su arquitectura, el entrenamiento del que salieron los pesos, el motor (TensorRT o PyTorch) y su huella (los 8 primeros
+caracteres del SHA-256 del archivo cargado). La app lo guarda con el análisis y lo enseña en el acta interna («analizado
+con Ojeador 1.2.0»; los modelos, solo al administrador). **Sube la versión con cada cambio que altere lo que propone**:
+la mayor con modelos o una cadena nueva, la menor con reglas nuevas y la de parche con arreglos.
+
+| Versión | Fecha | Qué cambia |
+|---|---|---|
+| 1.2.0 | 23-11-2026 | **Porteros por la equipación**: el color de torso y pantalón que no es de ningún equipo ni del árbitro y vive pegado a una portería es el del portero de quien la defiende, también cuando el detector lo toma por un jugador; el que el detector marca de portero pero viste como un equipo es un jugador de ese equipo. **Del tracklet del portero solo cuenta el rato en que viste como él** (el seguidor salta a veces al jugador que pasa pegado, y a veces vuelve: también se corta en medio) y, si saltó, sus lecturas del dorsal no cuentan; al revés, del jugador de campo que empieza, acaba o pasa por un portero se quita ese rato. Su dorsal, sin los números que ya llevan con claridad los jugadores de campo mientras se le ve y, si no basta, **por descarte con el acta**; y ningún jugador de campo de su equipo lleva su dorsal (pasos 1 y 6) |
+| 1.1.0 | 21-11-2026 | El portero es del equipo que defiende su portería en cada parte (en el descanso cambian de campo), no del que tiene más cerca; sus tramos de las dos partes se juntan por su dorsal (paso 6) |
+| 1.0.0 | 21-11-2026 | Nombre y versión en cada análisis, con los modelos y su huella |
+
 Es un programa aparte de la API y del servicio de vídeo (Python, GPU); la evaluación previa y el plan están en
 [`docs/lector-videos.md`](../../docs/lector-videos.md). Desde el 06-11-2026 la app lo lanza sola: ver «Integración con
 la app».
@@ -200,8 +213,15 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
    Hasta el 09-11-2026 se usaba
    el clasificador de apariencia de `sports` (SigLIP → UMAP → KMeans), que con el vídeo nocturno del Vallobín repartía
    6 y 21 jugadores.
-   Los porteros van con el equipo cuyo grueso tienen más cerca; el reparto sale en `recuento.reparto_equipos` y el
-   analizador avisa si un grupo se queda con menos de la quinta parte de los recortes.
+   Los porteros no votan: visten distinto que los suyos y, cuando atacan los rivales, quien tienen más cerca es el
+   rival (hasta la 1.1.0 iban con el equipo que tenían más cerca y, en el J8 del Vallobín, 26 tramos de portero, unos 18
+   minutos, acababan en el otro equipo). Su equipo sale después de la portería que defienden en cada parte (paso 6).
+   Desde la 1.2.0 cada tracklet guarda también, en los fotogramas en los que nadie lo tapa, el color de su **equipación
+   entera** (`colores.rasgos_equipacion`: mediana del centro del torso y del pantalón en Lab, la claridad respecto al
+   césped de los lados; sin la máscara de césped, que se come una camiseta verde): hasta 64 muestras repartidas por todo
+   el tracklet, con el segundo en que se tomó cada una, para encontrar a los porteros (paso 6).
+   El reparto sale en `recuento.reparto_equipos` y el analizador avisa si un grupo se queda con menos de la quinta
+   parte de los recortes.
 2. **Pasada principal** (5 fotogramas/s): detección de personas con el RF-DETR de jugadores en el fotograma entero a
    1280 px (`detector_jugadores.py`) y seguimiento con BoT-SORT o ByteTrack según la cámara (`rastreador.py`, paquete
    `trackers`), detección del balón (`deteccion.py` y `detector_balon.py`: RF-DETR en
@@ -241,15 +261,61 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
    primera cifra y lo que va detrás de cada una (otra cifra o el fin), en lotes en la GPU. De frente no hay número y esa
    lectura apenas pesa (`1 − P(sin número)`). Cada lectura se suma al tracklet **solo para el equipo cuya equipación se
    vio en ese fotograma**: si el seguidor confunde un momento al jugador con uno del otro equipo, el dorsal del otro no
-   cuenta. Luego, sobre los tracklets ya cerrados: (1) **cadenas** de tracklets del mismo equipo que empiezan justo donde
-   y cuando acaba otro (≤ 1 s, velocidad posible), nunca dos que dicen dorsales distintos; (2) **el dorsal de cada
-   cadena** por la suma de sus lecturas, con el acta solo entre los que jugaron y en sus minutos (± 5 min por el desfase
-   de relojes); el lado del acta (local o visitante) de cada equipo del vídeo sale de en qué reparto caen más lecturas;
-   (3) **un dorsal, una persona a la vez**: si dos cadenas lo dicen a la vez, la más débil prueba con su segundo número;
-   (4) **continuidad** (apagada: medida con el vídeo del Vallobín fallaba más que acertaba): una cadena sin número que
-   encaja en el hueco de un solo jugador sería ese jugador. Lo que no tiene número leído queda sin identificar. Como mucho 16
-   por equipo (once y los cambios; con el acta, los que jugaron). Desde ahí cada jugador identificado tiene un único
-   identificador (`900000 + equipo·1000 + dorsal`) y la posesión, los pases y las acciones salen por jugador.
+   cuenta. Luego, sobre los tracklets ya cerrados: (0) **porteros** (`porteros.py`): con el descanso y hacia dónde ataca
+   cada equipo en cada parte (por sus jugadores de campo, `mitades.py`). **Quién es portero, por la equipación** (desde
+   la 1.2.0; el detector solo marca «portero» una parte pequeña del tiempo): se aprende cómo visten los jugadores de
+   campo de cada equipo y el árbitro (media y covarianza robustas de la equipación de sus tracklets; distancia de
+   Mahalanobis) y, en cada parte, entre los tracklets que viven pegados a la portería que defiende un equipo (el 80 % de
+   sus posiciones a menos de 22 m de la línea de gol y 25 m del eje) y no visten como ninguno de esos tres, el color más
+   repetido es el de su portero (tiene que juntar el 60 % de ellos y 25 posiciones). Todo tracklet de ese color (a menos
+   de 5, el mismo límite que el de los equipos y el árbitro, de los que está más lejos) que está en el lado que defiende
+   ese equipo en cada parte en que se le ve es su portero, aunque el detector lo tome por un jugador o por el árbitro
+   (el verde lima de un portero y el verde menta del árbitro se le confunden); sin campo calibrado, solo si el color
+   vale para un solo portero y con 6 muestras. **Solo en el rato en que viste como él**: cuando un jugador pasa pegado
+   al portero, el seguidor salta a veces de uno a otro y el tracklet empieza en un defensa y sigue en el portero, o al
+   revés (por la camiseta no se parte: la del portero no dice su equipo). Cuenta del primer par de muestras seguidas más
+   cerca de su color que del de los dos equipos y el árbitro al último; lo de fuera pasa a otro tracklet, sin equipo, y
+   una muestra suelta en medio es el mismo portero agachado, borroso o tapado. Dos o más seguidas en medio también se
+   quitan (de la muestra anterior a la siguiente): o el seguidor saltó a otra persona y volvió al portero (en el J8, al
+   menos cinco veces y hasta 4 s) o es el portero agachado o borroso, que por el color no se distingue. Si el seguidor
+   saltó (dos muestras o más fuera de ese rato en un extremo, o un hueco en medio), las lecturas del dorsal del tracklet
+   no cuentan, que pueden ser del otro; y el que nunca viste como él dos muestras seguidas se queda sin equipo. Y al
+   revés: del tracklet de un jugador de campo que empieza, acaba o pasa en medio por un portero (dos muestras o más) se
+   quita ese rato, y el que viste como un portero de principio a fin sin que se le haya podido colocar se queda sin
+   equipo. Lo que se parece a un portero pero no se puede colocar (en el lado que no le toca o con muy pocas muestras)
+   se queda sin equipo. El que el detector marca de portero pero viste como un equipo es un jugador de ese equipo; como
+   el árbitro, sin equipo; y si no se sabe, como hasta la 1.1.0, del equipo que defiende la portería de su lado **en esa
+   parte** (en el descanso cambian de campo; el lado, por la mediana de su x; en la franja central, el 15 % del largo a
+   cada lado del medio, o sin campo calibrado, sin equipo), con el mismo recorte por el color del portero de esa
+   portería si se sabe (el que no se le parece en ningún momento es un jugador de campo que el detector tomó por
+   portero: sin equipo). Sin bastantes tracklets de los dos equipos para saber cómo visten, solo cuentan los que marca
+   el detector. En el J8 del Vallobín el detector marcaba de portero unos 11 de los 96 minutos: el del Real Titánico iba
+   de morado y el del Vallobín de verde lima, y casi siempre los tomaba por jugadores; con la 1.2.0 el 13 del Real
+   Titánico queda identificado el 96 % del tiempo en que se le ve y el 1 del Vallobín, por descarte, el 98 %, sin ningún
+   tracklet de otro en sus líneas (con la 1.1.0, el 13 salía con 0 minutos y el 1 no salía). Todos los tramos de portero
+   de un equipo, los de las dos partes, son la misma persona mientras no lo cambien: su dorsal sale de las lecturas de
+   todos juntos (de lejos se le lee poco el número; pide 1,5 de evidencia), con el acta solo entre los de su equipo que
+   estaban en el campo (al menos el 40 % del tiempo en que se le ve) y **sin los números ocupados**: antes se resuelven
+   los jugadores de campo solos, y el dorsal que dicen con claridad cadenas que se ven a la vez que el portero 15 s o
+   más es de otro. Y al revés, el dorsal del portero que se reconoce por la equipación no pasa a ninguna cadena de campo
+   de su equipo, ni por las lecturas ni por continuidad: por la equipación no es él, y un defensa al que se lee su
+   número cuando al portero no se le ve acabaría en su línea. Si las lecturas no bastan y está el acta, **por
+   descarte**: el único de su equipo que estuvo en el campo todo el tiempo en que se ve al portero (un minuto como poco)
+   y no es ningún jugador de campo identificado (visto un minuto o más); si queda más de uno, ninguno (la línea del acta
+   propuesta sale con la confianza del dorsal baja). El tramo del detector que coincide con otro de su equipo (dos
+   porteros a la vez no puede ser) o que dice con claridad otro número se resuelve como uno de campo; el del portero por
+   la equipación es el portero aunque se le lea otro número y, si no se identifica a ningún portero, se queda sin
+   identificar (como jugador de campo, sus dorsales mal leídos lo juntarían con los defensas). Si lo cambian, el que
+   entra se queda con los tramos de fuera de los minutos del primero. En un vídeo de una sola parte no se busca
+   descanso; (1) **cadenas** de tracklets del mismo equipo que empiezan justo donde y cuando acaba otro (≤ 1 s,
+   velocidad posible), nunca dos que dicen dorsales distintos; (2) **el dorsal de cada cadena** por la suma de sus
+   lecturas, con el acta solo entre los que jugaron y en sus minutos (± 5 min por el desfase de relojes); el lado del
+   acta (local o visitante) de cada equipo del vídeo sale de en qué reparto caen más lecturas; (3) **un dorsal, una
+   persona a la vez**: si dos cadenas lo dicen a la vez, la más débil prueba con su segundo número; (4) **continuidad**
+   (apagada: medida con el vídeo del Vallobín fallaba más que acertaba): una cadena sin número que encaja en el hueco de
+   un solo jugador sería ese jugador. Lo que no tiene número leído queda sin identificar. Como mucho 16 por equipo (once
+   y los cambios; con el acta, los que jugaron). Desde ahí cada jugador identificado tiene un único identificador
+   (`900000 + equipo·1000 + dorsal`) y la posesión, los pases y las acciones salen por jugador.
 7. **Modelo de lenguaje** (opcional, `llm/`): confirma eventos, lee dorsales, redacta.
 8. **Informes** (`informes.py`). `acta-propuesta.json` es la versión 2 cuando hay identificación: una línea por
    jugador identificado con `dorsal`, `nombreActa`, `confianzaDorsal` (parte de las lecturas que dicen ese número) y
@@ -272,7 +338,7 @@ uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<víde
 
 - Lee el avance de las líneas `##progreso N` (0-8 separar equipos, 8-95 la pasada, 95-100 el post-proceso) y, al
   terminar, carga `acta-propuesta.json` (la propuesta, con la confianza de la posesión: con «baja» la enseña pero no
-  la vuelca), `analisis.json` (versión, pesos, fotogramas, % con balón visto y % calibrados, tramo y medidas del
+  la vuelca), `analisis.json` (quién analizó y con qué modelos, fotogramas, % con balón visto y % calibrados, tramo y medidas del
   campo) y el recorte de cada jugador de la propuesta. Todo eso queda en la base
   (`MatchVideoAnalysis`); la carpeta de salida se conserva hasta que se elimina el vídeo.
 - `--plantillas` lleva, si el partido tiene acta oficial (también provisional), los que jugaron por lado con su

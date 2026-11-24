@@ -53,10 +53,14 @@ def _porteros(resumenes: dict[int, ResumenTracklet]):
     return lambda equipo: por_equipo.get(equipo, set())
 
 
-def buscar_descanso(instantes: list[Instante], dt: float, duracion_s: float, descanso_dado: float | None = None) -> float | None:
-    """El descanso antes de juntar los tracklets por dorsal (los minutos del acta lo necesitan para pasar a segundos)."""
+def buscar_descanso(instantes: list[Instante], dt: float, duracion_s: float, descanso_dado: float | None = None, una_parte: bool = False) -> float | None:
+    """El descanso antes de juntar los tracklets por dorsal (los minutos del acta lo necesitan para pasar a segundos y
+    los porteros, para saber qué portería defiende cada equipo en cada parte). En un vídeo de una sola parte no lo hay:
+    un parón largo no es el descanso."""
     if descanso_dado is not None:
         return descanso_dado
+    if una_parte:
+        return None
     resumenes = resumir_tracklets(instantes, dt)
     primera = detectar_eventos(instantes, toques_de(instantes), [1] * len(instantes), lambda e, m: None, _porteros(resumenes))
     return detectar_descanso(instantes, primera.eventos, duracion_s, None)
@@ -71,8 +75,10 @@ def analizar_jugadas(
     lado_de_equipo: dict[int, str | None] | None = None,
     campo: Campo | None = None,
     saque_s: float = 0.0,
+    una_parte: bool = False,
 ) -> Jugadas:
-    """`saque_s`: segundo del vídeo en que empieza el partido, para llevar los minutos del acta al vídeo."""
+    """`saque_s`: segundo del vídeo en que empieza el partido, para llevar los minutos del acta al vídeo. `una_parte`:
+    el vídeo es de una sola parte (sin descanso que buscar)."""
     campo = campo or Campo()
     toques = toques_de(instantes)
     resumenes = resumir_tracklets(instantes, dt, campo)
@@ -80,7 +86,7 @@ def analizar_jugadas(
 
     # El descanso se busca con una primera pasada sin direcciones (le basta con los parones y las posiciones).
     primera = detectar_eventos(instantes, toques, [1] * len(instantes), lambda e, m: None, porteros_de, campo)
-    descanso = detectar_descanso(instantes, primera.eventos, duracion_s, descanso_dado)
+    descanso = None if una_parte and descanso_dado is None else detectar_descanso(instantes, primera.eventos, duracion_s, descanso_dado)
     mitad_de = mitades(instantes, descanso)
     direcciones = direcciones_de_ataque(instantes, mitad_de, resumenes, campo)
     direccion_de = lambda equipo, mitad: direcciones.get((equipo, mitad))  # noqa: E731

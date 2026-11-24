@@ -6,6 +6,9 @@ lector de dorsales (PARSeq) y los clips de muestra."""
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,7 +35,6 @@ def descargar_modelos(carpeta: Path, con_videos: bool = False) -> list[Path]:
 def descargar_lector_dorsales(carpeta: Path) -> Path:
     """El lector de dorsales (PARSeq, Apache-2.0) desde las versiones publicadas de su repositorio. Su nombre lleva el
     principio del SHA-256 del archivo (como hace torch.hub): si no cuadra, se borra y falla."""
-    import hashlib
     import urllib.request
 
     from .dorsales import PESOS_PARSEQ, URL_PARSEQ
@@ -72,6 +74,60 @@ def cargar_modelos(carpeta: Path, device: str) -> Modelos:
     campo = DetectorCampo.cargar(carpeta, device)
     rutas = {"jugadores": jugadores.ruta, "balon": balon.ruta, "campo": campo.ruta}
     return Modelos(jugadores, balon, campo, device, rutas={nombre: ruta.relative_to(carpeta).as_posix() for nombre, ruta in rutas.items()})
+
+
+MOTORES = {"tensorrt": "TensorRT", "pytorch": "PyTorch"}
+
+
+def describir_modelos(modelos: Modelos, carpeta: Path, lector=None) -> list[dict]:
+    """Con qué modelo se hizo cada cosa, para que cada análisis lo diga: la arquitectura, el entrenamiento del que
+    salieron los pesos (la carpeta del entrenamiento, que lleva la fecha), el motor y la huella (el principio del SHA-256
+    del archivo cargado: dos análisis con la misma huella usaron exactamente los mismos pesos)."""
+    from .rfdetr_comun import CARPETA, VARIANTES
+
+    descritos = []
+    for que in ("jugadores", "balon", "campo"):
+        detector = getattr(modelos, que)
+        datos = _leer_json(carpeta / CARPETA / f"{que}.json")
+        descritos.append({
+            "que": que,
+            "modelo": VARIANTES.get(str(datos.get("variante", "medium")), ("", "RF-DETR"))[1],
+            "entrenamiento": entrenamiento(datos.get("checkpoint")),
+            "motor": MOTORES.get(detector.motor, detector.motor),
+            "huella": huella(detector.ruta),
+        })
+    ruta = getattr(lector, "ruta", None)
+    if ruta is not None:
+        descritos.append({
+            "que": "dorsales",
+            "modelo": "PARSeq",
+            "entrenamiento": "afinado con nuestros partidos" if ruta.parent.name == "afinados" else "publicado",
+            "motor": "PyTorch",
+            "huella": huella(ruta),
+        })
+    return descritos
+
+
+def entrenamiento(checkpoint: object) -> str | None:
+    """La carpeta del entrenamiento del checkpoint («entrenamientos\\rfdetr-balon-20261117-v2\\checkpoint_best_total.pth»
+    → «rfdetr-balon-20261117-v2»), venga la ruta de Windows o de Linux."""
+    partes = [p for p in re.split(r"[\\/]", str(checkpoint or "")) if p]
+    if not partes:
+        return None
+    return partes[-2] if len(partes) >= 2 else partes[-1]
+
+
+def huella(ruta: Path) -> str:
+    with open(ruta, "rb") as archivo:
+        return hashlib.file_digest(archivo, "sha256").hexdigest()[:8]
+
+
+def _leer_json(ruta: Path) -> dict:
+    try:
+        datos = json.loads(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return datos if isinstance(datos, dict) else {}
 
 
 def resolver_device(device: str) -> str:

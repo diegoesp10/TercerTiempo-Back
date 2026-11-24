@@ -17,6 +17,10 @@ import supervision as sv
 from .config import CLASE_ARBITRO, CLASE_PORTERO
 
 MAX_RECORTES = 3
+# Muestras de la equipación (`colores.rasgos_equipacion`) que se guardan por tracklet: al llenarse se queda una de cada
+# dos y desde ahí se toma una de cada dos, así que siempre están repartidas por todo el tracklet.
+MAX_EQUIPACIONES = 64
+MIN_EQUIPACIONES = 3
 # Corte de un tracklet por cambio de equipo: cuántas muestras seguidas del otro equipo hacen falta (a 5 fotogramas por
 # segundo, dos segundos: un jugador tapado por uno del otro equipo lo está menos), lo claras que tienen que ser y cuánto
 # voto tiene que llevar ya el equipo anterior.
@@ -53,6 +57,12 @@ class MemoriaTracklet:
     votos_dorsal_por_equipo: dict[int, np.ndarray] = field(default_factory=dict)
     mejor_dorsal_por_equipo: dict[int, tuple[float, int, np.ndarray]] = field(default_factory=dict)
     lecturas_dorsal: int = 0
+    # Muestras del color de la equipación (torso y pantalón) en los fotogramas en los que no lo tapaba nadie, y en qué
+    # segundo del vídeo se tomó cada una.
+    equipaciones: list[np.ndarray] = field(default_factory=list)
+    tiempos_equipacion: list[float] = field(default_factory=list)
+    _vistas_equipacion: int = 0
+    _paso_equipacion: int = 1
 
     @property
     def clase(self) -> int:
@@ -60,13 +70,16 @@ class MemoriaTracklet:
 
     @property
     def equipo(self) -> int | None:
-        if self.clase == CLASE_ARBITRO or not self.votos_equipo:
+        """Por la camiseta. Ni los árbitros ni los porteros: el de un portero sale de la portería que defiende
+        (`porteros.py`), aunque el detector lo haya tomado algún fotograma por un jugador de campo."""
+        if self.clase in (CLASE_ARBITRO, CLASE_PORTERO) or not self.votos_equipo:
             return None
         return max(self.votos_equipo, key=self.votos_equipo.get)
 
     @property
     def votos_dorsal(self) -> np.ndarray | None:
-        """Las lecturas del dorsal hechas con la equipación de su equipo (si aún no tiene equipo, todas)."""
+        """Las lecturas del dorsal hechas con la equipación de su equipo (si no tiene equipo por la camiseta, como un
+        portero, todas)."""
         equipo = self.equipo
         if equipo is not None:
             return self.votos_dorsal_por_equipo.get(equipo)
@@ -91,6 +104,24 @@ class MemoriaTracklet:
             return self.recortes_por_equipo[equipo]
         todos = [r for lista in self.recortes_por_equipo.values() for r in lista]
         return sorted(todos, key=lambda r: r.area, reverse=True)
+
+    @property
+    def equipacion(self) -> np.ndarray | None:
+        """La mediana de las muestras de la equipación, o None si hay muy pocas."""
+        if len(self.equipaciones) < MIN_EQUIPACIONES:
+            return None
+        return np.median(np.array(self.equipaciones), axis=0)
+
+    def sumar_equipacion(self, rasgos: np.ndarray, t: float = float("nan")) -> None:
+        self._vistas_equipacion += 1
+        if (self._vistas_equipacion - 1) % self._paso_equipacion:
+            return
+        self.equipaciones.append(rasgos)
+        self.tiempos_equipacion.append(t)
+        if len(self.equipaciones) > MAX_EQUIPACIONES:
+            self.equipaciones = self.equipaciones[::2]
+            self.tiempos_equipacion = self.tiempos_equipacion[::2]
+            self._paso_equipacion *= 2
 
     def sumar_dorsal(self, probabilidades: np.ndarray, peso: float, recorte: np.ndarray | None, equipo: int = -1) -> None:
         if peso <= 0:
