@@ -183,32 +183,104 @@ def ratos_portero(t) -> np.ndarray:
     return rato
 
 
+# De cada lectura, los números que se guardan en el historial: los más probables, que se llevan casi todo. Con los 99,
+# el historial de un partido ocuparía diez veces más.
+NUMEROS_HISTORIAL = 8
+
+
+class HistorialLecturas:
+    """Cada lectura del dorsal con su segundo, su tracklet, su equipo y su peso. Sirve para contar de un tracklet solo
+    las lecturas de un rato, como las del portero cuyo tracklet saltó un momento a otra persona."""
+
+    def __init__(self) -> None:
+        self._bloques: list[tuple[np.ndarray, ...]] = []
+        self._por_tracklet: dict[int, np.ndarray] | None = None
+        self._datos: tuple[np.ndarray, ...] | None = None
+
+    def poner(self, tracklets, tiempos, equipos, pesos, probabilidades: np.ndarray) -> None:
+        probabilidades = np.asarray(probabilidades, dtype=np.float32).reshape(len(tracklets), -1)
+        numeros = np.argsort(-probabilidades, axis=1, kind="stable")[:, :NUMEROS_HISTORIAL]
+        self._bloques.append((
+            np.asarray(tracklets, dtype=np.int64), np.asarray(tiempos, dtype=np.float64), np.asarray(equipos, dtype=np.int8),
+            np.asarray(pesos, dtype=np.float32), numeros.astype(np.uint8),
+            np.take_along_axis(probabilidades, numeros, axis=1).astype(np.float16),
+        ))
+        self._por_tracklet = None
+
+    def _juntar(self) -> tuple[np.ndarray, ...]:
+        if self._por_tracklet is None:
+            if self._bloques:
+                self._datos = tuple(np.concatenate(columna) for columna in zip(*self._bloques))
+                self._bloques = [self._datos]
+            else:
+                self._datos = (np.zeros(0, np.int64), np.zeros(0), np.zeros(0, np.int8), np.zeros(0, np.float32),
+                               np.zeros((0, NUMEROS_HISTORIAL), np.uint8), np.zeros((0, NUMEROS_HISTORIAL), np.float16))
+            orden = np.argsort(self._datos[0], kind="stable")
+            tracklets, cortes = np.unique(self._datos[0][orden], return_index=True)
+            self._por_tracklet = dict(zip(tracklets.tolist(), np.split(orden, cortes[1:])))
+        return self._datos
+
+    def votos(self, tracklet: int, dentro=None) -> np.ndarray:
+        """Las lecturas del tracklet sumadas como en `MemoriaTracklet.sumar_dorsal` (peso por probabilidad de cada
+        número), solo las de los segundos en que `dentro(tiempos)` es cierto (todas si es None)."""
+        _, tiempos, _, pesos, numeros, probabilidades = self._juntar()
+        votos = np.zeros(len(NUMEROS))
+        suyas = self._por_tracklet.get(int(tracklet))
+        if suyas is None:
+            return votos
+        if dentro is not None:
+            suyas = suyas[np.asarray(dentro(tiempos[suyas]), dtype=bool)]
+        np.add.at(votos, numeros[suyas], pesos[suyas, None] * probabilidades[suyas].astype(np.float64))
+        return votos
+
+    def para_guardar(self) -> dict[str, np.ndarray]:
+        nombres = ("tracklets", "tiempos", "equipos", "pesos", "numeros", "probabilidades")
+        return dict(zip(nombres, self._juntar()))
+
+    @classmethod
+    def desde_guardado(cls, datos: dict[str, np.ndarray]) -> "HistorialLecturas":
+        historial = cls()
+        historial._bloques = [tuple(datos[n] for n in ("tracklets", "tiempos", "equipos", "pesos", "numeros", "probabilidades"))]
+        return historial
+
+
 class ColaDorsales:
     """Junta las zonas de los dorsales de varios fotogramas y las lee de golpe (en la GPU, por lotes)."""
 
-    def __init__(self, lector: "LectorDorsales", lote: int = 512, guardar: GuardaZonas | None = None) -> None:
+    def __init__(self, lector: "LectorDorsales", lote: int = 512, guardar: GuardaZonas | None = None, historial: HistorialLecturas | None = None) -> None:
         self.lector = lector
         self.lote = lote
         self.guardar = guardar
-        self.pendientes: list[tuple[int, np.ndarray, np.ndarray | None, int]] = []
+        self.historial = historial
+        self.pendientes: list[tuple[int, np.ndarray, np.ndarray | None, int, float]] = []
         self.leidas = 0
 
-    def poner(self, tracklet: int, zona: np.ndarray, recorte: np.ndarray | None, memorias, equipo: int = -1) -> None:
-        """`equipo`: el que dice la equipación en este fotograma (la lectura solo cuenta para ese equipo)."""
-        self.pendientes.append((tracklet, zona, recorte, equipo))
+    def poner(self, tracklet: int, zona: np.ndarray, recorte: np.ndarray | None, memorias, equipo: int = -1, t: float = float("nan")) -> None:
+        """`equipo`: el que dice la equipación en este fotograma (la lectura solo cuenta para ese equipo); `t`, su segundo."""
+        self.pendientes.append((tracklet, zona, recorte, equipo, t))
         if len(self.pendientes) >= self.lote:
             self.vaciar(memorias)
 
     def vaciar(self, memorias) -> None:
         if not self.pendientes:
             return
-        lecturas = self.lector.leer([z for _, z, _, _ in self.pendientes])
-        for (tracklet, zona, recorte, equipo), lectura in zip(self.pendientes, lecturas):
+        lecturas = self.lector.leer([p[1] for p in self.pendientes])
+        pesos = [peso_lectura(lectura) for lectura in lecturas]
+        for (tracklet, zona, recorte, equipo, _), lectura, peso in zip(self.pendientes, lecturas, pesos):
             memoria = memorias.get(tracklet)
             if memoria is not None:
-                memoria.sumar_dorsal(lectura.probabilidades, peso_lectura(lectura), recorte, equipo)
+                memoria.sumar_dorsal(lectura.probabilidades, peso, recorte, equipo)
             if self.guardar is not None:
                 self.guardar.poner(tracklet, equipo, zona, lectura)
+        if self.historial is not None:
+            # Como en `sumar_dorsal`, las que no pesan nada no cuentan.
+            con_peso = [k for k, peso in enumerate(pesos) if peso > 0]
+            if con_peso:
+                self.historial.poner(
+                    [self.pendientes[k][0] for k in con_peso], [self.pendientes[k][4] for k in con_peso],
+                    [self.pendientes[k][3] for k in con_peso], [pesos[k] for k in con_peso],
+                    np.stack([lecturas[k].probabilidades for k in con_peso]),
+                )
         self.leidas += len(self.pendientes)
         self.pendientes = []
 

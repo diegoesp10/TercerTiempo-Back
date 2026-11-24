@@ -92,8 +92,13 @@ EQUIPACIONES_SIN_CAMPO = 6
 # Tracklets de un grupo (equipo o árbitro) para saber cómo viste.
 TRACKLETS_POR_GRUPO = 10
 # Muestras que no visten como él al principio o al final de un tracklet de portero, o seguidas en medio, para darlo por
-# mezclado: el seguidor saltó a otra persona y sus lecturas del dorsal pueden ser de ella.
+# mezclado: el seguidor saltó a otra persona y sus lecturas del dorsal de fuera de su rato pueden ser de ella.
 MUESTRAS_MEZCLA = 2
+# De un tracklet de portero mezclado solo cuentan las lecturas del dorsal de su rato a este margen o más de cada corte
+# (su principio o su fin, si se recortaron, y cada hueco): en el momento del salto la caja puede llevar a los dos. Dos
+# fotogramas de los analizados: en el J8 las lecturas de otro caen todas fuera del rato, ninguna limpia dentro ni junto
+# al corte, y con 1 s se perdían lecturas limpias del portero.
+MARGEN_CORTE_S = 0.4
 # Los fotogramas de un tracklet de portero fuera del rato en que viste como él pasan a este tracklet más el suyo: por
 # encima de los que nacen de un corte (`seguimiento.TRACKLET_CORTADO_BASE`) y por debajo de los jugadores identificados
 # (`identidades.ID_JUGADOR_BASE`).
@@ -188,6 +193,18 @@ class Porteros:
         if rato is not None and not rato[0] <= t <= rato[1]:
             return False
         return not any(a < t < b for a, b in self.huecos.get(tracklet, ()))
+
+    def lejos_de_los_cortes(self, tracklet: int, tiempos) -> np.ndarray:
+        """De cada segundo, si cae en el rato del tracklet a MARGEN_CORTE_S o más de cada corte. Si el tracklet está
+        mezclado y no se sabe dónde se cortó (sin el segundo de cada muestra), en ninguno."""
+        tiempos = np.asarray(tiempos, dtype=np.float64)
+        if tracklet in self.mezclados and tracklet not in self.ratos and tracklet not in self.huecos:
+            return np.zeros(tiempos.shape, dtype=bool)
+        desde, hasta = self.ratos.get(tracklet, (-np.inf, np.inf))
+        dentro = (tiempos >= desde + MARGEN_CORTE_S) & (tiempos <= hasta - MARGEN_CORTE_S)
+        for a, b in self.huecos.get(tracklet, ()):
+            dentro &= (tiempos <= a - MARGEN_CORTE_S) | (tiempos >= b + MARGEN_CORTE_S)
+        return dentro
 
     def junto_a_su_porteria(self, xy, equipo: int | None, mitad: int) -> bool | None:
         """Si en esa parte está al lado o debajo de la portería que defiende ese equipo (en la zona del portero: a menos de
@@ -602,7 +619,7 @@ def describir_porteros(porteros: Porteros, instantes: list[Instante], dt: float)
     if de_portero or porteros.mezclados:
         aparte.append(
             f"{de_portero} tracklets de portero recortados al rato en que visten como él "
-            f"(en {len(porteros.mezclados)} el seguidor saltó a otra persona y sus lecturas del dorsal no cuentan)"
+            f"(en {len(porteros.mezclados)} el seguidor saltó a otra persona y de sus lecturas del dorsal solo cuentan las de su rato)"
         )
     if len(recortados) > de_portero:
         aparte.append(f"{len(recortados) - de_portero} de jugadores de campo que empezaban, acababan o pasaban por un portero, sin ese rato")

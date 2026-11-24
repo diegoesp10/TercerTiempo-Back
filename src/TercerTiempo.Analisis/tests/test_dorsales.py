@@ -11,8 +11,11 @@ from tt_analisis.config import CLASE_JUGADOR, CLASE_PORTERO, Configuracion
 from tt_analisis.dorsales import (
     ALTO,
     ANCHO,
+    NUMEROS_HISTORIAL,
     TRACKLET_PORTERO_BASE,
+    ColaDorsales,
     GuardaZonas,
+    HistorialLecturas,
     Lectura,
     etiquetar_portero,
     nota_portero,
@@ -21,6 +24,7 @@ from tt_analisis.dorsales import (
 from tt_analisis.entrenar_dorsales import cargar, elegir_entreno
 from tt_analisis.identidades import Identidad, Resolucion
 from tt_analisis.porteros import Porteros
+from tt_analisis.seguimiento import MemoriaTracklet
 from tt_analisis.tipos import Instante, Persona
 from tt_analisis.video import fotogramas_elegidos, info_video
 
@@ -109,6 +113,33 @@ class _LectorDePrueba:
 
     def leer(self, zonas):
         return [_lectura(13, 0.95) if float(np.mean(z)) > 128 else _lectura(8, 0.05) for z in zonas]
+
+
+def test_el_historial_suma_las_lecturas_de_cada_tracklet_y_solo_las_del_rato_que_se_pide():
+    historial = HistorialLecturas()
+    p = np.full(99, 0.001)
+    p[12], p[17] = 0.8, 0.1
+    historial.poner([7, 7, 8], [1.0, 2.0, 1.5], [0, 1, 0], [0.5, 1.0, 1.0], np.stack([p, p, p]))
+    votos = historial.votos(7)
+    assert votos[12] == pytest.approx(1.5 * 0.8, abs=1e-3) and votos[17] == pytest.approx(1.5 * 0.1, abs=1e-3)
+    # De cada lectura solo se guardan los números más probables.
+    assert np.count_nonzero(votos) == NUMEROS_HISTORIAL
+    assert historial.votos(7, lambda t: t > 1.5)[12] == pytest.approx(0.8, abs=1e-3)
+    assert not historial.votos(9).any()
+    copia = HistorialLecturas.desde_guardado(historial.para_guardar())
+    assert np.allclose(copia.votos(8), historial.votos(8))
+
+
+def test_la_cola_apunta_cada_lectura_con_su_segundo_en_el_historial():
+    historial = HistorialLecturas()
+    cola = ColaDorsales(_LectorDePrueba(), historial=historial)
+    memorias = {5: MemoriaTracklet(5)}
+    cola.poner(5, np.full((10, 10, 3), 200, np.uint8), None, memorias, 0, 3.0)
+    cola.poner(5, np.full((10, 10, 3), 50, np.uint8), None, memorias, 0, 4.0)
+    cola.vaciar(memorias)
+    assert historial.votos(5, lambda t: t < 3.5)[12] == pytest.approx(0.95, abs=1e-3)
+    assert historial.votos(5)[7] == pytest.approx(0.05, abs=1e-3)
+    assert memorias[5].votos_dorsal_por_equipo[0][12] == pytest.approx(0.95)
 
 
 _CAJA_PORTERO = (40.0, 10.0, 80.0, 110.0)

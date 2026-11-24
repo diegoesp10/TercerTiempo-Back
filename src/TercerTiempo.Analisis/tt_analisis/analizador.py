@@ -22,7 +22,7 @@ from .colores import rasgos_equipacion, tapados
 from .config import CLASE_ARBITRO, MARGEN_CAMPO_CM, Configuracion
 from .geometria import Campo
 from .deteccion import Detector
-from .dorsales import ALTO_MIN_PX, ColaDorsales, GuardaZonas, cargar_lector, zona_dorsal
+from .dorsales import ALTO_MIN_PX, ColaDorsales, GuardaZonas, HistorialLecturas, cargar_lector, zona_dorsal
 from .identidades import Resolucion, Tramo, leer_plantillas, resolver
 from .equipos import ClasificadorEquipos, color_hex
 from .informes import acta_propuesta, escribir_json, escribir_mapas, escribir_posiciones, escribir_recortes, extraer_clips, resumen_markdown
@@ -92,7 +92,9 @@ def analizar(config: Configuracion, informar=print) -> dict:
     # Quién analiza el partido: el nombre y la versión del analizador y cada modelo, con su entrenamiento y su huella.
     analizador = {"nombre": NOMBRE, "version": __version__, "modelos": describir_modelos(modelos, config.modelos, lector)}
     guarda = GuardaZonas(config.guardar_dorsales) if lector is not None and config.guardar_dorsales is not None else None
-    cola = ColaDorsales(lector, guardar=guarda) if lector is not None else None
+    # Cada lectura con su segundo: del portero cuyo tracklet saltó a otra persona solo cuentan las de su rato.
+    historial = HistorialLecturas() if lector is not None else None
+    cola = ColaDorsales(lector, guardar=guarda, historial=historial) if lector is not None else None
     paso = max(1, round(info.fps / config.fps_muestreo))
     fps_real = info.fps / paso
     dt = 1 / fps_real
@@ -210,7 +212,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
             if cola is not None and clase != CLASE_ARBITRO:
                 zona = zona_dorsal(imagen, caja)
                 if zona is not None:
-                    cola.poner(tid, zona.copy(), recortar(imagen, caja, margen=6).copy(), seguidor.memorias, int(equipos[i]))
+                    cola.poner(tid, zona.copy(), recortar(imagen, caja, margen=6).copy(), seguidor.memorias, int(equipos[i]), fotograma.t)
 
         balon_imagen = None
         balon_campo = None
@@ -288,7 +290,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
     descanso_previo = buscar_descanso(instantes, dt, duracion_tramo, config.descanso, una_parte)
     mitad_de = mitades(instantes, descanso_previo)
     if os.environ.get("TT_GUARDAR_TRAMOS"):
-        guardar_para_porteros(config.salida / "porteros.pkl", instantes, mitad_de, descanso_previo, seguidor, datos_acta, config.saque)
+        guardar_para_porteros(config.salida / "porteros.pkl", instantes, mitad_de, descanso_previo, seguidor, datos_acta, config.saque, historial)
     porteros = colocar_porteros(instantes, mitad_de, seguidor.memorias, campo)
     decir(describir_porteros(porteros, instantes, dt))
     # Para el material del lector: en la pasada aún no se sabía quién era portero.
@@ -299,7 +301,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
     resolucion: Resolucion | None = None
     if cola is not None:
         plantillas = leer_plantillas(datos_acta, config.saque, descanso_previo) if datos_acta else []
-        tramos = tramos_de(instantes, seguidor, porteros, mitad_de)
+        tramos = tramos_de(instantes, seguidor, porteros, mitad_de, historial)
         if os.environ.get("TT_GUARDAR_TRAMOS"):
             # Para afinar `identidades.resolver` sin repetir la pasada (solo en pruebas).
             import pickle
@@ -433,12 +435,16 @@ def analizar(config: Configuracion, informar=print) -> dict:
     return analisis
 
 
-def tramos_de(instantes: list[Instante], seguidor: Seguidor, porteros: Porteros | None = None, mitad_de: list[int] | None = None) -> list[Tramo]:
+def tramos_de(
+    instantes: list[Instante], seguidor: Seguidor, porteros: Porteros | None = None, mitad_de: list[int] | None = None,
+    lecturas: HistorialLecturas | None = None,
+) -> list[Tramo]:
     """Cada tracklet de jugador como tramo para `identidades.resolver`: equipo, primer y último sitio, alto y lecturas.
     El equipo, el de su camiseta; el de un portero y el del que el detector tomó por portero pero viste como un equipo,
     el que `porteros.aplicar_porteros` ya puso en cada fotograma (los fotogramas sin equipo no cuentan). De esos dos,
-    todas las lecturas del dorsal: el color de la camiseta no dice bien de qué equipo son; pero ninguna del portero en
-    cuyo tracklet el seguidor saltó a otra persona, que pueden ser de ella. De los porteros, con las partes
+    todas las lecturas del dorsal: el color de la camiseta no dice bien de qué equipo son. Del portero en cuyo tracklet
+    el seguidor saltó a otra persona, solo las de su rato y lejos de los cortes (`lecturas`, con el segundo de cada una):
+    las de fuera pueden ser de la otra persona; sin el segundo, ninguna. De los porteros, con las partes
     (`mitad_de`, una por instante), en cuál empiezan y, en cada una, cuánto se les ve con el campo calibrado y cuánto de
     eso al lado o debajo de la portería que defiende su equipo."""
     porteros = porteros or Porteros()
@@ -473,7 +479,12 @@ def tramos_de(instantes: list[Instante], seguidor: Seguidor, porteros: Porteros 
         visto = max(d["equipos"], key=d["equipos"].get)
         portero = porteros.es_portero(tid)
         if portero or tid in porteros.de_campo:
-            votos = np.zeros(99) if tid in porteros.mezclados else _todas_las_lecturas(memoria)
+            if tid not in porteros.mezclados:
+                votos = _todas_las_lecturas(memoria)
+            elif lecturas is not None:
+                votos = lecturas.votos(tid, lambda tiempos, tid=tid: porteros.lejos_de_los_cortes(tid, tiempos))
+            else:
+                votos = np.zeros(99)
             equipo = visto
         else:
             votos = memoria.votos_dorsal if memoria is not None and memoria.votos_dorsal is not None else np.zeros(99)
@@ -493,9 +504,13 @@ def _todas_las_lecturas(memoria: MemoriaTracklet | None) -> np.ndarray:
     return np.sum(list(memoria.votos_dorsal_por_equipo.values()), axis=0)
 
 
-def guardar_para_porteros(ruta: Path, instantes: list[Instante], mitad_de: list[int], descanso: float | None, seguidor: Seguidor, datos_acta: dict | None, saque: float) -> None:
+def guardar_para_porteros(
+    ruta: Path, instantes: list[Instante], mitad_de: list[int], descanso: float | None, seguidor: Seguidor, datos_acta: dict | None, saque: float,
+    historial: HistorialLecturas | None = None,
+) -> None:
     """Para afinar la búsqueda de los porteros y `identidades.resolver` sin repetir la pasada (solo en pruebas): los
-    instantes antes de ponerles portero, y de cada tracklet sus votos, su equipación y su recorte más grande."""
+    instantes antes de ponerles portero, de cada tracklet sus votos, su equipación y su recorte más grande, y cada lectura
+    del dorsal con su segundo."""
     import pickle
 
     import cv2
@@ -508,7 +523,10 @@ def guardar_para_porteros(ruta: Path, instantes: list[Instante], mitad_de: list[
             "clase": m.clase, "votos_clase": dict(m.votos_clase), "equipo": m.equipo, "votos_equipo": dict(m.votos_equipo),
             "votos_dorsal_por_equipo": dict(m.votos_dorsal_por_equipo), "equipaciones": list(m.equipaciones), "tiempos_equipacion": list(m.tiempos_equipacion), "recorte": jpeg,
         }
-    datos = {"instantes": instantes, "mitad_de": mitad_de, "descanso": descanso, "memorias": memorias, "datos_acta": datos_acta, "saque": saque}
+    datos = {
+        "instantes": instantes, "mitad_de": mitad_de, "descanso": descanso, "memorias": memorias, "datos_acta": datos_acta, "saque": saque,
+        "lecturas": historial.para_guardar() if historial is not None else None,
+    }
     ruta.write_bytes(pickle.dumps(datos))
 
 

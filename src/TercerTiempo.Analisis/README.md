@@ -18,7 +18,8 @@ la mayor con modelos o una cadena nueva, la menor con reglas nuevas y la de parc
 
 | Versión | Fecha | Qué cambia |
 |---|---|---|
-| 2.0.0 | 24-11-2026 | **Lector de dorsales afinado también con los porteros** (pesos nuevos): sus espaldas con su número y su pecho sin número, porque el escudo del pecho se leía como un número y al portero casi nunca se le ve de espaldas; al entrenar, los dorsales que casi no se ven se repiten (`--minimo-por-dorsal`), y `--guardar-dorsales` guarda también las zonas de los porteros identificados. En el J8, en el tramo 20:00-30:00 (que el lector no ha visto), al 13 del Real Titánico le van el 31 % de sus lecturas (antes el 8 %) y los números leídos en su pecho bajan del 28 % al 4 %; el 1 del Vallobín se lee en sus 8 espaldas (antes en ninguna); los jugadores de campo, prácticamente igual (paso 6 y «Lector de dorsales que lee a los porteros») |
+| 2.1.0 | 24-11-2026 | **Del portero cuyo tracklet saltó a otra persona, las lecturas de su rato**: cada lectura del dorsal guarda su segundo (`HistorialLecturas`) y, del tracklet de portero en que el seguidor saltó a otro jugador, cuentan las de su rato a 0,4 s o más de cada corte (hasta la 2.0.0, ninguna). En el J8, sobre la misma pasada, la evidencia del 1 del Vallobín pasa de 5,1 a 15,6 (confianza de 0,07 a 0,16) y la del 13 del Real Titánico de 12,5 a 17,5, y ningún jugador de campo cambia. En una pasada del tramo 20:00-30:00, con la regla vieja el portero salía como el 6 y con la nueva queda sin identificar (paso 6 y «Las lecturas del portero cuyo tracklet saltó») |
+| 2.0.0 | 24-11-2026 | **Lector de dorsales afinado también con los porteros** (pesos nuevos): sus espaldas con su número y su pecho sin número, porque el escudo del pecho se leía como un número y al portero casi nunca se le ve de espaldas; al entrenar, los dorsales que casi no se ven se repiten (`--minimo-por-dorsal`), y `--guardar-dorsales` guarda también las zonas de los porteros identificados. En el J8, en el tramo 20:00-30:00 (que el lector no ha visto), al 13 del Real Titánico le van el 31 % de sus lecturas (antes el 8 %) y los números leídos en su pecho bajan del 28 % al 4 %. En el partido entero, el 1 del Vallobín se lee en sus 8 espaldas (antes en ninguna, aunque esas el lector nuevo las ha visto al entrenar) y, en la identificación, la confianza del 13 sube de 0,03 a 0,23 y el 1 sale por lecturas en vez de por descarte. Los jugadores de campo, igual (paso 6 y «Lector de dorsales que lee a los porteros») |
 | 1.3.0 | 24-11-2026 | **El portero, solo si todo cuadra; si no, sin identificar**: pasa la mayor parte del tiempo al lado o debajo de la portería que defiende su equipo (en cada parte con el campo calibrado al menos 20 s, el 70 % o más en la zona del portero: 22 m de su línea y 25 m del eje), y la parte en que no, no es suya; **nunca viste como los jugadores de campo de ningún equipo** (el que el detector marca de portero sin muestras de su equipación para comprobarlo, como el rival que remata en el área, no es nadie); su dorsal sale del acta (solo los de su equipo en el campo y, si el acta dice quién es portero, uno de ellos) y **por descarte solo si la equipación y la posición lo confirman** (tramos por la equipación, un minuto con el campo calibrado junto a su portería), sin los tramos que solo marca el detector. Su **recorte**, de un momento en que viste como él dentro de su rato, leído del vídeo (si no se sabe cómo viste, uno en que se le leyó su dorsal; si no, ninguno): la línea del 1 del Vallobín en el J8 salía con un jugador del Real Titánico (paso 6) |
 | 1.2.0 | 23-11-2026 | **Porteros por la equipación**: el color de torso y pantalón que no es de ningún equipo ni del árbitro y vive pegado a una portería es el del portero de quien la defiende, también cuando el detector lo toma por un jugador; el que el detector marca de portero pero viste como un equipo es un jugador de ese equipo. **Del tracklet del portero solo cuenta el rato en que viste como él** (el seguidor salta a veces al jugador que pasa pegado, y a veces vuelve: también se corta en medio) y, si saltó, sus lecturas del dorsal no cuentan; al revés, del jugador de campo que empieza, acaba o pasa por un portero se quita ese rato. Su dorsal, sin los números que ya llevan con claridad los jugadores de campo mientras se le ve y, si no basta, **por descarte con el acta**; y ningún jugador de campo de su equipo lleva su dorsal (pasos 1 y 6) |
 | 1.1.0 | 21-11-2026 | El portero es del equipo que defiende su portería en cada parte (en el descanso cambian de campo), no del que tiene más cerca; sus tramos de las dos partes se juntan por su dorsal (paso 6) |
@@ -280,9 +281,12 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
    una muestra suelta en medio es el mismo portero agachado, borroso o tapado. Dos o más seguidas en medio también se
    quitan (de la muestra anterior a la siguiente): o el seguidor saltó a otra persona y volvió al portero (en el J8, al
    menos cinco veces y hasta 4 s) o es el portero agachado o borroso, que por el color no se distingue. Si el seguidor
-   saltó (dos muestras o más fuera de ese rato en un extremo, o un hueco en medio), las lecturas del dorsal del tracklet
-   no cuentan, que pueden ser del otro; y el que nunca viste como él dos muestras seguidas se queda sin equipo. Y al
-   revés: del tracklet de un jugador de campo que empieza, acaba o pasa en medio por un portero (dos muestras o más) se
+   saltó (dos muestras o más fuera de ese rato en un extremo, o un hueco en medio), de las lecturas del dorsal del
+   tracklet solo cuentan las de su rato a 0,4 s o más de cada corte (`MARGEN_CORTE_S`, dos fotogramas de los
+   analizados; cada lectura guarda su segundo en `HistorialLecturas`): las de fuera pueden ser del otro y, en el momento
+   del salto, la caja puede llevar a los dos. Sin el segundo de cada muestra no se sabe dónde se cortó y no cuenta
+   ninguna. El que nunca viste como él dos muestras seguidas se queda sin equipo. Y al revés: del tracklet de un
+   jugador de campo que empieza, acaba o pasa en medio por un portero (dos muestras o más) se
    quita ese rato, y el que viste como un portero de principio a fin sin que se le haya podido colocar se queda sin
    equipo. Lo que se parece a un portero pero no se puede colocar (en el lado que no le toca o con muy pocas muestras)
    se queda sin equipo. El que el detector marca de portero pero viste como un equipo es un jugador de ese equipo; como
@@ -630,6 +634,99 @@ Ojo: el 1 del Vallobín no sale de espaldas en 20:00-30:00, así que lo del 1 so
 visto al entrenar; hasta otro partido no se sabe si lee un 1 en zonas nuevas. Los pesos del 16-11 quedan en
 `modelos/afinados/descartados/dorsales-16-11.pt` por si hubiera que volver.
 
+En la identificación, con las reglas de la 2.0.0 aplicadas a una pasada del J8 con cada lector (`TT_GUARDAR_TRAMOS=1`):
+
+| | Afinado del 16-11 | Afinado del 24-11 |
+|---|---|---|
+| Todo el partido, línea del 13: lecturas de sus tramos que van al 13 | 2 % (7,9 de 372) | 23 % (25,6 de 112), el número más votado |
+| Todo el partido, línea del 13: confianza (evidencia) | 0,03 (7,8) | **0,23 (24,6)** |
+| Todo el partido, línea del 1 | por descarte (0,3 de 61 lecturas) | **por lecturas**: confianza 0,07 (evidencia 5,1) |
+| Todo el partido, tiempo de los de campo con identidad (Real Titánico · Vallobín) | 33,5 % · 31,6 % | 34,2 % · 32,9 % |
+| Todo el partido, confianza media de los de campo (Real Titánico · Vallobín) | 0,723 · 0,749 | 0,724 · 0,737 |
+
+Ninguna línea de campo se queda con el 1 o el 13. Ningún jugador de campo pierde más de medio minuto, y el que más
+gana es el 17 del Vallobín, con 1,7 minutos más. Ojo: en todo el partido, el nuevo ya ha visto al entrenar las zonas de
+los porteros de fuera de 20:00-30:00, así que la medida justa es la del tramo apartado.
+
+En la identificación del tramo apartado (una pasada solo de 20:00-30:00 con cada lector), ninguno de los dos identifica
+al 13:
+- **Por qué no:** todas las lecturas de su número están en un tracklet en que el seguidor saltó a otra persona, y las de
+  esos tracklets no cuentan (regla de la 1.2.0).
+- **Lo que se lee en ese tracklet:** con el nuevo, el 70 % va al 13 (7,9 de 11,3). Con el viejo, el 21 % (7,6 de 36,5),
+  por detrás del 8 y del 6.
+- **En los demás tracklets del portero:** lo leído baja de 39,5 a 8,4. Eran sobre todo números falsos leídos en su pecho.
+- **En el partido entero:** con el lector nuevo, esa regla deja fuera el 24 % de lo que se lee al 13 y el 69 % de lo que
+  se lee al 1.
+
+La 2.1.0 recupera esas lecturas: guarda el segundo de cada una y cuenta solo las del rato en que el tracklet es el
+portero (ver «Las lecturas del portero cuyo tracklet saltó»).
+
+Los de campo en 20:00-30:00:
+
+| | Afinado del 16-11 | Afinado del 24-11 | Afinado del 24-11, repetida |
+|---|---|---|---|
+| Real Titánico: tiempo con identidad (confianza) | 26,8 % (0,715) | 26,4 % (0,712) | 29,0 % (0,682) |
+| Vallobín: tiempo con identidad (confianza) | 37,8 % (0,772) | 35,5 % (0,809) | 36,2 % (0,789) |
+
+La diferencia entre los dos lectores es menor que la que sale al repetir la misma pasada con el mismo lector, que además
+da 868 cadenas en vez de 854 y 117 toques de balón en vez de 127. La pasada no es determinista: para comparar dos
+versiones en un tramo corto, hay que repetirlo.
+
+## Las lecturas del portero cuyo tracklet saltó (24-11-2026, Ojeador 2.1.0)
+
+Hasta la 2.0.0, del tracklet de portero en que el seguidor saltó a otra persona no contaba ninguna lectura del dorsal
+(regla de la 1.2.0): no se sabía en qué segundo se había leído cada una. En el J8 eso dejaba fuera el 24 % de lo que
+se lee al 13 y el 69 % de lo que se lee al 1, y en el tramo 20:00-30:00, todas las lecturas del 13.
+
+Qué cambia:
+
+- Cada lectura del dorsal guarda su segundo, su tracklet, su equipo, su peso y sus 8 números más probables
+  (`dorsales.HistorialLecturas`, unos 12 MB en memoria en un partido entero). Con `TT_GUARDAR_TRAMOS=1` van también a
+  `porteros.pkl`.
+- Del tracklet de portero mezclado cuentan las lecturas de su rato (en el que viste como él, sin los huecos en que no)
+  a `MARGEN_CORTE_S` = 0,4 s o más de cada corte (`Porteros.lejos_de_los_cortes`). Si no se sabe dónde se cortó (sin
+  el segundo de cada muestra de la equipación), no cuenta ninguna, como antes.
+
+El margen se fijó mirando a ojo las zonas del dorsal de una pasada del tramo (`--guardar-dorsales`) y contando, en el
+partido entero, las lecturas con probabilidad por peso de al menos 0,1 de los 76 tracklets de portero mezclados con
+corte conocido:
+
+- **Las lecturas de otra persona caen fuera del rato.** En el tramo, el 20 y el 12 dentro del hueco de un tracklet del
+  13 y el 11 después de acabar el rato de otro. En el partido entero, las 48 lecturas limpias (0,8 o más) de otro
+  número están todas fuera. Esas ya las quitan el rato y sus huecos, sin margen.
+- **Dentro del rato no hay ninguna lectura limpia de otro número, tampoco junto al corte.** Las que leen otro número
+  con poca seguridad (58 en el partido) son borrones del mismo portero (en el tramo, un 6, un 3 y un 1 sobre su
+  camiseta morada) y salen por todo el rato, no junto al corte.
+- **Con 1 s se perdían lecturas limpias del portero**: en el tramo, cinco del 13 entre 0 y 0,8 s después de un hueco,
+  y el 6 le pasaba por delante. Con 0,4 s (dos fotogramas de los analizados) solo quedan fuera el fotograma del salto
+  y el siguiente, en los que la caja puede llevar a los dos.
+
+| J8, sobre la misma pasada | Sin las lecturas de los mezclados (2.0.0) | Margen 1 s | **Margen 0,4 s** | Margen 0 |
+|---|---|---|---|---|
+| Partido, línea del 13: evidencia (confianza) | 12,5 (0,143) | 14,5 (0,119) | **17,5 (0,136)** | 19,5 (0,147) |
+| Partido, línea del 1: evidencia (confianza) | 5,1 (0,071) | 14,1 (0,150) | **15,6 (0,161)** | 15,6 (0,159) |
+| Partido, jugadores de campo que cambian | | ninguno | ninguno | ninguno |
+| 20:00-30:00, lecturas de los tramos del portero que van al 13 (al 6) | 0 (2,4): sale como el 6 | 2,0 (3,2) | **5,0 (4,2)** | 7,0 (4,4) |
+
+La confianza del 13 apenas se mueve porque en su rato también se leen borrones como el 8 o el 6; la línea no cambia de
+dorsal porque esos números los llevan a la vez jugadores de campo. En el tramo, con la regla nueva el 13 se queda sin
+identificar (su número es el 30 % de lo leído) y el 6 recupera sus minutos (4,3): mejor sin identificar que equivocado.
+
+Probado y sin hacer, **un piso para el peso de cada lectura**: no contar las de peso (1 − probabilidad de «sin
+número») menor que 0,25, que son la mitad, casi todas de frente o de lado. Rehaciendo los votos desde las lecturas
+guardadas, en el partido entero sube la confianza del 13 de 0,14 a 0,24 y la del 1 de 0,18 a 0,26, y el tiempo con
+identidad de los de campo de 35,2 a 38,5 % (Real Titánico) y de 33,5 a 35,0 % (Vallobín); en el tramo identifica al
+13. Pero cambia lo que deciden todos los umbrales. De los 30 tracklets que pasan a tener jugador en el tramo, mirados
+a ojo, la mayoría aciertan y dos fallan: uno de 2 minutos en el que el seguidor mezcla al 3 y al 14 (lecturas: del 3,
+70; del 14, 31) pasa a ser el 3 y le quita el sitio al 3 de verdad, y otro que lee 4 y 11 acaba en el 17 por
+continuidad, unos 75 de los 412 s nuevos. Haría falta reajustar los umbrales con el piso y comprobarlo a ojo en un
+partido entero.
+
+Visto y pendiente (ya pasaba antes de la 2.1.0): cuando el portero de un equipo no sale identificado, los tramos que
+solo marca el detector se resuelven como los de campo (regla de la 1.3.0), también los que visten como el portero en
+su rato. En el tramo, sin el 13 identificado, 5 s del portero (de morado) acaban en la línea del 17 (de rojo y
+blanco). En el partido entero, con los dos porteros identificados, no pasa.
+
 ## El balón con RF-DETR y TensorRT (17-11-2026)
 
 Para no depender de Ultralytics (AGPL-3.0), el detector del balón pasa a **RF-DETR Medium** (Apache 2.0). Como el
@@ -856,3 +953,8 @@ detector de eventos es ahora una clase con un paso por instante (`eventos._Detec
 - Eventos: un gol o un tiro candidato repetido a pocos segundos en la misma jugada debería quedar en uno.
 - Faltas: más cobertura sin perder precisión (el balón quieto se ve poco); probar el silbato en el audio y la postura
   de los jugadores (uno en el suelo) para confirmar las paradas por frenazo.
+- Porteros: el tramo que solo marca el detector pero viste como el portero en su rato no debería acabar en la línea de
+  un jugador de campo cuando el portero no sale identificado; mejor sin identificar (en el 20:00-30:00 del J8, 5 s del
+  13 en la línea del 17).
+- Dorsales: un piso para el peso de cada lectura, reajustando con él los umbrales de la identificación (sin reajustar
+  sube la cobertura pero mete errores; ver «Las lecturas del portero cuyo tracklet saltó»).
