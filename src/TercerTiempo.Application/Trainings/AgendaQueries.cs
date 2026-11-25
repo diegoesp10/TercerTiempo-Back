@@ -25,7 +25,9 @@ public sealed record SquadAgendaItemDto(
     [property: Description("Solo en Match: estado de la convocatoria; null si no hay o si es un borrador que quien mira no puede ver.")]
     CallUpSummaryDto? CallUp,
     [property: Description("Solo en Match y mientras no se ha jugado: quién no puede jugar (sancionados y lesionados), haya convocatoria o no.")]
-    IReadOnlyList<UnavailablePlayerDto>? Unavailable = null);
+    IReadOnlyList<UnavailablePlayerDto>? Unavailable = null,
+    [property: Description("Solo en Match: es el próximo partido del equipo que aún no ha empezado, el de la convocatoria que toca preparar.")]
+    bool IsNext = false);
 
 public enum UnavailabilityKind
 {
@@ -81,11 +83,13 @@ internal sealed class GetSquadAgendaHandler(
             var byMatch = CallUps.Summaries(visible, squad, viewer, inRange.ToDictionary(m => m.Id, m => m.KickoffAt)).ToDictionary(c => c.MatchId);
             // Quién no puede jugar solo se calcula si hay algún partido por jugar en el intervalo.
             var sanctions = inRange.Any(m => !IsPlayed(m, now)) ? await suspensions.LoadAsync(squad, season, cancellationToken) : SuspensionCalendar.Empty;
+            // El próximo se busca en toda la temporada: en una semana sin él, ninguno del intervalo lo es.
+            var next = CallUps.NextToCallUp(season, now);
             items.AddRange(inRange.Select(m =>
             {
                 var done = IsPlayed(m, now);
                 return new SquadAgendaItemDto(SquadEventKind.Match, m.KickoffAt, done, null, MatchMapper.ToDto(m, teamMap), byMatch.GetValueOrDefault(m.Id),
-                    done ? null : Unavailable(squad, m, sanctions, injuryView));
+                    done ? null : Unavailable(squad, m, sanctions, injuryView), next?.Id == m.Id);
             }));
         }
 

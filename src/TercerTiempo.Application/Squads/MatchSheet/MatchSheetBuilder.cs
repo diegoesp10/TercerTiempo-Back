@@ -3,6 +3,7 @@ using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Matches;
 using TercerTiempo.Application.Performances;
 using TercerTiempo.Application.Squads.Suspensions;
+using TercerTiempo.Application.Trainings;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
@@ -31,7 +32,8 @@ internal static class MatchSheetBuilder
         ICallUpStore callUps,
         SuspensionCalendar suspensions,
         IOfficialSheetStore sheets,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<Match>? season = null)
     {
         var summary = await SquadMapper.ToSummaryAsync(squad, currentUser.CoachId, clock, teams, competitions, cancellationToken);
 
@@ -72,8 +74,11 @@ internal static class MatchSheetBuilder
 
         var canEdit = match.Status == MatchStatus.Played && isManager;
         var team = await teamStats.GetAsync(squad.Id, match.Id, cancellationToken);
+        // Quien prepara la convocatoria ve en toda la página del próximo partido que todavía no la ha enviado (season: los
+        // partidos del equipo; sin ellos, como tras guardar un acta, no se mira).
+        var callUpDue = isManager && season is not null && callUp is not { IsPublished: true } && CallUps.NextToCallUp(season, clock.GetUtcNow())?.Id == match.Id;
 
         return new MatchSheetDto(summary, matchDto, canEdit, entries, team is null ? null : TeamStats.TeamMatchStatsMapper.ToDto(team), called.Count > 0,
-            official is { IsAvailable: true });
+            official is { IsAvailable: true }, callUpDue);
     }
 }

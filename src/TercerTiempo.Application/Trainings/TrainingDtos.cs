@@ -215,7 +215,9 @@ public sealed record MatchCallUpDto(
     [property: Description("Sin número todavía: el de la última convocatoria, para proponerlo al preguntar. Solo para quien la prepara.")]
     int? SuggestedSize = null,
     [property: Description("Huella de lo que se ve (quién va, firmas, vistos, cita y si el partido ha empezado). GET …/callup/stamp da la de ahora: si no coincide, algo ha cambiado y hay que volver a pedir la convocatoria.")]
-    string Stamp = "");
+    string Stamp = "",
+    [property: Description("Es el próximo partido del equipo que aún no ha empezado: el de la convocatoria que toca preparar.")]
+    bool IsNext = false);
 
 public sealed record MyCallUpDto(
     Guid CallUpId,
@@ -377,7 +379,7 @@ internal static class TrainingMapper
     public static MatchCallUpDto ToDto(
         MatchCallUp? callUp, Squad squad, MatchDto match, bool canEdit, Guid? viewerSquadPlayerId, DateTimeOffset now,
         TercerTiempo.Application.Grounds.GroundDto? meetGround = null, TercerTiempo.Application.Grounds.GroundDto? matchGround = null,
-        InjuryView? injuries = null, SuspensionCalendar? suspensions = null, int? suggestedSize = null)
+        InjuryView? injuries = null, SuspensionCalendar? suspensions = null, int? suggestedSize = null, bool isNext = false)
     {
         injuries ??= InjuryView.None;
         suspensions ??= SuspensionCalendar.Empty;
@@ -393,7 +395,7 @@ internal static class TrainingMapper
         return new MatchCallUpDto(
             callUp?.Id, squad.Id, match, callUp?.Status ?? CallUpStatus.Draft, callUp?.MeetAt, meetGround, callUp?.MeetPlace, callUp?.Notes,
             callUp?.PublishedAt, match.KickoffAt <= now, entries, Counts(entries), canEdit, mine, matchGround,
-            squad.CallUpSize ?? callUp?.Size, squad.CallUpSize is not null, canEdit ? suggestedSize : null, CallUpStamp.Of(callUp, match.KickoffAt <= now));
+            squad.CallUpSize ?? callUp?.Size, squad.CallUpSize is not null, canEdit ? suggestedSize : null, CallUpStamp.Of(callUp, match.KickoffAt <= now), isNext);
     }
 }
 

@@ -45,7 +45,8 @@ internal sealed class GetMatchSheetHandler(
         if (match.SeasonId != squad.SeasonId || !match.Involves(squad.TeamId))
             throw new ConflictException(ErrorCode.MatchNotOfSquad);
 
+        var season = await matches.GetTeamMatchesAsync(squad.SeasonId, squad.TeamId, cancellationToken);
         return await MatchSheetBuilder.BuildAsync(squad, match, currentUser, clock, teams, competitions, players, performances, teamStats, clubs, callUps,
-            await suspensions.LoadAsync(squad, cancellationToken), sheets, cancellationToken);
+            await suspensions.LoadAsync(squad, season, cancellationToken), sheets, cancellationToken, season);
     }
 }

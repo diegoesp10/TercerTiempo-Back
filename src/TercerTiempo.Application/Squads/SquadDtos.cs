@@ -67,7 +67,9 @@ public sealed record MatchSheetDto(
     [property: System.ComponentModel.Description("El partido tiene convocatoria con algún convocado (solo para el club y el cuerpo técnico): el acta se prepara con esos jugadores.")]
     bool HasCallUp = false,
     [property: System.ComponentModel.Description("Ya está el acta oficial del partido: de ella salen los dorsales (sin ella no hay).")]
-    bool OfficialSheet = false);
+    bool OfficialSheet = false,
+    [property: System.ComponentModel.Description("Es el próximo partido del equipo y su convocatoria todavía no se ha enviado (solo para el club y el cuerpo técnico, que la preparan).")]
+    bool CallUpDue = false);
 
 public sealed record MatchSheetEntryDto(
     SquadPlayerDto Player,

@@ -346,6 +346,27 @@ public class TrainingAlertTests
     }
 
     [Fact]
+    public async Task The_call_up_that_is_due_is_the_next_match_one_and_it_moves_on_at_kickoff()
+    {
+        var f = new Fixture();
+        var later = Match.Schedule(f.Upcoming.SeasonId, 3, f.Team.Id, f.Rival.Id, Now.AddDays(10), "La Florida", null);
+        f.ExtraMatches.Add(later);
+        Task<MatchCallUpDto> CallUp(Match match) => f.GetCallUp(f.CoachUser).Handle(new(f.Squad.Id, match.Id), default);
+
+        Assert.Equal((true, false), ((await CallUp(f.Upcoming)).IsNext, (await CallUp(later)).IsNext));
+        var agenda = await f.Agenda(f.CoachUser).Handle(new(f.Squad.Id, DateOnly.FromDateTime(Now.AddDays(-7).DateTime), DateOnly.FromDateTime(Now.AddDays(14).DateTime)), default);
+        Assert.Equal(
+            [(f.Played.Id, false), (f.Upcoming.Id, true), (later.Id, false)],
+            agenda.Where(i => i.Kind == SquadEventKind.Match).Select(i => (i.Match!.Id, i.IsNext)));
+
+        // Al empezar el próximo, su convocatoria se cierra y la que toca preparar es la del siguiente.
+        f.Clock.Advance(TimeSpan.FromDays(3) + TimeSpan.FromMinutes(1));
+        var started = await CallUp(f.Upcoming);
+        Assert.Equal((true, false), (started.Closed, started.IsNext));
+        Assert.True((await CallUp(later)).IsNext);
+    }
+
+    [Fact]
     public async Task Planning_a_series_cites_each_player_with_an_account_once()
     {
         var f = new Fixture();

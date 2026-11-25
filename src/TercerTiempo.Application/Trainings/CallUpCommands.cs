@@ -109,6 +109,12 @@ internal static class CallUps
         return match;
     }
 
+    // El partido cuya convocatoria toca preparar: el primero del equipo que aún no ha empezado, porque al empezar se cierra
+    // (los aplazados sin fecha nueva no cuentan). El frontal aplica la misma regla a la lista de partidos.
+    public static Match? NextToCallUp(IEnumerable<Match> season, DateTimeOffset now) => season
+        .Where(m => m.Status == MatchStatus.Scheduled && m.KickoffAt > now)
+        .MinBy(m => m.KickoffAt);
+
     public static async Task<MatchDto> MatchDtoAsync(Match match, ITeamStore teams, CancellationToken cancellationToken)
     {
         var map = (await teams.GetByIdsAsync([match.HomeTeamId, match.AwayTeamId], cancellationToken)).ToDictionary(t => t.Id);
@@ -127,7 +133,8 @@ internal static class CallUps
 
     public static async Task<MatchCallUpDto> DetailAsync(
         MatchCallUp? callUp, Squad squad, Match match, MatchDto dto, bool canEdit, Guid? viewer, DateTimeOffset now,
-        IGroundStore grounds, ITeamStore teams, InjuryView injuries, SuspensionCalendar suspensions, CancellationToken cancellationToken, int? suggestedSize = null)
+        IGroundStore grounds, ITeamStore teams, InjuryView injuries, SuspensionCalendar suspensions, CancellationToken cancellationToken, int? suggestedSize = null,
+        bool isNext = false)
     {
         var season = await SeasonGrounds.LoadAsync(grounds, squad.SeasonId, cancellationToken);
         var meet = await MeetGroundAsync(callUp, season, grounds, cancellationToken);
@@ -135,7 +142,7 @@ internal static class CallUps
         var teamIds = new[] { meet, matchGround }.OfType<Ground>().SelectMany(g => season.HomeTeamsOf(g.Id)).Distinct().ToList();
         var names = teamIds.Count == 0 ? new Dictionary<Guid, string>() : (await teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id, t => t.Name);
         return TrainingMapper.ToDto(callUp, squad, dto, canEdit, viewer, now,
-            meet is null ? null : season.ToDto(meet, names), matchGround is null ? null : season.ToDto(matchGround, names), injuries, suspensions, suggestedSize);
+            meet is null ? null : season.ToDto(meet, names), matchGround is null ? null : season.ToDto(matchGround, names), injuries, suspensions, suggestedSize, isNext);
     }
 
     public static string When(DateTimeOffset at) => TimeZoneInfo.ConvertTime(at, TrainingClock.Zone).ToString("dd/MM HH:mm");
@@ -255,8 +262,11 @@ internal sealed class GetMatchCallUpHandler(
         var dto = await CallUps.MatchDtoAsync(match, teams, cancellationToken);
         // Sin número fijo, al preguntar a cuántos se convoca se propone el de la última convocatoria.
         var suggested = manager && squad.CallUpSize is null && callUp?.Size is null ? await callUps.GetLatestSizeAsync(squad.Id, cancellationToken) : null;
-        return await CallUps.DetailAsync(callUp, squad, match, dto, manager, TrainingAccess.ViewerEntry(squad, currentUser), clock.GetUtcNow(), grounds, teams,
-            await InjuryView.LoadAsync(squad, currentUser, clock, clubs, injuries, cancellationToken), await suspensions.LoadAsync(squad, cancellationToken), cancellationToken, suggested);
+        var now = clock.GetUtcNow();
+        var season = await matches.GetTeamMatchesAsync(squad.SeasonId, squad.TeamId, cancellationToken);
+        return await CallUps.DetailAsync(callUp, squad, match, dto, manager, TrainingAccess.ViewerEntry(squad, currentUser), now, grounds, teams,
+            await InjuryView.LoadAsync(squad, currentUser, clock, clubs, injuries, cancellationToken), await suspensions.LoadAsync(squad, season, cancellationToken), cancellationToken,
+            suggested, CallUps.NextToCallUp(season, now)?.Id == match.Id);
     }
 }
 
@@ -309,7 +319,8 @@ internal sealed class SaveMatchCallUpHandler(
                 throw new DomainException(ErrorCode.CallUpPlayerInjured, squad.Players.First(p => p.Id == id).FullName);
 
         // Ni un sancionado: la 5.ª amarilla o una expulsión en un partido anterior le dejan fuera de este.
-        var sanctions = await suspensions.LoadAsync(squad, cancellationToken);
+        var teamSeason = await matches.GetTeamMatchesAsync(squad.SeasonId, squad.TeamId, cancellationToken);
+        var sanctions = await suspensions.LoadAsync(squad, teamSeason, cancellationToken);
         foreach (var id in command.CalledSquadPlayerIds.Distinct())
             if (sanctions.On(id, match.Id) is { } suspension)
                 throw new DomainException(ErrorCode.CallUpPlayerSuspended, squad.Players.First(p => p.Id == id).FullName, SuspensionReader.ReasonInSentence(suspension));
@@ -335,7 +346,8 @@ internal sealed class SaveMatchCallUpHandler(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return await CallUps.DetailAsync(callUp, squad, match, dto, true, TrainingAccess.ViewerEntry(squad, currentUser), now, grounds, teams,
-            await InjuryView.LoadAsync(squad, currentUser, clock, clubs, injuries, cancellationToken), sanctions, cancellationToken);
+            await InjuryView.LoadAsync(squad, currentUser, clock, clubs, injuries, cancellationToken), sanctions, cancellationToken,
+            isNext: CallUps.NextToCallUp(teamSeason, now)?.Id == match.Id);
     }
 }
 
@@ -429,8 +441,10 @@ internal sealed class ResendCallUpHandler(
             callUp.UnseenEntries().Where(e => linked.Contains(e.SquadPlayerId)).ToList(), alerts, clock, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
+        var season = await matches.GetTeamMatchesAsync(squad.SeasonId, squad.TeamId, cancellationToken);
         return await CallUps.DetailAsync(callUp, squad, match, dto, true, TrainingAccess.ViewerEntry(squad, currentUser), now, grounds, teams,
-            await InjuryView.LoadAsync(squad, currentUser, clock, clubs, injuries, cancellationToken), await suspensions.LoadAsync(squad, cancellationToken), cancellationToken);
+            await InjuryView.LoadAsync(squad, currentUser, clock, clubs, injuries, cancellationToken), await suspensions.LoadAsync(squad, season, cancellationToken), cancellationToken,
+            isNext: CallUps.NextToCallUp(season, now)?.Id == match.Id);
     }
 }
 
