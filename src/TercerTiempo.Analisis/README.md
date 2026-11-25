@@ -70,6 +70,14 @@ del campo) no se descargan: son **RF-DETR** (Apache 2.0) entrenados con nuestros
 la GPU de cada equipo (`modelos/rfdetr/`, ver «El balón con RF-DETR y TensorRT», «Los jugadores con RF-DETR» y «El
 campo con RF-DETR Keypoint»). Desde el 18-11-2026 no queda nada de Ultralytics (AGPL-3.0).
 
+El modelo del aspecto (SigLIP, desde la 2.3.0) tampoco lo baja `descargar-modelos`: se guarda una vez la parte de la
+imagen en `modelos/siglip` (unos 370 MB). Sale idéntico al que se midió (huella `fad78ac3`). Sin esa carpeta el
+análisis lo avisa y solo identifica por el dorsal.
+
+```powershell
+uv run python -c "from transformers import SiglipVisionModel as M; M.from_pretrained('google/siglip-base-patch16-224').save_pretrained('modelos/siglip')"
+```
+
 ffmpeg hace falta solo para los clips de los eventos (en Windows se busca también el de winget).
 
 ## Uso
