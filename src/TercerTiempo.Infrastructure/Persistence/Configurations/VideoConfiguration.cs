@@ -24,8 +24,10 @@ internal sealed class MatchVideoConfiguration : IEntityTypeConfiguration<MatchVi
         builder.Property(v => v.ContentType).HasMaxLength(100).IsRequired();
         builder.Property(v => v.StorageKey).HasMaxLength(500).IsRequired();
 
-        // Compresión en segundo plano. Los valores por defecto en SQL dejan insertar a una API anterior a estas columnas.
-        builder.Property(v => v.Status).HasConversion<string>().HasMaxLength(20).HasDefaultValue(VideoStatus.Uploaded);
+        // Compresión en segundo plano. Los valores por defecto en SQL dejan insertar a una API anterior a estas columnas. El
+        // 0 no es ningún estado: solo sin valor se queda el de la base, y HasSentinel se lo dice a EF para que no avise.
+        builder.Property(v => v.Status).HasConversion<string>().HasMaxLength(20).HasDefaultValue(VideoStatus.Uploaded)
+            .HasSentinel((VideoStatus)0);
         builder.Property(v => v.ProcessingProgress).HasDefaultValue(0);
         builder.Property(v => v.ProcessingAttempts).HasDefaultValue(0);
         builder.Property(v => v.ProcessingError).HasMaxLength(MatchVideo.MaxErrorLength);

@@ -68,7 +68,9 @@ internal sealed class CommitteeSanctionConfiguration : IEntityTypeConfiguration<
         builder.Property(s => s.NormalizedName).HasMaxLength(CommitteeSanction.MaxNameLength).IsRequired();
         builder.Property(s => s.Article).HasMaxLength(CommitteeSanction.MaxArticleLength).IsRequired();
         builder.Property(s => s.Reason).HasMaxLength(CommitteeSanction.MaxReasonLength).IsRequired();
-        builder.Property(s => s.Kind).HasConversion<string>().HasMaxLength(10).HasDefaultValue(CommitteeSanctionKind.Player);
+        // El 0 no es ningún tipo de sanción: solo sin valor se queda el de la base (HasSentinel, para que EF no avise).
+        builder.Property(s => s.Kind).HasConversion<string>().HasMaxLength(10).HasDefaultValue(CommitteeSanctionKind.Player)
+            .HasSentinel((CommitteeSanctionKind)0);
 
         builder.HasIndex(s => s.ResolutionId);
     }
