@@ -18,6 +18,7 @@ la mayor con modelos o una cadena nueva, la menor con reglas nuevas y la de parc
 
 | Versión | Fecha | Qué cambia |
 |---|---|---|
+| 2.3.1 | 25-11-2026 | **Dos pasadas del mismo vídeo dan lo mismo**: el motor TensorRT del campo (FP16) no devolvía siempre lo mismo con la misma imagen (hasta 136 px en un punto) y la calibración arrastraba cada diferencia; en el J8 (20:00-21:30), cuatro pasadas iguales daban el campo calibrado entre el 64 y el 83 %, de 1 a 4 eventos y la posesión de 62/38 a 41/59. Ahora un motor TensorRT solo se usa si **da siempre lo mismo** con una imagen de prueba al cargarlo (`rfdetr_comun.da_siempre_lo_mismo`); si no, van los pesos de PyTorch. El del campo no la pasa y va con PyTorch FP16: dos pasadas salen idénticas, calibra igual o algo más y cuesta unos 10 ms por fotograma analizado («Dos pasadas, el mismo resultado») |
 | 2.3.0 | 25-11-2026 | **El balón primero y quién es quién también por el aspecto**: al fotograma analizado sin balón se le busca en los de ±0,04 s (`vecinos_balon_s`), en una ventana junto al balón cercano y, sin él, en la imagen entera de un solo fotograma por hueco (`vecinos_enteros`); con el campo calibrado, los huecos de hasta 3 s se rellenan **siguiendo a la cámara**; **balón en juego** (`en_juego.py`): lo visto y la trayectoria se miden sobre ese tiempo (`recuento.balon_en_juego`, y `calidad.balonEnJuego` en la propuesta), la posesión solo reparte ese tiempo y la app enseña y avisa con el balón visto en juego; el seguidor recuerda 1,5 s al que pierde (antes 10) y parte los tracklets de dos del mismo equipo que se cruzan; el dorsal de los que están junto al balón se relee en el fotograma de la mitad; y **el aspecto** (SigLIP, modelo nuevo: tocaría la mayor, pero se pidió la 2.3): a la cadena sin dorsal se le da el jugador que dice una regresión aprendida en el mismo partido con las identificadas, solo si antes se comprueba que acierta en el 95 % de las que da y si podía ser él. En el J8, tramo 20:00-30:00: el balón con trayectoria pasa del 68,6 al 80 % del tiempo en juego (visto, del 41,3 al 48,6 %), el tiempo con identidad del 26 al 32 % y del 36 al 42 %, y la pasada de 239 a 359 s (pasos 2, 3 y 6; «El balón en juego y quién es quién por el aspecto») |
 | 2.2.0 | 25-11-2026 | **Solo las acciones que se ven**: medido en el Vallobín - Real Titánico, casi todos los pases, pérdidas y recuperaciones de la 2.1.2 no estaban en el vídeo (balones que pasaban cerca de alguien, forcejeos, balones parados, cosas quietas en el césped y momentos sin el campo calibrado). Ahora las acciones de cada jugador salen de **toques controlados** (`MaquinaControl`: el balón a menos de 2 m en 0,2 s seguidos con el balón visto, sin cruzar de un lado a otro del jugador, quitárselo a quien lo tiene solo estando claramente más cerca y sin avistamientos más rápidos que un tiro); la posesión del equipo sigue con el más cercano. **Pase**: balón golpeado (4 m o más, entre 4 y 30 m/s) a un compañero. **Pérdida y recuperación**: el rival se hace con el balón en 2,5 s como mucho, no parado, y lo conserva 1,5 s o más. Sin el campo calibrado en los dos extremos no se cuenta. Un tiro no es pérdida ni pase. **El portero no pasa, ni pierde, ni recupera**: el balón del rival con el que se queda en su área 1 s o más es una **parada** (ya no sale del tiro a puerta) y el que pone en juego desde su área (a 8 m en 3 s), un **saque** (`distributions` en la propuesta y en `momentos`; no va al acta). El portero no tira. Junto a un objeto fijo solo vale el balón que va de paso, aunque haya un jugador al lado. Salen muchas menos acciones, pero las que salen se ven (paso 4) |
 | 2.1.2 | 25-11-2026 | **Cada acción con su segundo del vídeo**: en `acta-propuesta.json`, cada jugador y cada equipo traen `momentos`, el segundo del vídeo (a la décima) de cada cosa que cuenta su propuesta: del jugador, cada pase (cuando el balón deja su pie), pase fallado, pérdida, recuperación (cuando le llega), tiro, tiro a puerta, gol, parada, falta cometida y recibida y fuera de juego; del equipo, cada tiro, tiro a puerta, gol, córner, saque de banda, saque de puerta, falta y fuera de juego. Llevan las mismas claves y los mismos filtros que sus datos, así que lo que se cuenta y lo que se puede ver es lo mismo (salvo los goles que salen del acta oficial cerrada sin que el vídeo los viera). La app los enseña con «Ver» en «Del vídeo». Lo que se propone no cambia (paso 8) |
@@ -68,7 +69,9 @@ uv run tt-analisis info
 `descargar-modelos` baja el lector de dorsales y dos clips de muestra. Los tres detectores (balón, jugadores y puntos
 del campo) no se descargan: son **RF-DETR** (Apache 2.0) entrenados con nuestros partidos y compilados a TensorRT para
 la GPU de cada equipo (`modelos/rfdetr/`, ver «El balón con RF-DETR y TensorRT», «Los jugadores con RF-DETR» y «El
-campo con RF-DETR Keypoint»). Desde el 18-11-2026 no queda nada de Ultralytics (AGPL-3.0).
+campo con RF-DETR Keypoint»). Un motor TensorRT solo se usa si da siempre lo mismo con la misma imagen; el del campo no
+lo hace y el análisis va con sus pesos de PyTorch (ver «Dos pasadas, el mismo resultado»). Desde el 18-11-2026 no queda
+nada de Ultralytics (AGPL-3.0).
 
 El modelo del aspecto (SigLIP, desde la 2.3.0) tampoco lo baja `descargar-modelos`: se guarda una vez la parte de la
 imagen en `modelos/siglip` (unos 370 MB). Sale idéntico al que se midió (huella `fad78ac3`). Sin esa carpeta el
@@ -125,7 +128,7 @@ uv run tt-analisis exportar-jugadores                            # TensorRT para
 uv run tt-analisis evaluar-jugadores datasets\jugadores          # contra las etiquetas de validación
 uv run tt-analisis preparar-campo partido.mp4 [otro.mp4...]       # 32 puntos por destilación (datasets\campo)
 uv run tt-analisis entrenar-campo                                # RF-DETR Keypoint a 768 → modelos\rfdetr\campo.pth
-uv run tt-analisis exportar-campo                                # TensorRT para esta GPU → modelos\rfdetr\campo.trt
+uv run tt-analisis exportar-campo                                # TensorRT → modelos\rfdetr\campo.trt (solo se usa si da siempre lo mismo)
 uv run tt-analisis evaluar-campo datasets\partido [datasets\campo]   # calibrables, puntos y error de la homografía
 ```
 
@@ -492,8 +495,8 @@ resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni
   Comprobado en el J8 (20:00-30:00): posesión 42,7 %, balón en juego 79,6 %, visto 49,6 % y con trayectoria 81,0 %,
   igual en el visor que en `analisis.json`.
 - Al comprobarlo, dos pasadas del mismo tramo (20:00-21:30) salieron distintas ya en la calibración del campo (199 y 176
-  aciertos), antes de escribir nada de la repetición: el analizador no da exactamente lo mismo dos veces con el mismo
-  vídeo. Viene de antes; queda en «Siguientes pasos».
+  aciertos), antes de escribir nada de la repetición. Venía de antes, del motor TensorRT del campo, y se arregla en la
+  2.3.1 (ver «Dos pasadas, el mismo resultado»).
 
 ## Docker (GPU)
 
@@ -781,8 +784,9 @@ Los de campo en 20:00-30:00:
 | Vallobín: tiempo con identidad (confianza) | 37,8 % (0,772) | 35,5 % (0,809) | 36,2 % (0,789) |
 
 La diferencia entre los dos lectores es menor que la que sale al repetir la misma pasada con el mismo lector, que además
-da 868 cadenas en vez de 854 y 117 toques de balón en vez de 127. La pasada no es determinista: para comparar dos
-versiones en un tramo corto, hay que repetirlo.
+da 868 cadenas en vez de 854 y 117 toques de balón en vez de 127. Hasta la 2.3.1 la pasada no era determinista (por el
+motor del campo, ver «Dos pasadas, el mismo resultado») y para comparar dos versiones en un tramo corto había que
+repetirlo; desde la 2.3.1, la diferencia entre dos versiones en el mismo tramo es del cambio.
 
 ## Las lecturas del portero cuyo tracklet saltó (24-11-2026, Ojeador 2.1.0)
 
@@ -884,6 +888,59 @@ dorsal más leído (baja si el seguidor se va con otro).
   entero sigue tardando menos de lo que dura.
 - **Lo que no se ha hecho**: volver a entrenar el detector del balón, que es lo que subiría lo visto: solo hay vídeo del
   Vallobín, y la segunda tanda de etiquetado con él no mejoró el balón.
+
+## Dos pasadas, el mismo resultado (25-11-2026, Ojeador 2.3.1)
+
+Dos pasadas iguales del J8 (tramo 20:00-21:30, mismos argumentos, una detrás de otra) no daban lo mismo. Para saber
+dónde se separaban, un arnés apuntó, llamada a llamada, una huella de lo que entra y lo que sale de cada pieza (los
+fotogramas leídos, los tres detectores, el seguidor, la calibración, los equipos, el lector de dorsales y el del aspecto)
+y se compararon dos pasadas:
+
+- Los fotogramas, el detector de jugadores y el del balón dan exactamente lo mismo, bit a bit (450, 491 y 450 llamadas).
+- **El detector de los puntos del campo, no**: con la misma imagen da otra cosa en los 450 fotogramas. La mitad de los
+  puntos se mueve más de 1,9 px y alguno hasta 176, y 58 puntos cambian de lado del umbral de 0,5. Como la calibración
+  arrastra lo anterior (la homografía que se conserva, los saltos que se rechazan, las que se invalidan), cada
+  diferencia cambia los fotogramas siguientes y, con ellos, el balón en el campo, la posesión y los eventos.
+- Solo, con el mismo fotograma tres veces seguidas en el mismo proceso (20 fotogramas del J8):
+
+| Detector del campo | Repeticiones distintas | Por fotograma |
+|---|---|---|
+| TensorRT FP16 (el `campo.trt` de siempre) | 40 de 40 (hasta 136 px y 0,24 de confianza) | 8,4 ms |
+| TensorRT FP32 (compilado aparte para probar) | 0 de 40 | 25,7 ms |
+| PyTorch FP16 | 0 de 40 | 18,9 ms |
+| PyTorch FP32 | 0 de 40 | 31,2 ms |
+
+Los motores de jugadores y balón son deterministas; el del campo en FP16, no. Dentro del motor no se ha aislado qué
+capa es; cambia algo de una llamada a otra con la misma entrada, que es lo que importa.
+
+**Qué cambia** (`rfdetr_comun.py`): un motor TensorRT solo se usa si **da siempre lo mismo con la misma imagen**. Al
+cargarlo se le pasa cuatro veces una imagen de ruido con semilla, con umbral casi cero para que salgan todas las
+consultas (`da_siempre_lo_mismo`), y si alguna vez cambia algo, se usan los pesos de PyTorch y se dice. Con un fotograma
+real o con un campo dibujado pasa lo mismo: la sonda pilla siempre al del campo y nunca a los otros dos. Al compilar un
+motor (`exportar-<que>`) también se avisa de si el análisis lo va a usar, lo que importará al recompilarlos en otra GPU.
+
+Hoy el del campo va con PyTorch FP16, y dos pasadas del mismo tramo salen idénticas: las 3.643 llamadas registradas,
+`analisis.json` y `acta-propuesta.json` (solo cambian el tiempo de cálculo del resumen y la fecha que gzip pone en la
+cabecera de `posiciones.csv.gz`). En el mismo equipo, el mismo vídeo da siempre lo mismo; en otra GPU o con otras
+versiones de torch o de los controladores, el resultado puede ser otro, pero también fijo.
+
+- **Calidad**: igual o algo mejor que el motor de antes. En las evaluaciones del 18-11, PyTorch daba más fotogramas
+  calibrables en los tres conjuntos (67,7, 68,9 y 65,0 % frente a 64,1, 68,1 y 62,4 %) con prácticamente los mismos
+  puntos correctos y falsos.
+- **Coste**: unos 10 ms más por fotograma analizado, unos 5 minutos en un partido entero.
+
+En el tramo 20:00-21:30 del J8:
+
+| Pasada | Campo calibrado | Balón visto | Eventos | Posesión |
+|---|---|---|---|---|
+| 2.3.0, TensorRT, 1.ª | 83 % | 16 % | 4 | 61,6 / 38,4 |
+| 2.3.0, TensorRT, 2.ª | 64 % | 17 % | 1 | 47,3 / 52,7 |
+| 2.3.0, TensorRT, 3.ª | 68 % | 17 % | 4 | 41,0 / 59,0 |
+| 2.3.0, TensorRT, 4.ª | 70 % | 18 % | 4 | 60,6 / 39,4 |
+| **2.3.1, todas** | **77 %** | **15 %** | **5** | **37,0 / 63,0** |
+
+Lo de la 2.3.1 no es «la buena»: es una pasada como las otras, pero ahora es siempre la misma. Por eso, desde la 2.3.1,
+la diferencia entre dos versiones del analizador en el mismo tramo es del cambio y no de la pasada.
 
 ## El balón con RF-DETR y TensorRT (17-11-2026)
 
@@ -1041,7 +1098,9 @@ dependencias. La calibración (`campo.py`) no cambia: puntos con confianza > 0,5
   menos de 0,001 por época (mAP50-95 0,725; la caja del campo, 0,96). Probado y descartado: seis épocas más con la
   tasa de aprendizaje diez veces menor y más peso al error de los puntos (peor: 54 % de fotogramas calibrables), y cada
   vértice como un objeto pequeño para RF-DETR Medium (igual que el de puntos a la misma altura del entrenamiento).
-- **TensorRT** (`exportar-campo`): 7-10 ms por fotograma frente a 16 con PyTorch y unos 10 el YOLO.
+- **TensorRT** (`exportar-campo`): 7-10 ms por fotograma frente a 16 con PyTorch y unos 10 el YOLO. Desde la 2.3.1 no se
+  usa: con la misma imagen no da siempre lo mismo, y el análisis va con PyTorch FP16 (ver «Dos pasadas, el mismo
+  resultado»).
 
 **Cómo medirlo.** Las etiquetas de `datasets/vallobin/campo` son los puntos coherentes **del propio YOLO**, así que
 contra ellas el YOLO se mide a sí mismo: 76 % calibrables, 5,4 puntos a menos de 15 px y 13 px de error frente al 64-68
@@ -1116,8 +1175,8 @@ detector de eventos es ahora una clase con un paso por instante (`eventos._Detec
   de los jugadores (uno en el suelo) para confirmar las paradas por frenazo.
 - Dorsales: un piso para el peso de cada lectura, reajustando con él los umbrales de la identificación (sin reajustar
   sube la cobertura pero mete errores; ver «Las lecturas del portero cuyo tracklet saltó»).
-- Que dos pasadas del mismo vídeo den lo mismo: hoy difieren desde la calibración del campo (en 20:00-21:30 del J8, 199
-  y 176 aciertos, y con ello eventos y posesión). Las semillas ya están fijadas, así que lo más probable es la
-  inferencia en la GPU; hay que medirlo antes de tocar nada.
+- El campo otra vez con TensorRT (unos 10 ms por fotograma analizado): hace falta un motor que pase la sonda y vaya más
+  rápido que PyTorch FP16. En FP32 la pasa, pero tarda 25,7 ms; queda probar FP16 con solo algunas capas en FP32 o una
+  versión nueva de TensorRT (ver «Dos pasadas, el mismo resultado»).
 - El visor en directo: ver un análisis mientras se hace (el índice de `fotogramas.jsonl` ya lee un archivo a medias) y
   lanzar el análisis desde el propio visor.
