@@ -64,6 +64,9 @@ class Toque:
     t_fin: float
     xy_inicio: Punto | None
     xy_fin: Punto | None
+    # Empezó con el balón parado (un balón muerto antes de una falta o un saque, o algo quieto en el césped): quien lo
+    # toca no se lo ha quitado a nadie. Solo lo dice `posesion.MaquinaControl`.
+    parado: bool = False
 
 
 @dataclass

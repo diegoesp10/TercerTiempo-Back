@@ -117,9 +117,16 @@ def test_pocas_paradas_o_muy_seguidas_no_son_un_objeto():
     assert objetos_fijos(permanencias(_partido_con_paradas(seguidas))) == []
 
 
-def test_el_balon_pegado_a_un_jugador_junto_a_un_objeto_fijo_se_queda():
+def test_junto_a_un_objeto_fijo_solo_se_queda_el_balon_que_va_de_paso():
     objeto = [(60.0 + 200 * k, 3.0, (6900, 4100)) for k in range(5)]
-    instantes = _partido_con_paradas(objeto)
-    objetos = objetos_fijos(permanencias(instantes))
-    regate = instante(len(instantes), 2000.0, [persona(7, 1, (6950, 4150))], (6900, 4100))
-    assert quitar_objetos_fijos([regate], objetos) == 0 and regate.balon_campo == (6900, 4100)
+    objetos = objetos_fijos(permanencias(_partido_con_paradas(objeto)))
+    jugador = persona(7, 1, (6950, 4150))
+    # Mientras el objeto está en el césped, lo que se queda dentro es el objeto, aunque haya un jugador al lado...
+    quieto = [instante(0, 500.0, [jugador], (6900, 4100)), instante(1, 500.2, [jugador], (6900, 4100))]
+    assert quitar_objetos_fijos(quieto, objetos) == 2 and quieto[0].balon_campo is None
+    # ...y el balón que entra y sale a una velocidad posible va de paso.
+    de_paso = [instante(0, 500.0, [jugador], (6300, 4100)), instante(1, 500.2, [jugador], (6900, 4100)), instante(2, 500.4, [jugador], (7500, 4100))]
+    assert quitar_objetos_fijos(de_paso, objetos) == 0
+    # Más de un minuto después de su última parada ya no está: no se quita nada.
+    despues = [instante(0, 2000.0, [jugador], (6900, 4100))]
+    assert quitar_objetos_fijos(despues, objetos) == 0 and despues[0].balon_campo == (6900, 4100)

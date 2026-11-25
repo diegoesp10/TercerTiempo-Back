@@ -1,6 +1,7 @@
 """Eventos del partido deducidos de la trayectoria del balón y de la posesión: balón fuera (saque de banda, córner,
-saque de puerta), tiros (a puerta o no), goles (con el saque de centro que los confirma), paradas, parones y saques de
-centro. Todo son candidatos con una confianza; el cuerpo técnico (o el modelo de lenguaje) confirma."""
+saque de puerta), tiros (a puerta o no), goles (con el saque de centro que los confirma), parones y saques de centro
+(las paradas son del portero: `posesion.acciones_por_jugador`). Todo son candidatos con una confianza; el cuerpo técnico
+(o el modelo de lenguaje) confirma."""
 
 from __future__ import annotations
 
@@ -50,11 +51,6 @@ def _ultimo_toque_antes(toques: list[Toque], t: float, margen_s: float = 3.0) ->
     return mejor
 
 
-def _primer_toque_despues(toques: list[Toque], t: float, ventana_s: float) -> Toque | None:
-    candidatos = [x for x in toques if t <= x.t_inicio <= t + ventana_s]
-    return min(candidatos, key=lambda x: x.t_inicio) if candidatos else None
-
-
 def detectar_eventos(
     instantes: list[Instante],
     toques: list[Toque],
@@ -76,7 +72,7 @@ def detectar_eventos(
 class _Detector:
     """Recorre los instantes uno a uno. Cada regla mira el balón de ahora y lo que recuerda del anterior: el parón (sin
     balón a la vista o con él quieto mucho rato), el fuera (y el gol, que es un fuera entre los postes), el saque de
-    centro que confirma un gol y el tiro (con la parada del portero, si la hay)."""
+    centro que confirma un gol y el tiro."""
 
     toques: list[Toque]
     direccion_de: Callable[[int, int], int | None]
@@ -190,7 +186,9 @@ class _Detector:
     def _tiro_que_entra(self, ultimo: Toque | None, t: float) -> None:
         """El balón que cruza la línea entre los postes sale de un tiro: el que ya se vio con ese mismo toque o, si no se
         llegó a ver, uno nuevo. Un toque es un solo tiro."""
-        if ultimo is None:
+        # Con el portero como último en tocarlo, el balón que cruza la línea es él recogiéndolo o la calibración que
+        # tiembla en la línea, no un tiro suyo.
+        if ultimo is None or ultimo.tracklet in self.porteros_de(ultimo.equipo):
             return
         if self.ultimo_tiro is not None and self.ultimo_tiro_toque is ultimo:
             self.ultimo_tiro.detalle = "A puerta · el balón entra en la portería"
@@ -219,7 +217,8 @@ class _Detector:
         if modulo(v) < self.p.velocidad_tiro or inst.t - self.ultimo_tiro_t <= TIRO_DEDUP_S:
             return
         ultimo = _ultimo_toque_antes(self.toques, inst.t, margen_s=2.0)
-        if ultimo is None or ultimo is self.ultimo_tiro_toque:
+        # El portero no tira: el balón que sale rápido de él es un saque.
+        if ultimo is None or ultimo is self.ultimo_tiro_toque or ultimo.tracklet in self.porteros_de(ultimo.equipo):
             return
         direccion = self.direccion_de(ultimo.equipo, mitad)
         if not direccion:
@@ -236,10 +235,6 @@ class _Detector:
         self.ultimo_tiro = Evento("tiro", inst.t, equipo=ultimo.equipo, tracklet=ultimo.tracklet, confianza=0.55 if a_puerta else 0.45, detalle="A puerta" if a_puerta else "Fuera")
         self.ultimo_tiro_toque = ultimo
         self.resultado.eventos.append(self.ultimo_tiro)
-        if a_puerta:
-            siguiente = _primer_toque_despues(self.toques, inst.t, 3.0)
-            if siguiente and siguiente.equipo != ultimo.equipo and siguiente.tracklet in self.porteros_de(siguiente.equipo):
-                self.resultado.eventos.append(Evento("parada", siguiente.t_inicio, equipo=siguiente.equipo, tracklet=siguiente.tracklet, confianza=0.5, detalle="El portero se hace con el balón tras un tiro a puerta"))
 
 
 def _clasificar_fuera(lado: str, xy, equipo_toco: int | None, mitad: int, direccion_de, campo: Campo) -> tuple[str, int | None, str]:

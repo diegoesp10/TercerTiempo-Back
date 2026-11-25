@@ -40,8 +40,12 @@ FIJO_MIN_PERMANENCIAS = 4
 FIJO_MIN_LAPSO_S = 600.0
 FIJO_RADIO_MIN_CM = 250.0
 FIJO_HOLGURA_CM = 100.0
-# Dentro del radio de un objeto fijo se conserva el balón que está pegado a un jugador: ese sí puede ser el de verdad.
-FIJO_CERCA_JUGADOR_M = 2.0
+# Dentro del radio de un objeto fijo, mientras está en el césped (de su primera a su última permanencia, con
+# FIJO_MARGEN_S de margen), solo vale el balón que va de paso: visto también fuera del radio a menos de FIJO_PASO_S y a
+# una velocidad posible. Lo que se queda dentro es el objeto aunque haya un jugador al lado: medido el 25-11-2026 en el
+# Vallobín - Real Titánico, quedarse con lo que estaba cerca de alguien daba toques, pases y pérdidas que no existieron.
+FIJO_MARGEN_S = 60.0
+FIJO_PASO_S = 0.6
 
 
 @dataclass
@@ -196,20 +200,33 @@ def _mediana(perms: list[Permanencia]) -> Punto:
     return (float(cx), float(cy))
 
 
-def quitar_objetos_fijos(instantes: list[Instante], objetos: list[ObjetoFijo], cerca_jugador_m: float = FIJO_CERCA_JUGADOR_M) -> int:
-    """Quita el balón que cae dentro del radio de un objeto fijo, salvo que esté pegado a un jugador."""
+def quitar_objetos_fijos(instantes: list[Instante], objetos: list[ObjetoFijo]) -> int:
+    """Quita el balón que cae dentro del radio de un objeto fijo mientras está en el césped, salvo que vaya de paso."""
     if not objetos:
         return 0
-    quitados = 0
-    for inst in instantes:
-        if inst.balon_campo is None or not any(distancia(inst.balon_campo, o.centro) <= o.radio for o in objetos):
-            continue
-        lejos = distancia_a_jugadores_m(inst)
-        if lejos is not None and lejos <= cerca_jugador_m:
-            continue
+    dentro = [inst.balon_campo is not None and any(_en_objeto(inst, o) for o in objetos) for inst in instantes]
+    quitar = [i for i, d in enumerate(dentro) if d and not _de_paso(instantes, dentro, i)]
+    for i in quitar:
+        inst = instantes[i]
         inst.balon_imagen, inst.balon_campo, inst.balon_origen, inst.balon_confianza = None, None, None, None
-        quitados += 1
-    return quitados
+    return len(quitar)
+
+
+def _en_objeto(inst: Instante, objeto: ObjetoFijo) -> bool:
+    return objeto.t_primera - FIJO_MARGEN_S <= inst.t <= objeto.t_ultima + FIJO_MARGEN_S and distancia(inst.balon_campo, objeto.centro) <= objeto.radio
+
+
+def _de_paso(instantes: list[Instante], dentro: list[bool], i: int) -> bool:
+    """El balón de `i` se ve también fuera del radio a menos de `FIJO_PASO_S`, a una velocidad posible: va de paso."""
+    inst = instantes[i]
+    for paso in (-1, 1):
+        j = i + paso
+        while 0 <= j < len(instantes) and abs(instantes[j].t - inst.t) <= FIJO_PASO_S:
+            otro = instantes[j]
+            if otro.balon_campo is not None and not dentro[j] and distancia(otro.balon_campo, inst.balon_campo) / abs(otro.t - inst.t) <= VELOCIDAD_MAX_CAMPO_CM_S:
+                return True
+            j += paso
+    return False
 
 
 def _entre(a: Punto, b: Punto, f: float) -> Punto:

@@ -167,7 +167,7 @@ public sealed record VideoAnalysisPlayerDto(
     Guid? SuggestedSquadPlayerId = null,
     [property: Description("Minutos que jugó según el acta oficial cerrada (por descarte: sin cambio, el partido entero), aunque el vídeo no lo viera todo el rato; null sin acta cerrada o sin identificar.")]
     int? SheetMinutes = null,
-    [property: Description("Segundo del vídeo de cada acción de su propuesta (pases completados y fallados, pérdidas, recuperaciones, tiros, goles, paradas, faltas cometidas y recibidas y fueras de juego), para verla en el vídeo. null en análisis anteriores a Ojeador 2.1.2.")]
+    [property: Description("Segundo del vídeo de cada acción de su propuesta (pases completados y fallados, pérdidas, recuperaciones, tiros, goles, paradas, faltas cometidas y recibidas, fueras de juego y, desde Ojeador 2.2.0, saques del portero), para verla en el vídeo. null en análisis anteriores a Ojeador 2.1.2.")]
     VideoPlayerMoments? Moments = null);
 
 // Lo que se sabe del acta oficial para proponer la ficha de cada jugador identificado: el lado de la plantilla y, por

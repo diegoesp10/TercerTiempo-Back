@@ -245,6 +245,8 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                     "passes": acc.pases,
                     "passesFailed": acc.pases_fallados,
                     "touches": acc.toques,
+                    # Del portero: los balones que pone en juego desde su área (no son pases ni van al acta).
+                    "distributions": acc.saques,
                 },
                 # Cada acción de la propuesta en su segundo del vídeo, con las mismas claves (los toques no: son
                 # demasiados y no van al acta). Los goles del acta oficial que el vídeo no vio no tienen momento.
@@ -260,6 +262,7 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                     "ballLosses": redondear_segundos(acc.segundos_perdidas),
                     "passes": redondear_segundos(acc.segundos_pases),
                     "passesFailed": redondear_segundos(acc.segundos_pases_fallados),
+                    "distributions": redondear_segundos(acc.segundos_saques),
                 },
             }
         )
@@ -339,13 +342,13 @@ def resumen_markdown(analisis: dict, acta: dict, resumen_llm: str | None) -> str
         lineas += ["", f"Parones largos: {len(parones)} (" + ", ".join(f"{p['minuto']}→{formato_minuto(p['t_fin'] or p['t'])}" for p in parones[:12]) + ")."]
 
     lineas += ["", "## Jugadores seguidos (tracklets)", "", "Un tracklet es una persona seguida por el programa; se corta al perderla de vista. El cuerpo técnico asigna cada tracklet a una ficha.", "",
-               "| Tracklet | Equipo | Minutos | Distancia | Vel. máx. | Toques | Pases | Recup. | Pérdidas | Tiros | Dorsal (IA) |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+               "| Tracklet | Equipo | Minutos | Distancia | Vel. máx. | Toques | Pases | Recup. | Pérdidas | Tiros | Paradas | Saques | Dorsal (IA) |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for j in acta["jugadores"][:40]:
         t = next((x for x in analisis["tracklets"] if x["tracklet"] == j["tracklet"]), {})
         p = j["propuesta"]
         lineas.append(
             f"| {j['tracklet']}{' (POR)' if j['portero'] else ''} | {nombres[j['equipo']]} | {j['minutosALaVista']} | {j['distanciaM']} m | {t.get('velocidad_max_kmh', 0):.0f} km/h | "
-            f"{p['touches']} | {p['passes']} | {p['recoveries']} | {p['ballLosses']} | {p['shots']} | {j['dorsal_llm'] if j['dorsal_llm'] is not None else '—'} |"
+            f"{p['touches']} | {p['passes']} | {p['recoveries']} | {p['ballLosses']} | {p['shots']} | {p['saves']} | {p.get('distributions', 0)} | {j['dorsal_llm'] if j['dorsal_llm'] is not None else '—'} |"
         )
     recuento = analisis["recuento"]
     relleno = recuento.get("balon_relleno", {})

@@ -18,6 +18,7 @@ la mayor con modelos o una cadena nueva, la menor con reglas nuevas y la de parc
 
 | Versión | Fecha | Qué cambia |
 |---|---|---|
+| 2.2.0 | 25-11-2026 | **Solo las acciones que se ven**: medido en el Vallobín - Real Titánico, casi todos los pases, pérdidas y recuperaciones de la 2.1.2 no estaban en el vídeo (balones que pasaban cerca de alguien, forcejeos, balones parados, cosas quietas en el césped y momentos sin el campo calibrado). Ahora las acciones de cada jugador salen de **toques controlados** (`MaquinaControl`: el balón a menos de 2 m en 0,2 s seguidos con el balón visto, sin cruzar de un lado a otro del jugador, quitárselo a quien lo tiene solo estando claramente más cerca y sin avistamientos más rápidos que un tiro); la posesión del equipo sigue con el más cercano. **Pase**: balón golpeado (4 m o más, entre 4 y 30 m/s) a un compañero. **Pérdida y recuperación**: el rival se hace con el balón en 2,5 s como mucho, no parado, y lo conserva 1,5 s o más. Sin el campo calibrado en los dos extremos no se cuenta. Un tiro no es pérdida ni pase. **El portero no pasa, ni pierde, ni recupera**: el balón del rival con el que se queda en su área 1 s o más es una **parada** (ya no sale del tiro a puerta) y el que pone en juego desde su área (a 8 m en 3 s), un **saque** (`distributions` en la propuesta y en `momentos`; no va al acta). El portero no tira. Junto a un objeto fijo solo vale el balón que va de paso, aunque haya un jugador al lado. Salen muchas menos acciones, pero las que salen se ven (paso 4) |
 | 2.1.2 | 25-11-2026 | **Cada acción con su segundo del vídeo**: en `acta-propuesta.json`, cada jugador y cada equipo traen `momentos`, el segundo del vídeo (a la décima) de cada cosa que cuenta su propuesta: del jugador, cada pase (cuando el balón deja su pie), pase fallado, pérdida, recuperación (cuando le llega), tiro, tiro a puerta, gol, parada, falta cometida y recibida y fuera de juego; del equipo, cada tiro, tiro a puerta, gol, córner, saque de banda, saque de puerta, falta y fuera de juego. Llevan las mismas claves y los mismos filtros que sus datos, así que lo que se cuenta y lo que se puede ver es lo mismo (salvo los goles que salen del acta oficial cerrada sin que el vídeo los viera). La app los enseña con «Ver» en «Del vídeo». Lo que se propone no cambia (paso 8) |
 | 2.1.1 | 24-11-2026 | **El tramo del detector que viste como el portero nunca acaba en una línea de campo**: si su portero no sale identificado, los tramos que solo marca el detector pero que en su rato visten como él (comprobado con su color) se quedan sin identificar, como los del portero por la equipación; hasta ahora se resolvían como los de campo. En una pasada del 20:00-30:00 del J8, 5 s del 13 (de morado) salen de la línea del 17 y es lo único que cambia; en el partido entero no cambia nada (paso 6) |
 | 2.1.0 | 24-11-2026 | **Del portero cuyo tracklet saltó a otra persona, las lecturas de su rato**: cada lectura del dorsal guarda su segundo (`HistorialLecturas`) y, del tracklet de portero en que el seguidor saltó a otro jugador, cuentan las de su rato a 0,4 s o más de cada corte (hasta la 2.0.0, ninguna). En el J8, sobre la misma pasada, la evidencia del 1 del Vallobín pasa de 5,1 a 15,6 (confianza de 0,07 a 0,16) y la del 13 del Real Titánico de 12,5 a 17,5, y ningún jugador de campo cambia. En una pasada del tramo 20:00-30:00, con la regla vieja el portero salía como el 6 y con la nueva queda sin identificar (paso 6 y «Las lecturas del portero cuyo tracklet saltó») |
@@ -43,8 +44,8 @@ la app».
 | Faltas y penaltis | El juego se para con el balón en el campo (el balón quieto lejos de las líneas o el frenazo de todos a la vez) sin un fuera ni un gol que lo explique: **la recibe el que tenía el balón y la comete el rival más cercano**, que tiene que estar a menos de 5 m | Baja en cobertura (el balón quieto se ve poco), alta en lo que sale |
 | Fueras de juego | Parada en la que saca el otro equipo desde donde estaba un atacante por delante del penúltimo defensor en el último pase hacia delante de su equipo | Baja en cobertura |
 | Minutos de cada jugador | **Por descarte, del acta oficial cerrada**: sin cambio, el partido entero aunque la cámara no lo vea todo el rato; con cambio, desde o hasta ese minuto | La del acta |
-| Paradas | Tiro a puerta seguido del portero con el balón | Media |
-| Pases, pérdidas, recuperaciones por tracklet | Cadenas de toques del mismo equipo / cambios de equipo sin balón fuera | Media |
+| Paradas y saques del portero | Parada: el portero se queda 1 s o más en su área con un balón del rival. Saque: el balón que suelta en su área está a 8 m en 3 s. El portero no pasa, ni pierde, ni recupera | Alta en lo que propone; se escapan las que no se ven (cámara cerrada, balón por el aire) |
+| Pases, pérdidas, recuperaciones por tracklet | Toques controlados (no el más cercano): pase con el balón golpeado a un compañero; pérdida y recuperación si el rival se hace con él poco después, no parado, y lo conserva; solo con el campo calibrado | Alta en lo que propone; son un mínimo |
 | Quién es quién | **Dorsal leído en la espalda** (PARSeq) y sumado en todos los fotogramas de cada jugador; con el acta oficial (`--plantillas`), solo los dorsales de los que jugaron y en sus minutos | Alta en el número leído; el tiempo sin identificar (de frente, lejos) cuenta para el equipo y no para nadie en concreto |
 | De qué equipo es cada uno | Color de la camiseta (resumen Lab del torso, sin el césped, con la claridad medida respecto al césped del recorte; dos grupos por KMeans) | Alta si las dos equipaciones se distinguen, también de noche |
 
@@ -237,8 +238,8 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
    el RF-DETR de puntos a 768 px → homografía con RANSAC y error de reproyección; por fotograma o única), filtro de personas fuera del campo y proyección de posiciones.
 3. **Trayectoria del balón** (`balon.py`): primero se quitan los **objetos fijos** que el detector toma por el balón
    (un cono, una bolsa o una botella junto a la línea): sitios donde el «balón» se queda quieto al menos cuatro veces
-   a lo largo de diez minutos o más, fuera de los puntos de saque; dentro de su radio solo vale con un jugador a menos
-   de 2 m. Luego los avistamientos sueltos (flojos, lejos de todos los jugadores y
+   a lo largo de diez minutos o más, fuera de los puntos de saque; dentro de su radio, mientras está en el césped, solo vale
+   el balón que va de paso (visto fuera del radio a menos de 0,6 s), aunque haya un jugador al lado. Luego los avistamientos sueltos (flojos, lejos de todos los jugadores y
    sin otro a menos de 1,5 s) y se rellenan por interpolación los huecos de hasta 2 s entre dos avistamientos con
    una velocidad plausible (en el campo si los dos extremos están proyectados, y siempre en la imagen). El balón de
    cada instante queda marcado como «visto» o «interpolado».
@@ -249,7 +250,11 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
    sin balón ya no se sabe de quién es hasta el siguiente toque. Sale con su confianza: **alta** si hay balón en el
    60 % del tramo y se reparte al menos la mitad, **media** a partir del 35 % y la cuarta parte, **baja** si no (el
    35 % es el mismo umbral con el que la app avisa de calidad baja). Con confianza baja la posesión se enseña pero
-   la app no la vuelca al acta.
+   la app no la vuelca al acta. Las **acciones de cada jugador** no salen de esta máquina sino de una más exigente
+   (`MaquinaControl`, desde la 2.2.0): el balón tiene que verse con él (a menos de 2 m en 0,2 s seguidos, con el
+   balón visto y sin cruzar de un lado a otro), para quitárselo a quien lo tiene hay que estar 0,5 m más cerca, un
+   avistamiento más rápido que un tiro no es el balón y cada toque dice si empezó con el balón parado. Pase, pérdida,
+   recuperación, parada y saque del portero, como en la tabla de arriba.
 5. **Jugadas** (`jugadas.py`, que encadena lo demás sobre las posiciones guardadas): toques de balón; eventos
    (`eventos.py`: fueras, saques, córners, tiros, goles, parones); el **descanso** y la dirección de ataque de cada
    equipo en cada parte (`mitades.py`: el parón más largo del medio del tramo o, si no lo hay, **el cambio de campo**,

@@ -51,7 +51,7 @@ def test_acta_propuesta_desde_los_dos_lados():
     assert tracklets == [3, 9, 8]
     jugador = acta["jugadores"][0]
     assert jugador["dorsal_llm"] == 7 and jugador["recorte"] == "recortes/tracklet-3.jpg"
-    assert jugador["propuesta"] == {"shots": 2, "shotsOnTarget": 1, "goals": 1, "saves": 0, "recoveries": 4, "ballLosses": 3, "passes": 12, "passesFailed": 2, "touches": 30, "fouls": 0, "foulsReceived": 0, "offsides": 0}
+    assert jugador["propuesta"] == {"shots": 2, "shotsOnTarget": 1, "goals": 1, "saves": 0, "recoveries": 4, "ballLosses": 3, "passes": 12, "passesFailed": 2, "touches": 30, "fouls": 0, "foulsReceived": 0, "offsides": 0, "distributions": 0}
     assert jugador["minutos"] is None and acta["actaOficial"] is None
     assert acta["jugadores"][1]["propuesta"]["saves"] == 1
 
@@ -68,6 +68,7 @@ def test_cada_accion_de_la_propuesta_lleva_su_segundo_del_video(tmp_path):
     acciones = {
         3: AccionesJugador(pases=2, pases_fallados=1, perdidas=1, recuperaciones=1, toques=9, segundos_pases=[250.26, 12.0], segundos_pases_fallados=[260.0],
                            segundos_perdidas=[260.0], segundos_recuperaciones=[240.0]),
+        9: AccionesJugador(saques=2, segundos_saques=[800.04, 790.0]),
     }
     acta = acta_propuesta(eventos, posesion, resumenes, acciones, {}, {}, ("Vallobín", "Rival"), ["#0000ff", "#ff0000"])
     a, b = acta["equipos"]
@@ -78,9 +79,10 @@ def test_cada_accion_de_la_propuesta_lleva_su_segundo_del_video(tmp_path):
     # En orden y a la décima.
     assert jugador["momentos"] == {
         "shots": [100.0, 140.0], "shotsOnTarget": [100.0], "goals": [101.0], "fouls": [], "foulsReceived": [400.0], "offsides": [500.0], "saves": [],
-        "recoveries": [240.0], "ballLosses": [260.0], "passes": [12.0, 250.3], "passesFailed": [260.0],
+        "recoveries": [240.0], "ballLosses": [260.0], "passes": [12.0, 250.3], "passesFailed": [260.0], "distributions": [],
     }
     assert acta["jugadores"][1]["momentos"]["saves"] == [700.0]
+    assert acta["jugadores"][1]["propuesta"]["distributions"] == 2 and acta["jugadores"][1]["momentos"]["distributions"] == [790.0, 800.0]
     assert next(j for j in acta["jugadores"] if j["tracklet"] == 8)["momentos"]["fouls"] == [400.0]
     # Lo que cuenta la propuesta y lo que se puede ver en el vídeo es lo mismo, dato a dato (sin acta oficial).
     for j in acta["jugadores"]:

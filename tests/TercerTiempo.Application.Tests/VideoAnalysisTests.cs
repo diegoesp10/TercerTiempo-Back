@@ -88,6 +88,30 @@ public class VideoProposalTests
         Assert.Null(proposal.Players.Single(p => p.Tracklet == 900004).Moments);
         Assert.Null(VideoProposal.Parse(VideoAnalysisSamples.Proposal).Players[0].Moments);
     }
+
+    [Fact]
+    public void Since_ojeador_2_2_0_the_goalkeeper_brings_his_distributions_which_do_not_go_to_the_sheet()
+    {
+        var proposal = VideoProposal.Parse("""
+            { "version": 2,
+              "equipos": [ { "id": 0, "teamStats": {} }, { "id": 1, "teamStats": {} } ],
+              "jugadores": [ { "tracklet": 900001, "equipo": 0, "portero": true, "propuesta": { "saves": 1, "distributions": 2 },
+                               "momentos": { "saves": [700], "distributions": [812.04, 790] } },
+                             { "tracklet": 900004, "equipo": 0, "propuesta": { "passes": 1 }, "momentos": { "passes": [10] } } ] }
+            """);
+
+        var keeper = proposal.Players.Single(p => p.Tracklet == 900001);
+        Assert.Equal((1, 2), (keeper.Actions.Saves, keeper.Actions.Distributions));
+        Assert.Equal([790m, 812.0m], keeper.Moments!.Distributions);
+        Assert.Equal([700m], keeper.Moments.Saves);
+        // Un jugador de campo (o un análisis anterior) no trae saques: ninguno.
+        var outfield = proposal.Players.Single(p => p.Tracklet == 900004);
+        Assert.Equal(0, outfield.Actions.Distributions);
+        Assert.Empty(outfield.Moments!.Distributions);
+        // Los saques no tienen casilla en el acta, pero se suman al juntar los tramos de un jugador.
+        Assert.False((VideoPlayerActions.None with { Distributions = 3 }).HasSheetData);
+        Assert.Equal(5, keeper.Actions.Plus(keeper.Actions with { Distributions = 3 }).Distributions);
+    }
 }
 
 public class VideoSheetMergeTests

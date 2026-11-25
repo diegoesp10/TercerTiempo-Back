@@ -78,7 +78,8 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
                         Count(a.Touches),
                         Count(a.Fouls),
                         Count(a.FoulsReceived),
-                        Count(a.Offsides)))
+                        Count(a.Offsides),
+                        Count(a.Distributions)))
                 {
                     ShirtFromVideo = p.Dorsal is >= 1 and <= 99,
                     SheetName = string.IsNullOrWhiteSpace(p.NombreActa) ? null : p.NombreActa.Trim(),
@@ -117,7 +118,10 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
         ? null
         : new VideoPlayerMoments(
             Seconds(m.Shots), Seconds(m.ShotsOnTarget), Seconds(m.Goals), Seconds(m.Saves), Seconds(m.Recoveries), Seconds(m.BallLosses),
-            Seconds(m.Passes), Seconds(m.PassesFailed), Seconds(m.Fouls), Seconds(m.FoulsReceived), Seconds(m.Offsides));
+            Seconds(m.Passes), Seconds(m.PassesFailed), Seconds(m.Fouls), Seconds(m.FoulsReceived), Seconds(m.Offsides))
+        {
+            Distributions = Seconds(m.Distributions),
+        };
 
     // Segundos del archivo de vídeo, en orden y a la décima; lo que no es un segundo (vacío o negativo) se descarta.
     private static IReadOnlyList<decimal> Seconds(List<decimal?>? values) => values is null
@@ -225,6 +229,7 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
         public List<decimal?>? Fouls { get; set; }
         public List<decimal?>? FoulsReceived { get; set; }
         public List<decimal?>? Offsides { get; set; }
+        public List<decimal?>? Distributions { get; set; }
     }
 
     private sealed class ActionsDto
@@ -241,6 +246,7 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
         public int? Fouls { get; set; }
         public int? FoulsReceived { get; set; }
         public int? Offsides { get; set; }
+        public int? Distributions { get; set; }
     }
 }
 
@@ -320,7 +326,11 @@ public sealed record VideoPlayerMoments(
     IReadOnlyList<decimal> PassesFailed,
     IReadOnlyList<decimal> Fouls,
     IReadOnlyList<decimal> FoulsReceived,
-    IReadOnlyList<decimal> Offsides);
+    IReadOnlyList<decimal> Offsides)
+{
+    // Los saques del portero, desde Ojeador 2.2.0; vacío en análisis anteriores.
+    public IReadOnlyList<decimal> Distributions { get; init; } = [];
+}
 
 // Lo mismo para los datos de un equipo, «a favor»: los momentos en contra son los del otro equipo.
 public sealed record VideoTeamMoments(
@@ -345,16 +355,18 @@ public sealed record VideoPlayerActions(
     int Touches,
     int Fouls = 0,
     int FoulsReceived = 0,
-    int Offsides = 0)
+    int Offsides = 0,
+    int Distributions = 0)
 {
     public static readonly VideoPlayerActions None = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-    // Lo que se puede llevar al acta (los toques, las faltas recibidas y los fueras de juego no tienen casilla).
+    // Lo que se puede llevar al acta (los toques, las faltas recibidas, los fueras de juego y los saques del portero,
+    // los balones que pone en juego desde su área, no tienen casilla).
     public bool HasSheetData => Shots > 0 || Goals > 0 || Saves > 0 || Recoveries > 0 || BallLosses > 0 || PassesAttempted > 0 || Fouls > 0;
 
     public VideoPlayerActions Plus(VideoPlayerActions other) => new(
         Shots + other.Shots, ShotsOnTarget + other.ShotsOnTarget, Goals + other.Goals, Saves + other.Saves,
         Recoveries + other.Recoveries, BallLosses + other.BallLosses, PassesCompleted + other.PassesCompleted,
         PassesAttempted + other.PassesAttempted, Touches + other.Touches, Fouls + other.Fouls,
-        FoulsReceived + other.FoulsReceived, Offsides + other.Offsides);
+        FoulsReceived + other.FoulsReceived, Offsides + other.Offsides, Distributions + other.Distributions);
 }

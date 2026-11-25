@@ -15,7 +15,7 @@ from .identidades import minuto_a_segundos
 from .interrupciones import Interrupciones, detectar_interrupciones
 from .mitades import detectar_descanso, direcciones_de_ataque, mitades
 from .oficial import ActaOficial, ajustar_goles
-from .posesion import AccionesJugador, MaquinaPosesion, ResumenPosesion, Secuencia, acciones_por_jugador, resumir_posesion, secuencias
+from .posesion import AccionesJugador, MaquinaPosesion, ResumenPosesion, Secuencia, acciones_por_jugador, resumir_posesion, secuencias, toques_controlados
 from .tipos import Evento, Instante, Toque
 
 
@@ -111,6 +111,16 @@ def analizar_jugadas(
     en_descanso = [paron is not None and paron.t <= inst.t <= (paron.t_fin or inst.t) for inst in instantes]
     posesion = resumir_posesion(toques, instantes, juego_activo, mitad_de, direccion_de, dt, campo, excluidos=en_descanso)
     secs = secuencias(toques, cortes)
+    # Las acciones de cada jugador, con los toques que se ven (más exigentes que los de la posesión), sin los tiros y con
+    # los porteros aparte. Sus paradas van también a los eventos, para los clips y la revisión.
+    tiros = [(e.tracklet, e.t) for e in eventos if e.tipo == "tiro" and e.tracklet is not None]
+    acciones = acciones_por_jugador(secuencias(toques_controlados(instantes), cortes), porteros_de(0) | porteros_de(1), tiros, instantes, campo)
+    paradas = [
+        Evento("parada", t, equipo=resumenes[tid].equipo if tid in resumenes else None, tracklet=tid, confianza=0.55, detalle="El portero se queda en su área con un balón del rival")
+        for tid, a in acciones.items()
+        for t in a.segundos_paradas
+    ]
+    eventos = sorted(eventos + paradas, key=lambda e: e.t)
     return Jugadas(
         toques=toques,
         resumenes=resumenes,
@@ -123,6 +133,6 @@ def analizar_jugadas(
         interrupciones=interrupciones,
         posesion=posesion,
         secuencias=secs,
-        acciones=acciones_por_jugador(secs),
+        acciones=acciones,
         goles_quitados=goles_quitados,
     )

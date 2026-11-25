@@ -63,12 +63,12 @@ class Campo:
             tercio = 2 - tercio
         return ("propio", "medio", "rival")[tercio]
 
-    def en_area(self, xy: Punto, lado: int) -> bool:
+    def en_area(self, xy: Punto, lado: int, margen: float = 0.0) -> bool:
         x, y = xy
-        dentro_y = abs(y - self.ancho / 2) <= AREA_GRANDE_ANCHO_CM / 2
+        dentro_y = abs(y - self.ancho / 2) <= AREA_GRANDE_ANCHO_CM / 2 + margen
         if lado < 0:
-            return dentro_y and 0 <= x <= AREA_GRANDE_LARGO_CM
-        return dentro_y and self.largo - AREA_GRANDE_LARGO_CM <= x <= self.largo
+            return dentro_y and -margen <= x <= AREA_GRANDE_LARGO_CM + margen
+        return dentro_y and self.largo - AREA_GRANDE_LARGO_CM - margen <= x <= self.largo + margen
 
     def en_punto_de_saque(self, xy: Punto, margen: float = 300.0) -> bool:
         """Donde el reglamento para el balón una y otra vez: el centro, los puntos de penalti, el área pequeña (saques

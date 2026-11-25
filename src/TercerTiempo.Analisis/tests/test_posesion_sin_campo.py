@@ -1,5 +1,5 @@
 from tt_analisis.config import CLASE_JUGADOR
-from tt_analisis.posesion import MaquinaPosesion, acciones_por_jugador, secuencias
+from tt_analisis.posesion import MaquinaPosesion, acciones_por_jugador, secuencias, toques_controlados
 from tt_analisis.tipos import Instante, Persona
 
 
@@ -22,5 +22,7 @@ def test_sin_campo_calibrado_la_posesion_se_mide_en_la_imagen():
 
     secs = secuencias(maquina.toques, [])
     acciones = acciones_por_jugador(secs)
-    assert acciones[1].perdidas == 1 and acciones[2].recuperaciones == 1
-    assert acciones[1].pases_fallados == 0  # sin distancia no se afirma que fuera un pase
+    # Sin el campo no se sabe por dónde fue el balón ni si salió entre medias: ni pérdida, ni recuperación, ni pase.
+    assert acciones[1].perdidas == 0 and acciones[2].recuperaciones == 0 and acciones[1].pases_fallados == 0
+    # Los toques de las acciones también se miden en la imagen.
+    assert [(t.tracklet, t.xy_inicio) for t in toques_controlados(instantes)] == [(1, None), (2, None)]

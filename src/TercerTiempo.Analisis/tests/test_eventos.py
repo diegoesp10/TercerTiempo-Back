@@ -91,8 +91,9 @@ def test_otro_fuera_por_la_misma_banda_cuenta_si_el_balon_volvio_al_juego():
     assert [(e.tipo, e.equipo) for e in r.eventos] == [("saque_banda", 1), ("saque_banda", 0)]
 
 
-def test_tiro_a_puerta_y_parada_del_portero():
-    # Balón lanzado desde 9 m de la portería derecha a 15 m/s hacia el centro de la portería.
+def test_tiro_a_puerta_y_la_parada_es_del_portero():
+    # Balón lanzado desde 9 m de la portería derecha a 15 m/s hacia el centro de la portería. La parada no sale de aquí,
+    # sino de las acciones del portero (posesion.acciones_por_jugador).
     balones = [(9000, 3500), (9300, 3500), (9600, 3500), (9900, 3500), (10200, 3500), (10500, 3500), (10520, 3500)]
     guardameta = portero(9, 1, (11800, 3500))
     instantes = _instantes(balones, personas=[guardameta])
@@ -100,8 +101,15 @@ def test_tiro_a_puerta_y_parada_del_portero():
     r = detectar_eventos(instantes, toques, [1] * len(instantes), lambda e, m: DIRECCION[e], lambda e: {9} if e == 1 else set())
     tiros = _tipos(r, "tiro")
     assert len(tiros) == 1 and tiros[0].detalle == "A puerta" and tiros[0].tracklet == 4
-    paradas = _tipos(r, "parada")
-    assert len(paradas) == 1 and paradas[0].tracklet == 9
+    assert not _tipos(r, "parada")
+
+
+def test_el_balon_que_sale_rapido_del_portero_no_es_un_tiro():
+    balones = [(9000, 3500), (9300, 3500), (9600, 3500), (9900, 3500), (10200, 3500)]
+    instantes = _instantes(balones)
+    toques = [Toque(4, 0, 0.0, 0.2, (9000, 3500), (9300, 3500))]
+    r = detectar_eventos(instantes, toques, [1] * len(instantes), lambda e, m: DIRECCION[e], lambda e: {4} if e == 0 else set())
+    assert not _tipos(r, "tiro")
 
 
 def test_un_despeje_del_defensor_no_es_tiro():
