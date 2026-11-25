@@ -481,6 +481,7 @@ resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni
 - Teclas: espacio; ←/→ (1 s; con Mayús, 5 s); `,` y `.` (fotograma analizado anterior y siguiente); `[` y `]` (desfase
   de un fotograma si vídeo y dibujo no fueran a la par; `0` lo quita); la inicial de cada capa (J, E, B, T, P, C, M, D)
   y Esc.
+- El vídeo empieza siempre sin sonido, para que no suene en segundo plano: se le da con el altavoz o con `S`.
 
 **Mientras se analiza** (desde el 25-11-2026)
 

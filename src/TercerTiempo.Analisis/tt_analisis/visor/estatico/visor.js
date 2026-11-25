@@ -244,6 +244,7 @@ async function montar(nueva, conservar) {
     await rep.asegurar(inicio).catch(() => {});
     if (!rep.ficha.video_existe) pedirVideo(rep.ficha);
     else mensaje();
+    silenciar();
     video.src = `/api/a/${rep.id}/video`;
     video.addEventListener('loadedmetadata', () => {
       video.currentTime = Math.min(Math.max(inicio, rep.inicio), rep.fin);
@@ -594,6 +595,9 @@ function montarControles() {
   }
   $('btn-play').addEventListener('click', alternarPlay);
   $('btn-directo').addEventListener('click', irALoUltimo);
+  $('btn-sonido').addEventListener('click', alternarSonido);
+  video.addEventListener('volumechange', mostrarSonido);
+  silenciar();
   $('btn-atras').addEventListener('click', () => saltar(-5));
   $('btn-adelante').addEventListener('click', () => saltar(5));
   $('btn-fot-atras').addEventListener('click', () => instanteVecino(-1));
@@ -636,6 +640,25 @@ function alternarCapa(clave) {
   const chip = document.querySelector(`[data-capa="${clave}"]`);
   if (chip) chip.setAttribute('aria-pressed', String(capas[clave]));
   repintar();
+}
+
+// Cada vídeo que se abre empieza sin sonido, para que no suene en segundo plano; se le da con el altavoz o la S.
+function silenciar() {
+  video.muted = true;
+  mostrarSonido();
+}
+
+function alternarSonido() {
+  video.muted = !video.muted;
+  if (!video.muted && video.volume === 0) video.volume = 1;
+}
+
+function mostrarSonido() {
+  const boton = $('btn-sonido');
+  const con = !video.muted && video.volume > 0;
+  boton.setAttribute('aria-pressed', String(con));
+  boton.setAttribute('aria-label', con ? 'Quitar el sonido' : 'Activar el sonido');
+  boton.title = con ? 'Con sonido: pulsa para quitarlo (S)' : 'Sin sonido: pulsa para oírlo (S)';
 }
 
 function alternarPlay() {
@@ -745,6 +768,7 @@ function teclado(e) {
   if (tecla === '.') { instanteVecino(1); return; }
   if (tecla === 'Escape') { elegir(null); return; }
   if (tecla.toLowerCase() === 'l' && rep.enDirecto) { irALoUltimo(); return; }
+  if (tecla.toLowerCase() === 's') { alternarSonido(); return; }
   if (tecla === '[' || tecla === ']' || tecla === '0') {
     // Por si el vídeo y lo dibujado no van a la par: un fotograma de vídeo cada vez.
     estado.desfase = tecla === '0' ? 0 : estado.desfase + (tecla === ']' ? 1 : -1) / rep.video.fps;

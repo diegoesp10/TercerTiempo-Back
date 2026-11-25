@@ -29,7 +29,7 @@
     <main id="pantalla-visor" hidden>
       <section class="escena">
         <div class="video-caja" id="video-caja">
-          <video id="video" preload="auto" playsinline></video>
+          <video id="video" preload="auto" playsinline muted></video>
           <canvas id="capa"></canvas>
           <canvas id="minimapa"></canvas>
           <div class="pildoras" id="pildoras"></div>
@@ -51,6 +51,10 @@
             <option value="2">2×</option>
             <option value="4">4×</option>
           </select>
+          <button class="boton icono" id="btn-sonido" type="button" aria-pressed="false" title="Sin sonido: pulsa para oírlo (S)" aria-label="Activar el sonido">
+            <svg class="sin-sonido" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16.5 9.5l5 5m0-5l-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+            <svg class="con-sonido" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+          </button>
           <span class="separador" aria-hidden="true"></span>
           <div class="capas" id="capas" role="group" aria-label="Capas"></div>
           <span class="desfase" id="desfase" hidden></span>
