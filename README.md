@@ -625,6 +625,11 @@ uv run --frozen tt-analisis analizar <vídeo> --salida <Videos:Directory>/analys
   no lanzarlo). Deja la propuesta en la base y la carpeta de salida junto al vídeo, así que el contenedor la borra con
   él. Alternativa: un contenedor con GPU (`src/TercerTiempo.Analisis/Dockerfile`, `--gpus all`, con `uv` fijado y
   `uv sync --frozen` sobre `uv.lock`).
+- **Visor del Ojeador** (`Start-Visor.ps1`, o doble clic en `Visor-Ojeador.cmd`): un programa aparte, en una ventana
+  propia de este equipo, para ver encima del vídeo lo que hizo el analizador en cada análisis (jugadores, balón, campo
+  y cómo salen las estadísticas). Lee las carpetas de salida del volumen de Docker del entorno por `\\wsl.localhost`
+  (del `.env` solo toma `TT_DATA_VOLUME`) y las de prueba del analizador; no toca la app ni la base. Ver el
+  [README del analizador](src/TercerTiempo.Analisis/README.md#el-visor-del-ojeador-25-11-2026).
 
 **Acceso** (`VideoAccess`): un vídeo nunca es público. Lo ven la plantilla que lo subió (club, cuerpo técnico vigente y
 jugadores vinculados: `Owner`), el administrador (`Admin`) y quien tenga un pase del partido que lo incluya (`Pass`);

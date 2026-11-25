@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ojeador · Visor</title>
+  <link rel="stylesheet" href="/estatico/visor.css">
+  <script type="module" src="/estatico/visor.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="barra">
+      <div class="marca"><span class="logo" aria-hidden="true"></span> Ojeador <span class="version" id="version"></span></div>
+      <div class="partido" id="partido"></div>
+      <button class="boton" id="btn-lista" type="button" hidden>Otros análisis</button>
+    </header>
+
+    <main class="lista" id="pantalla-lista" hidden>
+      <h1>Análisis</h1>
+      <p class="ayuda">Cada análisis del Ojeador deja su repetición: el vídeo con lo que vio y lo que sacó en cada fotograma. Elige uno o pega la ruta de su carpeta (la que tiene <code>analisis.json</code>).</p>
+      <form class="abrir" id="form-abrir">
+        <input id="ruta-abrir" type="text" placeholder="C:\…\salidas\partido  o  \\wsl.localhost\…\videos\analysis\…" autocomplete="off" spellcheck="false" aria-label="Carpeta del análisis">
+        <button class="boton primario" type="submit">Abrir</button>
+      </form>
+      <p class="error" id="error-lista" hidden></p>
+      <div class="tarjetas" id="tarjetas"></div>
+    </main>
+
+    <main id="pantalla-visor" hidden>
+      <section class="escena">
+        <div class="video-caja" id="video-caja">
+          <video id="video" preload="auto" playsinline></video>
+          <canvas id="capa"></canvas>
+          <canvas id="minimapa"></canvas>
+          <div class="pildoras" id="pildoras"></div>
+          <div class="aviso-evento" id="aviso-evento"></div>
+          <div class="mensaje-video" id="mensaje-video" hidden></div>
+        </div>
+        <div class="controles">
+          <button class="boton icono" id="btn-play" type="button" title="Reproducir o pausar (espacio)" aria-label="Reproducir">▶</button>
+          <button class="boton icono" id="btn-atras" type="button" title="5 s atrás (Mayús + ←)" aria-label="5 segundos atrás">«</button>
+          <button class="boton icono" id="btn-fot-atras" type="button" title="Fotograma analizado anterior (,)" aria-label="Fotograma analizado anterior">‹</button>
+          <button class="boton icono" id="btn-fot-adelante" type="button" title="Fotograma analizado siguiente (.)" aria-label="Fotograma analizado siguiente">›</button>
+          <button class="boton icono" id="btn-adelante" type="button" title="5 s adelante (Mayús + →)" aria-label="5 segundos adelante">»</button>
+          <span class="tiempo" id="tiempo"></span>
+          <select id="velocidad" title="Velocidad" aria-label="Velocidad">
+            <option value="0.25">0,25×</option>
+            <option value="0.5">0,5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+          <span class="separador" aria-hidden="true"></span>
+          <div class="capas" id="capas" role="group" aria-label="Capas"></div>
+          <span class="desfase" id="desfase" hidden></span>
+        </div>
+        <div class="lineas">
+          <canvas id="linea-detalle" title="Los 30 s de antes y de después"></canvas>
+          <canvas id="linea-total" title="Todo el tramo analizado"></canvas>
+        </div>
+      </section>
+      <aside class="panel">
+        <nav class="pestanas" role="tablist">
+          <button class="pestana" role="tab" data-pestana="estadisticas" aria-selected="true" type="button">Estadísticas</button>
+          <button class="pestana" role="tab" data-pestana="jugadores" aria-selected="false" type="button">Jugadores</button>
+          <button class="pestana" role="tab" data-pestana="eventos" aria-selected="false" type="button">Jugadas</button>
+          <button class="pestana" role="tab" data-pestana="analisis" aria-selected="false" type="button">Análisis</button>
+        </nav>
+        <div class="panel-cuerpo" id="panel-cuerpo"></div>
+      </aside>
+    </main>
+  </div>
+</body>
+</html>

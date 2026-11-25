@@ -89,6 +89,7 @@ uv run tt-analisis analizar partido.mp4 --descanso 52:30 --llm claude           
 uv run tt-analisis analizar partido.mp4 --llm ollama --modelo-llm gemma4:12b         # lo mismo con un modelo local
 uv run tt-analisis analizar partido.mp4 --fps 3 --sin-clips                          # más rápido, menos fino
 uv run tt-analisis comparar salidas\a salidas\b salidas\c                              # varias pasadas del mismo tramo, lado a lado
+uv run tt-analisis visor salidas                                                     # verlo encima del vídeo (ver «El visor del Ojeador»)
 ```
 
 Opciones: `--camara movil|fija` (ver abajo), `--fps` (fotogramas analizados por segundo, 5 por defecto),
@@ -102,7 +103,7 @@ quién»), `--saque 1:30` (segundo del vídeo en que empieza el partido, para pa
 defecto), `--sin-dorsales` (no leer dorsales: un jugador por tracklet, como antes), `--progreso` (el avance como líneas `##progreso N` en la salida estándar, sin barras: para quien lo
 lanza como proceso), `--exigir-gpu` (sin GPU CUDA termina con el código de salida 3 en vez de analizar en CPU) y
 `--semilla N` (para medir la estabilidad: fija los generadores y muestrea otros fotogramas del mismo tramo,
-desplazados dentro del paso). `comparar` pone varias pasadas lado a lado (balón, calibración, toques, posesión y su
+desplazados dentro del paso) y `--sin-repeticion` (no guardar `repeticion/`, lo que lee el visor). `comparar` pone varias pasadas lado a lado (balón, calibración, toques, posesión y su
 confianza, emparejando los equipos por el color de la camiseta) y dice cuántos puntos se mueve la posesión, total y
 por minuto, respecto a la primera.
 
@@ -205,6 +206,7 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
 | `recortes/` | El mejor recorte de cada tracklet, para asignarlo a una ficha |
 | `clips/` | Clip de 10 s de cada tiro, gol, córner y parada |
 | `posiciones.csv.gz` | Posición de cada persona y del balón en cada fotograma analizado (campo en cm e imagen en px) |
+| `repeticion/` | Desde el 25-11-2026: lo que vio el analizador en cada fotograma y lo que sacó de ello, para el visor (`fotogramas.jsonl` y `final.json`; ver «El visor del Ojeador»). No cambia nada del análisis y la app no lo lee |
 | `anotado.mp4` | Con `--video-anotado`: cajas por equipo, número de tracklet, balón y radar del campo |
 
 ## Cómo funciona
@@ -436,6 +438,62 @@ uv run tt-analisis analizar <vídeo> --salida <Videos:Directory>/analysis/<víde
 Probado el 06-11-2026 en FakeDatos con el vídeo del Vallobín: el tramo 20:00-25:00 pedido desde el acta interna (5 min
 de cálculo, 27 jugadores seguidos, balón en el 19,3 % de los fotogramas y campo calibrado en el 66,9 %) y un clip de
 100 s subido por trozos, que se comprimió y se analizó solo con el campo de 100 × 62 apuntado por el club (2 min).
+
+## El visor del Ojeador (25-11-2026)
+
+Un programa aparte para ver, en este equipo y en su propia ventana, lo que hizo el analizador con un vídeo: el mismo
+resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni la toca: la app sigue lanzando
+`tt-analisis analizar` como hasta ahora y el visor solo lee las carpetas de salida.
+
+**Cómo se abre**
+
+- Doble clic en `backend\Visor-Ojeador.cmd`, o `.\Start-Visor.ps1` desde `backend` (por defecto, los análisis de
+  FakeDatos; `-Environment Development`, `-Folder <carpeta>` para otra y `-NoWindow` para abrirlo en el navegador de
+  siempre). Busca los análisis que deja el analizador de la app en el volumen de Docker (`videos\analysis\<vídeo>`, por
+  `\\wsl.localhost`) y los de prueba de `salidas\`.
+- Desde aquí: `uv run tt-analisis visor [carpetas...] [--video ruta] [--puerto N] [--sin-ventana]`. Cada carpeta puede
+  ser la de un análisis (se abre directamente) o una que los contenga (hasta tres niveles por debajo).
+- Abre Edge (o Chrome) en modo aplicación, con un perfil propio, y se cierra al cerrar la ventana. El servidor solo
+  escucha en 127.0.0.1 y solo atiende a la propia página del visor: ni a otras webs abiertas en el navegador ni a
+  nombres que apunten a 127.0.0.1.
+- Un análisis hecho antes del 25-11-2026 no tiene repetición: sale en la lista, pero para verlo hay que volver a
+  analizar el vídeo («Volver a analizar» en el acta interna). Si no encuentra el vídeo, pide su ruta.
+
+**Qué enseña**
+
+- Encima del vídeo, sincronizado fotograma a fotograma: cada persona con su recuadro (del color de su equipo;
+  discontinuo si no se le identificó), su dorsal y cómo se le identificó (A, por el aspecto; C, por continuidad; D, por
+  descarte; sin letra, por el dorsal leído), el balón (visto, visto en un fotograma vecino o interpolado) con su estela,
+  quién lo tiene, las líneas del campo como las calibró el analizador y un minimapa con los pies de cada uno llevados al
+  campo y lo que abarca la cámara. Con «Depuración», los tracklets, las cadenas y los balones descartados.
+- Las cajas se interpolan entre los fotogramas analizados (5 por segundo) por su tracklet, y el balón entre
+  avistamientos cercanos: lo dibujado es lo que vio el analizador, no una detección nueva.
+- Dos líneas de tiempo, los 30 s de alrededor y todo el tramo: balón, en juego, posesión, calibración, toques y cada
+  acción que cuenta o jugada. Se salta con un clic.
+- Un panel: «Estadísticas» hasta el segundo en que va el vídeo, contadas igual que el analizador (posesión, balón en
+  juego, visto y con trayectoria, lo que cuenta para el acta y las jugadas); «Jugadores» (ficha con foto, cómo se le
+  identificó, el segundo de cada acción y su mapa de calor); «Jugadas» (todas, para saltar a cada una); «Análisis» (quién
+  analizó, con qué modelos, las medidas y el JSON).
+- Teclas: espacio; ←/→ (1 s; con Mayús, 5 s); `,` y `.` (fotograma analizado anterior y siguiente); `[` y `]` (desfase
+  de un fotograma si vídeo y dibujo no fueran a la par; `0` lo quita); la inicial de cada capa (J, E, B, T, P, C, M, D)
+  y Esc.
+
+**La repetición** (`repeticion/`, formato 1; el detalle, al principio de `repeticion.py`)
+
+- `fotogramas.jsonl`: una línea por fotograma analizado, con `t` lo primero para indexar el archivo sin leerlo entero.
+  Lleva cada persona (id final, tracklet, clase, equipo, caja y, si el seguidor le dio otro tracklet, ese), el balón con
+  su origen, lo que se vio y se descartó, el balón de los fotogramas vecinos y la homografía.
+- `final.json`: lo del tramo entero. Los equipos, el modelo del campo y, por instante, el origen del balón, si está en
+  juego, a quién se le cuenta la posesión, si está calibrado y la parte. Y los toques, los jugadores (con cómo se les
+  identificó), los tracklets (cadena y método), las acciones con su segundo, los eventos y los objetos fijos.
+- Ocupa unos 1,8 MB por cada 10 minutos (≈ 16 MB un partido) más unos 120 KB. Se va con la carpeta del análisis (la app
+  la vacía antes de volver a analizar y al eliminar el vídeo).
+- No cambia la propuesta: se escribe al final, leyendo lo ya calculado, y por eso la versión sigue siendo la 2.3.0.
+  Comprobado en el J8 (20:00-30:00): posesión 42,7 %, balón en juego 79,6 %, visto 49,6 % y con trayectoria 81,0 %,
+  igual en el visor que en `analisis.json`.
+- Al comprobarlo, dos pasadas del mismo tramo (20:00-21:30) salieron distintas ya en la calibración del campo (199 y 176
+  aciertos), antes de escribir nada de la repetición: el analizador no da exactamente lo mismo dos veces con el mismo
+  vídeo. Viene de antes; queda en «Siguientes pasos».
 
 ## Docker (GPU)
 
@@ -1058,3 +1116,8 @@ detector de eventos es ahora una clase con un paso por instante (`eventos._Detec
   de los jugadores (uno en el suelo) para confirmar las paradas por frenazo.
 - Dorsales: un piso para el peso de cada lectura, reajustando con él los umbrales de la identificación (sin reajustar
   sube la cobertura pero mete errores; ver «Las lecturas del portero cuyo tracklet saltó»).
+- Que dos pasadas del mismo vídeo den lo mismo: hoy difieren desde la calibración del campo (en 20:00-21:30 del J8, 199
+  y 176 aciertos, y con ello eventos y posesión). Las semillas ya están fijadas, así que lo más probable es la
+  inferencia en la GPU; hay que medirlo antes de tocar nada.
+- El visor en directo: ver un análisis mientras se hace (el índice de `fotogramas.jsonl` ya lee un archivo a medias) y
+  lanzar el análisis desde el propio visor.

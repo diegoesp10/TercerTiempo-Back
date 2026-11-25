@@ -529,6 +529,8 @@ class ResumenPosesion:
     segundos_con_balon: float = 0.0
     segundos_vistos: float = 0.0
     segundos_activos: float = 0.0
+    # A qué equipo se le cuenta cada instante (None: a nadie), para el visor (`repeticion.py`).
+    por_instante: list[int | None] = field(default_factory=list)
 
     def porcentaje(self, equipo: int) -> float | None:
         total = self.segundos[0] + self.segundos[1]
@@ -608,6 +610,7 @@ def resumir_posesion(
             ultimo_equipo = ultimo_toque.equipo
             i += 1
         if excluido:
+            resumen.por_instante.append(None)
             continue
         resumen.segundos_tramo += dt
         con_balon = inst.balon_imagen is not None
@@ -620,10 +623,13 @@ def resumir_posesion(
             if inst.balon_origen == "visto":
                 resumen.segundos_vistos += dt
         if not activo:
+            resumen.por_instante.append(None)
             continue
         resumen.segundos_activos += dt
         if not con_balon or ultimo_equipo is None:
+            resumen.por_instante.append(None)
             continue
+        resumen.por_instante.append(ultimo_equipo)
         resumen.segundos[ultimo_equipo] += dt
         resumen.por_mitad.setdefault(mitad, defaultdict(float))[ultimo_equipo] += dt
         minuto = int(inst.t // 60)

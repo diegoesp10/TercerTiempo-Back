@@ -116,6 +116,8 @@ class Configuracion:
     # Carpeta donde dejar las zonas del dorsal y sus etiquetas (las de los jugadores identificados) para afinar el lector
     # (`entrenar-dorsales`); None: no se guardan.
     guardar_dorsales: Path | None = None
+    # La repetición para el visor (`repeticion.py`): cada fotograma analizado con lo que se vio y se sacó de él.
+    repeticion: bool = True
 
 
 # Clases de las personas y del balón: las del detector de jugadores de Roboflow, que siguen en los datasets de

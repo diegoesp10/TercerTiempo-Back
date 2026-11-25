@@ -251,6 +251,10 @@ class Resolucion:
     segundos_sin_identificar: dict[int, float]
     # Por equipo, cómo salió la prueba del aspecto y cuántas cadenas (y segundos) se dieron por él.
     apariencia: dict[int, dict] = field(default_factory=dict)
+    # Para el visor (`repeticion.py`): de cada tracklet, su cadena y, si se le dio jugador, cómo ("dorsal", "aspecto",
+    # "continuidad" o "descarte").
+    cadena: dict[int, int] = field(default_factory=dict)
+    metodo: dict[int, str] = field(default_factory=dict)
 
 
 def _distancia(a: Punto, b: Punto) -> float:
@@ -706,6 +710,7 @@ def resolver(
                 nombres[(e, j.dorsal)] = j.nombre
     identidades: dict[tuple[int, int], Identidad] = {}
     asignacion: dict[int, int] = {}
+    metodo: dict[int, str] = {}
     for i, (d, ev, parte) in asignada.items():
         c = cadenas[i]
         clave = (c.equipo, d)
@@ -722,8 +727,10 @@ def resolver(
             ident.por_descarte = True
         if i >= de_campo_hasta:
             ident.portero = True
+        como = "aspecto" if i in por_apariencia else "continuidad" if i in por_continuidad else "descarte" if i in por_descarte else "dorsal"
         for t in c.tramos:
             asignacion[t.tracklet] = ident.id
+            metodo[t.tracklet] = como
     for ident in identidades.values():
         votos = np.sum([cadenas[i].votos for i, (d, _, _) in asignada.items() if (cadenas[i].equipo, d) == (ident.equipo, ident.dorsal)], axis=0)
         total = float(votos.sum())
@@ -737,7 +744,8 @@ def resolver(
         if t.equipo in sin:
             sin[t.equipo] += t.duracion
     orden = sorted(identidades.values(), key=lambda x: (x.equipo, x.dorsal))
-    return Resolucion(asignacion, orden, lado_de_equipo, len(cadenas), {e: round(s, 1) for e, s in sin.items()}, apariencia)
+    cadena = {t.tracklet: i for i, c in enumerate(cadenas) for t in c.tramos}
+    return Resolucion(asignacion, orden, lado_de_equipo, len(cadenas), {e: round(s, 1) for e, s in sin.items()}, apariencia, cadena, metodo)
 
 
 def _continuidad(cadenas: list[Cadena], asignada: dict[int, tuple[int, float, float]], vetados: dict[int, set[int]] | None = None) -> set[int]:

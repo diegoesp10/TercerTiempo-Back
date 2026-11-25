@@ -34,6 +34,7 @@ from .jugadas import analizar_jugadas, buscar_descanso
 from .mitades import mitades
 from .oficial import leer_acta
 from .porteros import Porteros, colocar_porteros, describir_porteros
+from .repeticion import escribir_repeticion
 from .seguimiento import MemoriaTracklet, Seguidor
 from .tipos import Instante, Persona, formato_minuto
 from .video import PCT_LEIDO_MINIMO, Lectura, fotograma_en, fotogramas, fotogramas_elegidos, info_video, pct_leido, recortar
@@ -319,6 +320,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
     progreso.etapa("jugadas")
     progreso.fase("salidas", 0, 3)
     t0 = time.time()
+    # Para la repetición (`repeticion.py`): lo que vio el detector en cada instante, antes de completar y limpiar.
+    balon_crudo = [(inst.balon_imagen, inst.balon_confianza) if inst.balon_imagen is not None else None for inst in instantes] if config.repeticion else None
     # El balón de los fotogramas vecinos, a los instantes que no lo tenían.
     pista_xy = [(t, (float(c[0]), float(c[1])), conf) for t, c, conf in pista]
     intermedios = completar_con_intermedios(instantes, pista_xy, 1 / info.fps, campo, MARGEN_CAMPO_CM, vecinos=max(1, vecinos))
@@ -350,6 +353,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
     if os.environ.get("TT_GUARDAR_TRAMOS"):
         guardar_para_porteros(config.salida / "porteros.pkl", instantes, mitad_de, descanso_previo, seguidor, datos_acta, config.saque, historial)
     porteros = colocar_porteros(instantes, mitad_de, seguidor.memorias, campo)
+    # Para la repetición: el tracklet de cada persona ya con los porteros colocados, antes de pasar a su jugador.
+    tracklets_previos = [[p.tracklet for p in inst.personas] for inst in instantes] if config.repeticion else None
     decir(describir_porteros(porteros, instantes, dt))
     # Para el material del lector: en la pasada aún no se sabía quién era portero.
     muestras_portero = muestras_de_porteros(instantes, porteros) if guarda is not None else []
@@ -452,20 +457,29 @@ def analizar(config: Configuracion, informar=print) -> dict:
     if config.clips:
         with tqdm(desc="Clips de eventos", unit="clip", disable=config.progreso) as barra:
             clips = extraer_clips(resultado_eventos, config.video, config.salida, config.clip_margen_s, ruta_ffmpeg(), avance=lambda k: barra.update(k - barra.n))
+    colores = [color_hex(c) for c in clasificador.colores]
+    equipos_json = [{"id": e, "nombre": config.nombres_equipos[e], "color": colores[e]} for e in (0, 1)]
+    video_json = {"ruta": str(config.video), "ancho": info.ancho, "alto": info.alto, "fps": info.fps, "duracion_s": round(info.duracion_s, 1), "tramo_inicio_s": config.segmento.inicio, "tramo_fin_s": round(fin_s, 1)}
+    repeticion = None
+    if config.repeticion:
+        # Para ver en el visor lo que hizo el analizador (`tt-analisis visor`); no cambia nada de lo que propone.
+        repeticion = escribir_repeticion(
+            config.salida, instantes, tracklets_previos, balon_crudo, pista_xy, analizador=analizador, video=video_json, dt=dt, equipos=equipos_json,
+            campo=campo, jugadas=jugadas, resolucion=resolucion, recortes=recortes, objetos_fijos=relleno.objetos_fijos,
+        )
     tiempos["salidas_s"] = time.time() - t0
     tiempos["total_s"] = time.time() - inicio_total
 
     progreso.fase("salidas", 2, 3)
-    colores = [color_hex(c) for c in clasificador.colores]
     con_balon = balon_cobertura["vistos"]
     calibrados = sum(1 for i in instantes if i.calibrado)
     analisis = {
         "version": __version__,
         "analizador": analizador,
-        "video": {"ruta": str(config.video), "ancho": info.ancho, "alto": info.alto, "fps": info.fps, "duracion_s": round(info.duracion_s, 1), "tramo_inicio_s": config.segmento.inicio, "tramo_fin_s": round(fin_s, 1)},
+        "video": video_json,
         "parametros": {"fps_muestreo": round(fps_real, 2), "vecinos_balon": vecinos, "vecinos_balon_s": config.vecinos_balon_s, "vecinos_enteros": config.vecinos_enteros, "device": modelos.device, "camara": config.camara, "seguidor": detector.rastreador.nombre, "motor_jugadores": modelos.jugadores.motor, "motor_balon": modelos.balon.motor, "motor_campo": modelos.campo.motor, "llm": llm.nombre if llm else None, "modelos": modelos.rutas, "campo_m": [campo.largo / 100, campo.ancho / 100]},
         "llm": llm.nombre if llm else None,
-        "equipos": [{"id": e, "nombre": config.nombres_equipos[e], "color": colores[e]} for e in (0, 1)],
+        "equipos": equipos_json,
         "direcciones_ataque": {f"equipo{e}_mitad{m}": d for (e, m), d in sorted(direcciones.items())},
         "descanso_s": descanso,
         "calibracion": calibrador.resumen(),
@@ -501,7 +515,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
                 for x in resolucion.identidades
             ],
         },
-        "archivos": {"mapas": mapas, "posiciones": posiciones, "anotado": "anotado.mp4" if renderizador else None},
+        "archivos": {"mapas": mapas, "posiciones": posiciones, "anotado": "anotado.mp4" if renderizador else None, "repeticion": repeticion},
         "tiempos": {k: round(v, 1) for k, v in tiempos.items()},
     }
     acta = acta_propuesta(resultado_eventos, posesion, resumenes, acciones, dorsales, recortes, config.nombres_equipos, colores, resolucion, acta_oficial, en_juego)

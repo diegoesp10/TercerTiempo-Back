@@ -46,6 +46,13 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--sin-dorsales", action="store_true", help="No leer los dorsales: cada tracklet queda suelto, como antes.")
     a.add_argument("--sin-apariencia", action="store_true", help="No reconocer por el aspecto a quien no se le lee el dorsal.")
     a.add_argument("--guardar-dorsales", type=Path, default=None, help="Carpeta donde dejar las zonas del dorsal y sus etiquetas (los jugadores identificados) para `entrenar-dorsales`.")
+    a.add_argument("--sin-repeticion", action="store_true", help="No escribir repeticion/ (lo que se vio en cada fotograma, para `visor`).")
+
+    v = sub.add_parser("visor", help="Abre el visor en una ventana propia: el vídeo con lo que vio y sacó el analizador encima, fotograma a fotograma.")
+    v.add_argument("carpetas", type=Path, nargs="*", help="Carpetas de análisis (con analisis.json) o carpetas donde buscarlos; por defecto, salidas/.")
+    v.add_argument("--video", type=Path, default=None, help="El vídeo, si no está donde dice analisis.json (solo con una carpeta de análisis).")
+    v.add_argument("--puerto", type=int, default=0, help="Puerto local (por defecto, uno libre).")
+    v.add_argument("--sin-ventana", action="store_true", help="No abrir la ventana: solo escribe la dirección para abrirla en el navegador.")
 
     ed = sub.add_parser("entrenar-dorsales", help="Afina el lector de dorsales con las zonas guardadas (--guardar-dorsales) y deja los pesos en modelos/afinados/dorsales.pt.")
     ed.add_argument("carpetas", type=Path, nargs="+", help="Carpetas de --guardar-dorsales (de uno o varios partidos).")
@@ -333,6 +340,11 @@ def main(argv: list[str] | None = None) -> int:
         for ruta in descargar_modelos(args.modelos, con_videos=args.con_videos):
             print(ruta)
         return 0
+    if args.orden == "visor":
+        from .visor import abrir_visor
+
+        return abrir_visor(args.carpetas or [Path("salidas")], video=args.video, puerto=args.puerto, ventana=not args.sin_ventana)
+
     if args.orden == "info":
         from .modelos import describir_gpu
         from .video import info_video
@@ -377,6 +389,7 @@ def main(argv: list[str] | None = None) -> int:
         plantillas=args.plantillas,
         saque=a_segundos(args.saque) if args.saque else 0.0,
         guardar_dorsales=args.guardar_dorsales,
+        repeticion=not args.sin_repeticion,
     )
     from .analizador import analizar
     from .modelos import SinGpu
