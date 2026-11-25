@@ -175,7 +175,7 @@ internal sealed class JobScheduler
                 true),
             new(JobNames.CallUpReminders,
                 "Avisos de convocatoria",
-                $"Recuerda en la campanita al club y al cuerpo técnico de cada equipo que la convocatoria de su próximo partido sigue sin enviar (sin hacer o en borrador): un aviso {TercerTiempo.Application.Trainings.CallUpReminders.DaysBefore[0]} días antes del partido y otro el día antes. Se dan por resueltos al enviarla o al empezar el partido, cuando ya no se puede hacer. Lee la base de este entorno, sin peticiones a ninguna web.",
+                "Recuerda en la campanita al club y al cuerpo técnico de cada equipo, el día antes del partido, que la convocatoria de su próximo partido sigue sin enviar (sin hacer o en borrador). Se da por resuelto al enviarla o al empezar el partido, cuando ya no se puede hacer. Lee la base de este entorno, sin peticiones a ninguna web.",
                 TimeSpan.FromHours(1),
                 TimeSpan.FromSeconds(70),
                 true),

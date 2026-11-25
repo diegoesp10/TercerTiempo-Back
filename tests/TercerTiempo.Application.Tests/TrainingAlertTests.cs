@@ -367,12 +367,18 @@ public class TrainingAlertTests
     }
 
     [Fact]
-    public async Task The_staff_and_the_club_are_reminded_of_the_next_call_up_until_it_is_sent()
+    public async Task The_staff_and_the_club_are_reminded_of_the_next_call_up_the_day_before_until_it_is_sent()
     {
         var f = new Fixture();
         List<Alert> DueAlerts() => f.Alerts.Where(a => a.Kind == AlertKind.CallUpDue).ToList();
 
-        // Tres días antes del partido: uno para el entrenador y otro para el club, con el partido y su día.
+        // A tres días del partido y a dos, todavía nada.
+        Assert.Equal((0, 0, 0), Counts(await f.Reminders().Handle(new(), default)));
+        f.Clock.Advance(TimeSpan.FromDays(1));
+        Assert.Equal((0, 0, 0), Counts(await f.Reminders().Handle(new(), default)));
+
+        // El día antes: uno para el entrenador y otro para el club, con el partido y su día.
+        f.Clock.Advance(TimeSpan.FromDays(1));
         Assert.Equal((1, 2, 0), Counts(await f.Reminders().Handle(new(), default)));
         Assert.Equal([f.Coach.Id], DueAlerts().Select(a => a.CoachId).OfType<Guid>());
         Assert.Equal([f.Club.Id], DueAlerts().Select(a => a.ClubId).OfType<Guid>());
@@ -381,39 +387,40 @@ public class TrainingAlertTests
         Assert.Equal($"/plantillas/{f.Squad.Id}/partidos/{f.Upcoming.Id}?tab=convocatoria", first.Link);
         Assert.Equal(CallUps.DayOf(f.Upcoming.KickoffAt), first.DueOn);
 
-        // No se repite en cada pasada.
+        // No se repite en cada pasada, y un borrador no cuenta como enviada.
         Assert.Equal((0, 0, 0), Counts(await f.Reminders().Handle(new(), default)));
-
-        // En borrador no cuenta como enviada: el día antes llega otro, que lo dice.
         await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id], null, null, null, null, Publish: false), default);
-        f.Clock.Advance(TimeSpan.FromDays(2));
-        Assert.Equal((1, 2, 0), Counts(await f.Reminders().Handle(new(), default)));
-        Assert.Equal(4, DueAlerts().Count(a => !a.IsResolved));
-        Assert.StartsWith("Convocatoria en borrador", DueAlerts().OrderBy(a => a.CreatedAt).Last().Title);
+        Assert.Equal((0, 0, 0), Counts(await f.Reminders().Handle(new(), default)));
+        Assert.Equal(2, DueAlerts().Count(a => !a.IsResolved));
 
-        // Al enviarla se resuelven todos en el momento, y la pasada siguiente no vuelve a avisar.
+        // Al enviarla se resuelven en el momento, y la pasada siguiente no vuelve a avisar.
         await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id, f.Nel.Id], null, null, null, null, Publish: true), default);
         Assert.All(DueAlerts(), a => Assert.True(a.IsResolved));
         Assert.Equal((0, 0, 0), Counts(await f.Reminders().Handle(new(), default)));
     }
 
     [Fact]
-    public async Task A_reminder_left_unanswered_is_resolved_at_kickoff_and_the_next_match_gets_its_own_later()
+    public async Task A_reminder_left_unanswered_is_resolved_at_kickoff_and_the_next_match_gets_its_own_the_day_before()
     {
         var f = new Fixture();
         var later = Match.Schedule(f.Upcoming.SeasonId, 3, f.Team.Id, f.Rival.Id, Now.AddDays(10), "La Florida", null);
         f.ExtraMatches.Add(later);
 
+        f.Clock.Advance(TimeSpan.FromDays(2));
         Assert.Equal((1, 2, 0), Counts(await f.Reminders().Handle(new(), default)));
 
         // Empieza sin convocatoria: ya no se puede hacer y su aviso se resuelve. El siguiente queda a una semana: aún nada.
-        f.Clock.Advance(TimeSpan.FromDays(3) + TimeSpan.FromMinutes(1));
+        f.Clock.Advance(TimeSpan.FromDays(1) + TimeSpan.FromMinutes(1));
         Assert.Equal((0, 0, 2), Counts(await f.Reminders().Handle(new(), default)));
 
-        // A tres días del siguiente, el suyo.
-        f.Clock.Advance(TimeSpan.FromDays(4));
+        // El día antes del siguiente, el suyo, que dice que se quedó en borrador.
+        await f.SaveCallUp().Handle(new(f.Squad.Id, later.Id, [f.Pelayo.Id], null, null, null, null, Publish: false), default);
+        f.Clock.Advance(TimeSpan.FromDays(6));
         Assert.Equal((1, 2, 0), Counts(await f.Reminders().Handle(new(), default)));
-        Assert.All(f.Alerts.Where(a => a.Kind == AlertKind.CallUpDue && !a.IsResolved), a => Assert.Contains(later.Id.ToString("N"), a.Key));
+        var open = f.Alerts.Where(a => a.Kind == AlertKind.CallUpDue && !a.IsResolved).ToList();
+        Assert.Equal(2, open.Count);
+        Assert.All(open, a => Assert.Contains(later.Id.ToString("N"), a.Key));
+        Assert.All(open, a => Assert.StartsWith("Convocatoria en borrador", a.Title));
     }
 
     private static (int CallUps, int Raised, int Resolved) Counts(CallUpRemindersSynced result) => (result.CallUps, result.Raised, result.Resolved);

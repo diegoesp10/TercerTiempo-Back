@@ -16,8 +16,8 @@ public sealed record CallUpRemindersSynced(int CallUps, int Raised, int Resolved
 
 public static class CallUpReminders
 {
-    // Días antes del partido (por el día, en la hora de la federación) en que llega cada recordatorio, del primero al último.
-    public static readonly int[] DaysBefore = [3, 1];
+    // Días antes del partido (por el día, en la hora de la federación) en que llega un recordatorio: solo el día antes.
+    public static readonly int[] DaysBefore = [1];
 
     public const string Prefix = "callup-due:";
 
@@ -32,9 +32,9 @@ public static class CallUpReminders
 }
 
 // Recordatorio en la campanita del club y del cuerpo técnico: la convocatoria del próximo partido del equipo (el mismo que
-// marcan la lista de partidos, la agenda y la página del partido) sigue sin enviarse, sin hacer o en borrador. Llega
-// DaysBefore días antes del partido y otra vez el día antes, una vez por plazo, y se da por resuelto al enviarla (en el
-// momento, al guardarla) o al empezar el partido, cuando ya no se puede hacer. No llama a ninguna web.
+// marcan la lista de partidos, la agenda y la página del partido) sigue sin enviarse, sin hacer o en borrador. Llega una
+// vez por plazo de DaysBefore (el día antes) y se da por resuelto al enviarla (en el momento, al guardarla) o al empezar
+// el partido, cuando ya no se puede hacer. No llama a ninguna web.
 internal sealed class SyncCallUpRemindersHandler(
     IMatchStore matches,
     ISquadStore squads,
