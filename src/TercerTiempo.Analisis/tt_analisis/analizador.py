@@ -34,7 +34,7 @@ from .jugadas import analizar_jugadas, buscar_descanso
 from .mitades import mitades
 from .oficial import leer_acta
 from .porteros import Porteros, colocar_porteros, describir_porteros
-from .repeticion import escribir_repeticion
+from .repeticion import Directo, escribir_repeticion
 from .seguimiento import MemoriaTracklet, Seguidor
 from .tipos import Instante, Persona, formato_minuto
 from .video import PCT_LEIDO_MINIMO, Lectura, fotograma_en, fotogramas, fotogramas_elegidos, info_video, pct_leido, recortar
@@ -64,7 +64,24 @@ def fijar_semilla(semilla: int) -> None:
     torch.manual_seed(semilla)
 
 
+def datos_del_video(config: Configuracion, info, fin_s: float) -> dict:
+    return {"ruta": str(config.video), "ancho": info.ancho, "alto": info.alto, "fps": info.fps, "duracion_s": round(info.duracion_s, 1), "tramo_inicio_s": config.segmento.inicio, "tramo_fin_s": round(fin_s, 1)}
+
+
 def analizar(config: Configuracion, informar=print) -> dict:
+    # Lo que se va viendo, para seguir el análisis en el visor mientras se hace (`repeticion.Directo`). Si el análisis no
+    # termina, lo provisional se queda con el porqué.
+    directo = Directo(config.salida, activo=config.repeticion)
+    try:
+        return _analizar(config, informar, directo)
+    except BaseException as error:
+        directo.fallo(error)
+        raise
+    finally:
+        directo.detener()
+
+
+def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
     inicio_total = time.time()
     tiempos: dict[str, float] = {}
     # Lanzado como proceso, cada cosa que se sabe va como hito (y las órdenes de pausa llegan por la entrada estándar).
@@ -77,6 +94,11 @@ def analizar(config: Configuracion, informar=print) -> dict:
     config.salida.mkdir(parents=True, exist_ok=True)
     progreso.fase("equipos", 0, 1)
     fin_s = min(config.segmento.fin, info.duracion_s) if config.segmento.fin is not None else info.duracion_s
+    directo.empezar(
+        analizador={"nombre": NOMBRE, "version": __version__}, video=datos_del_video(config, info, fin_s),
+        equipos=[{"id": e, "nombre": config.nombres_equipos[e]} for e in (0, 1)], avance=progreso,
+    )
+    decir = directo.con_hitos(decir)
     decir(f"Vídeo: {info.ancho}×{info.alto} a {info.fps:.0f} fps, {formato_minuto(info.duracion_s)}. Tramo {formato_minuto(config.segmento.inicio)} – {formato_minuto(fin_s)}.")
     decir(f"Analizador: {NOMBRE} {__version__}.")
     decir(f"GPU: {describir_gpu()}")
@@ -163,6 +185,10 @@ def analizar(config: Configuracion, informar=print) -> dict:
     progreso.etapa("pasada", tramo_inicio_s=round(config.segmento.inicio, 1), tramo_fin_s=round(fin_s, 1), fotogramas_total=total)
     decir(f"Siguiendo a jugadores y balón: {total} fotogramas a {fps_real:.1f} por segundo de vídeo.")
     progreso.fase("pasada", 0, total)
+    directo.empezar_pasada(
+        video=datos_del_video(config, info, fin_s), dt=dt, campo=campo, total=total,
+        equipos=[{"id": e, "nombre": config.nombres_equipos[e], "color": color_hex(clasificador.colores[e])} for e in (0, 1)],
+    )
     vistos = calibrados_hasta = 0
     # El balón visto en los fotogramas vecinos: [(t, centro en px, confianza)], en orden.
     pista: list[tuple[float, np.ndarray, float]] = []
@@ -272,6 +298,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
             inst.t, None if balon_imagen is None else np.asarray(balon_imagen, dtype=np.float32),
             ultimo[2] if balon_imagen is not None and ultimo is not None and ultimo[0] == inst.t else None, det.personas,
         )
+        entre = []
         if fotograma.intermedios:
             entre = detector.balon_vecinos(fotograma.intermedios, previo, actual, vecinos, 1 / info.fps, config.vecinos_enteros)
             pista.extend(entre)
@@ -281,6 +308,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
                 anterior = instantes[-2]
                 vistos_cerca += anterior.balon_imagen is not None or any(abs(t - anterior.t) <= margen_cerca for t, _, _ in pista[-8:])
         previo = actual
+        directo.fotograma(inst, entre, tracklets=len(seguidor.memorias))
         if progreso.toca():
             activo_s = max(1e-6, time.monotonic() - pasada_inicio - pasada_pausa)
             fps_proceso = n / activo_s
@@ -297,6 +325,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
             )
         if renderizador:
             renderizador.dibujar(imagen, inst)
+    # Lo provisional del último instante, antes de que se complete el balón y se decida quién es quién.
+    directo.fin_pasada()
     if renderizador:
         renderizador.cerrar()
     if cola is not None:
@@ -459,14 +489,17 @@ def analizar(config: Configuracion, informar=print) -> dict:
             clips = extraer_clips(resultado_eventos, config.video, config.salida, config.clip_margen_s, ruta_ffmpeg(), avance=lambda k: barra.update(k - barra.n))
     colores = [color_hex(c) for c in clasificador.colores]
     equipos_json = [{"id": e, "nombre": config.nombres_equipos[e], "color": colores[e]} for e in (0, 1)]
-    video_json = {"ruta": str(config.video), "ancho": info.ancho, "alto": info.alto, "fps": info.fps, "duracion_s": round(info.duracion_s, 1), "tramo_inicio_s": config.segmento.inicio, "tramo_fin_s": round(fin_s, 1)}
+    video_json = datos_del_video(config, info, fin_s)
     repeticion = None
     if config.repeticion:
-        # Para ver en el visor lo que hizo el analizador (`tt-analisis visor`); no cambia nada de lo que propone.
+        # Para ver en el visor lo que hizo el analizador (`tt-analisis visor`); no cambia nada de lo que propone. Lo
+        # provisional se borra después, con la definitiva ya escrita.
+        directo.detener()
         repeticion = escribir_repeticion(
             config.salida, instantes, tracklets_previos, balon_crudo, pista_xy, analizador=analizador, video=video_json, dt=dt, equipos=equipos_json,
             campo=campo, jugadas=jugadas, resolucion=resolucion, recortes=recortes, objetos_fijos=relleno.objetos_fijos,
         )
+        directo.terminar()
     tiempos["salidas_s"] = time.time() - t0
     tiempos["total_s"] = time.time() - inicio_total
 

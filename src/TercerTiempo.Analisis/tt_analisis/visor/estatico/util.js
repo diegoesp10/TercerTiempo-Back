@@ -7,7 +7,36 @@ export const COLORES = {
   balon: { v: '#4ade80', n: '#2dd4bf', i: '#fbbf24', x: '#f87171' },
   calibrado: '#818cf8',
   enJuego: '#cbd5e1',
+  directo: '#f43f5e',
 };
+
+// Las etapas de un análisis (`avance.ETAPAS`), como se enseñan mientras se hace.
+export const ETAPAS = {
+  modelos: 'Cargando los modelos',
+  equipos: 'Separando los equipos por la camiseta',
+  pasada: 'Siguiendo a jugadores y balón',
+  jugadas: 'Balón, porteros, quién es quién y jugadas',
+  revision: 'Revisando con el modelo de lenguaje',
+  salidas: 'Escribiendo los resultados',
+};
+
+// Cómo va un análisis en marcha (lo de directo.json): texto, texto corto, clase ('directo', 'pausa' o 'mal'), si se ha
+// parado (o ya no llega nada de él) y, en la pasada, el porcentaje.
+export function estadoEnCurso(e) {
+  if (!e) return { texto: 'Analizando', corto: 'Analizando', clase: 'directo', parado: false, pct: null };
+  if (e.sin_directo) return { texto: 'Ya no llega nada en directo', corto: 'Sin directo', clase: 'pausa', parado: true, pct: null };
+  if (e.error) return { texto: `Falló: ${e.error}`, corto: 'Falló', clase: 'mal', parado: true, pct: null };
+  if (e.vivo === false) return { texto: `Se ha parado${e.actualizado ? ` (sin noticias desde las ${hora(e.actualizado)})` : ''}`, corto: 'Parado', clase: 'mal', parado: true, pct: null };
+  const pct = e.etapa === 'pasada' && e.fotogramas_total && e.fotogramas != null ? Math.min(100, Math.floor((100 * e.fotogramas) / e.fotogramas_total)) : null;
+  if (e.pausado) return { texto: 'En pausa', corto: 'En pausa', clase: 'pausa', parado: false, pct };
+  if (pct != null) return { texto: `Analizando · ${pct} %`, corto: `${pct} %`, clase: 'directo', parado: false, pct };
+  return { texto: ETAPAS[e.etapa] || 'Analizando', corto: 'Analizando', clase: 'directo', parado: false, pct };
+}
+
+// La hora de un instante (segundos desde 1970), «19:42».
+export function hora(segundos) {
+  return new Date(segundos * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+}
 
 export const ORIGEN_BALON = {
   v: 'visto en su fotograma',

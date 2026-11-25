@@ -17,7 +17,7 @@
 
     <main class="lista" id="pantalla-lista" hidden>
       <h1>Análisis</h1>
-      <p class="ayuda">Cada análisis del Ojeador deja su repetición: el vídeo con lo que vio y lo que sacó en cada fotograma. Elige uno o pega la ruta de su carpeta (la que tiene <code>analisis.json</code>).</p>
+      <p class="ayuda">Cada análisis del Ojeador deja su repetición: el vídeo con lo que vio y lo que sacó en cada fotograma. Elige uno o pega la ruta de su carpeta (la que tiene <code>analisis.json</code>). Los que se están haciendo salen como «Analizando» y se pueden ver mientras avanzan.</p>
       <form class="abrir" id="form-abrir">
         <input id="ruta-abrir" type="text" placeholder="C:\…\salidas\partido  o  \\wsl.localhost\…\videos\analysis\…" autocomplete="off" spellcheck="false" aria-label="Carpeta del análisis">
         <button class="boton primario" type="submit">Abrir</button>
@@ -43,6 +43,7 @@
           <button class="boton icono" id="btn-fot-adelante" type="button" title="Fotograma analizado siguiente (.)" aria-label="Fotograma analizado siguiente">›</button>
           <button class="boton icono" id="btn-adelante" type="button" title="5 s adelante (Mayús + →)" aria-label="5 segundos adelante">»</button>
           <span class="tiempo" id="tiempo"></span>
+          <button class="boton" id="btn-directo" type="button" hidden title="Ir a lo último analizado (L)">Lo último</button>
           <select id="velocidad" title="Velocidad" aria-label="Velocidad">
             <option value="0.25">0,25×</option>
             <option value="0.5">0,5×</option>

@@ -139,6 +139,7 @@ export class Dibujo {
       const info = rep.tracklets.get(p.tracklet);
       let texto;
       if (p.clase === 3) texto = 'Árbitro';
+      else if (rep.enDirecto) texto = p.clase === 1 ? `#${p.tracklet} · portero` : `#${p.tracklet}`;
       else if (jugador) {
         texto = String(jugador.dorsal);
         if (p.clase === 1) texto += ' · portero';
@@ -146,7 +147,7 @@ export class Dibujo {
         if (letra) texto += ` · ${letra}`;
         if (elegido && jugador.nombre) texto += ` · ${rep.nombreDe(p.id).split(' · ')[1] || ''}`;
       } else texto = p.clase === 1 ? '? · portero' : '?';
-      if (capas.depuracion) {
+      if (capas.depuracion && !rep.enDirecto) {
         texto += ` #${p.tracklet}`;
         if (p.seguidor !== p.tracklet) texto += ` ↩${p.seguidor}`;
         if (info) texto += ` c${info.cadena}`;

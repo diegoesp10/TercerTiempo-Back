@@ -1,6 +1,7 @@
 // Las dos líneas de tiempo: la de todo el tramo y la de detalle (30 s antes y después de donde está el vídeo). En cada
 // una, por instante analizado: de dónde sale el balón, si está en juego, a quién se le cuenta la posesión y si el campo
-// está calibrado; en la de detalle, además, los toques (quién tiene el balón) y cada acción que cuenta.
+// está calibrado; en la de detalle, además, los toques (quién tiene el balón) y cada acción que cuenta. En directo, lo
+// que aún no se ha analizado va sombreado y lo que solo se sabe al terminar (en juego, posesión) queda vacío.
 
 import { COLORES, TIPOS_ACCION, TIPOS_EVENTO, buscarIndice, minuto } from './util.js';
 
@@ -54,6 +55,12 @@ export class Lineas {
     const k = this.rep.instante(t);
     if (k < 0) return;
     const rep = this.rep;
+    if (rep.enDirecto) {
+      if (t > rep.frontera() + rep.dt) { lienzo.title = `${minuto(t)} · aún sin analizar`; return; }
+      const balon = { v: 'visto', n: 'visto en un vecino', '-': 'sin balón' }[rep.balon[k]] || 'sin balón';
+      lienzo.title = `${minuto(t)} · balón ${balon} · ${rep.calibrado[k] === '1' ? 'calibrado' : 'sin calibrar'} · en juego y posesión, al terminar`;
+      return;
+    }
     const balon = { v: 'visto', n: 'visto en un vecino', i: 'interpolado', x: 'descartado', '-': 'sin balón' }[rep.balon[k]];
     const q = rep.posesion[k];
     const pos = q === '0' || q === '1' ? rep.equipos[Number(q)].nombre : 'a nadie';
@@ -70,6 +77,43 @@ export class Lineas {
     this.fondo.width = this.total.width;
     this.fondo.height = this.total.height;
     this._pintarFondo();
+  }
+
+  // En directo, con instantes nuevos.
+  actualizar() {
+    this._pintarFondo();
+  }
+
+  // Lo que aún no ha analizado (en directo): sombreado desde `x0`, con su rótulo si cabe.
+  _pendiente(ctx, x0, x1, y0, y1) {
+    if (x1 - x0 < 1) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, x1 - x0, y1 - y0);
+    ctx.clip();
+    ctx.fillStyle = '#0a0e13b8';
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.strokeStyle = '#ffffff12';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const alto = y1 - y0;
+    for (let x = x0 - alto; x < x1; x += 7) {
+      ctx.moveTo(x, y1);
+      ctx.lineTo(x + alto, y0);
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = COLORES.directo;
+    ctx.fillRect(x0 - 1, y0, 2, y1 - y0);
+    ctx.font = '600 10px "Segoe UI", system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    const texto = 'Sin analizar todavía';
+    if (x1 - x0 > ctx.measureText(texto).width + 16) {
+      ctx.fillStyle = '#93a1b3';
+      ctx.fillText(texto, x0 + 8, (y0 + y1) / 2);
+    }
+    ctx.restore();
   }
 
   _pintarFondo() {
@@ -94,7 +138,14 @@ export class Lineas {
         ctx.fillStyle = color;
         ctx.fillRect(x0, y, Math.max(1, x(rep.t[k] + rep.dt) - x0), altoFila);
       }
+      if (rep.enDirecto && (fila === 1 || fila === 2) && rep.t.length) {
+        ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('al terminar', IZQUIERDA + 4, y + altoFila / 2 + 0.5);
+      }
     }
+    if (rep.enDirecto) this._pendiente(ctx, Math.max(IZQUIERDA, x(rep.frontera() + rep.dt)), IZQUIERDA + ancho, 0, arriba + FILAS.length * (altoFila + gap));
     const yEv = arriba + FILAS.length * (altoFila + gap) + 2;
     ctx.font = '600 10px "Segoe UI", system-ui, sans-serif';
     ctx.fillStyle = '#93a1b3';
@@ -179,6 +230,10 @@ export class Lineas {
         ctx.fillStyle = color;
         ctx.fillRect(x0, y, Math.max(1, x1 - x0 - 0.5), altoFila);
       }
+    }
+    if (rep.enDirecto) {
+      const xf = x(rep.frontera() + rep.dt);
+      if (xf < IZQUIERDA + ancho) this._pendiente(ctx, Math.max(IZQUIERDA, xf), IZQUIERDA + ancho, 0, h - 12);
     }
     // Los toques: quién tiene el balón (con su dorsal si cabe).
     const yToques = arriba + FILAS.length * (altoFila + gap);

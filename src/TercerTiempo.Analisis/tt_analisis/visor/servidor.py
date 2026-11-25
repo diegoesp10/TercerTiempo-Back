@@ -1,6 +1,10 @@
 """El visor: un servidor local (solo 127.0.0.1) que enseña en una ventana propia el vídeo de un análisis con lo que vio y
 sacó el Ojeador encima (`repeticion.py`). Solo lee: las carpetas de análisis, su vídeo y la página de `estatico/`. La
-ventana es Edge (o Chrome) en modo aplicación con un perfil propio; al cerrarla, el visor termina."""
+ventana es Edge (o Chrome) en modo aplicación con un perfil propio; al cerrarla, el visor termina.
+
+Un análisis que se está haciendo (con `repeticion/directo.json` y sin `final.json` más nuevo) sale en la lista desde que
+empieza y se puede abrir: la página sigue lo provisional (`directo.jsonl`) según avanza y, en cuanto aparece la
+repetición definitiva, pasa a ella."""
 
 from __future__ import annotations
 
@@ -22,10 +26,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from ..repeticion import CARPETA, FINAL, FOTOGRAMAS, IndiceFotogramas
+from ..repeticion import CARPETA, DIRECTO, ESTADO_DIRECTO, FINAL, FOTOGRAMAS, IndiceFotogramas
 
 ESTATICO = Path(__file__).parent / "estatico"
 BLOQUE = 1 << 20
+# Un análisis en marcha reescribe directo.json cada pocos segundos (`repeticion.LATIDO_S`), también en pausa: sin noticias
+# en este rato, se ha parado (el proceso se cortó o se mató, o el equipo se durmió).
+SIN_NOTICIAS_S = 30.0
 # Sin latido de la página en este tiempo, el visor se cierra (al cerrar la ventana avisa; esto es por si no puede). Una
 # ventana minimizada sigue latiendo, aunque el navegador la frene a una vez por minuto.
 SIN_LATIDO_S = 300.0
@@ -53,47 +60,114 @@ def absoluta(ruta: Path) -> Path:
     return Path(os.path.abspath(os.path.expanduser(str(ruta))))
 
 
+def es_analisis(carpeta: Path) -> bool:
+    """Una carpeta de análisis: con analisis.json o con un análisis empezado (aún sin analisis.json)."""
+    return (carpeta / "analisis.json").exists() or (carpeta / CARPETA / ESTADO_DIRECTO).exists()
+
+
+def _mtime(ruta: Path) -> float | None:
+    try:
+        return ruta.stat().st_mtime
+    except OSError:
+        return None
+
+
+def en_curso(estado: dict) -> dict:
+    """Lo de un análisis en marcha que se enseña en la lista."""
+    return {k: estado.get(k) for k in ("etapa", "vivo", "pausado", "error", "fotogramas", "fotogramas_total", "t", "inicio", "actualizado")}
+
+
 @dataclass
 class Analisis:
     carpeta: Path
-    # El vídeo indicado a mano; si no, el de analisis.json.
+    # El vídeo indicado a mano; si no, el de analisis.json (o el del análisis en marcha).
     video: Path | None = None
     _indice: IndiceFotogramas | None = None
+    # De qué repetición es el índice: ("final", fecha de final.json) o ("directo", cuándo empezó ese análisis).
+    _generacion: tuple | None = None
+    # Lo de analisis.json que sale en la lista, por su fecha (la lista se pide cada pocos segundos).
+    _resumen: tuple[int, dict] | None = None
     _cerrojo: threading.Lock = field(default_factory=threading.Lock)
 
     @property
     def id(self) -> str:
         return identificador(self.carpeta)
 
-    def ruta_video(self) -> Path | None:
+    def _ruta(self, nombre: str) -> Path:
+        return self.carpeta / CARPETA / nombre
+
+    def modo(self) -> tuple[str | None, dict | None]:
+        """("directo", estado) si en la carpeta se está analizando, ("final", None) con la repetición definitiva y (None,
+        None) sin ninguna. Manda lo más nuevo: un análisis vuelto a lanzar en la misma carpeta tapa al anterior mientras
+        se hace; si se para sin terminar, vuelve a verse el anterior terminado, si lo había."""
+        final = _mtime(self._ruta(FINAL))
+        estado = leer_json(self._ruta(ESTADO_DIRECTO))
+        if estado is not None:
+            vivo = not estado.get("error") and time.time() - float(estado.get("actualizado") or 0) <= SIN_NOTICIAS_S
+            fecha = _mtime(self._ruta(ESTADO_DIRECTO))
+            mas_nuevo = final is None or (fecha is not None and fecha > final)
+            if mas_nuevo and (vivo or final is None):
+                estado["vivo"] = vivo
+                return "directo", estado
+        return ("final" if final is not None else None), None
+
+    def ruta_video(self, modo: str | None = None, estado: dict | None = None) -> Path | None:
         if self.video is not None:
             return self.video
-        ruta = ((leer_json(self.carpeta / "analisis.json") or {}).get("video") or {}).get("ruta")
+        if modo is None:
+            modo, estado = self.modo()
+        ruta = ((estado if modo == "directo" else self._de_analisis_json()).get("video") or {}).get("ruta")
         return Path(ruta) if ruta else None
 
-    def indice(self) -> IndiceFotogramas | None:
-        ruta = self.carpeta / CARPETA / FOTOGRAMAS
+    def indice(self, modo: str | None = None, estado: dict | None = None) -> IndiceFotogramas | None:
+        if modo is None:
+            modo, estado = self.modo()
+        if modo is None:
+            return None
+        if modo == "final":
+            ruta, marca = self._ruta(FOTOGRAMAS), _mtime(self._ruta(FINAL))
+        else:
+            ruta, marca = self._ruta(DIRECTO), estado.get("inicio")
         with self._cerrojo:
-            if self._indice is None:
-                if not ruta.exists():
-                    return None
+            if self._indice is None or self._generacion != (modo, marca):
                 self._indice = IndiceFotogramas(ruta)
+                self._generacion = (modo, marca)
             else:
                 self._indice.actualizar()
             return self._indice
 
+    def _de_analisis_json(self) -> dict:
+        ruta = self.carpeta / "analisis.json"
+        try:
+            marca = ruta.stat().st_mtime_ns
+        except OSError:
+            return {}
+        with self._cerrojo:
+            if self._resumen is None or self._resumen[0] != marca:
+                datos = leer_json(ruta) or {}
+                self._resumen = (marca, {
+                    "video": datos.get("video"), "analizador": datos.get("analizador"), "equipos": datos.get("equipos"),
+                    "pct_con_balon": (datos.get("recuento") or {}).get("pct_con_balon"),
+                    "jugadores": len((datos.get("identificacion") or {}).get("jugadores") or []),
+                })
+            return self._resumen[1]
+
     def ficha(self) -> dict:
         """Lo que se enseña en la lista de análisis."""
-        ruta = self.carpeta / "analisis.json"
-        datos = leer_json(ruta) or {}
+        modo, estado = self.modo()
+        if modo == "directo":
+            # De un análisis en marcha, lo suyo: no lo que dejó en la carpeta uno anterior.
+            datos = {"video": estado.get("video"), "analizador": estado.get("analizador"), "equipos": estado.get("equipos")}
+            fecha = estado.get("inicio")
+        else:
+            datos = self._de_analisis_json()
+            fecha = _mtime(self.carpeta / "analisis.json")
         video = datos.get("video") or {}
         analizador = datos.get("analizador") or {}
-        recuento = datos.get("recuento") or {}
-        identificacion = datos.get("identificacion") or {}
-        ruta_video = self.ruta_video()
+        ruta_video = self.ruta_video(modo, estado)
         try:
-            analizado = datetime.fromtimestamp(ruta.stat().st_mtime).isoformat(timespec="minutes")
-        except OSError:
+            analizado = datetime.fromtimestamp(float(fecha)).isoformat(timespec="minutes") if fecha is not None else None
+        except (OverflowError, OSError, ValueError):
             analizado = None
         return {
             "id": self.id,
@@ -103,12 +177,33 @@ class Analisis:
             "tramo": [video.get("tramo_inicio_s"), video.get("tramo_fin_s")],
             "duracion_video_s": video.get("duracion_s"),
             "analizado": analizado,
-            "repeticion": (self.carpeta / CARPETA / FINAL).exists(),
+            "repeticion": modo == "final",
+            "en_curso": en_curso(estado) if modo == "directo" else None,
             "video": str(ruta_video) if ruta_video else None,
             "video_existe": bool(ruta_video and ruta_video.exists()),
-            "balon_pct": recuento.get("pct_con_balon"),
-            "jugadores": len(identificacion.get("jugadores") or []),
+            "balon_pct": datos.get("pct_con_balon"),
+            "jugadores": datos.get("jugadores") or 0,
         }
+
+    def directo(self, desde: int) -> dict:
+        """Lo que pide la página para seguir un análisis en marcha: su estado y, desde el instante `desde`, el segundo de
+        cada uno, de dónde sale su balón y si está calibrado. Con la repetición definitiva ya escrita, `terminado`, y
+        `parado` si esa repetición es la de un análisis anterior porque el que se hacía se ha parado sin terminar. Sin lo
+        uno ni lo otro, `sin_directo` (el analizador dejó de escribir lo provisional o se vació la carpeta)."""
+        modo, estado = self.modo()
+        if modo != "directo":
+            respuesta = {"terminado": modo == "final"}
+            if modo == "final":
+                # Al terminar bien, directo.json deja de escribirse antes de final.json (y luego se borra).
+                quedo = leer_json(self._ruta(ESTADO_DIRECTO))
+                fecha, final = _mtime(self._ruta(ESTADO_DIRECTO)), _mtime(self._ruta(FINAL))
+                if quedo is not None and fecha is not None and final is not None and fecha > final:
+                    respuesta["parado"] = quedo.get("error") or "sin noticias del análisis"
+            else:
+                respuesta["sin_directo"] = True
+            return respuesta
+        indice = self.indice(modo, estado)
+        return dict(estado, terminado=False, instantes=indice.resumen(desde) if indice is not None else {"desde": desde, "t": [], "balon": "", "calibrado": ""})
 
 
 class Biblioteca:
@@ -123,7 +218,7 @@ class Biblioteca:
         self._cerrojo = threading.RLock()
         for carpeta in carpetas:
             carpeta = absoluta(carpeta)
-            if (carpeta / "analisis.json").exists():
+            if es_analisis(carpeta):
                 a = self.registrar(carpeta, video)
                 self.inicial = self.inicial or a.id
             else:
@@ -142,7 +237,8 @@ class Biblioteca:
             for raiz in self.raices:
                 for carpeta in _con_analisis(raiz, PROFUNDIDAD_BUSQUEDA):
                     self.registrar(carpeta)
-            todos = list(self.analisis.values())
+            # Uno que se ha quedado sin nada que ver (se vació su carpeta o se borró) no sale en la lista.
+            todos = [a for a in self.analisis.values() if es_analisis(a.carpeta)]
         return sorted(todos, key=_fecha, reverse=True)
 
     def get(self, ident: str) -> Analisis | None:
@@ -154,7 +250,7 @@ class Biblioteca:
 
 
 def _con_analisis(raiz: Path, profundidad: int):
-    if (raiz / "analisis.json").exists():
+    if es_analisis(raiz):
         yield raiz
         return
     if profundidad <= 0:
@@ -168,10 +264,9 @@ def _con_analisis(raiz: Path, profundidad: int):
 
 
 def _fecha(a: Analisis) -> float:
-    try:
-        return (a.carpeta / "analisis.json").stat().st_mtime
-    except OSError:
-        return 0.0
+    # Los que se están haciendo, los primeros.
+    fechas = [_mtime(a.carpeta / "analisis.json"), _mtime(a.carpeta / CARPETA / ESTADO_DIRECTO)]
+    return max((f for f in fechas if f is not None), default=0.0)
 
 
 class Vida:
@@ -269,8 +364,8 @@ class Manejador(BaseHTTPRequestHandler):
                 carpeta = Path(str(json.loads(cuerpo.decode("utf-8") or "{}").get("carpeta") or "").strip().strip('"'))
             except ValueError:
                 return self._error(HTTPStatus.BAD_REQUEST, "Petición no válida.")
-            if not str(carpeta) or not (absoluta(carpeta) / "analisis.json").exists():
-                return self._error(HTTPStatus.NOT_FOUND, "En esa carpeta no hay ningún analisis.json.")
+            if not str(carpeta) or not es_analisis(absoluta(carpeta)):
+                return self._error(HTTPStatus.NOT_FOUND, "En esa carpeta no hay ningún análisis (ni analisis.json ni uno en marcha).")
             return self._json(self.server.biblioteca.registrar(carpeta).ficha())
         partes = [p for p in url.path.split("/") if p]
         if len(partes) == 4 and partes[:2] == ["api", "a"] and partes[3] == "video":
@@ -311,6 +406,12 @@ class Manejador(BaseHTTPRequestHandler):
             return self._json(analisis.ficha())
         if que in ARCHIVOS_JSON and len(resto) == 1:
             return self._archivo(analisis.carpeta / ARCHIVOS_JSON[que], "application/json; charset=utf-8")
+        if que == "directo" and len(resto) == 1:
+            try:
+                desde = int(consulta.get("desde", ["0"])[0])
+            except ValueError:
+                return self._error(HTTPStatus.BAD_REQUEST, "Instante no válido.")
+            return self._json(analisis.directo(desde))
         if que == "fotogramas" and len(resto) == 1:
             indice = analisis.indice()
             if indice is None:

@@ -1,18 +1,20 @@
 import http.client
 import json
+import os
 import threading
+import time
 
 import pytest
 
-from tt_analisis.repeticion import CARPETA, FINAL, FOTOGRAMAS
+from tt_analisis.repeticion import CARPETA, DIRECTO, ESTADO_DIRECTO, FINAL, FOTOGRAMAS
 from tt_analisis.visor.servidor import Biblioteca, Servidor, identificador, absoluta
 
 VIDEO = bytes(range(256)) * 40
 
 
 def _analisis(carpeta, video):
-    (carpeta / CARPETA).mkdir(parents=True)
-    (carpeta / "recortes").mkdir()
+    (carpeta / CARPETA).mkdir(parents=True, exist_ok=True)
+    (carpeta / "recortes").mkdir(exist_ok=True)
     datos = {
         "analizador": {"nombre": "Ojeador", "version": "2.3.0"},
         "video": {"ruta": str(video), "tramo_inicio_s": 0.0, "tramo_fin_s": 1.0, "duracion_s": 1.0},
@@ -134,3 +136,143 @@ def test_ni_estaticos_ni_recortes_salen_de_su_carpeta(visor):
     assert _pedir(servidor, "GET", f"/api/a/{ident}/recortes/..%2Fanalisis.json")[0].status == 404
     respuesta, contenido = _pedir(servidor, "GET", "/")
     assert respuesta.status == 200 and b"/estatico/visor.js" in contenido
+
+
+# ---------------------------------------------------------------- análisis que se están haciendo
+
+def _en_marcha(carpeta, video, *, actualizado=None, error=None, lineas=3, inicio=1000.0):
+    """Lo que deja un análisis a medias (`repeticion.Directo`): su estado y los fotogramas que lleva."""
+    (carpeta / CARPETA).mkdir(parents=True, exist_ok=True)
+    estado = {
+        "formato": 1, "analizador": {"nombre": "Ojeador", "version": "2.3.0"},
+        "video": {"ruta": str(video), "ancho": 1280, "alto": 720, "fps": 25.0, "duracion_s": 10.0, "tramo_inicio_s": 0.0, "tramo_fin_s": 10.0},
+        "inicio": inicio, "actualizado": time.time() if actualizado is None else actualizado, "etapa": "pasada", "pausado": False,
+        "hitos": ["Siguiendo a jugadores y balón: 50 fotogramas a 5.0 por segundo de vídeo."], "dt": 0.2,
+        "equipos": [{"id": 0, "nombre": "CD Vallobín", "color": "#c81e1e"}, {"id": 1, "nombre": "Real Titánico", "color": "#1e1ec8"}],
+        "campo": {"largo_cm": 10000, "ancho_cm": 6000, "vertices": [], "aristas": []}, "fotogramas_total": 50, "fotogramas": lineas,
+    }
+    if error:
+        estado["error"] = error
+    (carpeta / CARPETA / ESTADO_DIRECTO).write_text(json.dumps(estado), encoding="utf-8")
+    with (carpeta / CARPETA / DIRECTO).open("w", encoding="utf-8", newline="\n") as f:
+        for i in range(lineas):
+            linea = {"t": round(i * 0.2, 3), "i": i * 5, "h": None if i == 1 else [1, 0, 0, 0, 1, 0, 0, 0, 1], "p": [[3, 3, 2, 0, 10, 10, 30, 60]]}
+            if i == 0:
+                linea["b"] = [100.0, 50.0, "v", 0.8]
+            f.write(json.dumps(linea, separators=(",", ":")) + "\n")
+    return carpeta
+
+
+def _fechas(carpeta, *, final, directo):
+    """Cuándo se escribió cada uno (lo que decide cuál manda)."""
+    for nombre, cuando in ((FINAL, final), (ESTADO_DIRECTO, directo)):
+        ruta = carpeta / CARPETA / nombre
+        if cuando is not None and ruta.exists():
+            os.utime(ruta, (cuando, cuando))
+
+
+def _json(servidor, ruta):
+    respuesta, contenido = _pedir(servidor, "GET", ruta)
+    assert respuesta.status == 200, contenido
+    return json.loads(contenido)
+
+
+def test_un_analisis_que_se_esta_haciendo_sale_en_la_lista_y_se_sigue_segun_avanza(visor):
+    servidor, tmp_path = visor
+    carpeta = _en_marcha(tmp_path / "salidas" / "j9", tmp_path / "partido.mp4")
+    ident = identificador(absoluta(carpeta))
+    ficha = next(f for f in _json(servidor, "/api/analisis") if f["id"] == ident)
+    assert ficha["repeticion"] is False and ficha["en_curso"]["etapa"] == "pasada" and ficha["en_curso"]["vivo"] is True
+    assert ficha["en_curso"]["fotogramas"] == 3 and ficha["en_curso"]["fotogramas_total"] == 50
+    assert ficha["equipos"] == ["CD Vallobín", "Real Titánico"] and ficha["analizador"] == "Ojeador 2.3.0" and ficha["video_existe"] is True
+
+    directo = _json(servidor, f"/api/a/{ident}/directo?desde=0")
+    assert directo["terminado"] is False and directo["vivo"] is True and directo["dt"] == 0.2 and directo["hitos"]
+    assert directo["instantes"] == {"desde": 0, "t": [0.0, 0.2, 0.4], "balon": "v--", "calibrado": "101"}
+    # Lo nuevo, desde donde se quedó la página.
+    with (carpeta / CARPETA / DIRECTO).open("a", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps({"t": 0.6, "i": 15, "h": None, "p": [], "v": [[0.56, 1.0, 2.0, 0.5]]}, separators=(",", ":")) + "\n")
+    assert _json(servidor, f"/api/a/{ident}/directo?desde=3")["instantes"] == {"desde": 3, "t": [0.6], "balon": "n", "calibrado": "0"}
+    assert [x["t"] for x in _json(servidor, f"/api/a/{ident}/fotogramas?desde=0.2&hasta=0.6")] == [0.2, 0.4, 0.6]
+    assert _pedir(servidor, "GET", f"/api/a/{ident}/directo?desde=uno")[0].status == 400
+    assert _pedir(servidor, "GET", f"/api/a/{ident}/video", cabeceras={"Range": "bytes=0-9"})[1] == VIDEO[:10]
+    # También abriendo su carpeta a mano, aunque aún no tenga analisis.json.
+    otra = _en_marcha(tmp_path / "suelta", tmp_path / "partido.mp4")
+    respuesta, contenido = _pedir(servidor, "POST", "/api/abrir", {"carpeta": str(otra)})
+    assert respuesta.status == 200 and json.loads(contenido)["en_curso"]["vivo"] is True
+
+
+def test_al_terminar_se_pasa_a_la_repeticion_definitiva(visor):
+    servidor, tmp_path = visor
+    carpeta = _en_marcha(tmp_path / "salidas" / "j9", tmp_path / "partido.mp4")
+    ident = identificador(absoluta(carpeta))
+    assert _json(servidor, f"/api/a/{ident}/directo?desde=0")["terminado"] is False
+    # El análisis deja de escribir directo.json antes de escribir la definitiva (y luego lo borra).
+    _analisis(carpeta, tmp_path / "partido.mp4")
+    ahora = time.time()
+    _fechas(carpeta, final=ahora, directo=ahora - 5)
+    assert _json(servidor, f"/api/a/{ident}/directo?desde=3") == {"terminado": True}
+    ficha = _json(servidor, f"/api/a/{ident}/ficha")
+    assert ficha["repeticion"] is True and ficha["en_curso"] is None and ficha["jugadores"] == 1
+    assert [x["t"] for x in _json(servidor, f"/api/a/{ident}/fotogramas?desde=0&hasta=2")] == [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    (carpeta / CARPETA / ESTADO_DIRECTO).unlink()
+    (carpeta / CARPETA / DIRECTO).unlink()
+    assert _json(servidor, f"/api/a/{ident}/directo?desde=0") == {"terminado": True}
+
+
+def test_uno_vuelto_a_lanzar_en_la_carpeta_tapa_al_anterior_mientras_se_hace(visor):
+    servidor, tmp_path = visor
+    video = tmp_path / "partido.mp4"
+    carpeta = tmp_path / "salidas" / "j10"
+    _analisis(carpeta, video)
+    _en_marcha(carpeta, video)
+    ahora = time.time()
+    _fechas(carpeta, final=ahora - 100, directo=ahora)
+    ident = identificador(absoluta(carpeta))
+    ficha = _json(servidor, f"/api/a/{ident}/ficha")
+    assert ficha["repeticion"] is False and ficha["en_curso"]["vivo"] is True
+    assert [x["t"] for x in _json(servidor, f"/api/a/{ident}/fotogramas?desde=0&hasta=2")] == [0.0, 0.2, 0.4]
+
+    # Se para sin noticias: vuelve a verse el anterior, y la página sabe que el que seguía no terminó.
+    _en_marcha(carpeta, video, actualizado=ahora - 120)
+    _fechas(carpeta, final=ahora - 100, directo=ahora)
+    ficha = _json(servidor, f"/api/a/{ident}/ficha")
+    assert ficha["repeticion"] is True and ficha["en_curso"] is None
+    assert _json(servidor, f"/api/a/{ident}/directo?desde=3") == {"terminado": True, "parado": "sin noticias del análisis"}
+    assert [x["t"] for x in _json(servidor, f"/api/a/{ident}/fotogramas?desde=0&hasta=2")] == [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    _en_marcha(carpeta, video, error="CUDA sin memoria")
+    _fechas(carpeta, final=ahora - 100, directo=ahora)
+    assert _json(servidor, f"/api/a/{ident}/directo?desde=0") == {"terminado": True, "parado": "CUDA sin memoria"}
+
+
+def test_sin_uno_anterior_el_que_se_paro_se_sigue_viendo_con_el_porque(visor):
+    servidor, tmp_path = visor
+    video = tmp_path / "partido.mp4"
+    parado = _en_marcha(tmp_path / "salidas" / "j11", video, actualizado=time.time() - 120)
+    fallido = _en_marcha(tmp_path / "salidas" / "j12", video, error="No se puede abrir el vídeo")
+    fichas = {f["id"]: f for f in _json(servidor, "/api/analisis")}
+    sin_noticias = fichas[identificador(absoluta(parado))]["en_curso"]
+    assert sin_noticias["vivo"] is False and sin_noticias["error"] is None
+    con_error = fichas[identificador(absoluta(fallido))]["en_curso"]
+    assert con_error["vivo"] is False and con_error["error"] == "No se puede abrir el vídeo"
+    directo = _json(servidor, f"/api/a/{identificador(absoluta(fallido))}/directo?desde=0")
+    assert directo["terminado"] is False and directo["vivo"] is False and directo["error"] == "No se puede abrir el vídeo"
+    assert directo["instantes"]["t"] == [0.0, 0.2, 0.4]
+
+
+def test_si_lo_provisional_desaparece_la_pagina_lo_sabe_y_sigue_mirando(visor):
+    servidor, tmp_path = visor
+    video = tmp_path / "partido.mp4"
+    carpeta = _en_marcha(tmp_path / "salidas" / "j13", video)
+    ident = identificador(absoluta(carpeta))
+    assert _json(servidor, f"/api/a/{ident}/directo?desde=0")["instantes"]["t"] == [0.0, 0.2, 0.4]
+    # El analizador dejó de escribirlo (o se vació la carpeta): ni lo provisional ni la definitiva.
+    (carpeta / CARPETA / ESTADO_DIRECTO).unlink()
+    (carpeta / CARPETA / DIRECTO).unlink()
+    assert _json(servidor, f"/api/a/{ident}/directo?desde=3") == {"terminado": False, "sin_directo": True}
+    assert ident not in [f["id"] for f in _json(servidor, "/api/analisis")]
+    # Si en la carpeta empieza otro, es ese el que se sigue.
+    _en_marcha(carpeta, video, inicio=2000.0, lineas=1)
+    directo = _json(servidor, f"/api/a/{ident}/directo?desde=0")
+    assert directo["inicio"] == 2000.0 and directo["vivo"] is True and directo["instantes"]["t"] == [0.0]
+    assert ident in [f["id"] for f in _json(servidor, "/api/analisis")]

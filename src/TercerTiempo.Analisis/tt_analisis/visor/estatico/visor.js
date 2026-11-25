@@ -1,10 +1,12 @@
-// El visor del Ojeador: la lista de análisis y, de uno, el vídeo con lo que vio y sacó el analizador encima.
+// El visor del Ojeador: la lista de análisis y, de uno, el vídeo con lo que vio y sacó el analizador encima. Un análisis
+// que se está haciendo se abre en directo: se sigue lo provisional según avanza y, al terminar, se pasa solo a la
+// repetición definitiva sin tocar el vídeo.
 
 import { Repeticion, pedirJSON } from './datos.js';
 import { Dibujo } from './dibujo.js';
 import { Lineas } from './linea.js';
 import { Panel } from './panel.js';
-import { COLORES, ORIGEN_BALON, TIPOS_ACCION, TIPOS_EVENTO, buscarIndice, el, guardar, minuto, minutoPreciso, recordar } from './util.js';
+import { COLORES, ETAPAS, ORIGEN_BALON, TIPOS_ACCION, TIPOS_EVENTO, buscarIndice, el, estadoEnCurso, guardar, minuto, minutoPreciso, recordar } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 const CAPAS = [
@@ -19,17 +21,26 @@ const CAPAS = [
 ];
 
 const BALON_CORTO = { v: 'Visto', n: 'Vecino', i: 'Interpolado', x: 'Descartado', '-': 'Sin balón' };
+// Cada cuánto se mira cómo va un análisis en marcha (él escribe cada instante y su estado cada 2 s) y la lista.
+const SEGUIR_MS = 1500;
+const LISTA_MS = 4000;
+// En directo, al reproducir, el vídeo espera a este margen de donde va el análisis y sigue cuando hay de nuevo este otro.
+const MARGEN_ESPERA_S = 0.4;
+const MARGEN_SEGUIR_S = 3;
 
 const video = $('video');
 const capa = $('capa');
 const minimapa = $('minimapa');
 const capas = { ...Object.fromEntries(CAPAS.map(([k, , def]) => [k, def])), ...recordar('visor.capas', {}) };
-const estado = { seleccion: null, desfase: 0, tMedia: 0, ultimoT: null, personas: [], escena: null, panelEn: 0, clavePildoras: '', avisoHasta: 0, guardadoEn: 0 };
+const estado = { seleccion: null, desfase: 0, tMedia: 0, ultimoT: null, personas: [], escena: null, panelEn: 0, clavePildoras: '', avisoHasta: 0, guardadoEn: 0, esperando: false };
 let rep = null;
 let dibujo = null;
 let lineas = null;
 let panel = null;
 let abriendo = null;
+let seguimiento = null;
+let refrescoLista = null;
+const tarjetasHechas = new Map();
 
 // ---------------------------------------------------------------- arranque y lista
 
@@ -65,27 +76,61 @@ async function lista() {
   $('version').textContent = '· visor';
   document.title = 'Ojeador · Visor';
   const cont = $('tarjetas');
+  tarjetasHechas.clear();
   cont.replaceChildren(el('div', { clase: 'sub', texto: 'Buscando análisis…' }));
+  await refrescarLista();
+}
+
+// La lista se vuelve a pedir cada poco mientras se ve: así salen los análisis que empiezan y cómo van los que están en marcha.
+async function refrescarLista() {
+  clearTimeout(refrescoLista);
+  if ($('pantalla-lista').hidden) return;
+  const cont = $('tarjetas');
   try {
     const fichas = await pedirJSON('/api/analisis');
-    cont.replaceChildren(...(fichas.length ? fichas.map(tarjeta) : [el('div', { clase: 'vacio', texto: 'No hay análisis en las carpetas del visor. Pega arriba la ruta de uno.' })]));
+    if ($('pantalla-lista').hidden) return;
+    if (!fichas.length) {
+      tarjetasHechas.clear();
+      cont.replaceChildren(el('div', { clase: 'vacio', texto: 'No hay análisis en las carpetas del visor. Pega arriba la ruta de uno.' }));
+    } else {
+      // Solo se rehace la tarjeta que ha cambiado (para no quitarle el clic a la que se está pulsando).
+      const nodos = fichas.map((f) => {
+        const clave = JSON.stringify(f);
+        const hecha = tarjetasHechas.get(f.id);
+        if (hecha && hecha.clave === clave) return hecha.nodo;
+        const nodo = tarjeta(f);
+        tarjetasHechas.set(f.id, { clave, nodo });
+        return nodo;
+      });
+      const cambia = nodos.length !== cont.children.length || nodos.some((n, i) => cont.children[i] !== n);
+      if (cambia) cont.replaceChildren(...nodos);
+    }
   } catch (e) {
     cont.replaceChildren(el('div', { clase: 'error', texto: e.message }));
   }
+  refrescoLista = setTimeout(refrescarLista, LISTA_MS);
 }
 
 function tarjeta(f) {
   const titulo = f.equipos && f.equipos.length ? f.equipos.join(' – ') : f.carpeta.split(/[\\/]/).pop();
   const fecha = f.analizado ? new Date(f.analizado).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : null;
-  return el('button', { clase: 'tarjeta', type: 'button', onclick: () => { location.hash = `#/a/${f.id}`; } },
+  const marcha = f.en_curso;
+  let principal;
+  if (marcha) {
+    const que = estadoEnCurso(marcha);
+    principal = el('span', { clase: `etiqueta ${que.clase}`, title: marcha.error || null }, que.clase === 'directo' ? el('span', { clase: 'punto-vivo', 'aria-hidden': 'true' }) : null, que.texto);
+  } else {
+    principal = el('span', { clase: `etiqueta ${f.repeticion ? 'bien' : 'mal'}`, texto: f.repeticion ? 'Con repetición' : 'Sin repetición: vuelve a analizarlo' });
+  }
+  return el('button', { clase: `tarjeta${marcha ? ' en-marcha' : ''}`, type: 'button', onclick: () => { location.hash = `#/a/${f.id}`; } },
     el('span', { clase: 'titulo', texto: titulo }),
-    el('span', { clase: 'linea-dato', texto: `Tramo ${minuto(f.tramo[0])} – ${minuto(f.tramo[1])} · ${f.analizador || 'Ojeador'}${fecha ? ' · ' + fecha : ''}` }),
+    el('span', { clase: 'linea-dato', texto: `Tramo ${minuto(f.tramo[0])} – ${minuto(f.tramo[1])} · ${f.analizador || 'Ojeador'}${fecha ? (marcha ? ' · empezado ' : ' · ') + fecha : ''}` }),
     el('span', { clase: 'linea-dato', texto: f.carpeta }),
     el('span', { clase: 'etiquetas' },
-      el('span', { clase: `etiqueta ${f.repeticion ? 'bien' : 'mal'}`, texto: f.repeticion ? 'Con repetición' : 'Sin repetición: vuelve a analizarlo' }),
+      principal,
       f.video_existe ? null : el('span', { clase: 'etiqueta mal', texto: 'No se encuentra el vídeo' }),
-      f.balon_pct != null ? el('span', { clase: 'etiqueta', texto: `Balón visto ${String(f.balon_pct).replace('.', ',')} %` }) : null,
-      f.jugadores ? el('span', { clase: 'etiqueta', texto: `${f.jugadores} identificados` }) : null,
+      !marcha && f.balon_pct != null ? el('span', { clase: 'etiqueta', texto: `Balón visto ${String(f.balon_pct).replace('.', ',')} %` }) : null,
+      !marcha && f.jugadores ? el('span', { clase: 'etiqueta', texto: `${f.jugadores} identificados` }) : null,
     ),
   );
 }
@@ -116,6 +161,7 @@ function mensaje(...hijos) {
 async function abrir(id) {
   if (rep && rep.id === id) return;
   cerrarVisor();
+  clearTimeout(refrescoLista);
   $('pantalla-lista').hidden = true;
   $('pantalla-visor').hidden = false;
   $('btn-lista').hidden = false;
@@ -123,42 +169,186 @@ async function abrir(id) {
   const esta = (abriendo = Symbol('abrir'));
   try {
     const ficha = await pedirJSON(`/api/a/${id}/ficha`);
-    if (!ficha.repeticion) {
+    if (esta !== abriendo) return;
+    let nueva;
+    if (ficha.en_curso) nueva = await enMarcha(id, ficha, esta);
+    else if (ficha.repeticion) nueva = await definitiva(id, ficha);
+    else {
       mensaje(el('strong', { texto: 'Este análisis no tiene repetición.' }), el('div', { texto: 'Se hizo antes de que el Ojeador la guardara. Vuelve a analizar el vídeo (en la app, «Volver a analizar») y ábrelo otra vez.' }));
       return;
     }
-    const [final, analisis, acta] = await Promise.all([
-      pedirJSON(`/api/a/${id}/final.json`),
-      pedirJSON(`/api/a/${id}/analisis.json`),
-      pedirJSON(`/api/a/${id}/acta-propuesta.json`).catch(() => null),
-    ]);
-    if (esta !== abriendo) return;
-    rep = new Repeticion(id, ficha, final, analisis, acta);
-    dibujo = new Dibujo(rep);
-    lineas = new Lineas($('linea-detalle'), $('linea-total'), rep, (t) => irA(t));
-    panel = new Panel($('panel-cuerpo'), rep, { ir: (t, quien) => irA(t, quien), elegir: (quien, buscar) => elegir(quien, buscar) });
-    rep.alCargar = () => { if (video.paused) repintar(); };
-    estado.desfase = recordar(`visor.desfase.${id}`, 0);
-    mostrarDesfase();
-    const nombres = (final.equipos || []).map((e) => e.nombre).join(' – ');
-    $('version').textContent = final.analizador?.version || '';
-    $('partido').replaceChildren(el('strong', { texto: nombres }), ` · tramo ${minuto(rep.inicio)} – ${minuto(rep.fin)}`);
-    document.title = `${nombres} · Ojeador`;
-    marcarPestana(panel.pestana);
-    const inicio = recordar(`visor.t.${id}`, rep.inicio);
+    if (!nueva || esta !== abriendo) return;
+    await montar(nueva, false);
+  } catch (e) {
+    if (esta === abriendo) mensaje(el('strong', { texto: 'No se ha podido abrir el análisis.' }), el('div', { texto: e.message }));
+  }
+}
+
+async function definitiva(id, ficha) {
+  const [final, analisis, acta] = await Promise.all([
+    pedirJSON(`/api/a/${id}/final.json`),
+    pedirJSON(`/api/a/${id}/analisis.json`),
+    pedirJSON(`/api/a/${id}/acta-propuesta.json`).catch(() => null),
+  ]);
+  return new Repeticion(id, ficha, final, analisis, acta);
+}
+
+// Un análisis en marcha. Hasta que empieza la pasada principal (cargar los modelos y separar los equipos) no hay nada que
+// dibujar: se espera enseñando cómo va.
+async function enMarcha(id, ficha, esta) {
+  for (;;) {
+    const d = await pedirJSON(`/api/a/${id}/directo?desde=0`);
+    if (esta !== abriendo) return null;
+    if (d.terminado) return definitiva(id, await pedirJSON(`/api/a/${id}/ficha`));
+    if (d.campo && d.equipos && d.dt) return Repeticion.enMarcha(id, ficha, d);
+    if (d.sin_directo) {
+      mensaje(el('strong', { texto: 'Ya no llega nada en directo de este análisis.' }), el('div', { texto: 'Dejó de escribir lo provisional, o se vació su carpeta. Si termina, se verá aquí.' }));
+    } else {
+      const que = estadoEnCurso({ ...d, fotogramas: null });
+      const hitos = (d.hitos || []).slice(-4);
+      mensaje(
+        el('strong', { texto: d.error ? 'El análisis ha fallado antes de empezar a seguir el partido.' : que.parado ? 'El análisis se ha parado antes de empezar a seguir el partido.' : 'El análisis está empezando.' }),
+        el('div', { texto: d.error || `${ETAPAS[d.etapa] || 'Preparando'}… En cuanto empiece a seguir a jugadores y balón se verá aquí, según avanza.` }),
+        hitos.length ? el('div', { clase: 'hitos-mensaje' }, hitos.map((h) => el('div', { texto: h }))) : null,
+      );
+      if (d.error || que.parado) return null;
+    }
+    await new Promise((resolver) => setTimeout(resolver, SEGUIR_MS));
+    if (esta !== abriendo) return null;
+  }
+}
+
+// Pone en pantalla una repetición. Con `conservar` (el análisis en marcha acaba de terminar), el vídeo sigue donde estaba.
+async function montar(nueva, conservar) {
+  const pestana = panel ? panel.pestana : null;
+  clearTimeout(seguimiento);
+  rep = nueva;
+  dibujo = new Dibujo(rep);
+  lineas = new Lineas($('linea-detalle'), $('linea-total'), rep, (t) => irA(t));
+  panel = new Panel($('panel-cuerpo'), rep, { ir: (t, quien) => irA(t, quien), elegir: (quien, buscar) => elegir(quien, buscar), loUltimo: () => irALoUltimo() });
+  if (pestana) panel.mostrar(pestana);
+  rep.alCargar = () => { if (video.paused) repintar(); };
+  estado.desfase = recordar(`visor.desfase.${rep.id}`, 0);
+  estado.clavePildoras = '';
+  estado.esperando = false;
+  mostrarDesfase();
+  cabecera();
+  marcarPestana(panel.pestana);
+  $('btn-directo').hidden = !rep.enDirecto;
+  if (conservar) {
+    rep.asegurar(video.currentTime + estado.desfase).catch(() => {});
+  } else {
+    // En directo, de entrada, donde se quedó si ya está analizado; si no, lo último que ha visto el analizador.
+    let inicio = recordar(`visor.t.${rep.id}`, rep.inicio);
+    if (rep.enDirecto && (inicio > rep.frontera() || inicio < rep.inicio)) inicio = Math.max(rep.inicio, rep.frontera() - 8);
     await rep.asegurar(inicio).catch(() => {});
-    if (!ficha.video_existe) pedirVideo(ficha);
+    if (!rep.ficha.video_existe) pedirVideo(rep.ficha);
     else mensaje();
-    video.src = `/api/a/${id}/video`;
+    video.src = `/api/a/${rep.id}/video`;
     video.addEventListener('loadedmetadata', () => {
       video.currentTime = Math.min(Math.max(inicio, rep.inicio), rep.fin);
       redimensionar();
     }, { once: true });
-    redimensionar();
-    bucle();
-  } catch (e) {
-    mensaje(el('strong', { texto: 'No se ha podido abrir el análisis.' }), el('div', { texto: e.message }));
   }
+  redimensionar();
+  bucle();
+  if (rep.enDirecto) seguir();
+}
+
+function cabecera() {
+  const nombres = (rep.equipos || []).map((e) => e.nombre).join(' – ');
+  $('version').textContent = rep.final.analizador?.version || '';
+  $('partido').replaceChildren(...[
+    el('strong', { texto: nombres }), ` · tramo ${minuto(rep.inicio)} – ${minuto(rep.fin)}`,
+    rep.enDirecto ? el('span', { clase: 'en-directo' }, el('span', { clase: 'punto-vivo', 'aria-hidden': 'true' }), 'en directo') : null,
+  ].filter(Boolean));
+  document.title = `${rep.enDirecto ? '● ' : ''}${nombres} · Ojeador`;
+}
+
+// Lo nuevo de un análisis en marcha, cada SEGUIR_MS: sus instantes y su estado. Al aparecer la repetición definitiva se
+// pasa a ella; si en la carpeta empieza otro análisis, se abre ese.
+function seguir() {
+  const propio = rep;
+  const paso = async () => {
+    if (rep !== propio) return;
+    try {
+      const d = await pedirJSON(`/api/a/${propio.id}/directo?desde=${propio.t.length}`);
+      if (rep !== propio) return;
+      if (d.terminado) {
+        await terminado(propio, d.parado);
+        return;
+      }
+      if (d.sin_directo) {
+        // Ni lo provisional ni la definitiva (el analizador dejó de escribir lo de en directo, o se vació la carpeta): se
+        // queda lo que había y se sigue mirando, por si termina o empieza otro.
+        if (!propio.directo.sin_directo) {
+          propio.crecer({ ...propio.directo, sin_directo: true, instantes: null });
+          avisar('Ya no llega nada en directo de este análisis: si termina, se verá aquí.', COLORES.balon.i, 8000);
+        }
+      } else if (d.inicio !== propio.directo.inicio) {
+        reabrir(propio.id);
+        return;
+      } else if (propio.crecer(d)) {
+        lineas.actualizar();
+      }
+      estado.clavePildoras = '';
+      if (estado.esperando) {
+        // Sigue cuando hay más analizado; si la pasada ya acabó, no va a haber más: sigue con lo que queda. Si el
+        // análisis se ha parado, deja de esperar y el vídeo queda en pausa.
+        const parado = estadoEnCurso(propio.directo).parado;
+        const sinMas = parado || propio.directo.etapa !== 'pasada';
+        if (sinMas || propio.frontera() >= video.currentTime + estado.desfase + MARGEN_SEGUIR_S) {
+          estado.esperando = false;
+          if (!parado) video.play().catch(() => {});
+        }
+      }
+      if (video.paused) repintar();
+    } catch {
+      // El siguiente intento.
+    }
+    if (rep === propio) seguimiento = setTimeout(paso, SEGUIR_MS);
+  };
+  seguimiento = setTimeout(paso, SEGUIR_MS);
+}
+
+// Con `parado`, la repetición que hay es la de un análisis anterior en la misma carpeta: el que se seguía no terminó.
+async function terminado(propio, parado) {
+  try {
+    const ficha = await pedirJSON(`/api/a/${propio.id}/ficha`);
+    if (rep !== propio) return;
+    if (!ficha.repeticion) {
+      reabrir(propio.id);
+      return;
+    }
+    const nueva = await definitiva(propio.id, ficha);
+    if (rep !== propio) return;
+    // Lo elegido en directo es un tramo del seguidor; en la definitiva, los ids son otros.
+    estado.seleccion = null;
+    await montar(nueva, true);
+    if (parado) avisar(`El análisis se ha parado sin terminar (${parado}): se ve el anterior, el que ya había en la carpeta.`, COLORES.balon.x, 9000);
+    else avisar('Análisis terminado: ya está todo (quién es quién, posesión, jugadas y lo que cuenta para el acta).', COLORES.balon.v, 5000);
+  } catch {
+    if (rep === propio) seguimiento = setTimeout(() => terminado(propio, parado), SEGUIR_MS);
+  }
+}
+
+function reabrir(id) {
+  cerrarVisor();
+  abrir(id);
+}
+
+function irALoUltimo() {
+  if (!rep || !rep.enDirecto) return;
+  irA(Math.max(rep.inicio, rep.frontera() - 5));
+  video.play().catch(() => {});
+}
+
+function avisar(texto, color, ms = 2200) {
+  const caja = $('aviso-evento');
+  caja.textContent = texto;
+  caja.style.borderColor = color || '#ffffff2a';
+  caja.classList.add('visible', 'largo');
+  estado.avisoHasta = performance.now() + ms;
 }
 
 function pedirVideo(ficha) {
@@ -187,6 +377,8 @@ function pedirVideo(ficha) {
 }
 
 function cerrarVisor() {
+  clearTimeout(seguimiento);
+  abriendo = null;
   if (!rep) return;
   guardar(`visor.t.${rep.id}`, video.currentTime);
   video.pause();
@@ -196,6 +388,8 @@ function cerrarVisor() {
   dibujo = lineas = panel = null;
   estado.seleccion = null;
   estado.clavePildoras = '';
+  estado.esperando = false;
+  $('btn-directo').hidden = true;
   for (const lienzo of [capa, minimapa]) lienzo.getContext('2d').clearRect(0, 0, lienzo.width, lienzo.height);
   $('pildoras').replaceChildren();
 }
@@ -234,6 +428,15 @@ function pintar(quieto = false) {
   const t = estado.tMedia + estado.desfase;
   if (!rep.cargado(t)) rep.asegurar(t).catch(() => {});
   else rep.asegurar(t + 15).catch(() => {});
+  // En directo, el vídeo que llega a donde va el análisis lo espera (y sigue solo cuando hay más).
+  if (rep.enDirecto && rep.directo.etapa === 'pasada' && !video.paused && !estado.esperando && estado.ultimoT != null) {
+    const frontera = rep.frontera();
+    if (estado.ultimoT <= frontera - MARGEN_ESPERA_S && t > frontera - MARGEN_ESPERA_S) {
+      estado.esperando = true;
+      estado.clavePildoras = '';
+      video.pause();
+    }
+  }
   const ctx = capa.getContext('2d');
   const { dpr } = estado.escena;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -266,8 +469,31 @@ function pildoras(t) {
   const k = rep.instante(t);
   let clave;
   let lista;
-  // [texto, color, texto corto para cuando el vídeo es estrecho]
-  if (t < rep.inicio - 0.1 || t > rep.fin + 0.1 || k < 0) {
+  // [texto, color, texto corto para cuando el vídeo es estrecho, en directo]
+  if (rep.enDirecto) {
+    const frontera = rep.frontera();
+    const que = estadoEnCurso(rep.directo);
+    let vivo;
+    if (que.clase !== 'directo') vivo = [que.texto, que.clase === 'pausa' ? COLORES.balon.i : '#f87171', que.corto];
+    else if (rep.directo.etapa === 'pasada') vivo = [`En directo · analizado hasta ${minuto(frontera)}${que.pct != null ? ` (${que.pct} %)` : ''}`, COLORES.directo, 'Directo', true];
+    else vivo = [`En directo · ${(ETAPAS[rep.directo.etapa] || 'analizando').toLowerCase()}`, COLORES.directo, 'Directo', true];
+    if (t < rep.inicio - 0.1 || t > rep.fin + 0.1 || k < 0) {
+      clave = `fuera${que.texto}`;
+      lista = [vivo, ['Fuera del tramo analizado', '#64748b', 'Fuera del tramo']];
+    } else if (t > frontera + rep.dt) {
+      clave = `pendiente${que.texto}${estado.esperando}`;
+      lista = [vivo, estado.esperando ? ['Esperando al analizador', COLORES.balon.i, 'Esperando'] : ['Aún sin analizar', '#64748b', 'Sin analizar']];
+    } else {
+      const b = rep.balon[k];
+      clave = `${b}${rep.calibrado[k]}${que.texto}${estado.esperando}`;
+      lista = [
+        vivo,
+        [b === '-' ? 'Sin balón' : b === 'n' ? 'Balón visto en un fotograma vecino' : 'Balón visto', COLORES.balon[b] || '#64748b', BALON_CORTO[b]],
+        rep.calibrado[k] === '1' ? ['Campo calibrado', COLORES.calibrado, 'Calibrado'] : ['Sin calibrar', '#64748b', 'Sin calibrar'],
+        estado.esperando ? ['Esperando al analizador', COLORES.balon.i, 'Esperando'] : null,
+      ].filter(Boolean);
+    }
+  } else if (t < rep.inicio - 0.1 || t > rep.fin + 0.1 || k < 0) {
     clave = 'fuera';
     lista = [['Fuera del tramo analizado', '#64748b', 'Fuera del tramo']];
   } else {
@@ -284,7 +510,7 @@ function pildoras(t) {
   }
   if (clave === estado.clavePildoras) return;
   estado.clavePildoras = clave;
-  $('pildoras').replaceChildren(...lista.map(([texto, color, corto]) => el('span', { clase: 'pildora' },
+  $('pildoras').replaceChildren(...lista.map(([texto, color, corto, latiendo]) => el('span', { clase: `pildora${latiendo ? ' directo' : ''}` },
     el('span', { clase: 'punto', estilo: { background: color } }),
     el('span', { clase: 'largo', texto }),
     el('span', { clase: 'corto', texto: corto || texto }),
@@ -310,6 +536,7 @@ function avisos(t) {
       const ultimo = pasadas[pasadas.length - 1];
       caja.textContent = ultimo.texto;
       caja.style.borderColor = ultimo.color || '#ffffff2a';
+      caja.classList.remove('largo');
       caja.classList.add('visible');
       estado.avisoHasta = performance.now() + 2200;
     }
@@ -366,6 +593,7 @@ function montarControles() {
     }));
   }
   $('btn-play').addEventListener('click', alternarPlay);
+  $('btn-directo').addEventListener('click', irALoUltimo);
   $('btn-atras').addEventListener('click', () => saltar(-5));
   $('btn-adelante').addEventListener('click', () => saltar(5));
   $('btn-fot-atras').addEventListener('click', () => instanteVecino(-1));
@@ -412,6 +640,8 @@ function alternarCapa(clave) {
 
 function alternarPlay() {
   if (!rep) return;
+  estado.esperando = false;
+  estado.clavePildoras = '';
   if (video.paused) video.play().catch(() => {});
   else video.pause();
 }
@@ -423,6 +653,7 @@ function saltar(segundos) {
 
 function irA(t, quien) {
   if (!rep) return;
+  estado.esperando = false;
   const destino = Math.min(Math.max(t, rep.inicio), rep.fin) - estado.desfase;
   rep.asegurar(destino + estado.desfase).catch(() => {});
   video.currentTime = Math.max(0, destino);
@@ -482,6 +713,12 @@ function descripcion(p) {
   const j = rep.jugadores.get(p.id);
   const info = rep.tracklets.get(p.tracklet);
   const partes = [];
+  if (rep.enDirecto) {
+    partes.push(p.clase === 3 ? 'Árbitro' : p.clase === 1 ? 'Portero (según el detector)' : 'Jugador');
+    if (p.equipo === 0 || p.equipo === 1) partes.push(`${rep.equipos[p.equipo].nombre} (por la camiseta, hasta ahora)`);
+    partes.push(`tramo #${p.tracklet} del seguidor · quién es se decide al terminar`);
+    return partes.join(' · ');
+  }
   if (p.clase === 3) partes.push('Árbitro');
   else if (j) partes.push(`${rep.nombreDe(p.id)}${j.portero ? ' (portero)' : ''}`);
   else partes.push('Sin identificar');
@@ -507,6 +744,7 @@ function teclado(e) {
   if (tecla === ',') { instanteVecino(-1); return; }
   if (tecla === '.') { instanteVecino(1); return; }
   if (tecla === 'Escape') { elegir(null); return; }
+  if (tecla.toLowerCase() === 'l' && rep.enDirecto) { irALoUltimo(); return; }
   if (tecla === '[' || tecla === ']' || tecla === '0') {
     // Por si el vídeo y lo dibujado no van a la par: un fotograma de vídeo cada vez.
     estado.desfase = tecla === '0' ? 0 : estado.desfase + (tecla === ']' ? 1 : -1) / rep.video.fps;

@@ -1,9 +1,12 @@
 // Los datos de un análisis en el visor: lo de todo el tramo (final.json y analisis.json) y los fotogramas, que se piden
-// por tramos de VENTANA_S segundos alrededor de donde está el vídeo.
+// por tramos de VENTANA_S segundos alrededor de donde está el vídeo. De un análisis que se está haciendo, lo provisional:
+// lo de directo.json en lugar de final.json y unos instantes que crecen según avanza (`crecer`).
 
 import { TIPOS_ACCION, buscarIndice } from './util.js';
 
 const VENTANA_S = 20;
+// En directo, un tramo que llegaba hasta donde iba el análisis se vuelve a pedir cuando ha avanzado, como mucho tan a menudo.
+const REPEDIR_MS = 1200;
 // Entre dos fotogramas analizados (0,2 s a 5 por segundo) se interpola; con un hueco mayor, solo cerca de uno de ellos.
 const HUECO_MAX_S = 0.6;
 const CERCA_S = 0.15;
@@ -19,12 +22,16 @@ export async function pedirJSON(url, opciones) {
 }
 
 export class Repeticion {
-  constructor(id, ficha, final, analisis, acta) {
+  constructor(id, ficha, final, analisis, acta, directo = null) {
     this.id = id;
     this.ficha = ficha;
     this.final = final;
     this.analisis = analisis || {};
     this.acta = acta;
+    // En directo: lo último que se sabe del análisis en marcha (directo.json); `version` sube con cada novedad.
+    this.enDirecto = !!directo;
+    this.directo = directo;
+    this.version = 0;
     const ins = final.instantes;
     this.t = Float64Array.from(ins.t);
     this.balon = ins.balon;
@@ -61,6 +68,47 @@ export class Repeticion {
     this.descartados = [];
     this.ventanas = new Map();
     this.alCargar = null;
+  }
+
+  // Un análisis en marcha: lo de directo.json hace de final.json, sin nada de lo que solo se sabe al terminar (quién es
+  // quién, posesión, balón en juego, toques, acciones, jugadas). En juego, posesión y parte van como «?» por instante.
+  static enMarcha(id, ficha, d) {
+    const final = {
+      formato: 1, analizador: d.analizador, video: d.video, dt: d.dt, equipos: d.equipos, campo: d.campo,
+      descanso_s: null, direcciones_ataque: {},
+      instantes: { t: [], balon: '', en_juego: '', posesion: '', calibrado: '', mitad: '' },
+      toques: [], jugadores: [], tracklets: {}, acciones: {}, eventos: [], objetos_fijos: [],
+    };
+    const rep = new Repeticion(id, ficha, final, null, null, d);
+    rep.crecer(d);
+    return rep;
+  }
+
+  // Lo nuevo de un análisis en marcha (`/api/a/<id>/directo?desde=<instantes que ya hay>`). Devuelve si hay instantes nuevos.
+  crecer(d) {
+    this.directo = d;
+    this.version++;
+    const ins = d.instantes;
+    const n0 = this.t.length;
+    if (!ins || ins.desde !== n0 || !ins.t.length) return false;
+    const t = new Float64Array(n0 + ins.t.length);
+    t.set(this.t);
+    t.set(ins.t, n0);
+    this.t = t;
+    this.balon += ins.balon;
+    this.calibrado += ins.calibrado;
+    const desconocido = '?'.repeat(ins.t.length);
+    this.enJuego += desconocido;
+    this.posesion += desconocido;
+    this.mitad += desconocido;
+    this._prefijos();
+    return true;
+  }
+
+  // Hasta dónde ha llegado el análisis (en directo) o el final del tramo.
+  frontera() {
+    if (!this.enDirecto) return this.fin;
+    return this.t.length ? this.t[this.t.length - 1] : this.inicio;
   }
 
   _prefijos() {
@@ -129,7 +177,8 @@ export class Repeticion {
     const i = Math.floor(relativo / VENTANA_S);
     const pedir = [i, i + 1];
     if (relativo - i * VENTANA_S < 4) pedir.push(i - 1);
-    const validas = pedir.filter((k) => k >= 0 && this.inicio + k * VENTANA_S <= this.fin + 0.01);
+    const hasta = this.enDirecto ? this.frontera() : this.fin;
+    const validas = pedir.filter((k) => k >= 0 && this.inicio + k * VENTANA_S <= hasta + 0.01);
     return Promise.all(validas.map((k) => this._ventana(k)));
   }
 
@@ -140,9 +189,15 @@ export class Repeticion {
 
   _ventana(k) {
     let v = this.ventanas.get(k);
+    // En directo, el tramo que se pidió cuando el análisis aún no había llegado a su final se vuelve a pedir al avanzar.
+    if (v && v.listo && v.incompleta && this.frontera() > v.frontera + 0.01 && performance.now() - v.pedida > REPEDIR_MS) {
+      this.ventanas.delete(k);
+      v = null;
+    }
     if (!v) {
       const desde = this.inicio + k * VENTANA_S;
-      v = { listo: false };
+      const frontera = this.frontera();
+      v = { listo: false, pedida: performance.now(), frontera, incompleta: this.enDirecto && frontera < desde + VENTANA_S };
       v.promesa = pedirJSON(`/api/a/${this.id}/fotogramas?desde=${desde.toFixed(3)}&hasta=${(desde + VENTANA_S).toFixed(3)}`)
         .then((lista) => {
           this._anadir(lista);
@@ -150,7 +205,7 @@ export class Repeticion {
           if (this.alCargar) this.alCargar();
         })
         .catch((e) => {
-          this.ventanas.delete(k);
+          if (this.ventanas.get(k) === v) this.ventanas.delete(k);
           throw e;
         });
       this.ventanas.set(k, v);
@@ -170,6 +225,9 @@ export class Repeticion {
         if (f.b[2] === 'n' && f.v) {
           for (const v of f.v) this.balones.push({ t: v[0], x: v[1], y: v[2], o: 'n', c: v[3], bc: null, vecino: true });
         }
+      } else if (this.enDirecto && f.v) {
+        // Lo provisional no pone en el instante el balón de sus vecinos (eso se decide al terminar): se enseña donde se vio.
+        for (const v of f.v) this.balones.push({ t: v[0], x: v[1], y: v[2], o: 'n', c: v[3], bc: null, vecino: true });
       }
       if (f.bd) this.descartados.push({ t: f.t, x: f.bd[0], y: f.bd[1], c: f.bd[2] });
     }

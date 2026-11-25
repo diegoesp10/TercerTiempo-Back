@@ -1,10 +1,17 @@
 // El panel de la derecha: las estadísticas tal como las lleva el analizador hasta donde está el vídeo, los jugadores,
-// las jugadas y todo lo que dejó el análisis.
+// las jugadas y todo lo que dejó el análisis. De un análisis en marcha, cómo va y lo que ya se puede contar.
 
 import { nombreCorto } from './datos.js';
-import { ACCIONES_PLURAL, COLORES, METODO, ORIGEN_BALON, TIPOS_ACCION, TIPOS_EVENTO, duracion, el, minuto, numero, pct } from './util.js';
+import { ACCIONES_PLURAL, COLORES, ETAPAS, METODO, ORIGEN_BALON, TIPOS_ACCION, TIPOS_EVENTO, duracion, el, estadoEnCurso, hora, minuto, numero, pct } from './util.js';
 
 const EVENTOS_CONTADOS = ['gol', 'tiro', 'corner', 'falta', 'fuera_de_juego', 'saque_banda', 'saque_puerta', 'fuera_fondo'];
+const AL_TERMINAR = [
+  'Quién es quién: el dorsal leído, el aspecto y el acta oficial, con todo el tramo; y los porteros, por la portería que defienden.',
+  'El balón completo: el de los fotogramas vecinos puesto en su instante, los huecos cortos rellenados y fuera lo quieto.',
+  'Balón en juego, posesión y toques.',
+  'Pases, pérdidas, recuperaciones, paradas y saques del portero: lo que cuenta para el acta.',
+  'Las jugadas: goles, tiros, córneres, faltas, saques…',
+];
 
 export class Panel {
   constructor(cuerpo, rep, acciones) {
@@ -12,6 +19,7 @@ export class Panel {
     this.rep = rep;
     this.ir = acciones.ir;
     this.elegir = acciones.elegir;
+    this.loUltimo = acciones.loUltimo;
     this.pestana = 'estadisticas';
     this.filtro = { jugadas: true, acciones: true };
     this.ultimaClave = null;
@@ -22,17 +30,133 @@ export class Panel {
     this.ultimaClave = null;
   }
 
-  // Se llama a menudo: solo se vuelve a pintar si ha cambiado algo de lo que se enseña.
+  // Se llama a menudo: solo se vuelve a pintar si ha cambiado algo de lo que se enseña (en directo, también lo que llega).
   actualizar(t, seleccion) {
     const rep = this.rep;
     const k = rep.instante(t);
-    const clave = `${this.pestana}|${this.pestana === 'analisis' ? '' : k}|${seleccion}|${this.filtro.jugadas}${this.filtro.acciones}`;
+    const clave = `${this.pestana}|${this.pestana === 'analisis' && !rep.enDirecto ? '' : k}|${seleccion}|${this.filtro.jugadas}${this.filtro.acciones}|${rep.version}`;
     if (clave === this.ultimaClave) return;
     this.ultimaClave = clave;
     const scroll = this.cuerpo.scrollTop;
-    this.cuerpo.replaceChildren(...this[`_${this.pestana}`](t, seleccion));
+    const pintar = rep.enDirecto ? this[`_${this.pestana}EnDirecto`] : this[`_${this.pestana}`];
+    this.cuerpo.replaceChildren(...pintar.call(this, t, seleccion));
     this.cuerpo.scrollTop = scroll;
   }
+
+  // ---------------------------------------------------------------- en directo
+
+  _cabezaDirecto() {
+    const rep = this.rep;
+    const d = rep.directo;
+    const que = estadoEnCurso(d);
+    const frontera = rep.frontera();
+    const total = d.fotogramas_total || 0;
+    const hechos = d.fotogramas ?? rep.t.length;
+    const nodos = [];
+    nodos.push(el('div', { clase: `en-marcha ${que.clase}` },
+      el('div', { clase: 'que' }, que.clase === 'directo' ? el('span', { clase: 'punto-vivo', 'aria-hidden': 'true' }) : null, que.clase === 'directo' ? (ETAPAS[d.etapa] || 'Analizando') : que.texto),
+      el('div', { clase: 'hasta num', texto: `Analizado hasta el ${minuto(frontera)}` }),
+      el('div', { clase: 'sub', texto: `de ${minuto(rep.inicio)} – ${minuto(rep.fin)} · ${numero(hechos)}${total ? ` de ${numero(total)}` : ''} fotogramas` }),
+      total ? el('div', { clase: 'regla' }, el('span', { estilo: { width: `${Math.min(100, (100 * hechos) / total)}%` } })) : null,
+      this._ritmo(),
+      el('div', { clase: 'filtros', estilo: { marginTop: '8px', marginBottom: '0' } }, el('button', { clase: 'boton', type: 'button', onclick: () => this.loUltimo(), texto: 'Ir a lo último (L)' })),
+    ));
+    return nodos;
+  }
+
+  // A qué ritmo va la pasada y cuánto le queda (sin contar lo que viene después de la pasada).
+  _ritmo() {
+    const rep = this.rep;
+    const d = rep.directo;
+    if (estadoEnCurso(d).parado || d.etapa !== 'pasada' || !d.inicio_pasada || !d.actualizado || !rep.t.length) return null;
+    const segundos = d.actualizado - d.inicio_pasada;
+    const avanzado = rep.frontera() - rep.inicio;
+    if (segundos < 5 || avanzado <= 0) return null;
+    const ritmo = avanzado / segundos;
+    const queda = Math.max(0, rep.fin - rep.frontera()) / ritmo;
+    return el('div', { clase: 'sub', texto: `${numero(ritmo, 2)}× la velocidad del vídeo · le quedan unos ${duracion(queda)} de pasada${d.pausado ? ' (en pausa)' : ''}` });
+  }
+
+  _estadisticasEnDirecto(t) {
+    const rep = this.rep;
+    const nodos = this._cabezaDirecto();
+    const tt = Math.min(Math.max(t, rep.inicio), rep.frontera());
+    const h = rep.hasta(tt);
+    nodos.push(el('h2', { texto: `Hasta el ${minuto(tt)}, de momento` }));
+    nodos.push(medida('Balón visto', pct(h.visto, h.n), h.visto / Math.max(1, h.n), COLORES.balon.v, 'En su fotograma o en uno vecino (±0,04 s), antes de quitar lo quieto y lo suelto: al terminar puede bajar un poco.'));
+    nodos.push(medida('Campo calibrado', pct(h.calib, h.n), h.calib / Math.max(1, h.n), COLORES.calibrado, 'Sin calibrar no se sabe dónde está cada uno en el campo.'));
+    if (rep.directo.tracklets != null) nodos.push(el('div', { clase: 'sub', estilo: { marginTop: '8px' }, texto: `${numero(rep.directo.tracklets)} tramos del seguidor hasta ahora (personas seguidas, contando cada vez que se pierde a alguien).` }));
+    nodos.push(el('h2', { texto: 'Al terminar' }));
+    nodos.push(el('ul', { clase: 'al-terminar' }, AL_TERMINAR.map((x) => el('li', { texto: x }))));
+    nodos.push(...this._hitos());
+    nodos.push(el('h2', { texto: 'Cómo leer el vídeo' }));
+    nodos.push(leyendaDirecto());
+    return nodos;
+  }
+
+  _hitos() {
+    const hitos = (this.rep.directo.hitos || []).slice().reverse();
+    if (!hitos.length) return [];
+    return [el('h2', { texto: 'Lo último que ha dicho el analizador' }), el('div', { clase: 'hitos' }, hitos.map((x) => el('div', { texto: x })))];
+  }
+
+  _jugadoresEnDirecto(t, seleccion) {
+    const rep = this.rep;
+    const nodos = [];
+    if (seleccion != null) {
+      const siguiente = rep.siguienteAparicion(seleccion, t);
+      nodos.push(el('div', { clase: 'ficha' },
+        el('div', { clase: 'nombre', texto: `Tramo #${seleccion} del seguidor` }),
+        el('div', { clase: 'sub', texto: 'Quién es, al terminar. Este número cambia cada vez que el seguidor lo pierde de vista.' }),
+        el('div', { clase: 'filtros', estilo: { marginTop: '8px', marginBottom: '0' } },
+          siguiente != null ? el('button', { clase: 'boton', type: 'button', onclick: () => this.ir(siguiente, seleccion), texto: 'Ir a donde sale' }) : null,
+          el('button', { clase: 'boton', type: 'button', onclick: () => this.elegir(null), texto: 'Quitar' }),
+        ),
+      ));
+    }
+    nodos.push(el('h2', { texto: 'Quién es quién' }));
+    nodos.push(el('div', { clase: 'sub', texto: 'Se decide al terminar, con todo el tramo: los dorsales leídos, el aspecto y, si lo hay, el acta oficial; y los porteros, por la portería que defienden en cada parte. Mientras, cada recuadro lleva el número de tramo del seguidor (#) y el color del equipo que dice su camiseta hasta ese momento.' }));
+    if (rep.directo.tracklets != null) nodos.push(el('div', { clase: 'sub', estilo: { marginTop: '8px' }, texto: `${numero(rep.directo.tracklets)} tramos del seguidor hasta ahora.` }));
+    return nodos;
+  }
+
+  _eventosEnDirecto() {
+    return [
+      el('h2', { texto: 'Jugadas y acciones' }),
+      el('div', { clase: 'sub', texto: 'Las jugadas (goles, tiros, córneres, faltas, saques…) y lo que cuenta para el acta (pases, pérdidas, recuperaciones, paradas y saques del portero) salen al terminar: necesitan el balón completo y saber quién es quién. Aquí aparecen solas en cuanto termine.' }),
+    ];
+  }
+
+  _analisisEnDirecto() {
+    const rep = this.rep;
+    const d = rep.directo;
+    const que = estadoEnCurso(d);
+    const datos = (pares) => el('dl', { clase: 'datos' }, pares.filter(Boolean).flatMap(([k, v]) => [el('dt', { texto: k }), el('dd', { texto: v ?? '–' })]));
+    const nodos = [];
+    nodos.push(el('h2', { texto: 'Quién analiza' }));
+    nodos.push(datos([
+      ['Analizador', `${d.analizador?.nombre || 'Ojeador'} ${d.analizador?.version || ''}`],
+      ['Estado', que.clase === 'directo' ? (ETAPAS[d.etapa] || 'Analizando') : que.texto],
+      ['Empezó', d.inicio ? new Date(d.inicio * 1000).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : '–'],
+      ['Última noticia', d.actualizado ? hora(d.actualizado) : '–'],
+      ['Carpeta', rep.ficha.carpeta],
+    ]));
+    nodos.push(el('h2', { texto: 'El vídeo' }));
+    nodos.push(datos([
+      ['Imagen', `${d.video?.ancho}×${d.video?.alto} a ${numero(d.video?.fps)} fps`],
+      ['Tramo', `${minuto(rep.inicio)} – ${minuto(rep.fin)}`],
+      ['Analizado hasta', minuto(rep.frontera())],
+      ['Fotogramas', `${numero(d.fotogramas ?? rep.t.length)}${d.fotogramas_total ? ` de ${numero(d.fotogramas_total)}` : ''} (${numero(1 / (rep.dt || 0.2), 1)} por segundo)`],
+    ]));
+    if (d.error) nodos.push(el('div', { clase: 'error', texto: d.error }));
+    nodos.push(...this._hitos());
+    nodos.push(el('h2', { texto: 'Todo' }));
+    const { instantes, ...resto } = d;
+    nodos.push(el('details', { clase: 'json' }, el('summary', { texto: 'directo.json' }), el('pre', { texto: JSON.stringify(resto, null, 1) })));
+    return nodos;
+  }
+
+  // ---------------------------------------------------------------- terminado
 
   _nombreEquipo(e) {
     return this.rep.equipos[e]?.nombre || `Equipo ${e === 0 ? 'A' : 'B'}`;
@@ -296,6 +420,19 @@ function mapaCalor(mapa, color) {
   const max = Math.max(1, ...mapa.flat());
   return el('div', { clase: 'calor', title: 'Dónde se le ve en el campo (12 × 8 casillas, de izquierda a derecha como en la imagen calibrada)' },
     mapa.flatMap((filaCeldas) => filaCeldas.map((v) => el('span', { estilo: { background: color, opacity: String(v ? 0.15 + 0.85 * (v / max) : 0) } })))
+  );
+}
+
+function leyendaDirecto() {
+  const item = (color, texto, discontinuo) => el('div', {}, el('span', { clase: 'color', estilo: { background: discontinuo ? 'transparent' : color, border: discontinuo ? `2px dashed ${color}` : 'none' } }), texto);
+  return el('div', { clase: 'leyenda' },
+    item(COLORES.equipo[0], 'Equipo A, por su camiseta hasta ese momento (color del visor, no el de su camiseta)', true),
+    item(COLORES.equipo[1], 'Equipo B', true),
+    item(COLORES.arbitro, 'Árbitro'),
+    el('div', { texto: 'Etiqueta: el número de tramo del seguidor (#). Todos van discontinuos: aún no se sabe quién es nadie.' }),
+    item(COLORES.balon.v, 'Balón visto en su fotograma'),
+    item(COLORES.balon.n, 'Balón visto en un fotograma vecino'),
+    el('div', { texto: 'Líneas blancas: el campo como lo calibra el analizador. Lo sombreado en las líneas de tiempo aún no se ha analizado.' }),
   );
 }
 

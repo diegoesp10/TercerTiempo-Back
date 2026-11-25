@@ -16,6 +16,8 @@
   --interpolado: #fbbf24;
   --descartado: #f87171;
   --calibrado: #818cf8;
+  --directo: #f43f5e;
+  --pausa: #fbbf24;
   --radio: 8px;
   font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   font-size: 14px;
@@ -77,6 +79,34 @@ button, select, input { font: inherit; color: inherit; }
 .vacio { color: var(--suave); padding: 24px; border: 1px dashed var(--borde); border-radius: 10px; }
 .error { color: var(--descartado); }
 
+/* Análisis en marcha */
+.punto-vivo {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--directo); flex: none;
+  box-shadow: 0 0 0 0 #f43f5e99; animation: latido 1.6s ease-out infinite;
+}
+@keyframes latido {
+  0% { box-shadow: 0 0 0 0 #f43f5e99; }
+  70% { box-shadow: 0 0 0 7px #f43f5e00; }
+  100% { box-shadow: 0 0 0 0 #f43f5e00; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .punto-vivo, .pildora.directo .punto { animation: none; }
+}
+.etiqueta.directo { display: inline-flex; align-items: center; gap: 6px; color: #fda4af; border-color: #881337; }
+.etiqueta.pausa { color: var(--pausa); border-color: #78350f; }
+.tarjeta.en-marcha { border-color: #4c1d2b; }
+.tarjeta.en-marcha:hover { border-color: #881337; }
+.en-directo {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid #881337; color: #fda4af; font-size: 12px; vertical-align: 1px;
+}
+.pildora.directo { border-color: #88133799; }
+.pildora.directo .punto { animation: latido 1.6s ease-out infinite; }
+.hitos-mensaje { display: grid; gap: 2px; max-width: 560px; font-size: 12.5px; color: var(--tenue); text-align: left; }
+.hitos-mensaje div, .hitos div { overflow-wrap: anywhere; }
+#btn-directo { border-color: #881337; color: #fda4af; }
+#btn-directo:hover { background: #2a1219; }
+
 /* Visor */
 #pantalla-visor { display: grid; grid-template-columns: minmax(0, 1fr) 372px; min-height: 0; }
 .escena { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; min-width: 0; min-height: 0; }
@@ -106,6 +136,8 @@ button, select, input { font: inherit; color: inherit; }
   opacity: 0; transition: opacity .25s;
 }
 .aviso-evento.visible { opacity: 1; }
+/* Los largos (el análisis ha terminado, se ha parado...), debajo de las píldoras para no taparlas. */
+.aviso-evento.largo { top: 54px; white-space: normal; width: max-content; max-width: min(620px, calc(100% - 24px)); border-radius: 12px; text-align: center; }
 .mensaje-video {
   position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center;
   color: var(--suave); background: #000c;
@@ -207,6 +239,21 @@ details.json summary { cursor: pointer; color: var(--suave); margin: 10px 0 6px;
 details.json pre { max-height: 420px; overflow: auto; padding: 10px; background: #0b1016; border-radius: 8px; font-size: 11.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .leyenda { display: grid; gap: 4px; font-size: 12.5px; color: var(--suave); }
 .leyenda span.color { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; }
+
+.en-marcha { display: grid; gap: 3px; padding: 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid #4c1d2b; }
+.en-marcha.pausa { border-color: #78350f; }
+.en-marcha.mal { border-color: #7f1d1d; }
+.en-marcha .que { display: flex; align-items: center; gap: 8px; color: #fda4af; font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.en-marcha.pausa .que { color: var(--pausa); }
+.en-marcha.mal .que { color: var(--descartado); }
+.en-marcha .hasta { margin: 2px 0 0; }
+.en-marcha .regla { height: 6px; border-radius: 999px; background: #0b1016; overflow: hidden; margin: 6px 0 2px; }
+.en-marcha .regla span { display: block; height: 100%; background: var(--directo); }
+.en-marcha.pausa .regla span { background: var(--pausa); }
+ul.al-terminar { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: var(--suave); font-size: 12.5px; }
+.hitos { display: grid; gap: 4px; font-size: 12px; color: var(--suave); }
+.hitos div { padding: 4px 8px; border-left: 2px solid var(--borde); }
+.hitos div:first-child { border-left-color: var(--directo); color: var(--texto); }
 
 @media (max-width: 1100px) {
   body { overflow: auto; }

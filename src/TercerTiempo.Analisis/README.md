@@ -106,7 +106,8 @@ quién»), `--saque 1:30` (segundo del vídeo en que empieza el partido, para pa
 defecto), `--sin-dorsales` (no leer dorsales: un jugador por tracklet, como antes), `--progreso` (el avance como líneas `##progreso N` en la salida estándar, sin barras: para quien lo
 lanza como proceso), `--exigir-gpu` (sin GPU CUDA termina con el código de salida 3 en vez de analizar en CPU) y
 `--semilla N` (para medir la estabilidad: fija los generadores y muestrea otros fotogramas del mismo tramo,
-desplazados dentro del paso) y `--sin-repeticion` (no guardar `repeticion/`, lo que lee el visor). `comparar` pone varias pasadas lado a lado (balón, calibración, toques, posesión y su
+desplazados dentro del paso) y `--sin-repeticion` (no guardar `repeticion/`, lo que lee el visor, ni lo que deja
+verlo mientras se hace). `comparar` pone varias pasadas lado a lado (balón, calibración, toques, posesión y su
 confianza, emparejando los equipos por el color de la camiseta) y dice cuántos puntos se mueve la posesión, total y
 por minuto, respecto a la primera.
 
@@ -209,7 +210,7 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
 | `recortes/` | El mejor recorte de cada tracklet, para asignarlo a una ficha |
 | `clips/` | Clip de 10 s de cada tiro, gol, córner y parada |
 | `posiciones.csv.gz` | Posición de cada persona y del balón en cada fotograma analizado (campo en cm e imagen en px) |
-| `repeticion/` | Desde el 25-11-2026: lo que vio el analizador en cada fotograma y lo que sacó de ello, para el visor (`fotogramas.jsonl` y `final.json`; ver «El visor del Ojeador»). No cambia nada del análisis y la app no lo lee |
+| `repeticion/` | Desde el 25-11-2026: lo que vio el analizador en cada fotograma y lo que sacó de ello, para el visor (`fotogramas.jsonl` y `final.json`; mientras se analiza, `directo.json` y `directo.jsonl`, que se borran al terminar; ver «El visor del Ojeador»). No cambia nada del análisis y la app no lo lee |
 | `anotado.mp4` | Con `--video-anotado`: cajas por equipo, número de tracklet, balón y radar del campo |
 
 ## Cómo funciona
@@ -481,6 +482,27 @@ resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni
   de un fotograma si vídeo y dibujo no fueran a la par; `0` lo quita); la inicial de cada capa (J, E, B, T, P, C, M, D)
   y Esc.
 
+**Mientras se analiza** (desde el 25-11-2026)
+
+- Un análisis que se está haciendo sale en la lista como «Analizando», con la etapa en que va (los equipos por la
+  camiseta, la pasada con su porcentaje, quién es quién, las jugadas...), y se puede abrir sin esperar a que termine.
+  La lista se pone al día sola cada 4 s y lo abierto, cada segundo y medio.
+- Durante la pasada principal se ve lo que lleva hecho: cada persona con su recuadro, del color del equipo que le da
+  la camiseta hasta ese momento, y el número de su tramo del seguidor (`#12`: quién es quién y los porteros se deciden
+  al terminar); el balón visto en su fotograma o en uno vecino y las líneas del campo donde ya está calibrado. En las
+  líneas de tiempo, lo que falta sale rayado («Sin analizar todavía»).
+- Si el vídeo alcanza a lo analizado, espera («Esperando al analizador») y sigue en cuanto hay más; «Lo último» (o `L`)
+  lleva a lo último analizado. Al acabar la pasada ya no espera.
+- El panel cambia: «Estadísticas» dice hasta dónde va, a qué ritmo (veces la velocidad del vídeo y lo que le queda de
+  pasada), el balón visto y el campo calibrado hasta ahí, cuántos tramos lleva el seguidor, lo que llega al terminar y
+  lo último que ha dicho el analizador; «Jugadores», el tramo pinchado en el vídeo; «Análisis», quién analiza y el vídeo.
+- Al terminar, el visor pasa solo a la repetición definitiva (quién es quién, posesión, jugadas y lo que cuenta para el
+  acta), sin recargar y con el vídeo donde estaba.
+- Si se para (falla, se corta el proceso o el equipo se duerme: 30 s sin noticias), lo dice con el porqué. Si en la
+  carpeta había un análisis anterior terminado, vuelve a verse ese: uno vuelto a lanzar en la misma carpeta lo tapa
+  solo mientras se hace, y la página abierta pasa sola al nuevo. Si lo provisional desaparece (el analizador dejó de
+  escribirlo o se vació la carpeta), dice «Ya no llega nada en directo» y sigue mirando por si termina.
+
 **La repetición** (`repeticion/`, formato 1; el detalle, al principio de `repeticion.py`)
 
 - `fotogramas.jsonl`: una línea por fotograma analizado, con `t` lo primero para indexar el archivo sin leerlo entero.
@@ -497,6 +519,25 @@ resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni
 - Al comprobarlo, dos pasadas del mismo tramo (20:00-21:30) salieron distintas ya en la calibración del campo (199 y 176
   aciertos), antes de escribir nada de la repetición. Venía de antes, del motor TensorRT del campo, y se arregla en la
   2.3.1 (ver «Dos pasadas, el mismo resultado»).
+- Mientras se analiza (`Directo`), dos archivos más que se borran al terminar. `directo.jsonl`, con el formato de
+  `fotogramas.jsonl` y lo provisional de cada instante de la pasada: el tracklet del seguidor hace de id, el equipo es
+  el de su voto hasta ese momento y va el balón visto, el de los fotogramas vecinos y la homografía. Cada instante se
+  escribe al llegar el siguiente, para repartir los balones vecinos igual que la definitiva. Y `directo.json`, el
+  estado: el analizador, el vídeo, la etapa, lo último que ha dicho y, desde la pasada, los equipos con sus colores, el
+  campo, el paso entre instantes y los fotogramas hechos y por hacer; si falla, `error`. Se reescribe entero cada 2 s
+  aunque no haya nada nuevo (también en pausa) y de golpe (archivo temporal y `os.replace`): el visor nunca lee uno a
+  medias.
+- Cuál se enseña: lo de en directo si `directo.json` es más nuevo que `final.json` (o no hay final) y tiene noticias de
+  los últimos 30 s (o no hay final); si no, la definitiva. Al terminar bien, `directo.json` deja de escribirse antes de
+  escribir la definitiva, y después se borra.
+- Lo de en directo tampoco cambia la propuesta y la versión no sube: copia lo ya calculado en cada instante, no toca los
+  generadores aleatorios y, si no puede escribir, se apaga (y quita lo provisional, para que el visor no dé por parado
+  un análisis que sigue) y el análisis sigue igual. Lo prueba `tests/test_repeticion.py` pasando el analizador entero
+  (detector, calibrador y equipos de prueba; el seguidor y todo lo de después de la pasada, los de verdad) con y sin
+  repetición: `acta-propuesta.json` y `analisis.json` salen iguales, salvo los tiempos y la ruta de `repeticion/`.
+- Probado el 25-11-2026 con un análisis de verdad (en CPU, 20:00-20:04 del Vallobín, con la GPU ocupada): sale en la
+  lista desde que empieza, se ve avanzar, dice «Se ha parado» al cortarlo, la página pasa sola al relanzado en la misma
+  carpeta y, al terminar, a la repetición definitiva.
 
 ## Docker (GPU)
 
@@ -1178,5 +1219,5 @@ detector de eventos es ahora una clase con un paso por instante (`eventos._Detec
 - El campo otra vez con TensorRT (unos 10 ms por fotograma analizado): hace falta un motor que pase la sonda y vaya más
   rápido que PyTorch FP16. En FP32 la pasa, pero tarda 25,7 ms; queda probar FP16 con solo algunas capas en FP32 o una
   versión nueva de TensorRT (ver «Dos pasadas, el mismo resultado»).
-- El visor en directo: ver un análisis mientras se hace (el índice de `fotogramas.jsonl` ya lee un archivo a medias) y
-  lanzar el análisis desde el propio visor.
+- Lanzar el análisis desde el propio visor, con los mismos argumentos que la app (`UvVideoAnalyzer.Arguments`); verlo
+  mientras se hace ya se puede (ver «El visor del Ojeador»).
