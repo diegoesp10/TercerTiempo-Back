@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from . import rfdetr_comun
-from .teselas import LADO, a_fotograma, rejilla
+from .teselas import LADO, a_fotograma, recortar, rejilla
 
 QUE = "balon"
 RESOLUCION = 576
@@ -75,6 +75,33 @@ class DetectorBalon:
         cajas = [r.xyxy for r in resultados]
         puntuaciones = [r.confidence if r.confidence is not None else np.ones(len(r.xyxy)) for r in resultados]
         return a_fotograma(cajas, puntuaciones, origenes)
+
+    def detectar_zonas(self, imagenes_bgr: list[np.ndarray], zonas: list[tuple[int, int, int, int]], conf: float) -> list[tuple[np.ndarray, np.ndarray]]:
+        """Como `detectar`, pero en varios fotogramas a la vez y solo en las teselas de la rejilla que tocan la zona de cada
+        uno: todas en los mismos lotes a la GPU. Las teselas se recortan antes de subirlas (de cada fotograma se mira poco)."""
+        import torch
+
+        trozos: list[np.ndarray] = []
+        de_quien: list[tuple[int, tuple[int, int]]] = []
+        for k, (imagen, (x1, y1, x2, y2)) in enumerate(zip(imagenes_bgr, zonas)):
+            alto, ancho = imagen.shape[:2]
+            for x, y in rejilla(ancho, alto):
+                if x < x2 and x + LADO > x1 and y < y2 and y + LADO > y1:
+                    trozos.append(recortar(imagen, x, y))
+                    de_quien.append((k, (x, y)))
+        salida: list[tuple[list, list, list]] = [([], [], []) for _ in imagenes_bgr]
+        for inicio in range(0, len(trozos), LOTE_MAX_TRT):
+            lote = torch.from_numpy(np.ascontiguousarray(np.stack(trozos[inicio : inicio + LOTE_MAX_TRT]))).to(self.device, non_blocking=True)
+            lote = lote.flip(-1).permute(0, 3, 1, 2).float().div_(255.0)
+            resultados = self.prediccion.predict(lote, threshold=conf, include_source_image=False)
+            if not isinstance(resultados, list):
+                resultados = [resultados]
+            for r, (k, origen) in zip(resultados, de_quien[inicio : inicio + LOTE_MAX_TRT]):
+                cajas, puntuaciones, origenes = salida[k]
+                cajas.append(r.xyxy)
+                puntuaciones.append(r.confidence if r.confidence is not None else np.ones(len(r.xyxy)))
+                origenes.append(origen)
+        return [a_fotograma(c, p, o) if o else (np.zeros((0, 4), dtype=np.float32), np.zeros((0,), dtype=np.float32)) for c, p, o in salida]
 
 
 def evaluar(detector: DetectorBalon, carpetas: list[Path], umbrales: tuple[float, ...] = (0.2, 0.3, 0.4, 0.5, 0.6), informar=print) -> dict:

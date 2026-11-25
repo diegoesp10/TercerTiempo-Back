@@ -129,7 +129,7 @@ def redondear_segundos(segundos) -> list[float]:
     return sorted(round(float(t), 1) for t in segundos)
 
 
-def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: dict[int, ResumenTracklet], acciones: dict[int, AccionesJugador], dorsales: dict[int, dict], recortes: dict[int, str], nombres: tuple[str, str], colores: list[str], resolucion=None, acta: ActaOficial | None = None) -> dict:
+def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: dict[int, ResumenTracklet], acciones: dict[int, AccionesJugador], dorsales: dict[int, dict], recortes: dict[int, str], nombres: tuple[str, str], colores: list[str], resolucion=None, acta: ActaOficial | None = None, en_juego: dict | None = None) -> dict:
     """Lo mismo que pide la API del acta interna (TeamMatchStatsInput y las líneas por jugador), desde los dos lados.
     Con los dorsales leídos, una línea por jugador identificado (con su dorsal y, si se pasó el acta oficial, su nombre
     en ella); sin ellos, una por tracklet de más de 30 s, y la app decide qué tracklet es cada ficha. Con el acta oficial,
@@ -272,6 +272,9 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
         "segundosConBalon": round(posesion.segundos_con_balon, 1),
         "segundosAtribuidos": round(posesion.segundos_atribuidos, 1),
     }
+    if en_juego is not None:
+        # El balón con el juego en marcha (`en_juego.py`): qué parte del tramo y, de ese tiempo, visto y con trayectoria.
+        calidad["balonEnJuego"] = {"enJuegoPct": en_juego["pct_en_juego"], "vistoPct": en_juego["pct_visto"], "trayectoriaPct": en_juego["pct_con_trayectoria"]}
     if resolucion is not None:
         calidad["sinIdentificarS"] = {str(e): s for e, s in resolucion.segundos_sin_identificar.items()}
     vistos = {(lados.get(j["equipo"]), j["dorsal"]) for j in jugadores if j["dorsal"] is not None}

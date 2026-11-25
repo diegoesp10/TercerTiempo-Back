@@ -18,6 +18,7 @@ la mayor con modelos o una cadena nueva, la menor con reglas nuevas y la de parc
 
 | Versión | Fecha | Qué cambia |
 |---|---|---|
+| 2.3.0 | 25-11-2026 | **El balón primero y quién es quién también por el aspecto**: al fotograma analizado sin balón se le busca en los de ±0,04 s (`vecinos_balon_s`), en una ventana junto al balón cercano y, sin él, en la imagen entera de un solo fotograma por hueco (`vecinos_enteros`); con el campo calibrado, los huecos de hasta 3 s se rellenan **siguiendo a la cámara**; **balón en juego** (`en_juego.py`): lo visto y la trayectoria se miden sobre ese tiempo (`recuento.balon_en_juego`, y `calidad.balonEnJuego` en la propuesta), la posesión solo reparte ese tiempo y la app enseña y avisa con el balón visto en juego; el seguidor recuerda 1,5 s al que pierde (antes 10) y parte los tracklets de dos del mismo equipo que se cruzan; el dorsal de los que están junto al balón se relee en el fotograma de la mitad; y **el aspecto** (SigLIP, modelo nuevo: tocaría la mayor, pero se pidió la 2.3): a la cadena sin dorsal se le da el jugador que dice una regresión aprendida en el mismo partido con las identificadas, solo si antes se comprueba que acierta en el 95 % de las que da y si podía ser él. En el J8, tramo 20:00-30:00: el balón con trayectoria pasa del 68,6 al 80 % del tiempo en juego (visto, del 41,3 al 48,6 %), el tiempo con identidad del 26 al 32 % y del 36 al 42 %, y la pasada de 239 a 359 s (pasos 2, 3 y 6; «El balón en juego y quién es quién por el aspecto») |
 | 2.2.0 | 25-11-2026 | **Solo las acciones que se ven**: medido en el Vallobín - Real Titánico, casi todos los pases, pérdidas y recuperaciones de la 2.1.2 no estaban en el vídeo (balones que pasaban cerca de alguien, forcejeos, balones parados, cosas quietas en el césped y momentos sin el campo calibrado). Ahora las acciones de cada jugador salen de **toques controlados** (`MaquinaControl`: el balón a menos de 2 m en 0,2 s seguidos con el balón visto, sin cruzar de un lado a otro del jugador, quitárselo a quien lo tiene solo estando claramente más cerca y sin avistamientos más rápidos que un tiro); la posesión del equipo sigue con el más cercano. **Pase**: balón golpeado (4 m o más, entre 4 y 30 m/s) a un compañero. **Pérdida y recuperación**: el rival se hace con el balón en 2,5 s como mucho, no parado, y lo conserva 1,5 s o más. Sin el campo calibrado en los dos extremos no se cuenta. Un tiro no es pérdida ni pase. **El portero no pasa, ni pierde, ni recupera**: el balón del rival con el que se queda en su área 1 s o más es una **parada** (ya no sale del tiro a puerta) y el que pone en juego desde su área (a 8 m en 3 s), un **saque** (`distributions` en la propuesta y en `momentos`; no va al acta). El portero no tira. Junto a un objeto fijo solo vale el balón que va de paso, aunque haya un jugador al lado. Salen muchas menos acciones, pero las que salen se ven (paso 4) |
 | 2.1.2 | 25-11-2026 | **Cada acción con su segundo del vídeo**: en `acta-propuesta.json`, cada jugador y cada equipo traen `momentos`, el segundo del vídeo (a la décima) de cada cosa que cuenta su propuesta: del jugador, cada pase (cuando el balón deja su pie), pase fallado, pérdida, recuperación (cuando le llega), tiro, tiro a puerta, gol, parada, falta cometida y recibida y fuera de juego; del equipo, cada tiro, tiro a puerta, gol, córner, saque de banda, saque de puerta, falta y fuera de juego. Llevan las mismas claves y los mismos filtros que sus datos, así que lo que se cuenta y lo que se puede ver es lo mismo (salvo los goles que salen del acta oficial cerrada sin que el vídeo los viera). La app los enseña con «Ver» en «Del vídeo». Lo que se propone no cambia (paso 8) |
 | 2.1.1 | 24-11-2026 | **El tramo del detector que viste como el portero nunca acaba en una línea de campo**: si su portero no sale identificado, los tramos que solo marca el detector pero que en su rato visten como él (comprobado con su color) se quedan sin identificar, como los del portero por la equipación; hasta ahora se resolvían como los de campo. En una pasada del 20:00-30:00 del J8, 5 s del 13 (de morado) salen de la línea del 17 y es lo único que cambia; en el partido entero no cambia nada (paso 6) |
@@ -36,8 +37,8 @@ la app».
 
 | Dato | Cómo | Fiabilidad con cámara fija lateral a 1080p |
 |---|---|---|
-| Posesión por equipo, mitad, tercio y minuto | Jugador más cercano al balón con histéresis; el balón en vuelo es de quien lo lanzó. Solo se reparte el tiempo con balón visto o interpolado, y sale con su **confianza** (alta, media o baja) | Alta si el balón se ve; con confianza baja la app no la vuelca |
-| Mapas de calor, distancia, velocidad máxima | Posiciones proyectadas al campo (homografía por los puntos de las líneas) | Alta si la calibración es buena |
+| Posesión por equipo, mitad, tercio y minuto | Jugador más cercano al balón con histéresis; el balón en vuelo es de quien lo lanzó. Solo se reparte el tiempo con el balón en juego (desde la 2.3.0) y visto o interpolado, y sale con su **confianza** (alta, media o baja) | Alta si el balón se ve; con confianza baja la app no la vuelca |
+| Mapas de calor, distancia, velocidad máxima | Posiciones proyectadas al campo (homografía por los puntos de las líneas), solo mientras el vídeo tiene al jugador a la vista: la distancia no es la de todo el partido (la app dice «m mientras se le ve») | Alta si la calibración es buena |
 | Saques de banda, córners, saques de puerta | Balón fuera + quién lo tocó + hacia dónde ataca cada equipo. Si vuelve a salir por la misma línea sin haber vuelto al juego (2 s dentro y a más de 10 m de donde salió), es el mismo parón: lo recogen o la calibración tiembla en la línea | Media-alta |
 | Tiros / a puerta | Balón rápido hacia la portería desde menos de 35 m; corte con la línea de gol. Un toque es un solo tiro: el balón que acaba entrando es el mismo disparo que ya se vio | Media (candidatos: revisar el clip) |
 | Goles | Balón que cruza entre los postes; se confirma si sigue un saque de centro. Con el acta oficial cerrada, **como mucho los del acta**: con el minuto de cada gol se queda el candidato más cercano (a menos de 5 min si lo confirmó el saque de centro, de 2 min si no; sin minutos, solo los confirmados) y los demás se quitan (balones por encima del larguero o recogidos detrás de la portería). Del tiro de un gol quitado, el disparo que se vio queda como tiro fuera y el que solo se dedujo del cruce se quita | Media-alta con confirmación; con el acta, alta |
@@ -46,7 +47,7 @@ la app».
 | Minutos de cada jugador | **Por descarte, del acta oficial cerrada**: sin cambio, el partido entero aunque la cámara no lo vea todo el rato; con cambio, desde o hasta ese minuto | La del acta |
 | Paradas y saques del portero | Parada: el portero se queda 1 s o más en su área con un balón del rival. Saque: el balón que suelta en su área está a 8 m en 3 s. El portero no pasa, ni pierde, ni recupera | Alta en lo que propone; se escapan las que no se ven (cámara cerrada, balón por el aire) |
 | Pases, pérdidas, recuperaciones por tracklet | Toques controlados (no el más cercano): pase con el balón golpeado a un compañero; pérdida y recuperación si el rival se hace con él poco después, no parado, y lo conserva; solo con el campo calibrado | Alta en lo que propone; son un mínimo |
-| Quién es quién | **Dorsal leído en la espalda** (PARSeq) y sumado en todos los fotogramas de cada jugador; con el acta oficial (`--plantillas`), solo los dorsales de los que jugaron y en sus minutos | Alta en el número leído; el tiempo sin identificar (de frente, lejos) cuenta para el equipo y no para nadie en concreto |
+| Quién es quién | **Dorsal leído en la espalda** (PARSeq) y sumado en todos los fotogramas de cada jugador; con el acta oficial (`--plantillas`), solo los dorsales de los que jugaron y en sus minutos. Desde la 2.3.0, también **por el aspecto** (SigLIP): solo si en el partido acierta en el 95 % de las cadenas identificadas que se apartan para probarlo | Alta en el número leído; el tiempo sin identificar (de frente, lejos) cuenta para el equipo y no para nadie en concreto |
 | De qué equipo es cada uno | Color de la camiseta (resumen Lab del torso, sin el césped, con la claridad medida respecto al césped del recorte; dos grupos por KMeans) | Alta si las dos equipaciones se distinguen, también de noche |
 
 Las tarjetas no se deducen del vídeo: vienen del acta oficial, como el resultado y los minutos.
@@ -190,7 +191,7 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
 | Archivo | Qué es |
 |---|---|
 | `resumen.md` | El informe para el cuerpo técnico: posesión, datos de equipo propuestos, eventos, jugadores seguidos, calidad del análisis y, si hay modelo de lenguaje, su resumen |
-| `analisis.json` | Todo: vídeo y parámetros, equipos y colores, dirección de ataque por mitad, descanso, calibración, recuentos (`pct_con_balon` es el balón visto, lo que guarda la app; `pct_con_balon_total` y `balon_relleno`, con los huecos rellenados), posesión (con `confianza` y `cobertura`), eventos (con confianza, clip y veredicto del modelo), tracklets (acciones, distancia, mapa de calor, recorte, dorsal) y tiempos |
+| `analisis.json` | Todo: vídeo y parámetros, equipos y colores, dirección de ataque por mitad, descanso, calibración, recuentos (`pct_con_balon` es el balón visto, lo que guarda la app; `pct_con_balon_total` y `balon_relleno`, con los huecos rellenados; desde la 2.3.0, `balon_vecinos` y `balon_en_juego`, lo visto y la trayectoria sobre el tiempo en juego), identificación (desde la 2.3.0, con `apariencia`: la prueba del aspecto de cada equipo y lo que dio), posesión (con `confianza` y `cobertura`), eventos (con confianza, clip y veredicto del modelo), tracklets (acciones, distancia, mapa de calor, recorte, dorsal) y tiempos |
 | `acta-propuesta.json` | Lo que pide la API del acta interna: `teamStats` desde los dos lados (posesión con `possessionConfidence` y `possessionBallPct`, tiros, córners, saques, goles), una línea por tracklet con la propuesta por jugador y `calidad`; la app decide cuál es «nuestro» equipo y qué tracklet es cada ficha. Desde la 2.1.2, cada equipo y cada jugador llevan también `momentos`: el segundo del vídeo de cada cosa que cuentan, para verla desde la app |
 | `mapas/` | Mapas de calor PNG por equipo y por tracklet |
 | `recortes/` | El mejor recorte de cada tracklet, para asignarlo a una ficha |
@@ -234,15 +235,25 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
    todo el fotograma por 24 teselas de 384 px a resolución nativa, en un lote con TensorRT; filtros de tamaño y de
    salto; entre varios candidatos gana el más coherente con la trayectoria
    reciente y con dónde están los jugadores, y un candidato flojo solo vale cerca de un jugador o de donde se
-   esperaba el balón), calibración del campo (`detector_campo.py` y `campo.py`: los 32 puntos clave de las líneas con
+   esperaba el balón; desde la 2.3.0, al fotograma en el que no se ve se le busca en los de ±0,04 s, `vecinos_balon_s`:
+   en una ventana alrededor del balón del fotograma analizado de al lado o de uno de hace un momento y, sin él, en la
+   imagen entera, en un solo fotograma por tramo entre dos analizados, `vecinos_enteros`, que es lo caro), calibración del campo (`detector_campo.py` y `campo.py`: los 32 puntos clave de las líneas con
    el RF-DETR de puntos a 768 px → homografía con RANSAC y error de reproyección; por fotograma o única), filtro de personas fuera del campo y proyección de posiciones.
 3. **Trayectoria del balón** (`balon.py`): primero se quitan los **objetos fijos** que el detector toma por el balón
    (un cono, una bolsa o una botella junto a la línea): sitios donde el «balón» se queda quieto al menos cuatro veces
    a lo largo de diez minutos o más, fuera de los puntos de saque; dentro de su radio, mientras está en el césped, solo vale
    el balón que va de paso (visto fuera del radio a menos de 0,6 s), aunque haya un jugador al lado. Luego los avistamientos sueltos (flojos, lejos de todos los jugadores y
    sin otro a menos de 1,5 s) y se rellenan por interpolación los huecos de hasta 2 s entre dos avistamientos con
-   una velocidad plausible (en el campo si los dos extremos están proyectados, y siempre en la imagen). El balón de
-   cada instante queda marcado como «visto» o «interpolado».
+   una velocidad plausible (en el campo si los dos extremos están proyectados, y siempre en la imagen). Desde la 2.3.0,
+   con el campo calibrado en todo el hueco, **siguiendo a la cámara** y hasta 3 s: el punto se interpola en la imagen
+   y se proyecta con la homografía de cada instante (la cámara sigue al balón; probado apartando trozos de balón visto,
+   el error mediano en huecos de 2-3 s baja de 3,3 a 2,5 m y en los cortos, de 1,5 a 0,3 m). El balón de
+   cada instante queda marcado como «visto» o «interpolado». Y desde la 2.3.0, **cuándo está el balón en juego**
+   (`en_juego.py`): parado con el balón fuera del campo (hasta que se vuelve a ver dentro), quieto en el mismo sitio, o
+   tres segundos o más sin verlo con los jugadores casi quietos (su movimiento en la imagen respecto al de todos, para
+   que no cuente el paneo, y en altos de su caja por segundo), además de lo que ya paran los eventos. Mirado a ojo en
+   24 momentos del J8, acierta en 21. Lo que se mide del balón (visto, con trayectoria) se cuenta sobre ese tiempo, y la
+   posesión solo reparte el tiempo en juego.
 4. **Posesión** (`posesion.py`): la máquina de «jugador más cercano al balón con histéresis» (un cambio de poseedor se
    confirma tras 0,2 s seguidos del mismo candidato, medidos en tiempo y no en muestras, para que la cadencia no la
    cambie) corre sobre esa
@@ -350,9 +361,25 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
    acta (local o visitante) de cada equipo del vídeo sale de en qué reparto caen más lecturas; (3) **un dorsal, una
    persona a la vez**: si dos cadenas lo dicen a la vez, la más débil prueba con su segundo número; (4) **continuidad**
    (apagada: medida con el vídeo del Vallobín fallaba más que acertaba): una cadena sin número que encaja en el hueco de
-   un solo jugador sería ese jugador. Lo que no tiene número leído queda sin identificar. Como mucho 16 por equipo (once
+   un solo jugador sería ese jugador; (5) **aspecto** (desde la 2.3.0, `apariencia.py`): de cada jugador sin tapar
+   de 40 px o más, un recorte de cada dos fotogramas analizados pasa por SigLIP (google/siglip-base-patch16-224,
+   Apache-2.0, solo la parte de la imagen, en `modelos/siglip`) y cada tracklet suma sus vectores de 768 números. Por
+   equipo, una regresión logística (vectores estandarizados) aprende el aspecto de los jugadores identificados por el
+   dorsal y se prueba antes apartando cadenas identificadas por bloques de tiempo: se usa con el umbral más bajo con el
+   que acierta en el 95 % de las que da (y da al menos 10), y si no hay ninguno, no se usa. Entonces una cadena sin
+   número es el jugador que sale con esa probabilidad (y 0,2 más que el segundo) si podía serlo: en el campo según el
+   acta, sin verse a la vez en otro sitio y llegando a tiempo desde donde se le vio antes y hasta donde se le ve
+   después. Fuera las que no se parecen a sí mismas (coherencia, el parecido medio entre sus recortes, por debajo del
+   percentil 10 de las identificadas: el seguidor saltó a otra persona) y las que por el aspecto no son de su equipo
+   (menos de 0,9; la camiseta del otro equipo o la del árbitro que el color medio dejó en este). Lo que no tiene número
+   leído ni aspecto claro queda sin identificar. Como mucho 16 por equipo (once
    y los cambios; con el acta, los que jugaron). Desde ahí cada jugador identificado tiene un único identificador
-   (`900000 + equipo·1000 + dorsal`) y la posesión, los pases y las acciones salen por jugador.
+   (`900000 + equipo·1000 + dorsal`) y la posesión, los pases y las acciones salen por jugador. Desde la 2.3.0 el
+   seguidor recuerda a un jugador perdido 1,5 s con cámara móvil (antes 10 s, en los que se iba con otro) y parte los
+   tracklets de dos del mismo equipo que se montan (IoU 0,3) al separarse: el tramo que nace de un cruce solo se enlaza
+   con otro si los dos dicen con claridad el mismo dorsal. Y el dorsal de los que están junto al balón (hasta 3, con los
+   pies a menos de dos altos de su caja) se vuelve a leer en el fotograma de la mitad entre dos analizados, con su caja a
+   mitad de camino: a 0,1 s la postura ya es otra.
 7. **Modelo de lenguaje** (opcional, `llm/`): confirma eventos, lee dorsales, redacta.
 8. **Informes** (`informes.py`). `acta-propuesta.json` es la versión 2 cuando hay identificación: una línea por
    jugador identificado con `dorsal`, `nombreActa`, `confianzaDorsal` (parte de las lecturas que dicen ese número) y
@@ -418,7 +445,9 @@ subirla (8-12 GB) o correr el analizador fuera de Docker, como en las pruebas.
 17-11-2026 pasar todos los detectores a RF-DETR en vez de pagar su licencia comercial, y hecho el 18-11-2026: balón y
 jugadores son RF-DETR Medium, el campo RF-DETR Keypoint y el seguidor el BoT-SORT/ByteTrack de `trackers` (Roboflow,
 Apache 2.0). `ultralytics` ya no está en las dependencias, y los pesos YOLO públicos (`football-*.pt`) se quitaron de `modelos/`
-el 18-11-2026.
+el 18-11-2026. El modelo del aspecto (desde la 2.3.0) es SigLIP de Google (`google/siglip-base-patch16-224`, Apache
+2.0), con `transformers` (Apache 2.0); en `modelos/siglip` va solo la parte de la imagen, guardada con
+`SiglipVisionModel.save_pretrained` desde los pesos publicados.
 
 ## Estado de las pruebas (05-11-2026)
 
@@ -744,6 +773,52 @@ que solo marca el detector se resolvían como los de campo (regla de la 1.3.0), 
 en su rato. En el tramo, sin el 13 identificado, 5 s del portero (de morado) acababan en la línea del 17 (de rojo y
 blanco), y ahora quedan sin identificar. En el partido entero, con los dos porteros identificados, no cambia nada.
 
+## El balón en juego y quién es quién por el aspecto (25-11-2026, Ojeador 2.3.0)
+
+Diego quiere el balón como eje del análisis (que se vea o se sepa por dónde va el 80–90 % del juego) y a cada jugador
+único por su dorsal o por su aspecto. Medido en el J8 (Vallobín - Real Titánico, vídeo a 50 fps), tramo 20:00-30:00,
+como lo lanza la app (`--camara movil`, acta oficial con `--plantillas`, `--sin-clips`), sumando los cambios por tandas.
+El balón en juego, igual en todas: `en_juego.py` sobre los instantes guardados, sin las paradas de los eventos (en la
+pasada de la 2.3.0, con ellas, sale en juego el 79,5 %, visto el 48,8 % y con trayectoria el 80,0 %). «Visto» y «con
+trayectoria» son sobre todos los fotogramas analizados; la pureza, la parte de las lecturas de cada tracklet que dicen su
+dorsal más leído (baja si el seguidor se va con otro).
+
+| Pasada | Visto | Con trayectoria | En juego | Visto en juego | Trayectoria en juego | Tiempo con identidad (equipo 0 / 1) | Pureza | Pasada |
+|---|---|---|---|---|---|---|---|---|
+| 2.2.0 | 34,1 % | 56,3 % | 78,8 % | 41,3 % | 68,6 % | 26 % / 36 % | 0,601 | 239 s |
+| + vecinos sin tope, relleno con la cámara, memoria corta y cruces | 43,7 % | 71,5 % | 82,6 % | 49,6 % | 82,1 % | 29 % / 35 % | 0,628 | 452 s |
+| + una sola imagen entera por hueco y relectura junto al balón | 42,3 % | 68,8 % | 81,0 % | 49,1 % | 80,5 % | 26 % / 35 % | 0,628 | 340 s |
+| 2.3.0 (+ aspecto) | 42,0 % | 68,0 % | 80,1 % | 48,6 % | 79,8 % | 32 % / 42 % | 0,630 | 359 s |
+
+- **Vecinos** (`vecinos_balon_s`, `vecinos_enteros`): al fotograma analizado en el que no se ve el balón se le busca en
+  los de ±0,04 s (a 50 fps, el de cada lado): de un fotograma al siguiente cambian la borrosidad y quién lo tapa. Sin
+  tope, 4.931 búsquedas en la imagen entera (el 62 % de las miradas, casi todo el coste añadido) completaban el 13 % de
+  los instantes que miraban, frente al 28-38 % de las ventanas alrededor de un balón cercano, y la pasada casi se
+  doblaba; con una sola imagen entera por hueco entre dos analizados quedan 1.382 y se pierde poco: en la 2.3.0, 231
+  instantes sin balón lo tienen por sus vecinos.
+- **Relleno siguiendo a la cámara**: apartando trozos de balón visto y rellenándolos, el error mediano en huecos de 2-3 s
+  baja de 3,3 a 2,5 m y en los cortos, de 1,5 a 0,3 m; por eso, con el campo calibrado, el hueco que se rellena pasa de
+  2 a 3 s.
+- **Balón en juego**: mirado a ojo en 24 momentos, acierta en 21. Con trayectoria, el balón está en el 80 % del tiempo
+  en juego (antes, el 68,6 %); visto, en la mitad. El 80–90 % se alcanza con la trayectoria; subir lo visto pide un
+  detector del balón mejor, con más partidos (abajo).
+- **Memoria corta y cruces**: con 10 s de memoria el seguidor se iba con otro jugador. Con 1,5 s y los tracklets
+  partidos en los 286 cruces de dos del mismo equipo, la pureza sube de 0,601 a 0,628; una pasada igual sin esto daba la
+  misma identidad con la pureza de antes.
+- **Relectura junto al balón**: 1.120 lecturas más, de los hasta 3 que están junto al balón, en el fotograma de la mitad
+  entre dos analizados. En el tramo no cambia lo identificado (17 toques de jugadores identificados frente a 16): se deja
+  porque cuesta poco y suma lecturas donde está la jugada.
+- **Aspecto** (SigLIP, `apariencia.py`): 17.651 recortes y 19 s más de pasada (+5 %). Probado en cada equipo apartando
+  por bloques de tiempo las cadenas ya identificadas por el dorsal, el equipo 0 acierta 41 de 43 (umbral 0,97) y el 1,
+  48 de 50 (0,95). Da su jugador a 19 y 17 cadenas sin dorsal (3:03 y 2:05 a la vista): el tiempo con identidad pasa
+  del 26 al 32 % y del 35 al 42 %. En la primera prueba, sin los filtros de coherencia y de equipo, se colaban cadenas
+  del árbitro, del otro equipo y de dos personas; con ellos, en la hoja de contactos de las 36 cadenas no hay ninguna del
+  otro equipo ni del árbitro, y en cuatro se ve el número que se les dio.
+- **Coste**: la pasada tarda un 50 % más que con la 2.2.0 (de 239 a 359 s en el tramo, con la RTX 5070 Ti); un partido
+  entero sigue tardando menos de lo que dura.
+- **Lo que no se ha hecho**: volver a entrenar el detector del balón, que es lo que subiría lo visto: solo hay vídeo del
+  Vallobín, y la segunda tanda de etiquetado con él no mejoró el balón.
+
 ## El balón con RF-DETR y TensorRT (17-11-2026)
 
 Para no depender de Ultralytics (AGPL-3.0), el detector del balón pasa a **RF-DETR Medium** (Apache 2.0). Como el
@@ -961,8 +1036,11 @@ detector de eventos es ahora una clase con un paso por instante (`eventos._Detec
 - En la sección «Del vídeo» de la app: los eventos uno a uno con su clip (hoy se lanza con `--sin-clips`), el minimapa
   y la posesión por tramos; y separar mejor los dos equipos de noche (en las pruebas quedaron 6 y 21 jugadores seguidos).
 - Volver a afinar el lector de dorsales con las zonas de más partidos (hoy solo uno; `--guardar-dorsales` ya guarda
-  también las de los porteros) y unir mejor los tramos sin número (re-identificación por apariencia): es lo que falta
-  para subir del 25 % de tiempo con identidad.
+  también las de los porteros). Desde la 2.3.0 el aspecto da su jugador a parte de los tramos sin número (en el tramo
+  medido, del 26-35 % al 32-42 % del tiempo con identidad): probarlo en más partidos (de noche, con equipaciones
+  parecidas) y bajar su umbral si la prueba lo permite.
+- El balón: con trayectoria ya está el 80 % del tiempo en juego, pero visto, solo la mitad; subirlo pide volver a
+  entrenar su detector con más partidos (y varios fotogramas seguidos) o analizar más fotogramas por segundo junto a él.
 - Condiciones de grabación en el manual y aviso en la subida cuando el encuadre no sirve.
 - Árbitros y porteros: no fiarse solo del voto de clase del detector; un «árbitro» cuya camiseta es claramente la de un
   equipo es un jugador. Y revisar a mano una muestra de personas (sobre todo árbitros y porteros) para la segunda

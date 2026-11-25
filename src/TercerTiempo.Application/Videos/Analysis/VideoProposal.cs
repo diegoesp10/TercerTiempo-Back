@@ -93,11 +93,18 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
         var unidentified = (file.Calidad?.SinIdentificarS ?? [])
             .Where(kv => kv.Key is "0" or "1")
             .ToDictionary(kv => int.Parse(kv.Key, System.Globalization.CultureInfo.InvariantCulture), kv => (int)Math.Round(Math.Max(0, kv.Value)));
-        return new VideoProposal(teams, players, file.Identificados == true && players.Any(p => p.ShirtFromVideo)) { UnidentifiedSeconds = unidentified };
+        return new VideoProposal(teams, players, file.Identificados == true && players.Any(p => p.ShirtFromVideo))
+        {
+            UnidentifiedSeconds = unidentified,
+            BallInPlay = ReadBallInPlay(file.Calidad?.BalonEnJuego),
+        };
     }
 
     // Segundos con jugadores a la vista sin identificar, por equipo (0, 1).
     public IReadOnlyDictionary<int, int> UnidentifiedSeconds { get; init; } = new Dictionary<int, int>();
+
+    // Desde Ojeador 2.3.0; null en análisis anteriores.
+    public VideoBallInPlay? BallInPlay { get; init; }
 
     public VideoProposalTeam? Team(int index) => Teams.FirstOrDefault(t => t.Index == index);
 
@@ -106,6 +113,13 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
     public int? TeamOn(MatchSide side) => Identified ? Teams.FirstOrDefault(t => t.Side == side)?.Index : null;
 
     private static int Count(int? value) => Math.Max(0, value ?? 0);
+
+    private static decimal Percent(decimal value) => Math.Clamp(Math.Round(value, 1), 0, 100);
+
+    // Lo que tiene trayectoria incluye lo visto: si el archivo dice menos, no cuadra y se sube a lo visto.
+    private static VideoBallInPlay? ReadBallInPlay(BallInPlayDto? b) => b is { EnJuegoPct: { } inPlay, VistoPct: { } seen, TrayectoriaPct: { } tracked }
+        ? new VideoBallInPlay(Percent(inPlay), Percent(seen), Math.Max(Percent(seen), Percent(tracked)))
+        : null;
 
     // Ningún dato de un partido llega a tantas veces: una lista más larga no es de fiar y se recorta.
     private const int MaxMoments = 2000;
@@ -158,6 +172,14 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
     private sealed class QualityDto
     {
         public Dictionary<string, decimal>? SinIdentificarS { get; set; }
+        public BallInPlayDto? BalonEnJuego { get; set; }
+    }
+
+    private sealed class BallInPlayDto
+    {
+        public decimal? EnJuegoPct { get; set; }
+        public decimal? VistoPct { get; set; }
+        public decimal? TrayectoriaPct { get; set; }
     }
 
     private sealed class TeamDto
@@ -258,6 +280,11 @@ public enum VideoPossessionConfidence
     Medium = 2,
     High = 3,
 }
+
+// El balón medido sobre el tiempo de juego: mientras está parado (fueras, faltas, saques, cambios) no verlo no es un fallo.
+// InPlayPct es la parte del tramo con el balón en juego; SeenPct y TrackedPct, la del tiempo en juego con el balón visto y
+// con su trayectoria (visto o en un hueco corto seguido con la cámara).
+public sealed record VideoBallInPlay(decimal InPlayPct, decimal SeenPct, decimal TrackedPct);
 
 // Los datos de un equipo, «a favor»: lo que es en contra para un equipo es lo que tiene a favor el otro (las faltas que
 // recibe uno son las que comete el otro, y los fueras de juego del rival son los que le pitan a él).

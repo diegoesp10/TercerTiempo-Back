@@ -24,6 +24,8 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--campo", default=None, help="Medidas del campo en metros, p. ej. 100x62 (ver `medir-campo`); por defecto 120x70.")
     a.add_argument("--device", default="cuda", help="cuda (por defecto), cuda:0 o cpu.")
     a.add_argument("--fps", type=float, default=5.0, help="Fotogramas por segundo que se analizan (5 por defecto).")
+    a.add_argument("--vecinos-balon", type=float, default=0.04, help="Si no se ve el balón en un fotograma analizado, se busca en los de estos segundos a cada lado (0,04 por defecto; 0: solo en los analizados).")
+    a.add_argument("--vecinos-enteros", type=int, default=1, help="Sin balón cerca, fotogramas vecinos en los que se busca en toda la imagen por cada tramo entre dos analizados (1 por defecto).")
     a.add_argument("--segmento", default=None, help="Tramo a analizar, p. ej. 10:00-15:00 o 0:45:00-1:35:00.")
     a.add_argument("--descanso", default=None, help="Minuto del vídeo en que empieza la segunda parte (p. ej. 52:30); si no, se detecta.")
     a.add_argument("--confianza", type=float, default=0.3, help="Puntuación mínima de una persona detectada (las flojas solo continúan a alguien ya seguido).")
@@ -42,6 +44,7 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--plantillas", type=Path, default=None, help="JSON con las plantillas del acta oficial (dorsales y minutos de cada uno): el dorsal leído se cruza con ellas.")
     a.add_argument("--saque", default="0", help="Minuto del vídeo en que empieza el partido (p. ej. 1:30), para pasar los minutos del acta al vídeo.")
     a.add_argument("--sin-dorsales", action="store_true", help="No leer los dorsales: cada tracklet queda suelto, como antes.")
+    a.add_argument("--sin-apariencia", action="store_true", help="No reconocer por el aspecto a quien no se le lee el dorsal.")
     a.add_argument("--guardar-dorsales", type=Path, default=None, help="Carpeta donde dejar las zonas del dorsal y sus etiquetas (los jugadores identificados) para `entrenar-dorsales`.")
 
     ed = sub.add_parser("entrenar-dorsales", help="Afina el lector de dorsales con las zonas guardadas (--guardar-dorsales) y deja los pesos en modelos/afinados/dorsales.pt.")
@@ -352,6 +355,8 @@ def main(argv: list[str] | None = None) -> int:
         campo=a_medidas(args.campo),
         device=args.device,
         fps_muestreo=args.fps,
+        vecinos_balon_s=args.vecinos_balon,
+        vecinos_enteros=args.vecinos_enteros,
         segmento=Segmento.parse(args.segmento),
         descanso=a_segundos(args.descanso) if args.descanso else None,
         confianza=args.confianza,
@@ -368,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         exigir_gpu=args.exigir_gpu,
         semilla=args.semilla,
         dorsales=not args.sin_dorsales,
+        apariencia=not args.sin_apariencia,
         plantillas=args.plantillas,
         saque=a_segundos(args.saque) if args.saque else 0.0,
         guardar_dorsales=args.guardar_dorsales,

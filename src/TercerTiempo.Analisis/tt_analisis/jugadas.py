@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .balon import permanencias
+from .en_juego import EnJuego, balon_en_juego
 from .estadisticas import ResumenTracklet, resumir_tracklets
 from .eventos import Resultado, detectar_eventos
 from .geometria import Campo
@@ -34,6 +35,8 @@ class Jugadas:
     secuencias: list[Secuencia]
     acciones: dict[int, AccionesJugador]
     goles_quitados: int = 0
+    # Cuándo está el balón en juego (desde la 2.3.0 la posesión solo cuenta ese tiempo).
+    en_juego: EnJuego | None = None
 
     def direccion_de(self, equipo: int, mitad: int) -> int | None:
         return self.direcciones.get((equipo, mitad))
@@ -101,6 +104,11 @@ def analizar_jugadas(
             if any(t0 <= inst.t <= t1 for t0, t1 in interrupciones.paradas):
                 juego_activo[i] = False
 
+    # Además de lo que paran los eventos y las interrupciones, el balón fuera, quieto o perdido de vista con los jugadores
+    # casi quietos (`en_juego.py`).
+    en_juego = balon_en_juego(instantes, dt, juego_activo, campo)
+    juego_activo = en_juego.en_juego
+
     goles_quitados = 0
     if acta is not None:
         segundo = lambda minuto: minuto_a_segundos(minuto, saque_s, descanso, acta.parte, acta.minutos_parte)  # noqa: E731
@@ -135,4 +143,5 @@ def analizar_jugadas(
         secuencias=secs,
         acciones=acciones,
         goles_quitados=goles_quitados,
+        en_juego=en_juego,
     )

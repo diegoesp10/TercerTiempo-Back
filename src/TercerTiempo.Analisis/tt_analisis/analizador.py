@@ -15,14 +15,15 @@ import supervision as sv
 from tqdm import tqdm
 
 from . import NOMBRE, __version__
+from . import apariencia as ap
 from .avance import Avance
-from .balon import cobertura, limpiar_trayectoria
+from .balon import cobertura, completar_con_intermedios, limpiar_trayectoria
 from .campo import Calibrador, configurar_campo
 from .colores import rasgos_equipacion, tapados
 from .config import CLASE_ARBITRO, MARGEN_CAMPO_CM, Configuracion
 from .geometria import Campo
-from .deteccion import Detector
-from .dorsales import ALTO_MIN_PX, ColaDorsales, GuardaZonas, HistorialLecturas, cargar_lector, zona_dorsal
+from .deteccion import Detector, Muestreado
+from .dorsales import ALTO_MIN_PX, ColaDorsales, GuardaZonas, HistorialLecturas, cargar_lector, junto_al_balon, zona_dorsal
 from .identidades import Resolucion, Tramo, leer_plantillas, resolver
 from .equipos import ClasificadorEquipos, color_hex
 from .informes import acta_propuesta, escribir_json, escribir_mapas, escribir_posiciones, escribir_recortes, extraer_clips, resumen_markdown
@@ -89,15 +90,21 @@ def analizar(config: Configuracion, informar=print) -> dict:
         decir(f"Lector de dorsales: {lector.nombre}.")
     elif config.dorsales:
         decir("Aviso: falta el lector de dorsales (modelos/parseq-bb5792a6.pt; `tt-analisis descargar-modelos`): cada tracklet queda suelto.")
+    apariencia = ap.cargar_apariencia(config.modelos, modelos.device) if lector is not None and config.apariencia else None
+    if lector is not None and config.apariencia and apariencia is None:
+        decir("Aviso: falta el modelo del aspecto (modelos/siglip): solo se identifica por el dorsal.")
     # Quién analiza el partido: el nombre y la versión del analizador y cada modelo, con su entrenamiento y su huella.
-    analizador = {"nombre": NOMBRE, "version": __version__, "modelos": describir_modelos(modelos, config.modelos, lector)}
+    analizador = {"nombre": NOMBRE, "version": __version__, "modelos": describir_modelos(modelos, config.modelos, lector, apariencia)}
     guarda = GuardaZonas(config.guardar_dorsales) if lector is not None and config.guardar_dorsales is not None else None
     # Cada lectura con su segundo: del portero cuyo tracklet saltó a otra persona solo cuentan las de su rato.
     historial = HistorialLecturas() if lector is not None else None
     cola = ColaDorsales(lector, guardar=guarda, historial=historial) if lector is not None else None
+    cola_aspecto = ap.ColaApariencia(apariencia) if apariencia is not None else None
     paso = max(1, round(info.fps / config.fps_muestreo))
     fps_real = info.fps / paso
     dt = 1 / fps_real
+    # Al analizado en el que no se ve el balón se le busca en los fotogramas de al lado (ver `Configuracion.vecinos_balon_s`).
+    vecinos = max(0, min(int(round(config.vecinos_balon_s * info.fps)), paso - 1))
     if config.semilla is not None:
         fijar_semilla(config.semilla)
         # Con otra semilla se muestrean otros fotogramas del vídeo (desplazados dentro del paso): sirve para medir
@@ -156,9 +163,17 @@ def analizar(config: Configuracion, informar=print) -> dict:
     decir(f"Siguiendo a jugadores y balón: {total} fotogramas a {fps_real:.1f} por segundo de vídeo.")
     progreso.fase("pasada", 0, total)
     vistos = calibrados_hasta = 0
+    # El balón visto en los fotogramas vecinos: [(t, centro en px, confianza)], en orden.
+    pista: list[tuple[float, np.ndarray, float]] = []
+    previo: Muestreado | None = None
+    # Para el avance: instantes con balón en su fotograma o en uno de al lado (se sabe un tramo después).
+    vistos_cerca = 0
+    margen_cerca = vecinos / info.fps + 1e-3
     pasada_inicio = time.monotonic()
     pasada_pausa = 0.0
-    for fotograma in tqdm(fotogramas(config, info, paso=paso, lectura=lectura), total=total, desc="Analizando", unit="fot", disable=config.progreso):
+    # Lecturas del dorsal en el fotograma de la mitad entre dos muestreados (`dorsales.junto_al_balon`).
+    lecturas_medio = 0
+    for fotograma in tqdm(fotogramas(config, info, paso=paso, lectura=lectura, vecinos=vecinos, medio=cola is not None), total=total, desc="Analizando", unit="fot", disable=config.progreso):
         pasada_pausa += progreso.punto_de_control()
         n += 1
         progreso.fase("pasada", n, total)
@@ -183,12 +198,15 @@ def analizar(config: Configuracion, informar=print) -> dict:
 
         equipos, pesos = clasificador.clasificar(imagen, seguidas)
         seguidas = seguidor.votar_equipos(seguidas, equipos, pesos)
+        seguidas = seguidor.separar_cruces(seguidas, fotograma.t)
         tapada = tapados(seguidas.xyxy) if len(seguidas) else np.zeros(0, dtype=bool)
 
         personas = []
+        equipo_fotograma: dict[int, int] = {}
         for i in range(len(seguidas)):
             tid = int(seguidas.tracker_id[i])
             memoria = seguidor.memorias[tid]
+            equipo_fotograma[tid] = int(equipos[i])
             clase = memoria.clase
             caja = tuple(float(v) for v in seguidas.xyxy[i])
             if not tapada[i]:
@@ -209,6 +227,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
             )
             if n % 10 == 0 and clase != CLASE_ARBITRO:
                 memoria.guardar_recorte(fotograma.t, caja, personas[-1].confianza, imagen, int(equipos[i]))
+            if cola_aspecto is not None and clase != CLASE_ARBITRO and not tapada[i] and caja[3] - caja[1] >= ap.ALTO_MIN_PX and (n + tid) % ap.RECORTE_CADA == 0:
+                cola_aspecto.poner(tid, recortar(imagen, caja, margen=2))
             if cola is not None and clase != CLASE_ARBITRO:
                 zona = zona_dorsal(imagen, caja)
                 if zona is not None:
@@ -227,10 +247,39 @@ def analizar(config: Configuracion, informar=print) -> dict:
                     # Un «balón» en la grada o en el banquillo no es el balón.
                     balon_imagen, balon_campo, balon_confianza = None, None, None
 
-        inst = Instante(fotograma.indice, fotograma.t, personas, balon_imagen, balon_campo, calibracion.valida, balon_confianza=balon_confianza)
+        alto_img, ancho_img = imagen.shape[:2]
+        inst = Instante(
+            fotograma.indice, fotograma.t, personas, balon_imagen, balon_campo, calibracion.valida, balon_confianza=balon_confianza,
+            homografia=calibracion.homografia if calibracion.valida else None,
+            vista_campo=calibrador.punto_a_campo((ancho_img / 2, alto_img / 2)) if calibracion.valida else None,
+        )
         instantes.append(inst)
         vistos += balon_imagen is not None
+        if cola is not None and fotograma.medio is not None and len(instantes) >= 2:
+            medio = fotograma.medio
+            for tid, caja, equipo in junto_al_balon(instantes[-2], inst, medio.t, equipo_fotograma):
+                zona = zona_dorsal(medio.imagen, caja)
+                if zona is not None:
+                    cola.poner(tid, zona.copy(), recortar(medio.imagen, caja, margen=6).copy(), seguidor.memorias, equipo, medio.t)
+                    lecturas_medio += 1
         calibrados_hasta += calibracion.valida
+
+        # El balón de los muestreados en los que no se vio, en sus fotogramas vecinos (los de este tramo: los de después del
+        # anterior y los de antes de este).
+        ultimo = detector.ultimo_balon
+        actual = Muestreado(
+            inst.t, None if balon_imagen is None else np.asarray(balon_imagen, dtype=np.float32),
+            ultimo[2] if balon_imagen is not None and ultimo is not None and ultimo[0] == inst.t else None, det.personas,
+        )
+        if fotograma.intermedios:
+            entre = detector.balon_vecinos(fotograma.intermedios, previo, actual, vecinos, 1 / info.fps, config.vecinos_enteros)
+            pista.extend(entre)
+            if balon_imagen is None and entre:
+                detector.recordar_balon(entre[-1][0], entre[-1][1])
+            if len(instantes) >= 2:
+                anterior = instantes[-2]
+                vistos_cerca += anterior.balon_imagen is not None or any(abs(t - anterior.t) <= margen_cerca for t, _, _ in pista[-8:])
+        previo = actual
         if progreso.toca():
             activo_s = max(1e-6, time.monotonic() - pasada_inicio - pasada_pausa)
             fps_proceso = n / activo_s
@@ -239,7 +288,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
                 fotogramas=n,
                 jugadores_en_imagen=sum(1 for p in personas if p.clase != CLASE_ARBITRO),
                 jugadores_seguidos=sum(1 for m in seguidor.memorias.values() if m.clase != CLASE_ARBITRO),
-                balon_pct=round(100 * vistos / n, 1),
+                balon_pct=round(100 * (vistos_cerca if vecinos else vistos) / max(1, n - 1 if vecinos else n), 1),
                 calibrado_pct=round(100 * calibrados_hasta / n, 1),
                 fps=round(fps_proceso, 1),
                 velocidad=round(fps_proceso / fps_real, 2),
@@ -251,6 +300,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
         renderizador.cerrar()
     if cola is not None:
         cola.vaciar(seguidor.memorias)
+    apariencias = cola_aspecto.vectores() if cola_aspecto is not None else None
     if guarda is not None:
         guarda.vaciar()
     tiempos["pasada_s"] = time.time() - t0
@@ -269,6 +319,14 @@ def analizar(config: Configuracion, informar=print) -> dict:
     progreso.etapa("jugadas")
     progreso.fase("salidas", 0, 3)
     t0 = time.time()
+    # El balón de los fotogramas vecinos, a los instantes que no lo tenían.
+    pista_xy = [(t, (float(c[0]), float(c[1])), conf) for t, c, conf in pista]
+    intermedios = completar_con_intermedios(instantes, pista_xy, 1 / info.fps, campo, MARGEN_CAMPO_CM, vecinos=max(1, vecinos))
+    if vecinos:
+        decir(
+            f"Fotogramas vecinos de los que no tenían balón: visto en {intermedios.detecciones} de {detector.intermedios_mirados} mirados "
+            f"({detector.vecinos_enteros} enteros); {intermedios.completados} instantes sin balón lo tienen por ellos."
+        )
     relleno = limpiar_trayectoria(instantes)
     balon_cobertura = cobertura(instantes)
     for objeto in relleno.objetos_fijos:
@@ -308,7 +366,9 @@ def analizar(config: Configuracion, informar=print) -> dict:
 
             mejores = {t.tracklet: seguidor.memorias[t.tracklet].mejor_dorsal_por_equipo for t in tramos if t.tracklet in seguidor.memorias}
             (config.salida / "tramos.pkl").write_bytes(pickle.dumps({"tramos": tramos, "plantillas": plantillas, "mejores": mejores}))
-        resolucion = resolver(tramos, plantillas)
+            if apariencias is not None:
+                (config.salida / "apariencias.pkl").write_bytes(pickle.dumps(apariencias))
+        resolucion = resolver(tramos, plantillas, apariencias=apariencias)
         if guarda is not None:
             etiquetas_portero: dict[str, dict] = {}
             # Sin el acta, el dorsal del portero no es seguro: sus zonas no se guardan.
@@ -324,10 +384,18 @@ def analizar(config: Configuracion, informar=print) -> dict:
                 persona.equipo = equipo_de.get(persona.tracklet, persona.equipo)
         por_equipo = {e: sum(1 for x in resolucion.identidades if x.equipo == e) for e in (0, 1)}
         decir(
-            f"Dorsales: {cola.leidas} lecturas; {len(tramos)} tracklets en {resolucion.cadenas} cadenas; "
+            f"Dorsales: {cola.leidas} lecturas ({lecturas_medio} junto al balón entre dos fotogramas); {len(tramos)} tracklets en {resolucion.cadenas} cadenas; "
             f"{por_equipo[0]} y {por_equipo[1]} jugadores identificados por el dorsal"
             + (" (con el acta oficial)" if plantillas else "") + "."
         )
+        for e, r in sorted(resolucion.apariencia.items()):
+            if r.get("umbral") is None:
+                decir(f"Aspecto, equipo {e}: no se usa; probado con {r['probadas']} cadenas identificadas, no acierta en el 95 % de las que daría.")
+            else:
+                decir(
+                    f"Aspecto, equipo {e}: probado con {r['probadas']} cadenas identificadas, acierta {r['aciertos']} de {r['dadas']}; "
+                    f"da su jugador a {r['asignadas']} cadenas sin dorsal ({formato_minuto(r['segundos'])} a la vista)."
+                )
         progreso.estado(forzar=True, jugadores_identificados=por_equipo[0] + por_equipo[1])
 
     # Con el mismo descanso con el que se colocó a los porteros.
@@ -336,6 +404,8 @@ def analizar(config: Configuracion, informar=print) -> dict:
     descanso, direcciones, posesion, secs, acciones = jugadas.descanso, jugadas.direcciones, jugadas.posesion, jugadas.secuencias, jugadas.acciones
     if seguidor.cortes:
         decir(f"Tracklets partidos porque el seguidor juntó a jugadores de los dos equipos: {seguidor.cortes}.")
+    if seguidor.cruces:
+        decir(f"Cruces de dos jugadores del mismo equipo: {seguidor.cruces}; sus tracklets se parten al separarse y quién es quién lo dice el dorsal.")
     if descanso is not None and not any(e.tipo == "paron" and e.t_fin == descanso for e in resultado_eventos) and config.descanso is None:
         decir(f"Sin pausa de descanso en el vídeo: la segunda parte empieza en {formato_minuto(descanso)}, cuando los equipos cambian de campo.")
     if jugadas.goles_quitados:
@@ -345,6 +415,12 @@ def analizar(config: Configuracion, informar=print) -> dict:
     fueras_de_juego = sum(1 for e in resultado_eventos if e.tipo == "fuera_de_juego")
     progreso.estado(forzar=True, toques=len(toques), eventos=len(resultado_eventos), jugadores_seguidos=len(resumenes))
     decir(f"Posesión y jugadas: {len(toques)} toques de balón y {len(resultado_eventos)} eventos detectados ({faltas} faltas y {fueras_de_juego} fueras de juego candidatos).")
+    en_juego = jugadas.en_juego.a_dict(dt) if jugadas.en_juego is not None else None
+    if en_juego is not None:
+        decir(
+            f"Balón en juego el {en_juego['pct_en_juego']} % del tramo; en ese tiempo, visto en el {en_juego['pct_visto']} % "
+            f"y con trayectoria en el {en_juego['pct_con_trayectoria']} %."
+        )
 
     # 4. El modelo de lenguaje, si se pidió.
     llm = crear_modelo(config.llm, config.modelo_llm)
@@ -387,21 +463,26 @@ def analizar(config: Configuracion, informar=print) -> dict:
         "version": __version__,
         "analizador": analizador,
         "video": {"ruta": str(config.video), "ancho": info.ancho, "alto": info.alto, "fps": info.fps, "duracion_s": round(info.duracion_s, 1), "tramo_inicio_s": config.segmento.inicio, "tramo_fin_s": round(fin_s, 1)},
-        "parametros": {"fps_muestreo": round(fps_real, 2), "device": modelos.device, "camara": config.camara, "seguidor": detector.rastreador.nombre, "motor_jugadores": modelos.jugadores.motor, "motor_balon": modelos.balon.motor, "motor_campo": modelos.campo.motor, "llm": llm.nombre if llm else None, "modelos": modelos.rutas, "campo_m": [campo.largo / 100, campo.ancho / 100]},
+        "parametros": {"fps_muestreo": round(fps_real, 2), "vecinos_balon": vecinos, "vecinos_balon_s": config.vecinos_balon_s, "vecinos_enteros": config.vecinos_enteros, "device": modelos.device, "camara": config.camara, "seguidor": detector.rastreador.nombre, "motor_jugadores": modelos.jugadores.motor, "motor_balon": modelos.balon.motor, "motor_campo": modelos.campo.motor, "llm": llm.nombre if llm else None, "modelos": modelos.rutas, "campo_m": [campo.largo / 100, campo.ancho / 100]},
         "llm": llm.nombre if llm else None,
         "equipos": [{"id": e, "nombre": config.nombres_equipos[e], "color": colores[e]} for e in (0, 1)],
         "direcciones_ataque": {f"equipo{e}_mitad{m}": d for (e, m), d in sorted(direcciones.items())},
         "descanso_s": descanso,
         "calibracion": calibrador.resumen(),
         "recuento": {
-            # `con_balon` y `pct_con_balon` son el balón **visto** por el detector (lo que guarda la app); con los huecos
-            # rellenados por la trayectoria, `con_balon_interpolado` y `pct_con_balon_total`.
+            # `con_balon` y `pct_con_balon` son el balón **visto** por el detector (lo que guarda la app): en su fotograma o,
+            # desde la 2.3.0, en uno de sus vecinos (`balon_vecinos`); solo en su fotograma, `con_balon_fotograma`.
+            # Con los huecos rellenados por la trayectoria, `con_balon_interpolado` y `pct_con_balon_total`.
             "fotogramas": len(instantes), "con_balon": con_balon, "pct_con_balon": round(100 * con_balon / len(instantes), 1),
+            "con_balon_fotograma": vistos, "pct_con_balon_fotograma": round(100 * vistos / len(instantes), 1),
+            "balon_vecinos": {**intermedios.a_dict(), "mirados": detector.intermedios_mirados, "enteros": detector.vecinos_enteros, "vecinos": vecinos},
             "con_balon_interpolado": balon_cobertura["interpolados"], "pct_con_balon_total": balon_cobertura["pct_con_balon"], "balon_relleno": relleno.a_dict(),
+            # Desde la 2.3.0: lo mismo solo con el balón en juego (`en_juego.py`), que es cuando importa verlo.
+            "balon_en_juego": en_juego,
             "pct_calibrados": round(100 * calibrados / len(instantes), 1),
             # Lo que se pudo leer del archivo frente a lo esperado: por debajo del 95 % la app lo marca como calidad baja.
             "fotogramas_esperados": total, "pct_leido": leido_pct, "lectura_cortada_s": lectura.cortado_en_s,
-            "muestras_equipos": muestras, "reparto_equipos": list(reparto), "tracklets": len(resumenes), "tracklets_partidos": seguidor.cortes, "toques": len(toques), "secuencias": len(secs),
+            "muestras_equipos": muestras, "reparto_equipos": list(reparto), "tracklets": len(resumenes), "tracklets_partidos": seguidor.cortes, "cruces_partidos": seguidor.cruces, "toques": len(toques), "secuencias": len(secs),
             "balones_descartados": detector.descartados, "balones_flojos_descartados": detector.flojos_descartados, "personas_fuera_del_campo": fuera_de_campo, "clips": clips,
         },
         "posesion": posesion.a_dict(),
@@ -409,6 +490,9 @@ def analizar(config: Configuracion, informar=print) -> dict:
         "tracklets": [dict(r.a_dict(), acciones=acciones.get(tid, None).a_dict() if tid in acciones else None, recorte=recortes.get(tid), dorsal_llm=dorsales.get(tid)) for tid, r in sorted(resumenes.items())],
         "identificacion": None if resolucion is None else {
             "lecturas": cola.leidas if cola is not None else 0,
+            "lecturas_junto_al_balon": lecturas_medio,
+            "recortes_apariencia": cola_aspecto.recortes if cola_aspecto is not None else 0,
+            "apariencia": {str(e): r for e, r in resolucion.apariencia.items()},
             "cadenas": resolucion.cadenas,
             "lado_de_equipo": {str(e): lado for e, lado in resolucion.lado_de_equipo.items()},
             "segundos_sin_identificar": {str(e): s for e, s in resolucion.segundos_sin_identificar.items()},
@@ -420,7 +504,7 @@ def analizar(config: Configuracion, informar=print) -> dict:
         "archivos": {"mapas": mapas, "posiciones": posiciones, "anotado": "anotado.mp4" if renderizador else None},
         "tiempos": {k: round(v, 1) for k, v in tiempos.items()},
     }
-    acta = acta_propuesta(resultado_eventos, posesion, resumenes, acciones, dorsales, recortes, config.nombres_equipos, colores, resolucion, acta_oficial)
+    acta = acta_propuesta(resultado_eventos, posesion, resumenes, acciones, dorsales, recortes, config.nombres_equipos, colores, resolucion, acta_oficial, en_juego)
     if llm is not None:
         resumen_llm = redactar_resumen(analisis, llm)
     escribir_json(analisis, config.salida / "analisis.json")
@@ -493,6 +577,7 @@ def tramos_de(
             Tramo(
                 tid, equipo, d["t_ini"], d["t_fin"], d["ini"], d["fin"], float(np.median(d["altos"])), votos, d["ini_campo"], d["fin_campo"], portero,
                 porteros.por_equipacion(tid), d["mitad"], d["porteria"], vestido_de_portero=porteros.vestido_de_portero(tid),
+                tras_cruce=tid in seguidor.tras_cruce,
             )
         )
     return tramos

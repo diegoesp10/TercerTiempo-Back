@@ -45,6 +45,11 @@ class Instante:
     # De dónde sale el balón de este instante: "visto" (el detector), "interpolado" (`balon.rellenar_huecos`) o None.
     balon_origen: str | None = None
     balon_confianza: float | None = None
+    # La calibración del campo de este fotograma (`campo.Homografia`, con `a_campo`), si la hay: para proyectar después
+    # de la pasada lo que se sitúa en él (el balón visto en los fotogramas intermedios de al lado).
+    homografia: object | None = None
+    # Hacia dónde mira la cámara: el punto del campo en el centro de la imagen (con el campo calibrado).
+    vista_campo: Punto | None = None
 
     def __post_init__(self) -> None:
         if self.balon_imagen is not None and self.balon_origen is None:

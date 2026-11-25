@@ -420,3 +420,19 @@ def test_si_el_acta_dice_quien_es_portero_su_dorsal_solo_puede_ser_uno_de_ellos(
     for j in jugadores:
         j.pop("portero", None)
     assert asignados(resolver(tramos, leer_plantillas({"equipos": [{"lado": "local", "nombre": "Vallobín", "jugadores": jugadores}, rival]})), 20, 22) == [id_jugador(1, 9)] * 2
+
+
+def test_un_tramo_que_nace_de_un_cruce_solo_sigue_a_otro_si_los_dos_dicen_el_mismo_dorsal():
+    def votos(dorsal=None):
+        v = np.zeros(99)
+        if dorsal:
+            v[dorsal - 1] = 3.0
+        return v
+
+    a = Tramo(1, 0, 0.0, 5.0, (100.0, 100.0), (100.0, 100.0), 80.0, votos(7))
+    sin_leer = Tramo(2, 0, 5.2, 9.0, (102.0, 100.0), (150.0, 100.0), 80.0, votos(), tras_cruce=True)
+    mismo = Tramo(3, 0, 5.2, 9.0, (102.0, 100.0), (150.0, 100.0), 80.0, votos(7), tras_cruce=True)
+    normal = Tramo(4, 0, 5.2, 9.0, (102.0, 100.0), (150.0, 100.0), 80.0, votos())
+    assert identidades.coste_enlace(a, sin_leer) is None
+    assert identidades.coste_enlace(a, mismo) is not None
+    assert identidades.coste_enlace(a, normal) is not None

@@ -5,16 +5,22 @@ de Ultralytics (AGPL-3.0).
   antes de asociar, para que un paneo no cambie el identificador de todos.
 - Cámara fija (trípode o tipo Veo): ByteTrack.
 
-Con los mismos ajustes que tenían los seguidores de Ultralytics: un tracklet aguanta 10 s sin verse, solo nace de una
-detección clara (0,5) y las flojas (por debajo de 0,35 o 0,4) solo sirven para continuar a alguien que ya se seguía. Se
-le pasa el instante de cada fotograma, así que da igual a cuántos fotogramas por segundo se analice."""
+Un tracklet solo nace de una detección clara (0,5) y las flojas (por debajo de 0,35 o 0,4) solo sirven para continuar a
+alguien que ya se seguía. Se le pasa el instante de cada fotograma, así que da igual a cuántos fotogramas por segundo se
+analice.
+
+Cuánto aguanta un tracklet sin verse: con cámara fija, 10 s (el jugador sigue en el plano). Con cámara móvil, desde la
+2.3.0, 1,5 s: la cámara va con el balón y quien no se ve más de un segundo y medio ha salido del plano o está detrás de
+un montón; con 10 s, al volver a verse a alguien cerca de donde el seguidor lo esperaba, le daba el número del que se
+perdió aunque fuera otro. Que sea la misma persona lo dicen después el dorsal y el aspecto (`identidades.py`)."""
 
 from __future__ import annotations
 
 import numpy as np
 import supervision as sv
 
-AGUANTA_S = 10.0
+AGUANTA_MOVIL_S = 1.5
+AGUANTA_FIJA_S = 10.0
 CONF_NACER = 0.5
 CONF_ALTA_MOVIL = 0.35
 CONF_ALTA_FIJA = 0.4
@@ -24,13 +30,14 @@ SEGUIDORES = ("botsort", "bytetrack")
 
 
 class Rastreador:
-    def __init__(self, nombre: str = "botsort", fps: float = 5.0) -> None:
+    def __init__(self, nombre: str = "botsort", fps: float = 5.0, camara: str = "movil") -> None:
         from trackers import BoTSORTTracker, ByteTrackTracker
 
         if nombre not in SEGUIDORES:
             raise ValueError(f"Seguidor desconocido: {nombre} (vale {', '.join(SEGUIDORES)}).")
         # `lost_track_buffer` va en fotogramas a 30 por segundo y el seguidor lo escala con `frame_rate`.
-        comunes = {"lost_track_buffer": int(round(AGUANTA_S * 30)), "frame_rate": fps, "track_activation_threshold": CONF_NACER}
+        self.aguanta_s = AGUANTA_MOVIL_S if camara == "movil" else AGUANTA_FIJA_S
+        comunes = {"lost_track_buffer": int(round(self.aguanta_s * 30)), "frame_rate": fps, "track_activation_threshold": CONF_NACER}
         self.nombre = nombre
         self.movil = nombre == "botsort"
         if self.movil:

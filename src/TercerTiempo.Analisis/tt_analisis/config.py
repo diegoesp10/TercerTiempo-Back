@@ -56,6 +56,17 @@ class Configuracion:
     device: str = "cuda"
     # Fotogramas analizados por segundo de vídeo: 5 es el equilibrio entre coste y seguir el balón.
     fps_muestreo: float = 5.0
+    # Al fotograma muestreado en el que no se ve el balón se le busca en los de `vecinos_balon_s` segundos o menos a cada
+    # lado (`deteccion.Detector.balon_vecinos`): de un fotograma al siguiente cambian la borrosidad y quién lo tapa. Medido
+    # el 25-11-2026 en el J8 (50 fps) con el detector en uno de cada dos fotogramas: el balón se ve en el 35 % de los
+    # muestreados, en el 45 % contando ±0,04 s y en el 52 % contando ±0,08 s (el doble de búsquedas). 0: solo en los
+    # muestreados.
+    vecinos_balon_s: float = 0.04
+    # Con balón cerca (el del otro muestreado o uno de hace un momento) se mira una ventana a su alrededor, que cuesta poco;
+    # sin él, la imagen entera (24 teselas). En el J8, las búsquedas enteras eran el 62 % de las miradas, casi todo el coste
+    # añadido, y completaban el 13 % de los instantes que miraban, frente al 28-38 % de las ventanas: como mucho tantos
+    # fotogramas enteros por tramo entre dos muestreados.
+    vecinos_enteros: int = 1
     segmento: Segmento = field(default_factory=Segmento)
     # Minuto del vídeo en el que empieza la segunda parte; si no se da, se detecta por el parón más largo.
     descanso: float | None = None
@@ -96,6 +107,8 @@ class Configuracion:
     semilla: int | None = None
     # Leer el dorsal de cada jugador (PARSeq) y juntar los tracklets en un jugador por dorsal.
     dorsales: bool = True
+    # Y dar su jugador por el aspecto (SigLIP, `apariencia.py`) a cadenas a las que no se les lee el dorsal.
+    apariencia: bool = True
     # Las plantillas del acta oficial (JSON con los dorsales y los minutos de cada uno): solo cuentan esos dorsales.
     plantillas: Path | None = None
     # Segundo del vídeo en que empieza el partido (para pasar los minutos del acta al vídeo).

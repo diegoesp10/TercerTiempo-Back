@@ -1,7 +1,7 @@
 """Quién es quién: de los miles de tracklets que deja el seguidor a un jugador por dorsal, como mucho los que jugaron.
 
-El seguidor da otro número cada vez que pierde a un jugador (en un partido entero, unos 20.000), pero en el campo hay
-como mucho 16 por equipo (once y los cambios). Para juntarlos:
+El seguidor da otro número cada vez que pierde a un jugador (en el J8, unos 1.700 cada 10 minutos desde la 2.3.0), pero
+en el campo hay como mucho 16 por equipo (once y los cambios). Para juntarlos:
 
 0. **Porteros**: en el campo hay uno por equipo a la vez y no sale de su portería. Su equipo ya viene de la portería
    que defiende en cada parte (`porteros.py`), así que todos los tramos de portero de un equipo, los de las dos partes
@@ -19,13 +19,19 @@ como mucho 16 por equipo (once y los cambios). Para juntarlos:
    nombre de otro.
 1. **Cadenas**: el tramo que empieza justo donde y cuando acaba otro del mismo equipo es el mismo jugador (se enlazan
    de menor a mayor salto, cada tramo con un solo antecesor y un solo sucesor, y nunca dos que ya dicen dorsales
-   distintos con claridad).
+   distintos con claridad). Desde la 2.3.0 el seguidor parte los tracklets de dos jugadores del mismo equipo que se
+   montan al separarse (`seguimiento.Seguidor.separar_cruces`): el tramo que nace de un cruce solo se enlaza con otro si
+   los dos dicen con claridad el mismo dorsal, porque a la salida de un cruce la cercanía no dice quién es quién.
 2. **Dorsal de cada cadena**: la suma de las lecturas del número de todos sus fotogramas. Con el acta oficial solo
    cuentan los dorsales de los que jugaron, y cada uno solo en sus minutos (el que sale en el 60 no está en el 70).
 3. **Un dorsal, una persona a la vez**: si dos cadenas del mismo equipo dicen el mismo dorsal a la vez, se queda la que
    más lo dice y la otra prueba con su segundo dorsal.
 4. **Continuidad** (desactivada por defecto, ver HUECO_CONTINUIDAD_S): una cadena sin dorsal que encaja en el hueco de
    un solo jugador (estaba donde él dejó de verse, y él no se ve mientras tanto) es ese jugador.
+5. **Aspecto** (desde la 2.3.0, `apariencia.py`): por equipo, se aprende el aspecto de los jugadores ya identificados y
+   se prueba antes con cadenas identificadas apartadas; solo si acierta en el 95 % de las que da, una cadena sin dorsal
+   con un jugador claro es ese jugador, si podía serlo (en el campo según el acta, sin verse a la vez en otro sitio y
+   llegando a tiempo desde donde se le vio antes y hasta donde se le ve después).
 
 Lo que no se resuelve queda «sin identificar»: cuenta para el equipo (posesión, mapas), no para ningún jugador."""
 
@@ -36,6 +42,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import apariencia as ap
 from .tipos import Punto
 
 ID_JUGADOR_BASE = 900_000
@@ -71,6 +78,16 @@ DURACION_CONTINUIDAD_S = 1.0
 VENTAJA_CONTINUIDAD = 0.5
 # Minutos del acta: margen (s) por el desfase entre el reloj del partido y el del vídeo.
 MARGEN_MINUTOS_S = 300.0
+# Aspecto: recortes mínimos de una cadena para fiarse de su vector y cadenas identificadas por equipo para aprender.
+RECORTES_APARIENCIA = 4
+CONOCIDAS_APARIENCIA = 30
+# Mirado a ojo el 25-11-2026 en el J8: las que fallaban eran cadenas con dos personas (el seguidor saltó) o con la
+# camiseta del otro equipo o del árbitro. Fuera las de menos coherencia (el parecido entre sus recortes) que el percentil
+# COHERENCIA_PERCENTIL de las identificadas de su equipo, y las que por el aspecto no son de su equipo: para aprender,
+# con menos de EQUIPO_APRENDER de probabilidad del suyo; para darles jugador, con menos de EQUIPO_DAR.
+COHERENCIA_PERCENTIL = 10
+EQUIPO_APRENDER = 0.5
+EQUIPO_DAR = 0.9
 MAXIMO_POR_EQUIPO = 16
 # El dorsal de un portero da mucho tiempo de partido de una vez: pide más evidencia que el de una cadena. Por equipo, el
 # titular y, si lo cambian, el que entra.
@@ -136,6 +153,9 @@ class Tramo:
     # Viste como el portero de su equipo: por la equipación o, de los que solo marca el detector, en su rato
     # (`porteros.Porteros.vestido_de_portero`). Si no es de ningún portero identificado, se queda sin identificar.
     vestido_de_portero: bool = False
+    # Nace al separarse dos del mismo equipo que se cruzaron (`seguimiento.Seguidor.separar_cruces`): puede ser
+    # cualquiera de los dos, así que solo sigue a otro tramo si los dos dicen el mismo dorsal con claridad.
+    tras_cruce: bool = False
 
     @property
     def duracion(self) -> float:
@@ -214,6 +234,8 @@ class Identidad:
     # Su línea sale de los tramos de un portero (`_porteros`), no solo de los de campo: un tracklet que el detector tomó
     # por portero y acabó en un jugador de campo no lo hace portero.
     portero: bool = False
+    # Cadenas que se le dieron por el aspecto (`_apariencia`), sin leerle el dorsal.
+    por_apariencia: int = 0
 
     @property
     def id(self) -> int:
@@ -227,6 +249,8 @@ class Resolucion:
     lado_de_equipo: dict[int, str | None]
     cadenas: int
     segundos_sin_identificar: dict[int, float]
+    # Por equipo, cómo salió la prueba del aspecto y cuántas cadenas (y segundos) se dieron por él.
+    apariencia: dict[int, dict] = field(default_factory=dict)
 
 
 def _distancia(a: Punto, b: Punto) -> float:
@@ -250,6 +274,8 @@ def coste_enlace(a: Tramo, b: Tramo) -> float | None:
     if d > limite:
         return None
     if _dorsales_chocan(a.votos, b.votos):
+        return None
+    if b.tras_cruce and (_claro(a.votos) is None or _claro(a.votos) != _claro(b.votos)):
         return None
     return 0.7 * d / limite + 0.3 * hueco / HUECO_MAX_S
 
@@ -624,7 +650,11 @@ def _porteros(
     return identificados, sueltos, perdidos
 
 
-def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, maximo: int = MAXIMO_POR_EQUIPO) -> Resolucion:
+def resolver(
+    tramos: list[Tramo], plantillas: list[Plantilla] | None = None, maximo: int = MAXIMO_POR_EQUIPO,
+    apariencias: dict[int, tuple[np.ndarray, int]] | None = None,
+) -> Resolucion:
+    """`apariencias`: por tracklet, la suma de sus vectores de aspecto y cuántos recortes (`apariencia.ColaApariencia`)."""
     plantillas = plantillas or []
     de_campo = [t for t in tramos if not t.portero]
     del_portero = [t for t in tramos if t.portero]
@@ -666,6 +696,7 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
             del asignada[i]
 
     por_continuidad = _continuidad(cadenas, asignada, vetados)
+    por_apariencia, apariencia = _apariencia(cadenas, asignada, apariencias, plantilla_de, vetados, de_campo_hasta)
 
     nombres: dict[tuple[int, int], str] = {}
     for e in (0, 1):
@@ -685,6 +716,8 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
         ident.evidencia += ev
         if i in por_continuidad:
             ident.por_continuidad += 1
+        if i in por_apariencia:
+            ident.por_apariencia += 1
         if i in por_descarte:
             ident.por_descarte = True
         if i >= de_campo_hasta:
@@ -704,7 +737,7 @@ def resolver(tramos: list[Tramo], plantillas: list[Plantilla] | None = None, max
         if t.equipo in sin:
             sin[t.equipo] += t.duracion
     orden = sorted(identidades.values(), key=lambda x: (x.equipo, x.dorsal))
-    return Resolucion(asignacion, orden, lado_de_equipo, len(cadenas), {e: round(s, 1) for e, s in sin.items()})
+    return Resolucion(asignacion, orden, lado_de_equipo, len(cadenas), {e: round(s, 1) for e, s in sin.items()}, apariencia)
 
 
 def _continuidad(cadenas: list[Cadena], asignada: dict[int, tuple[int, float, float]], vetados: dict[int, set[int]] | None = None) -> set[int]:
@@ -746,6 +779,109 @@ def _continuidad(cadenas: list[Cadena], asignada: dict[int, tuple[int, float, fl
         if not cambios:
             break
     return rellenadas
+
+
+def _llega(a: Tramo, b: Tramo) -> bool:
+    """Si el jugador que acaba en el tramo a puede estar donde empieza b (b después de a; un solape corto vale)."""
+    hueco = max(0.0, b.t_ini - a.t_fin)
+    if a.fin_campo is not None and b.ini_campo is not None:
+        return _distancia(a.fin_campo, b.ini_campo) <= VELOCIDAD_MAX_CM_S * hueco + HOLGURA_CM
+    if hueco > HUECO_CONTINUIDAD_IMAGEN_S:
+        # Sin el campo y con la cámara moviéndose, la imagen ya no dice nada.
+        return True
+    alto = max(1.0, (a.alto_px + b.alto_px) / 2)
+    return _distancia(a.fin, b.ini) <= (VELOCIDAD_MAX_ALTOS_S * hueco + HOLGURA_ALTOS) * alto
+
+
+def _cabe(c: Cadena, otras: list[Cadena]) -> bool:
+    """Si la cadena c puede ser del mismo jugador que `otras`: sin verse a la vez y llegando a tiempo desde la última de
+    antes y hasta la primera de después."""
+    if any(_solapan(c, o) for o in otras):
+        return False
+    antes = [o for o in otras if o.t_fin <= c.t_ini + SOLAPE_MAX_S]
+    despues = [o for o in otras if o.t_ini >= c.t_fin - SOLAPE_MAX_S]
+    if antes and not _llega(max(antes, key=lambda o: o.t_fin).tramos[-1], c.tramos[0]):
+        return False
+    return not (despues and not _llega(c.tramos[-1], min(despues, key=lambda o: o.t_ini).tramos[0]))
+
+
+def _apariencia(
+    cadenas: list[Cadena], asignada: dict[int, tuple[int, float, float]], apariencias: dict[int, tuple[np.ndarray, int]] | None,
+    plantilla_de: dict[int, Plantilla | None], vetados: dict[int, set[int]], de_campo_hasta: int,
+) -> tuple[set[int], dict[int, dict]]:
+    """Da su jugador por el aspecto a cadenas de campo sin dorsal (ver el punto 5 del principio). Devuelve las que se
+    dieron y, por equipo, cómo salió la prueba."""
+    dadas: set[int] = set()
+    resumen: dict[int, dict] = {}
+    if not apariencias:
+        return dadas, resumen
+    vector: dict[int, np.ndarray] = {}
+    coherente: dict[int, float] = {}
+    for i in range(de_campo_hasta):
+        junto = ap.juntar([apariencias[t.tracklet] for t in cadenas[i].tramos if t.tracklet in apariencias])
+        if junto is None or junto[1] < RECORTES_APARIENCIA:
+            continue
+        norma = float(np.linalg.norm(junto[0]))
+        if norma > 0:
+            vector[i] = junto[0] / norma
+            coherente[i] = ap.coherencia(*junto) or 0.0
+    # Para aprender, las identificadas por sus lecturas (las de continuidad, sin evidencia, no).
+    leidas = [i for i in vector if i in asignada and asignada[i][1] > 0]
+    sin_dorsal = [i for i in vector if i not in asignada]
+    if len({cadenas[i].equipo for i in leidas}) < 2:
+        return dadas, {e: {**ap.Prueba(None, 0).a_dict(), "asignadas": 0, "segundos": 0.0} for e in (0, 1)}
+    p1_leidas, p1_sin = ap.probabilidad_equipo(
+        np.stack([vector[i] for i in leidas]), [cadenas[i].equipo for i in leidas],
+        np.stack([vector[i] for i in sin_dorsal]) if sin_dorsal else np.zeros((0, len(next(iter(vector.values()))))),
+    )
+    del_suyo = {i: (p if cadenas[i].equipo == 1 else 1 - p) for i, p in zip(leidas + sin_dorsal, [*p1_leidas, *p1_sin])}
+    for e in (0, 1):
+        de_e = [i for i in leidas if cadenas[i].equipo == e]
+        minima = float(np.percentile([coherente[i] for i in de_e], COHERENCIA_PERCENTIL)) if de_e else 1.0
+        conocidas = [i for i in de_e if coherente[i] >= minima and not del_suyo[i] < EQUIPO_APRENDER]
+        de_dorsal: dict[int, list[int]] = defaultdict(list)
+        for i, (d, _, _) in asignada.items():
+            if cadenas[i].equipo == e:
+                de_dorsal[d].append(i)
+        dorsales = [asignada[i][0] for i in conocidas]
+        if len(conocidas) < CONOCIDAS_APARIENCIA or len(set(dorsales)) < 2:
+            resumen[e] = {**ap.Prueba(None, len(conocidas)).a_dict(), "asignadas": 0, "segundos": 0.0}
+            continue
+        plantilla = plantilla_de.get(e)
+
+        def posibles(i: int, apartadas: set[int], plantilla=plantilla, de_dorsal=de_dorsal, e=e) -> set[int]:
+            permitidos = _permitidos(cadenas[i], plantilla)
+            return {
+                d for d, lista in de_dorsal.items()
+                if permitidos[d - 1] and d not in vetados.get(e, ()) and _cabe(cadenas[i], [cadenas[j] for j in lista if j not in apartadas and j != i])
+            }
+
+        matriz = np.stack([vector[i] for i in conocidas])
+        prueba = ap.probar(
+            matriz, dorsales, [(cadenas[i].t_ini + cadenas[i].t_fin) / 2 for i in conocidas],
+            lambda k, apartadas, posibles=posibles, conocidas=conocidas: posibles(conocidas[k], {conocidas[j] for j in apartadas}),
+        )
+        resumen[e] = {**prueba.a_dict(), "asignadas": 0, "segundos": 0.0}
+        candidatas_e = [i for i in sin_dorsal if cadenas[i].equipo == e and coherente[i] >= minima and del_suyo[i] >= EQUIPO_DAR]
+        if prueba.umbral is None or not candidatas_e:
+            continue
+        sonda = ap.Sonda(matriz, dorsales)
+        candidatas = []
+        for fila, i in zip(sonda.probabilidades(np.stack([vector[i] for i in candidatas_e])), candidatas_e):
+            primero = ap.mejor(fila, sonda.clases)
+            if primero is not None and ap.se_atreve(primero[1], primero[2], prueba.umbral):
+                candidatas.append((-primero[1], i, fila))
+        # Primero las más claras: las que se dan cuentan ya para las siguientes (no verse a la vez, llegar a tiempo).
+        for _, i, fila in sorted(candidatas, key=lambda x: (x[0], x[1])):
+            elegido = ap.mejor(fila, sonda.clases, posibles(i, set()))
+            if elegido is None or not ap.se_atreve(elegido[1], elegido[2], prueba.umbral):
+                continue
+            asignada[i] = (elegido[0], 0.0, 0.0)
+            de_dorsal[elegido[0]].append(i)
+            dadas.add(i)
+            resumen[e]["asignadas"] += 1
+            resumen[e]["segundos"] = round(resumen[e]["segundos"] + cadenas[i].duracion, 1)
+    return dadas, resumen
 
 
 def _coste_hueco(a: Tramo, b: Tramo) -> float | None:

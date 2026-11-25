@@ -79,7 +79,7 @@ def cargar_modelos(carpeta: Path, device: str) -> Modelos:
 MOTORES = {"tensorrt": "TensorRT", "pytorch": "PyTorch"}
 
 
-def describir_modelos(modelos: Modelos, carpeta: Path, lector=None) -> list[dict]:
+def describir_modelos(modelos: Modelos, carpeta: Path, lector=None, apariencia=None) -> list[dict]:
     """Con qué modelo se hizo cada cosa, para que cada análisis lo diga: la arquitectura, el entrenamiento del que
     salieron los pesos (la carpeta del entrenamiento, que lleva la fecha), el motor y la huella (el principio del SHA-256
     del archivo cargado: dos análisis con la misma huella usaron exactamente los mismos pesos)."""
@@ -102,6 +102,15 @@ def describir_modelos(modelos: Modelos, carpeta: Path, lector=None) -> list[dict
             "que": "dorsales",
             "modelo": "PARSeq",
             "entrenamiento": "afinado con nuestros partidos" if ruta.parent.name == "afinados" else "publicado",
+            "motor": "PyTorch",
+            "huella": huella(ruta),
+        })
+    ruta = getattr(apariencia, "ruta", None)
+    if ruta is not None:
+        descritos.append({
+            "que": "apariencia",
+            "modelo": "SigLIP",
+            "entrenamiento": "publicado",
             "motor": "PyTorch",
             "huella": huella(ruta),
         })

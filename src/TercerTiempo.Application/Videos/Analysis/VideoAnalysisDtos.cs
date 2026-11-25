@@ -115,7 +115,13 @@ public sealed record VideoAnalysisQualityDto(
     [property: Description("% de los fotogramas del tramo que el analizador pudo leer del archivo; null en análisis anteriores al dato.")]
     decimal? ReadFramesPct = null,
     [property: Description("No se leyó al menos el 95 % de los fotogramas (archivo dañado o cortado): la propuesta sale de menos.")]
-    bool LowRead = false);
+    bool LowRead = false,
+    [property: Description("% del tramo con el balón en juego (sin fueras, faltas, saques ni cambios); null en análisis anteriores a Ojeador 2.3.0.")]
+    decimal? InPlayPct = null,
+    [property: Description("% del tiempo en juego con el balón visto. Con él se decide LowBall cuando lo hay.")]
+    decimal? BallSeenInPlayPct = null,
+    [property: Description("% del tiempo en juego con la trayectoria del balón: visto o en un hueco corto seguido con la cámara.")]
+    decimal? BallTrackedInPlayPct = null);
 
 public sealed record VideoAnalysisTeamDto(
     int Index,
@@ -251,12 +257,15 @@ internal static class VideoAnalysisMapper
                 p.Moments))
             .ToList() ?? [];
 
+        // Desde Ojeador 2.3.0 el balón se mide sobre el tiempo en juego: mientras está parado, no verlo no baja la calidad.
+        var inPlay = proposal?.BallInPlay;
         var quality = analysis is { Status: VideoAnalysisStatus.Ready, Frames: { } frames, BallFramesPct: { } ball, CalibratedFramesPct: { } calibrated }
             ? new VideoAnalysisQualityDto(
                 frames, ball, calibrated, analysis.AnalyzedSeconds ?? 0,
-                ball < MatchVideoAnalysis.LowBallFramesPct, calibrated < MatchVideoAnalysis.LowCalibratedFramesPct,
+                (inPlay?.SeenPct ?? ball) < MatchVideoAnalysis.LowBallFramesPct, calibrated < MatchVideoAnalysis.LowCalibratedFramesPct,
                 analysis.PitchLengthM, analysis.PitchWidthM, analysis.GenericPitch,
-                analysis.ReadFramesPct, analysis.ReadFramesPct < MatchVideoAnalysis.LowReadFramesPct)
+                analysis.ReadFramesPct, analysis.ReadFramesPct < MatchVideoAnalysis.LowReadFramesPct,
+                inPlay?.InPlayPct, inPlay?.SeenPct, inPlay?.TrackedPct)
             : null;
 
         return new VideoAnalysisPartDto(

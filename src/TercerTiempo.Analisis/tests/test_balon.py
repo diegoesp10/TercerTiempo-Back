@@ -130,3 +130,45 @@ def test_junto_a_un_objeto_fijo_solo_se_queda_el_balon_que_va_de_paso():
     # Más de un minuto después de su última parada ya no está: no se quita nada.
     despues = [instante(0, 2000.0, [jugador], (6900, 4100))]
     assert quitar_objetos_fijos(despues, objetos) == 0 and despues[0].balon_campo == (6900, 4100)
+
+
+class _Paneo:
+    """Calibración de prueba de una cámara que se desplaza: el punto de la imagen por 10 más lo que se ha movido (cm)."""
+
+    def __init__(self, desplazamiento_cm: float) -> None:
+        self.desplazamiento = desplazamiento_cm
+
+    def a_campo(self, puntos):
+        import numpy as np
+
+        return np.asarray(puntos, dtype=np.float32) * 10 + np.array([self.desplazamiento, 0.0], dtype=np.float32)
+
+
+def test_con_la_camara_calibrada_el_hueco_sigue_a_la_camara_y_llega_a_tres_segundos():
+    # La cámara barre 2 m por instante con el balón quieto en la imagen: el balón va con ella, no en línea recta.
+    instantes = [Instante(i, i * 0.2, [persona(1, 0, (3000, 3000))], None, None, True, homografia=_Paneo(200.0 * i)) for i in range(14)]
+    for i in (0, 13):
+        instantes[i].balon_imagen = (300.0, 300.0)
+        instantes[i].balon_campo = (3000.0 + 200.0 * i, 3000.0)
+        instantes[i].balon_origen = "visto"
+    relleno = rellenar_huecos(instantes)
+    assert (relleno.huecos, relleno.interpolados, relleno.guiados, relleno.huecos_largos) == (1, 12, 12, 0)
+    assert instantes[5].balon_imagen == (300.0, 300.0)
+    assert instantes[5].balon_campo == (4000.0, 3000.0)
+
+
+def test_sin_calibrar_todo_el_hueco_sigue_el_limite_de_dos_segundos_y_lo_que_cae_fuera_va_en_linea_recta():
+    instantes = [Instante(i, i * 0.2, [persona(1, 0, (3000, 3000))], None, None, True, homografia=_Paneo(0.0)) for i in range(14)]
+    for i in (0, 13):
+        instantes[i].balon_imagen = (300.0, 300.0)
+        instantes[i].balon_campo = (3000.0, 3000.0)
+        instantes[i].balon_origen = "visto"
+    instantes[6].homografia = None
+    assert rellenar_huecos(instantes).huecos_largos == 1
+    fuera = [Instante(i, i * 0.2, [persona(1, 0, (3000, 3000))], None, None, True, homografia=_Paneo(-1e6 if i == 1 else 0.0)) for i in range(3)]
+    for i in (0, 2):
+        fuera[i].balon_imagen = (300.0, 300.0)
+        fuera[i].balon_campo = (3000.0 + 100.0 * i, 3000.0)
+        fuera[i].balon_origen = "visto"
+    relleno = rellenar_huecos(fuera)
+    assert relleno.guiados == 0 and fuera[1].balon_campo == (3100.0, 3000.0)

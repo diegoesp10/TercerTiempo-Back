@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
@@ -47,6 +47,12 @@ class Fotograma:
     indice: int
     t: float
     imagen: np.ndarray
+    # Los fotogramas de entre el muestreado anterior y este (sin ninguno de los dos) que están a `vecinos` o menos de uno
+    # de los dos: en ellos solo se busca el balón, si a ese muestreado le falta (`deteccion.Detector.balon_vecinos`).
+    intermedios: list[Fotograma] = field(default_factory=list)
+    # El de la mitad entre el muestreado anterior y este: a 0,1 s de los dos, la postura ya es otra y se vuelve a leer el
+    # dorsal de los que están junto al balón (`analizador`).
+    medio: Fotograma | None = None
 
 
 # Por debajo de esto el tramo no se ha leído entero (archivo dañado o cortado): se avisa en el análisis.
@@ -69,10 +75,15 @@ def pct_leido(leidos: int, esperados: int) -> float:
 
 
 def fotogramas(config: Configuracion, info: InfoVideo, paso: int | None = None, inicio_s: float | None = None, fin_s: float | None = None,
-               lectura: Lectura | None = None) -> Iterator[Fotograma]:
+               lectura: Lectura | None = None, vecinos: int = 0, medio: bool = False) -> Iterator[Fotograma]:
     """Fotogramas del tramo, uno de cada `paso` (por defecto, los que hagan falta para `fps_muestreo`). Con `lectura`, se
-    apunta cuántos se leyeron y, si el archivo se acabó antes de tiempo, en qué segundo."""
+    apunta cuántos se leyeron y, si el archivo se acabó antes de tiempo, en qué segundo. Con `vecinos`, cada fotograma
+    lleva en `intermedios` los de entre él y el anterior que están a `vecinos` o menos de uno de los dos; con `medio`, en
+    `medio` el de la mitad entre los dos."""
     paso = paso or max(1, round(info.fps / config.fps_muestreo))
+    vecinos = max(0, min(vecinos, paso - 1))
+    entre: list[Fotograma] = []
+    del_medio: Fotograma | None = None
     inicio = config.segmento.inicio if inicio_s is None else inicio_s
     fin = config.segmento.fin if fin_s is None else fin_s
     primero = int(inicio * info.fps)
@@ -99,10 +110,24 @@ def fotogramas(config: Configuracion, info: InfoVideo, paso: int | None = None, 
                     break
                 if lectura is not None:
                     lectura.leidos += 1
-                yield Fotograma(indice, indice / info.fps, imagen)
+                # Los de antes del primero no tienen un muestreado a los dos lados: no se usan.
+                yield Fotograma(indice, indice / info.fps, imagen, entre if emitidos else [], del_medio if emitidos else None)
+                entre, del_medio = [], None
                 emitidos += 1
                 if config.max_fotogramas is not None and emitidos >= config.max_fotogramas:
                     break
+            else:
+                desfase = (indice - primero) % paso
+                es_vecino = vecinos > 0 and min(desfase, paso - desfase) <= vecinos
+                es_medio = medio and paso >= 2 and desfase == paso // 2
+                if es_vecino or es_medio:
+                    ok, imagen = cap.retrieve()
+                    if ok:
+                        f = Fotograma(indice, indice / info.fps, imagen)
+                        if es_vecino:
+                            entre.append(f)
+                        if es_medio:
+                            del_medio = f
             indice += 1
     finally:
         cap.release()

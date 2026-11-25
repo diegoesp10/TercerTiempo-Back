@@ -100,3 +100,56 @@ def test_las_muestras_de_la_equipacion_se_guardan_repartidas_por_todo_el_trackle
     assert abs(float(memoria.equipacion[0]) - 500) < 20
     # Cada muestra, con el momento en que se tomó (también tras quedarse con una de cada dos).
     assert memoria.tiempos_equipacion == [v / 5 for v in valores]
+
+
+def _en(ids: list[int], cajas: list[list[float]]) -> sv.Detections:
+    return sv.Detections(
+        xyxy=np.array(cajas, dtype=float),
+        class_id=np.full(len(ids), CLASE_JUGADOR),
+        confidence=np.full(len(ids), 0.9),
+        tracker_id=np.array(ids, dtype=int),
+    )
+
+
+def _paso(seguidor: Seguidor, ids: list[int], cajas: list[list[float]], equipos: list[int], t: float) -> list[int]:
+    seguidas = seguidor.registrar(_en(ids, cajas))
+    seguidas = seguidor.votar_equipos(seguidas, np.array(equipos), np.full(len(ids), 0.9))
+    return [int(x) for x in seguidor.separar_cruces(seguidas, t).tracker_id]
+
+
+def _con_equipo(seguidor: Seguidor, ids: list[int], equipos: list[int]) -> None:
+    lejos = [[100.0 * k, 0, 100.0 * k + 20, 50] for k in range(len(ids))]
+    for _ in range(5):
+        _paso(seguidor, ids, lejos, equipos, 0.0)
+
+
+def test_dos_del_mismo_equipo_que_se_montan_se_parten_los_dos_al_separarse():
+    seguidor = Seguidor()
+    _con_equipo(seguidor, [1, 2], [0, 0])
+    assert _paso(seguidor, [1, 2], [[0, 0, 20, 50], [5, 0, 25, 50]], [0, 0], 1.0) == [1, 2]
+    despues = _paso(seguidor, [1, 2], [[0, 0, 20, 50], [60, 0, 80, 50]], [0, 0], 1.2)
+    assert despues[0] != 1 and despues[1] != 2 and all(x >= TRACKLET_CORTADO_BASE for x in despues)
+    assert set(despues) == seguidor.tras_cruce and seguidor.cruces == 1
+    assert seguidor.equipo_de(despues[0]) == 0 and seguidor.equipo_de(despues[1]) == 0
+    # Lo que sigue va con los tracklets nuevos y no se vuelve a partir.
+    assert _paso(seguidor, [1, 2], [[0, 0, 20, 50], [70, 0, 90, 50]], [0, 0], 1.4) == despues
+
+
+def test_de_equipos_distintos_o_sin_montarse_no_se_parte_nada():
+    seguidor = Seguidor()
+    _con_equipo(seguidor, [1, 2, 3], [0, 1, 0])
+    _paso(seguidor, [1, 2, 3], [[0, 0, 20, 50], [5, 0, 25, 50], [200, 0, 220, 50]], [0, 1, 0], 1.0)
+    assert _paso(seguidor, [1, 2, 3], [[0, 0, 20, 50], [60, 0, 80, 50], [230, 0, 250, 50]], [0, 1, 0], 1.2) == [1, 2, 3]
+    assert seguidor.cruces == 0 and not seguidor.tras_cruce
+
+
+def test_si_uno_se_pierde_en_el_cruce_el_que_queda_se_parte_ya_y_el_otro_si_vuelve_pronto():
+    seguidor = Seguidor()
+    _con_equipo(seguidor, [1, 2, 3, 4], [0, 0, 0, 0])
+    _paso(seguidor, [1, 2, 3, 4], [[0, 0, 20, 50], [5, 0, 25, 50], [300, 0, 320, 50], [305, 0, 325, 50]], [0, 0, 0, 0], 1.0)
+    # El 2 y el 4 dejan de verse: el 1 y el 3 se parten ya.
+    solos = _paso(seguidor, [1, 3], [[0, 0, 20, 50], [300, 0, 320, 50]], [0, 0], 1.2)
+    assert solos[0] != 1 and solos[1] != 3
+    # El 2 vuelve antes de 2 s y se parte; el 4 vuelve tarde y sigue igual.
+    assert _paso(seguidor, [2], [[60, 0, 80, 50]], [0], 2.0)[0] != 2
+    assert _paso(seguidor, [4], [[400, 0, 420, 50]], [0], 4.0) == [4]

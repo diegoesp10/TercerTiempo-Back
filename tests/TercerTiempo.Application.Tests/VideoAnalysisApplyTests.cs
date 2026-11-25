@@ -85,6 +85,23 @@ public class VideoAnalysisApplyTests
     }
 
     [Fact]
+    public async Task Since_2_3_the_ball_is_measured_over_the_time_in_play_and_that_decides_the_low_quality_warning()
+    {
+        var f = new Fixture();
+        // El balón, en el 19,3 % de los fotogramas pero en el 48,2 % del tiempo en juego: el resto estaba parado.
+        f.Analyzed("""
+            {"version": 2, "equipos": [{"id": 0}, {"id": 1}], "jugadores": [],
+             "calidad": {"balonEnJuego": {"enJuegoPct": 40.04, "vistoPct": 48.23, "trayectoriaPct": 47}}}
+            """);
+
+        var quality = Assert.Single((await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default)).Videos).Quality!;
+
+        // Lo que tiene trayectoria incluye lo visto: un archivo que diga menos se sube a lo visto.
+        Assert.Equal((19.3m, 40.0m, 48.2m, 48.2m), (quality.BallFramesPct, quality.InPlayPct!.Value, quality.BallSeenInPlayPct!.Value, quality.BallTrackedInPlayPct!.Value));
+        Assert.False(quality.LowBall);
+    }
+
+    [Fact]
     public async Task Each_action_of_the_proposal_comes_with_its_second_in_the_video_to_watch_it()
     {
         var f = new Fixture();

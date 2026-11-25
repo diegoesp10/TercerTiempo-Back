@@ -7,11 +7,16 @@ conocen los dorsales del acta, solo cuentan los que de verdad jugaron."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
+
+if TYPE_CHECKING:
+    from .tipos import Instante
 
 PESOS_PARSEQ = "parseq-bb5792a6.pt"
 URL_PARSEQ = "https://github.com/baudm/parseq/releases/download/v1.0.0/parseq-bb5792a6.pt"
@@ -26,6 +31,13 @@ ZONA_Y = (0.16, 0.42)
 ZONA_X = (0.2, 0.8)
 # Por debajo de este alto de la persona en píxeles el número no se puede leer.
 ALTO_MIN_PX = 60
+# Desde Ojeador 2.3.0 el dorsal de los que están junto al balón se vuelve a leer en el fotograma de la mitad entre dos
+# muestreados: a 0,1 s de los dos la postura ya es otra (a ±0,04 s es casi la misma y la lectura no aporta). Hasta
+# MEDIO_JUGADORES, con los pies a menos de MEDIO_ALTOS altos de su caja del balón y seguidos en los dos muestreados sin
+# saltar (el centro de la caja se mueve menos de MEDIO_SALTO_ALTOS altos): su caja, a mitad de camino.
+MEDIO_JUGADORES = 3
+MEDIO_ALTOS = 2.0
+MEDIO_SALTO_ALTOS = 0.5
 
 
 def zona_dorsal(imagen: np.ndarray, caja) -> np.ndarray | None:
@@ -373,3 +385,27 @@ def cargar_lector(carpeta: Path, device: str, afinados: bool = True) -> "LectorD
     lector.ruta = ruta
     lector.nombre = f"PARSeq ({ruta.relative_to(carpeta).as_posix()})"
     return lector
+
+
+def junto_al_balon(anterior: "Instante", actual: "Instante", t: float, equipos: dict[int, int]) -> list[tuple[int, tuple[float, float, float, float], int]]:
+    """Los jugadores junto al balón (el del muestreado actual o, si no, el del anterior), con su caja en `t`, entre los
+    dos: [(tracklet, caja, equipo que dice su equipación en el actual)], el más cercano primero."""
+    balon = actual.balon_imagen or anterior.balon_imagen
+    if balon is None or actual.t <= anterior.t:
+        return []
+    f = min(1.0, max(0.0, (t - anterior.t) / (actual.t - anterior.t)))
+    antes = {p.tracklet: p for p in anterior.personas if p.es_jugador}
+    cerca = []
+    for p in actual.personas:
+        q = antes.get(p.tracklet)
+        if q is None or not p.es_jugador:
+            continue
+        alto = max(1.0, p.caja[3] - p.caja[1])
+        salto = math.hypot((p.caja[0] + p.caja[2] - q.caja[0] - q.caja[2]) / 2, (p.caja[1] + p.caja[3] - q.caja[1] - q.caja[3]) / 2)
+        distancia = math.hypot(p.xy_imagen[0] - balon[0], p.xy_imagen[1] - balon[1])
+        if salto > MEDIO_SALTO_ALTOS * alto or distancia > MEDIO_ALTOS * alto:
+            continue
+        caja = tuple(a + (b - a) * f for a, b in zip(q.caja, p.caja))
+        cerca.append((distancia, p.tracklet, caja, equipos.get(p.tracklet, -1)))
+    cerca.sort(key=lambda x: x[0])
+    return [(tid, caja, equipo) for _, tid, caja, equipo in cerca[:MEDIO_JUGADORES]]
