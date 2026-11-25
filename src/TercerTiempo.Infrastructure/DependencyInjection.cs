@@ -109,6 +109,7 @@ public static class DependencyInjection
         services.AddHostedService<TercerTiempo.Infrastructure.Sanctions.SuspensionAlertsWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.MatchReports.MatchReportsWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.MatchReports.InjuryProposalsWorker>();
+        services.AddHostedService<TercerTiempo.Infrastructure.Alerts.CallUpRemindersWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.FootballData.LeagueZonesWorker>();
         services.AddHostedService<TercerTiempo.Infrastructure.Grounds.GroundsWorker>();
 

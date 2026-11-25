@@ -367,6 +367,58 @@ public class TrainingAlertTests
     }
 
     [Fact]
+    public async Task The_staff_and_the_club_are_reminded_of_the_next_call_up_until_it_is_sent()
+    {
+        var f = new Fixture();
+        List<Alert> DueAlerts() => f.Alerts.Where(a => a.Kind == AlertKind.CallUpDue).ToList();
+
+        // Tres días antes del partido: uno para el entrenador y otro para el club, con el partido y su día.
+        Assert.Equal((1, 2, 0), Counts(await f.Reminders().Handle(new(), default)));
+        Assert.Equal([f.Coach.Id], DueAlerts().Select(a => a.CoachId).OfType<Guid>());
+        Assert.Equal([f.Club.Id], DueAlerts().Select(a => a.ClubId).OfType<Guid>());
+        var first = DueAlerts()[0];
+        Assert.Equal("Convocatoria por hacer: CD Vallobín - Real Titánico", first.Title);
+        Assert.Equal($"/plantillas/{f.Squad.Id}/partidos/{f.Upcoming.Id}?tab=convocatoria", first.Link);
+        Assert.Equal(CallUps.DayOf(f.Upcoming.KickoffAt), first.DueOn);
+
+        // No se repite en cada pasada.
+        Assert.Equal((0, 0, 0), Counts(await f.Reminders().Handle(new(), default)));
+
+        // En borrador no cuenta como enviada: el día antes llega otro, que lo dice.
+        await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id], null, null, null, null, Publish: false), default);
+        f.Clock.Advance(TimeSpan.FromDays(2));
+        Assert.Equal((1, 2, 0), Counts(await f.Reminders().Handle(new(), default)));
+        Assert.Equal(4, DueAlerts().Count(a => !a.IsResolved));
+        Assert.StartsWith("Convocatoria en borrador", DueAlerts().OrderBy(a => a.CreatedAt).Last().Title);
+
+        // Al enviarla se resuelven todos en el momento, y la pasada siguiente no vuelve a avisar.
+        await f.SaveCallUp().Handle(new(f.Squad.Id, f.Upcoming.Id, [f.Pelayo.Id, f.Nel.Id], null, null, null, null, Publish: true), default);
+        Assert.All(DueAlerts(), a => Assert.True(a.IsResolved));
+        Assert.Equal((0, 0, 0), Counts(await f.Reminders().Handle(new(), default)));
+    }
+
+    [Fact]
+    public async Task A_reminder_left_unanswered_is_resolved_at_kickoff_and_the_next_match_gets_its_own_later()
+    {
+        var f = new Fixture();
+        var later = Match.Schedule(f.Upcoming.SeasonId, 3, f.Team.Id, f.Rival.Id, Now.AddDays(10), "La Florida", null);
+        f.ExtraMatches.Add(later);
+
+        Assert.Equal((1, 2, 0), Counts(await f.Reminders().Handle(new(), default)));
+
+        // Empieza sin convocatoria: ya no se puede hacer y su aviso se resuelve. El siguiente queda a una semana: aún nada.
+        f.Clock.Advance(TimeSpan.FromDays(3) + TimeSpan.FromMinutes(1));
+        Assert.Equal((0, 0, 2), Counts(await f.Reminders().Handle(new(), default)));
+
+        // A tres días del siguiente, el suyo.
+        f.Clock.Advance(TimeSpan.FromDays(4));
+        Assert.Equal((1, 2, 0), Counts(await f.Reminders().Handle(new(), default)));
+        Assert.All(f.Alerts.Where(a => a.Kind == AlertKind.CallUpDue && !a.IsResolved), a => Assert.Contains(later.Id.ToString("N"), a.Key));
+    }
+
+    private static (int CallUps, int Raised, int Resolved) Counts(CallUpRemindersSynced result) => (result.CallUps, result.Raised, result.Resolved);
+
+    [Fact]
     public async Task Planning_a_series_cites_each_player_with_an_account_once()
     {
         var f = new Fixture();
@@ -807,6 +859,8 @@ public class TrainingAlertTests
 
         public SyncSuspensionAlertsHandler SuspensionAlerts() => new(Committee, Squads, Matches, Teams, Clubs, AlertStore, Suspensions, Unit, Clock);
 
+        public SyncCallUpRemindersHandler Reminders() => new(Matches, Squads, Teams, Clubs, CallUpStore, AlertStore, Unit, Clock);
+
         private IPerformanceStore PerformanceStore => Stub<IPerformanceStore>((method, args) => method switch
         {
             nameof(IPerformanceStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<PlayerMatchPerformance>>(Performances.Where(p => p.SquadId == (Guid)args![0]!).ToList()),
@@ -842,6 +896,8 @@ public class TrainingAlertTests
             nameof(ISquadStore.GetByIdAsync) => Task.FromResult((Guid)args![0]! == Squad.Id ? Squad : null),
             nameof(ISquadStore.GetByPlayerAsync) => Task.FromResult(Squad.IsMember((Guid)args![0]!) ? Squad : null),
             nameof(ISquadStore.GetBySeasonAsync) => Task.FromResult<IReadOnlyList<Squad>>((Guid)args![0]! == Squad.SeasonId ? [Squad] : []),
+            nameof(ISquadStore.GetByTeamIdsAsync) when args!.Length == 3 => Task.FromResult<IReadOnlyList<Squad>>(
+                ((IEnumerable<Guid>)args[0]!).Contains(Squad.TeamId) && (Guid)args[1]! == Squad.SeasonId ? [Squad] : []),
             _ => throw new NotSupportedException(method),
         });
         private IClubStore Clubs => Stub<IClubStore>((method, args) => method switch
@@ -866,6 +922,9 @@ public class TrainingAlertTests
             nameof(IMatchStore.GetByIdAsync) => Task.FromResult((Guid)args![0]! == Upcoming.Id ? Upcoming : ExtraMatches.FirstOrDefault(m => m.Id == (Guid)args[0]!)),
             nameof(IMatchStore.GetByIdsAsync) => Task.FromResult<IReadOnlyList<Match>>([Upcoming]),
             nameof(IMatchStore.GetTeamMatchesAsync) => Task.FromResult<IReadOnlyList<Match>>([Upcoming, Played, .. ExtraMatches]),
+            nameof(IMatchStore.GetScheduledKickingOffAsync) => Task.FromResult<IReadOnlyList<Match>>(new[] { Upcoming, Played }.Concat(ExtraMatches)
+                .Where(m => m.Status == MatchStatus.Scheduled && m.KickoffAt > (DateTimeOffset)args![0]! && m.KickoffAt <= (DateTimeOffset)args[1]!)
+                .OrderBy(m => m.KickoffAt).ToList()),
             _ => throw new NotSupportedException(method),
         });
         private ITeamStore Teams => Stub<ITeamStore>((method, args) => method switch

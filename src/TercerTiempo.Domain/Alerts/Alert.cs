@@ -36,6 +36,10 @@ public enum AlertKind
     // Para el cuerpo técnico y el club: la crónica de un partido cuenta que un jugador se lesionó. Se registra la lesión
     // o se descarta; se resuelve al decidirlo.
     InjuryProposal = 10,
+
+    // Para el cuerpo técnico y el club: la convocatoria del próximo partido sigue sin enviarse (sin hacer o en borrador).
+    // Se resuelve al enviarla o al empezar el partido, cuando ya no se puede hacer.
+    CallUpDue = 11,
 }
 
 // Aviso dentro de la app: la campanita del panel. Cada aviso tiene un solo destinatario: una cuenta de club, un jugador

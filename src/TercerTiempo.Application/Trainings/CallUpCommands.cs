@@ -342,6 +342,9 @@ internal sealed class SaveMatchCallUpHandler(
             var toNotify = firstTime ? callUp.Entries.Where(e => active.Contains(e.SquadPlayerId)) : changed.Where(e => active.Contains(e.SquadPlayerId));
             await CallUps.NotifyPlayersAsync(callUp, squad, dto, CallUps.PlaceOf(callUp, meetGround), toNotify, alerts, clock, cancellationToken);
             await CallUps.SyncShortfallAsync(callUp, squad, dto, clubs, alerts, clock, cancellationToken);
+            // Enviada: el recordatorio de que estaba por enviar deja de tener sentido ya, sin esperar al trabajo.
+            if (firstTime)
+                await StaffAlerts.ResolveAsync(squad, clubs, alerts, CallUpReminders.KeyPrefix(squad.Id, match.Id), clock, cancellationToken);
         }
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

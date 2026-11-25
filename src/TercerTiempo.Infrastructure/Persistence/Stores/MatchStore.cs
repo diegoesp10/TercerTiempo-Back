@@ -43,5 +43,11 @@ internal sealed class MatchStore(AppDbContext db) : IMatchStore
             .OrderBy(m => m.KickoffAt)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Match>> GetScheduledKickingOffAsync(DateTimeOffset after, DateTimeOffset until, CancellationToken cancellationToken = default) =>
+        await db.Matches.AsNoTracking()
+            .Where(m => m.Status == MatchStatus.Scheduled && m.KickoffAt > after && m.KickoffAt <= until)
+            .OrderBy(m => m.KickoffAt)
+            .ToListAsync(cancellationToken);
+
     public void Add(Match match) => db.Matches.Add(match);
 }

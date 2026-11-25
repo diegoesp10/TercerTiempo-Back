@@ -12,5 +12,9 @@ public interface IMatchStore
 
     // Todos los partidos entre dos equipos, de cualquier temporada y liga, solo para leer (del más antiguo al más reciente).
     Task<IReadOnlyList<Match>> GetBetweenAsync(Guid teamA, Guid teamB, CancellationToken cancellationToken = default);
+
+    // Los programados (sin jugar ni aplazar) con el saque después de after y no más tarde de until, de todas las ligas,
+    // solo para leer.
+    Task<IReadOnlyList<Match>> GetScheduledKickingOffAsync(DateTimeOffset after, DateTimeOffset until, CancellationToken cancellationToken = default);
     void Add(Match match);
 }

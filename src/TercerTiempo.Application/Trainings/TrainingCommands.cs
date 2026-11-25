@@ -261,15 +261,24 @@ internal static class TrainingAccess
 // Avisos al cuerpo técnico vigente y al club del equipo (si lo tiene): cada uno con su copia.
 internal static class StaffAlerts
 {
-    public static async Task RaiseAsync(
+    // Devuelve cuántos avisos ha creado (ninguno si la plantilla se ha quedado sin cuerpo técnico y sin club).
+    public static async Task<int> RaiseAsync(
         Squad squad, IClubStore clubs, IAlertStore alerts, AlertKind kind, string key, string title, string message, string? link, DateOnly? dueOn,
         TimeProvider clock, CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
+        var raised = 0;
         foreach (var member in squad.StaffOn(SquadAccess.Today(clock)))
+        {
             alerts.Add(Alert.ForCoach(member.CoachId, kind, key, title, message, link, dueOn, now));
+            raised++;
+        }
         if (await clubs.GetByTeamAsync(squad.TeamId, cancellationToken) is { } club)
+        {
             alerts.Add(Alert.ForClub(club.Id, kind, key, title, message, link, dueOn, now));
+            raised++;
+        }
+        return raised;
     }
 
     // Los abiertos del cuerpo técnico y del club, de una vez.

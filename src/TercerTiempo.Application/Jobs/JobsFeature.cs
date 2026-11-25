@@ -32,6 +32,9 @@ public static class JobNames
     // Propuestas de lesión de esas crónicas para las plantillas, con su aviso (no llama a nada de fuera).
     public const string InjuryProposals = "injury-proposals";
 
+    // Recordatorios de la convocatoria del próximo partido que sigue sin enviar (no llama a nada de fuera).
+    public const string CallUpReminders = "callup-reminders";
+
     // Lo ejecuta el servicio de vídeo (otro proceso), una ejecución por vídeo subido.
     public const string VideoTranscode = "video-transcode";
 
