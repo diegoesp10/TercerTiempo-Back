@@ -18,6 +18,7 @@ la mayor con modelos o una cadena nueva, la menor con reglas nuevas y la de parc
 
 | Versión | Fecha | Qué cambia |
 |---|---|---|
+| 2.1.2 | 25-11-2026 | **Cada acción con su segundo del vídeo**: en `acta-propuesta.json`, cada jugador y cada equipo traen `momentos`, el segundo del vídeo (a la décima) de cada cosa que cuenta su propuesta: del jugador, cada pase (cuando el balón deja su pie), pase fallado, pérdida, recuperación (cuando le llega), tiro, tiro a puerta, gol, parada, falta cometida y recibida y fuera de juego; del equipo, cada tiro, tiro a puerta, gol, córner, saque de banda, saque de puerta, falta y fuera de juego. Llevan las mismas claves y los mismos filtros que sus datos, así que lo que se cuenta y lo que se puede ver es lo mismo (salvo los goles que salen del acta oficial cerrada sin que el vídeo los viera). La app los enseña con «Ver» en «Del vídeo». Lo que se propone no cambia (paso 8) |
 | 2.1.1 | 24-11-2026 | **El tramo del detector que viste como el portero nunca acaba en una línea de campo**: si su portero no sale identificado, los tramos que solo marca el detector pero que en su rato visten como él (comprobado con su color) se quedan sin identificar, como los del portero por la equipación; hasta ahora se resolvían como los de campo. En una pasada del 20:00-30:00 del J8, 5 s del 13 (de morado) salen de la línea del 17 y es lo único que cambia; en el partido entero no cambia nada (paso 6) |
 | 2.1.0 | 24-11-2026 | **Del portero cuyo tracklet saltó a otra persona, las lecturas de su rato**: cada lectura del dorsal guarda su segundo (`HistorialLecturas`) y, del tracklet de portero en que el seguidor saltó a otro jugador, cuentan las de su rato a 0,4 s o más de cada corte (hasta la 2.0.0, ninguna). En el J8, sobre la misma pasada, la evidencia del 1 del Vallobín pasa de 5,1 a 15,6 (confianza de 0,07 a 0,16) y la del 13 del Real Titánico de 12,5 a 17,5, y ningún jugador de campo cambia. En una pasada del tramo 20:00-30:00, con la regla vieja el portero salía como el 6 y con la nueva queda sin identificar (paso 6 y «Las lecturas del portero cuyo tracklet saltó») |
 | 2.0.0 | 24-11-2026 | **Lector de dorsales afinado también con los porteros** (pesos nuevos): sus espaldas con su número y su pecho sin número, porque el escudo del pecho se leía como un número y al portero casi nunca se le ve de espaldas; al entrenar, los dorsales que casi no se ven se repiten (`--minimo-por-dorsal`), y `--guardar-dorsales` guarda también las zonas de los porteros identificados. En el J8, en el tramo 20:00-30:00 (que el lector no ha visto), al 13 del Real Titánico le van el 31 % de sus lecturas (antes el 8 %) y los números leídos en su pecho bajan del 28 % al 4 %. En el partido entero, el 1 del Vallobín se lee en sus 8 espaldas (antes en ninguna, aunque esas el lector nuevo las ha visto al entrenar) y, en la identificación, la confianza del 13 sube de 0,03 a 0,23 y el 1 sale por lecturas en vez de por descarte. Los jugadores de campo, igual (paso 6 y «Lector de dorsales que lee a los porteros») |
@@ -189,7 +190,7 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
 |---|---|
 | `resumen.md` | El informe para el cuerpo técnico: posesión, datos de equipo propuestos, eventos, jugadores seguidos, calidad del análisis y, si hay modelo de lenguaje, su resumen |
 | `analisis.json` | Todo: vídeo y parámetros, equipos y colores, dirección de ataque por mitad, descanso, calibración, recuentos (`pct_con_balon` es el balón visto, lo que guarda la app; `pct_con_balon_total` y `balon_relleno`, con los huecos rellenados), posesión (con `confianza` y `cobertura`), eventos (con confianza, clip y veredicto del modelo), tracklets (acciones, distancia, mapa de calor, recorte, dorsal) y tiempos |
-| `acta-propuesta.json` | Lo que pide la API del acta interna: `teamStats` desde los dos lados (posesión con `possessionConfidence` y `possessionBallPct`, tiros, córners, saques, goles), una línea por tracklet con la propuesta por jugador y `calidad`; la app decide cuál es «nuestro» equipo y qué tracklet es cada ficha |
+| `acta-propuesta.json` | Lo que pide la API del acta interna: `teamStats` desde los dos lados (posesión con `possessionConfidence` y `possessionBallPct`, tiros, córners, saques, goles), una línea por tracklet con la propuesta por jugador y `calidad`; la app decide cuál es «nuestro» equipo y qué tracklet es cada ficha. Desde la 2.1.2, cada equipo y cada jugador llevan también `momentos`: el segundo del vídeo de cada cosa que cuentan, para verla desde la app |
 | `mapas/` | Mapas de calor PNG por equipo y por tracklet |
 | `recortes/` | El mejor recorte de cada tracklet, para asignarlo a una ficha |
 | `clips/` | Clip de 10 s de cada tiro, gol, córner y parada |
@@ -353,7 +354,14 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
    `tramos`, el `lado` de cada equipo y `calidad.sinIdentificarS`. Cada equipo trae `foulsCommitted`/`foulsReceived` y
    `offsidesFor`/`offsidesAgainst`; cada jugador, `fouls`, `foulsReceived` y `offsides`, y con el acta cerrada
    `minutos` (por descarte) y sus goles del acta. `actaOficial` resume el acta que se usó (resultado, si está cerrada y
-   los minutos y goles de cada uno de los dos lados).
+   los minutos y goles de cada uno de los dos lados). Desde la 2.1.2, junto a `propuesta` y a `teamStats` van los
+   `momentos`: por cada clave (`passes`, `passesFailed`, `ballLosses`, `recoveries`, `shots`, `shotsOnTarget`, `goals`,
+   `saves`, `fouls`, `foulsReceived` y `offsides` del jugador; `shots`, `shotsOnTarget`, `goals`, `corners`, `throwIns`,
+   `goalKicks`, `fouls` y `offsides` del equipo), la lista ordenada de segundos del archivo de vídeo, el mismo que
+   reproduce la app (los tiempos son fotograma / fps desde el principio del archivo, también con `--segmento`). El pase
+   y la pérdida son el final del toque de quien lo da; la recuperación, el principio del toque de quien se lo lleva; el
+   saque de banda, el córner y el saque de puerta, cuando el balón sale; la falta, cuando se para el juego, y el fuera
+   de juego, el pase al adelantado.
 
 La lógica de posesión, eventos, estadísticas y geometría es pura y se prueba sin GPU: `uv run pytest`.
 

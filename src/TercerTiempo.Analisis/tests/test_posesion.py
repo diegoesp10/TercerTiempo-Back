@@ -1,3 +1,5 @@
+import pytest
+
 from tt_analisis.posesion import MaquinaPosesion, acciones_por_jugador, resumir_posesion, secuencias
 
 from conftest import instante, persona
@@ -47,6 +49,13 @@ def test_pases_perdidas_y_recuperaciones():
     assert acciones[1].pases == 1
     assert acciones[2].perdidas == 1 and acciones[2].pases_fallados == 1
     assert acciones[3].recuperaciones == 1
+    # Cada una con su segundo del vídeo: el pase y la pérdida cuando el balón deja el pie (fin del toque), la
+    # recuperación cuando llega al rival (principio del suyo).
+    assert acciones[1].segundos_pases == pytest.approx([0.6])
+    assert acciones[2].segundos_perdidas == pytest.approx([1.4]) and acciones[2].segundos_pases_fallados == pytest.approx([1.4])
+    assert acciones[3].segundos_recuperaciones == pytest.approx([1.6])
+    for a in acciones.values():
+        assert (len(a.segundos_pases), len(a.segundos_pases_fallados), len(a.segundos_perdidas), len(a.segundos_recuperaciones)) == (a.pases, a.pases_fallados, a.perdidas, a.recuperaciones)
 
 
 def test_un_corte_por_fuera_separa_las_secuencias_sin_perdida():
@@ -58,6 +67,7 @@ def test_un_corte_por_fuera_separa_las_secuencias_sin_perdida():
     assert secs[0].cortada_por_fuera
     acciones = acciones_por_jugador(secs)
     assert acciones[1].perdidas == 0 and acciones[3].recuperaciones == 0
+    assert acciones[1].segundos_perdidas == [] and acciones[3].segundos_recuperaciones == []
 
 
 def test_la_posesion_reparte_el_tiempo_activo_y_el_balon_en_vuelo_es_del_ultimo(dt):

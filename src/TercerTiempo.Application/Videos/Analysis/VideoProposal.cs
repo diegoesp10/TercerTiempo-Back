@@ -40,7 +40,10 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
                     Count(s.GoalKicksFor),
                     Count(s.GoalsFor),
                     Count(s.FoulsCommitted),
-                    Count(s.OffsidesFor));
+                    Count(s.OffsidesFor))
+                {
+                    Moments = TeamMoments(t.Momentos),
+                };
             })
             .ToList();
 
@@ -81,6 +84,7 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
                     SheetName = string.IsNullOrWhiteSpace(p.NombreActa) ? null : p.NombreActa.Trim(),
                     ShirtConfidence = p.ConfianzaDorsal is { } c ? Math.Clamp(Math.Round(c, 2), 0, 1) : null,
                     Pieces = Math.Max(1, p.Tramos ?? 1),
+                    Moments = PlayerMoments(p.Momentos),
                 };
             })
             .ToList();
@@ -101,6 +105,24 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
     public int? TeamOn(MatchSide side) => Identified ? Teams.FirstOrDefault(t => t.Side == side)?.Index : null;
 
     private static int Count(int? value) => Math.Max(0, value ?? 0);
+
+    // Ningún dato de un partido llega a tantas veces: una lista más larga no es de fiar y se recorta.
+    private const int MaxMoments = 2000;
+
+    private static VideoTeamMoments? TeamMoments(TeamMomentsDto? m) => m is null
+        ? null
+        : new VideoTeamMoments(Seconds(m.Shots), Seconds(m.ShotsOnTarget), Seconds(m.Goals), Seconds(m.Corners), Seconds(m.ThrowIns), Seconds(m.GoalKicks), Seconds(m.Fouls), Seconds(m.Offsides));
+
+    private static VideoPlayerMoments? PlayerMoments(PlayerMomentsDto? m) => m is null
+        ? null
+        : new VideoPlayerMoments(
+            Seconds(m.Shots), Seconds(m.ShotsOnTarget), Seconds(m.Goals), Seconds(m.Saves), Seconds(m.Recoveries), Seconds(m.BallLosses),
+            Seconds(m.Passes), Seconds(m.PassesFailed), Seconds(m.Fouls), Seconds(m.FoulsReceived), Seconds(m.Offsides));
+
+    // Segundos del archivo de vídeo, en orden y a la décima; lo que no es un segundo (vacío o negativo) se descarta.
+    private static IReadOnlyList<decimal> Seconds(List<decimal?>? values) => values is null
+        ? []
+        : values.OfType<decimal>().Where(v => v >= 0).Select(v => Math.Round(v, 1)).Order().Take(MaxMoments).ToList();
 
     private static MatchSide? Side(string? value) => value?.Trim().ToLowerInvariant() switch
     {
@@ -140,6 +162,19 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
         public string? Lado { get; set; }
         public string? Color { get; set; }
         public TeamStatsDto? TeamStats { get; set; }
+        public TeamMomentsDto? Momentos { get; set; }
+    }
+
+    private sealed class TeamMomentsDto
+    {
+        public List<decimal?>? Shots { get; set; }
+        public List<decimal?>? ShotsOnTarget { get; set; }
+        public List<decimal?>? Goals { get; set; }
+        public List<decimal?>? Corners { get; set; }
+        public List<decimal?>? ThrowIns { get; set; }
+        public List<decimal?>? GoalKicks { get; set; }
+        public List<decimal?>? Fouls { get; set; }
+        public List<decimal?>? Offsides { get; set; }
     }
 
     private sealed class TeamStatsDto
@@ -174,6 +209,22 @@ public sealed record VideoProposal(IReadOnlyList<VideoProposalTeam> Teams, IRead
         public string? Hasta { get; set; }
         public int? DistanciaM { get; set; }
         public ActionsDto? Propuesta { get; set; }
+        public PlayerMomentsDto? Momentos { get; set; }
+    }
+
+    private sealed class PlayerMomentsDto
+    {
+        public List<decimal?>? Shots { get; set; }
+        public List<decimal?>? ShotsOnTarget { get; set; }
+        public List<decimal?>? Goals { get; set; }
+        public List<decimal?>? Saves { get; set; }
+        public List<decimal?>? Recoveries { get; set; }
+        public List<decimal?>? BallLosses { get; set; }
+        public List<decimal?>? Passes { get; set; }
+        public List<decimal?>? PassesFailed { get; set; }
+        public List<decimal?>? Fouls { get; set; }
+        public List<decimal?>? FoulsReceived { get; set; }
+        public List<decimal?>? Offsides { get; set; }
     }
 
     private sealed class ActionsDto
@@ -222,6 +273,9 @@ public sealed record VideoProposalTeam(
 {
     // La posesión que se puede llevar al acta: la hay y no es de confianza baja.
     public int? UsablePossessionPct => PossessionConfidence == VideoPossessionConfidence.Low ? null : PossessionPct;
+
+    // Desde Ojeador 2.1.2; null en análisis anteriores.
+    public VideoTeamMoments? Moments { get; init; }
 }
 
 public sealed record VideoProposalPlayer(
@@ -247,7 +301,37 @@ public sealed record VideoProposalPlayer(
 
     // Tramos seguidos que se han juntado en este jugador.
     public int Pieces { get; init; } = 1;
+
+    // Desde Ojeador 2.1.2; null en análisis anteriores.
+    public VideoPlayerMoments? Moments { get; init; }
 }
+
+// El segundo del archivo de vídeo (a la décima, el mismo archivo que se reproduce) de cada cosa que cuenta la propuesta
+// de un jugador, para verla en el vídeo. Son las mismas que sus acciones, salvo los goles que salen del acta oficial
+// cerrada sin que el vídeo los viera; de los pases, los completados y los fallados por separado.
+public sealed record VideoPlayerMoments(
+    IReadOnlyList<decimal> Shots,
+    IReadOnlyList<decimal> ShotsOnTarget,
+    IReadOnlyList<decimal> Goals,
+    IReadOnlyList<decimal> Saves,
+    IReadOnlyList<decimal> Recoveries,
+    IReadOnlyList<decimal> BallLosses,
+    IReadOnlyList<decimal> PassesCompleted,
+    IReadOnlyList<decimal> PassesFailed,
+    IReadOnlyList<decimal> Fouls,
+    IReadOnlyList<decimal> FoulsReceived,
+    IReadOnlyList<decimal> Offsides);
+
+// Lo mismo para los datos de un equipo, «a favor»: los momentos en contra son los del otro equipo.
+public sealed record VideoTeamMoments(
+    IReadOnlyList<decimal> Shots,
+    IReadOnlyList<decimal> ShotsOnTarget,
+    IReadOnlyList<decimal> Goals,
+    IReadOnlyList<decimal> Corners,
+    IReadOnlyList<decimal> ThrowIns,
+    IReadOnlyList<decimal> GoalKicks,
+    IReadOnlyList<decimal> Fouls,
+    IReadOnlyList<decimal> Offsides);
 
 public sealed record VideoPlayerActions(
     int Shots,

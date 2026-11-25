@@ -56,6 +56,44 @@ def test_acta_propuesta_desde_los_dos_lados():
     assert acta["jugadores"][1]["propuesta"]["saves"] == 1
 
 
+def test_cada_accion_de_la_propuesta_lleva_su_segundo_del_video(tmp_path):
+    eventos, posesion, resumenes, _ = _datos()
+    eventos += [
+        Evento("falta", 400.04, equipo=1, tracklet=8, tracklet_rival=3, confianza=0.6),
+        # Con poca confianza no cuenta en la propuesta, así que tampoco tiene momento.
+        Evento("falta", 410.0, equipo=1, tracklet=8, tracklet_rival=3, confianza=0.3),
+        Evento("fuera_de_juego", 500.0, equipo=0, tracklet=3, confianza=0.5),
+        Evento("saque_puerta", 600.0, equipo=1, confianza=0.6),
+    ]
+    acciones = {
+        3: AccionesJugador(pases=2, pases_fallados=1, perdidas=1, recuperaciones=1, toques=9, segundos_pases=[250.26, 12.0], segundos_pases_fallados=[260.0],
+                           segundos_perdidas=[260.0], segundos_recuperaciones=[240.0]),
+    }
+    acta = acta_propuesta(eventos, posesion, resumenes, acciones, {}, {}, ("Vallobín", "Rival"), ["#0000ff", "#ff0000"])
+    a, b = acta["equipos"]
+    assert a["momentos"] == {"shots": [100.0, 140.0], "shotsOnTarget": [100.0], "goals": [101.0], "corners": [], "throwIns": [320.0], "goalKicks": [], "fouls": [], "offsides": [500.0]}
+    # El gol del rival no está confirmado: no cuenta ni tiene momento.
+    assert b["momentos"] == {"shots": [], "shotsOnTarget": [], "goals": [], "corners": [300.0], "throwIns": [], "goalKicks": [600.0], "fouls": [400.0], "offsides": []}
+    jugador = acta["jugadores"][0]
+    # En orden y a la décima.
+    assert jugador["momentos"] == {
+        "shots": [100.0, 140.0], "shotsOnTarget": [100.0], "goals": [101.0], "fouls": [], "foulsReceived": [400.0], "offsides": [500.0], "saves": [],
+        "recoveries": [240.0], "ballLosses": [260.0], "passes": [12.0, 250.3], "passesFailed": [260.0],
+    }
+    assert acta["jugadores"][1]["momentos"]["saves"] == [700.0]
+    assert next(j for j in acta["jugadores"] if j["tracklet"] == 8)["momentos"]["fouls"] == [400.0]
+    # Lo que cuenta la propuesta y lo que se puede ver en el vídeo es lo mismo, dato a dato (sin acta oficial).
+    for j in acta["jugadores"]:
+        for clave, momentos in j["momentos"].items():
+            assert len(momentos) == j["propuesta"][clave], (j["tracklet"], clave)
+    claves = {"shots": "shotsFor", "shotsOnTarget": "shotsOnTargetFor", "goals": "goalsFor", "corners": "cornersFor", "throwIns": "throwInsFor", "goalKicks": "goalKicksFor", "fouls": "foulsCommitted", "offsides": "offsidesFor"}
+    for equipo in acta["equipos"]:
+        for clave, dato in claves.items():
+            assert len(equipo["momentos"][clave]) == equipo["teamStats"][dato], (equipo["id"], clave)
+    escribir_json(acta, tmp_path / "acta-propuesta.json")
+    assert json.loads((tmp_path / "acta-propuesta.json").read_text(encoding="utf-8"))["jugadores"][0]["momentos"]["passes"] == [12.0, 250.3]
+
+
 def test_resumen_markdown_y_json(tmp_path):
     eventos, posesion, resumenes, acciones = _datos()
     acta = acta_propuesta(eventos, posesion, resumenes, acciones, {}, {}, ("Vallobín", "Rival"), ["#0000ff", "#ff0000"])

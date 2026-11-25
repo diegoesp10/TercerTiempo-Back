@@ -85,6 +85,36 @@ public class VideoAnalysisApplyTests
     }
 
     [Fact]
+    public async Task Each_action_of_the_proposal_comes_with_its_second_in_the_video_to_watch_it()
+    {
+        var f = new Fixture();
+        f.Analyzed("""
+            {"version": 2,
+             "equipos": [{"id": 0, "teamStats": {"cornersFor": 2, "throwInsFor": 1}, "momentos": {"corners": [610.0, 120.5], "throwIns": [33.2]}},
+                         {"id": 1, "teamStats": {"foulsCommitted": 1}, "momentos": {"fouls": [400.0]}}],
+             "jugadores": [
+               {"tracklet": 696, "equipo": 0, "minutosALaVista": 30, "propuesta": {"passes": 2, "passesFailed": 1, "recoveries": 1},
+                "momentos": {"passes": [12.0, 250.3], "passesFailed": [260.0], "recoveries": [240.0]}},
+               {"tracklet": 781, "equipo": 0, "minutosALaVista": 20, "propuesta": {"passes": 3}}]}
+            """);
+
+        var ready = Assert.Single((await f.Get(f.ClubUser).Handle(new(f.Squad.Id, f.Played.Id), default)).Videos);
+
+        // Con el tipo del archivo, para reproducirlo en cada momento.
+        Assert.Equal(f.Video.ContentType, ready.ContentType);
+        var ours = ready.Teams.Single(t => t.Index == 0).Moments!;
+        Assert.Equal([120.5m, 610.0m], ours.Corners);
+        Assert.Equal([33.2m], ours.ThrowIns);
+        Assert.Equal([400.0m], ready.Teams.Single(t => t.Index == 1).Moments!.Fouls);
+        var moments = ready.Players.Single(p => p.Tracklet == 696).Moments!;
+        Assert.Equal([12.0m, 250.3m], moments.PassesCompleted);
+        Assert.Equal([260.0m], moments.PassesFailed);
+        Assert.Equal([240.0m], moments.Recoveries);
+        // Un jugador sin momentos (un análisis anterior a Ojeador 2.1.2) no tiene nada que ver: null, no listas vacías.
+        Assert.Null(ready.Players.Single(p => p.Tracklet == 781).Moments);
+    }
+
+    [Fact]
     public async Task Without_the_official_sheet_nothing_is_proposed()
     {
         var f = new Fixture();

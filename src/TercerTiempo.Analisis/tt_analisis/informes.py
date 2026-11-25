@@ -24,6 +24,8 @@ from .video import extraer_clip
 TIPOS_CON_CLIP = ("gol", "tiro", "parada", "corner", "falta", "fuera_de_juego")
 # Faltas y fueras de juego con al menos esta confianza cuentan en la propuesta del acta (los demás quedan como eventos).
 CONFIANZA_PARADAS_ACTA = 0.4
+# Sin el acta oficial cerrada, solo cuentan los goles confirmados (por el saque de centro o por el minuto del acta).
+CONFIANZA_GOL_ACTA = 0.8
 ESCALA_MAPA = 0.1
 
 
@@ -105,8 +107,26 @@ def extraer_clips(eventos: list[Evento], video: Path, salida: Path, margen_s: fl
     return hechos
 
 
+def eventos_de(eventos: list[Evento], tipo: str, equipo: int | None = None, confianza_minima: float = 0.0) -> list[Evento]:
+    return [e for e in eventos if e.tipo == tipo and (equipo is None or e.equipo == equipo) and e.confianza >= confianza_minima]
+
+
 def contar_eventos(eventos: list[Evento], tipo: str, equipo: int | None = None, confianza_minima: float = 0.0) -> int:
-    return sum(1 for e in eventos if e.tipo == tipo and (equipo is None or e.equipo == equipo) and e.confianza >= confianza_minima)
+    return len(eventos_de(eventos, tipo, equipo, confianza_minima))
+
+
+def a_puerta(tiro: Evento) -> bool:
+    return tiro.detalle.startswith("A puerta") or "entra" in tiro.detalle
+
+
+def segundos_de(eventos: list[Evento]) -> list[float]:
+    """El segundo del vídeo de cada evento, en orden: la app lleva el vídeo a ese momento («Ver»)."""
+    return redondear_segundos(e.t for e in eventos)
+
+
+def redondear_segundos(segundos) -> list[float]:
+    # Se muestrean 5 fotogramas por segundo: la décima basta.
+    return sorted(round(float(t), 1) for t in segundos)
 
 
 def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: dict[int, ResumenTracklet], acciones: dict[int, AccionesJugador], dorsales: dict[int, dict], recortes: dict[int, str], nombres: tuple[str, str], colores: list[str], resolucion=None, acta: ActaOficial | None = None) -> dict:
@@ -114,7 +134,11 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
     Con los dorsales leídos, una línea por jugador identificado (con su dorsal y, si se pasó el acta oficial, su nombre
     en ella); sin ellos, una por tracklet de más de 30 s, y la app decide qué tracklet es cada ficha. Con el acta oficial,
     los minutos y los goles salen de ella (por descarte: sin cambio, el partido entero) y en `actaOficial` van todos los
-    que jugaron, se les viera o no."""
+    que jugaron, se les viera o no.
+
+    Desde la 2.1.2, cada equipo y cada jugador traen `momentos`: el segundo del vídeo de cada cosa que se cuenta, con las
+    mismas claves que sus datos y los mismos filtros, para verla en el vídeo desde la app. Los goles que salen del acta
+    oficial cerrada pueden no tener momento: el vídeo solo da los que vio."""
     identidades = {x.id: x for x in resolucion.identidades} if resolucion is not None else {}
     lados = lados_completos(resolucion.lado_de_equipo) if resolucion is not None else {}
     faltas = [x for x in eventos if x.tipo == "falta" and x.confianza >= CONFIANZA_PARADAS_ACTA]
@@ -143,14 +167,14 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                     "cornersAgainst": contar_eventos(eventos, "corner", rival),
                     "shotsFor": len(tiros),
                     "shotsAgainst": len(tiros_rival),
-                    "shotsOnTargetFor": sum(1 for x in tiros if x.detalle.startswith("A puerta") or "entra" in x.detalle),
-                    "shotsOnTargetAgainst": sum(1 for x in tiros_rival if x.detalle.startswith("A puerta") or "entra" in x.detalle),
+                    "shotsOnTargetFor": sum(1 for x in tiros if a_puerta(x)),
+                    "shotsOnTargetAgainst": sum(1 for x in tiros_rival if a_puerta(x)),
                     "throwInsFor": contar_eventos(eventos, "saque_banda", e),
                     "throwInsAgainst": contar_eventos(eventos, "saque_banda", rival),
                     "goalKicksFor": contar_eventos(eventos, "saque_puerta", e),
                     # Con el acta oficial cerrada, los goles son los suyos; si no, los candidatos confirmados por el saque de centro.
-                    "goalsFor": goles_acta[lados[e]] if goles_acta else contar_eventos(eventos, "gol", e, 0.8),
-                    "goalsAgainst": goles_acta[lados[rival]] if goles_acta and lados.get(rival) in goles_acta else contar_eventos(eventos, "gol", rival, 0.8),
+                    "goalsFor": goles_acta[lados[e]] if goles_acta else contar_eventos(eventos, "gol", e, CONFIANZA_GOL_ACTA),
+                    "goalsAgainst": goles_acta[lados[rival]] if goles_acta and lados.get(rival) in goles_acta else contar_eventos(eventos, "gol", rival, CONFIANZA_GOL_ACTA),
                     "goalsFromSheet": goles_acta is not None,
                     "goalsCandidatesFor": contar_eventos(eventos, "gol", e),
                     # Fueras de juego en los que cayó este equipo (a favor del rival) y en los que cayó el rival.
@@ -159,6 +183,17 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                     "foulsCommitted": sum(1 for x in faltas if x.equipo == e),
                     "foulsReceived": sum(1 for x in faltas if x.equipo == rival),
                     "notes": "Propuesta automática del vídeo: posesión, tiros, córners, saques de banda, faltas y fueras de juego (paradas del juego con el balón dentro del campo); las tarjetas no salen del vídeo.",
+                },
+                # Lo que hace este equipo, cada cosa en su segundo del vídeo: lo «en contra» son los momentos del otro.
+                "momentos": {
+                    "shots": segundos_de(tiros),
+                    "shotsOnTarget": segundos_de([x for x in tiros if a_puerta(x)]),
+                    "goals": segundos_de(eventos_de(eventos, "gol", e, CONFIANZA_GOL_ACTA)),
+                    "corners": segundos_de(eventos_de(eventos, "corner", e)),
+                    "throwIns": segundos_de(eventos_de(eventos, "saque_banda", e)),
+                    "goalKicks": segundos_de(eventos_de(eventos, "saque_puerta", e)),
+                    "fouls": segundos_de([x for x in faltas if x.equipo == e]),
+                    "offsides": segundos_de([x for x in fueras_de_juego if x.equipo == e]),
                 },
             }
         )
@@ -173,7 +208,8 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
         if resolucion is None and r.segundos < 30:
             continue
         acc = acciones.get(r.tracklet, AccionesJugador())
-        tiros = [x for x in eventos if x.tipo == "tiro" and x.tracklet == r.tracklet]
+        suyos = [x for x in eventos if x.tracklet == r.tracklet]
+        tiros = [x for x in suyos if x.tipo == "tiro"]
         oficial = acta.jugador(lados.get(r.equipo), ident.dorsal) if acta is not None and ident is not None else None
         jugadores.append(
             {
@@ -198,17 +234,32 @@ def acta_propuesta(eventos: list[Evento], posesion: ResumenPosesion, resumenes: 
                 "distanciaM": int(r.distancia_m),
                 "propuesta": {
                     "shots": len(tiros),
-                    "shotsOnTarget": sum(1 for x in tiros if x.detalle.startswith("A puerta") or "entra" in x.detalle),
-                    "goals": oficial.goles if oficial is not None and acta.cerrada else contar_eventos([x for x in eventos if x.tracklet == r.tracklet], "gol", None, 0.8),
+                    "shotsOnTarget": sum(1 for x in tiros if a_puerta(x)),
+                    "goals": oficial.goles if oficial is not None and acta.cerrada else contar_eventos(suyos, "gol", None, CONFIANZA_GOL_ACTA),
                     "fouls": sum(1 for x in faltas if x.tracklet == r.tracklet),
                     "foulsReceived": sum(1 for x in faltas if x.tracklet_rival == r.tracklet),
                     "offsides": sum(1 for x in fueras_de_juego if x.tracklet == r.tracklet),
-                    "saves": contar_eventos([x for x in eventos if x.tracklet == r.tracklet], "parada"),
+                    "saves": contar_eventos(suyos, "parada"),
                     "recoveries": acc.recuperaciones,
                     "ballLosses": acc.perdidas,
                     "passes": acc.pases,
                     "passesFailed": acc.pases_fallados,
                     "touches": acc.toques,
+                },
+                # Cada acción de la propuesta en su segundo del vídeo, con las mismas claves (los toques no: son
+                # demasiados y no van al acta). Los goles del acta oficial que el vídeo no vio no tienen momento.
+                "momentos": {
+                    "shots": segundos_de(tiros),
+                    "shotsOnTarget": segundos_de([x for x in tiros if a_puerta(x)]),
+                    "goals": segundos_de(eventos_de(suyos, "gol", None, CONFIANZA_GOL_ACTA)),
+                    "fouls": segundos_de([x for x in faltas if x.tracklet == r.tracklet]),
+                    "foulsReceived": segundos_de([x for x in faltas if x.tracklet_rival == r.tracklet]),
+                    "offsides": segundos_de([x for x in fueras_de_juego if x.tracklet == r.tracklet]),
+                    "saves": segundos_de(eventos_de(suyos, "parada")),
+                    "recoveries": redondear_segundos(acc.segundos_recuperaciones),
+                    "ballLosses": redondear_segundos(acc.segundos_perdidas),
+                    "passes": redondear_segundos(acc.segundos_pases),
+                    "passesFailed": redondear_segundos(acc.segundos_pases_fallados),
                 },
             }
         )

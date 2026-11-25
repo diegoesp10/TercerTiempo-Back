@@ -142,6 +142,13 @@ class AccionesJugador:
     perdidas: int = 0
     recuperaciones: int = 0
     toques: int = 0
+    # El segundo del vídeo de cada uno de los que cuentan arriba (uno por cada pase, pase fallado, pérdida y
+    # recuperación), para que la app lleve el vídeo a ese momento: el pase y la pérdida, cuando el balón deja su pie;
+    # la recuperación, cuando le llega.
+    segundos_pases: list[float] = field(default_factory=list)
+    segundos_pases_fallados: list[float] = field(default_factory=list)
+    segundos_perdidas: list[float] = field(default_factory=list)
+    segundos_recuperaciones: list[float] = field(default_factory=list)
 
     def a_dict(self) -> dict:
         return {"pases": self.pases, "pases_fallados": self.pases_fallados, "perdidas": self.perdidas, "recuperaciones": self.recuperaciones, "toques": self.toques}
@@ -149,7 +156,8 @@ class AccionesJugador:
 
 def acciones_por_jugador(secs: list[Secuencia], distancia_pase_cm: float = 300.0, ventana_recuperacion_s: float = 4.0) -> dict[int, AccionesJugador]:
     """Pases (toques seguidos de compañeros con el balón desplazado), pérdidas (último toque antes de que el rival
-    se haga con el balón sin que saliera fuera) y recuperaciones (primer toque del rival tras esa pérdida)."""
+    se haga con el balón sin que saliera fuera) y recuperaciones (primer toque del rival tras esa pérdida), cada uno con
+    su segundo del vídeo."""
     acciones: dict[int, AccionesJugador] = defaultdict(AccionesJugador)
     for i, sec in enumerate(secs):
         for toque in sec.toques:
@@ -159,16 +167,22 @@ def acciones_por_jugador(secs: list[Secuencia], distancia_pase_cm: float = 300.0
                 continue
             # Sin campo calibrado no se sabe cuánto viajó el balón: dos compañeros seguidos con el balón cuentan como pase.
             if _se_desplazo(anterior, siguiente, distancia_pase_cm):
-                acciones[anterior.tracklet].pases += 1
+                pasador = acciones[anterior.tracklet]
+                pasador.pases += 1
+                pasador.segundos_pases.append(anterior.t_fin)
         siguiente_sec = secs[i + 1] if i + 1 < len(secs) else None
         if siguiente_sec is None or sec.cortada_por_fuera or siguiente_sec.equipo == sec.equipo:
             continue
         ultimo, primero = sec.toques[-1], siguiente_sec.toques[0]
         if primero.t_inicio - ultimo.t_fin <= ventana_recuperacion_s:
-            acciones[ultimo.tracklet].perdidas += 1
+            perdio, recupero = acciones[ultimo.tracklet], acciones[primero.tracklet]
+            perdio.perdidas += 1
+            perdio.segundos_perdidas.append(ultimo.t_fin)
             if ultimo.xy_fin and primero.xy_inicio and distancia(ultimo.xy_fin, primero.xy_inicio) >= distancia_pase_cm:
-                acciones[ultimo.tracklet].pases_fallados += 1
-            acciones[primero.tracklet].recuperaciones += 1
+                perdio.pases_fallados += 1
+                perdio.segundos_pases_fallados.append(ultimo.t_fin)
+            recupero.recuperaciones += 1
+            recupero.segundos_recuperaciones.append(primero.t_inicio)
     return dict(acciones)
 
 

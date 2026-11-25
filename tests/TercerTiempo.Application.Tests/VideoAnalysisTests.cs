@@ -58,6 +58,36 @@ public class VideoProposalTests
         Assert.Equal((1, 1, 0), (player.Actions.Shots, player.Actions.ShotsOnTarget, player.Actions.PassesAttempted));
         Assert.Empty(VideoProposal.Parse("{}").Players);
     }
+
+    [Fact]
+    public void Since_ojeador_2_1_2_each_action_brings_its_second_in_the_video_in_order()
+    {
+        var proposal = VideoProposal.Parse("""
+            { "version": 2,
+              "equipos": [ { "id": 0, "teamStats": { "cornersFor": 2 }, "momentos": { "corners": [610.04, 120.5], "fouls": [-4, null, 70.26], "shots": [] } },
+                           { "id": 1, "teamStats": {} } ],
+              "jugadores": [ { "tracklet": 900003, "equipo": 0, "propuesta": { "passes": 2, "passesFailed": 1, "goals": 1 },
+                               "momentos": { "passes": [250.26, 12], "passesFailed": [260], "goals": [101.0], "foulsReceived": [400] } },
+                             { "tracklet": 900004, "equipo": 0 } ] }
+            """);
+
+        var team = proposal.Team(0)!.Moments!;
+        Assert.Equal([120.5m, 610.0m], team.Corners);
+        // Lo que no es un segundo del vídeo (negativo o vacío) se descarta; lo que falta, sin momentos.
+        Assert.Equal([70.3m], team.Fouls);
+        Assert.Empty(team.Shots);
+        Assert.Empty(team.Goals);
+        // Un equipo o un jugador sin momentos (análisis anteriores) no tiene ninguno: null, no listas vacías.
+        Assert.Null(proposal.Team(1)!.Moments);
+        var moments = proposal.Players.Single(p => p.Tracklet == 900003).Moments!;
+        Assert.Equal([12m, 250.3m], moments.PassesCompleted);
+        Assert.Equal([260m], moments.PassesFailed);
+        Assert.Equal([101m], moments.Goals);
+        Assert.Equal([400m], moments.FoulsReceived);
+        Assert.Empty(moments.BallLosses);
+        Assert.Null(proposal.Players.Single(p => p.Tracklet == 900004).Moments);
+        Assert.Null(VideoProposal.Parse(VideoAnalysisSamples.Proposal).Players[0].Moments);
+    }
 }
 
 public class VideoSheetMergeTests

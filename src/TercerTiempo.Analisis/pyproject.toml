@@ -1,6 +1,6 @@
 [project]
 name = "tt-analisis"
-version = "2.1.1"
+version = "2.1.2"
 description = "Tercer Tiempo: análisis del vídeo de un partido (detección, seguimiento, posesión, eventos) para proponer el acta interna."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

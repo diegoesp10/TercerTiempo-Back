@@ -93,7 +93,9 @@ public sealed record VideoAnalysisPartDto(
     [property: Description("El equipo (0 o 1) que por los dorsales es el de la plantilla según el acta oficial; null si no se sabe.")]
     int? SuggestedOurTeam = null,
     [property: Description("Segundos del vídeo con jugadores de la plantilla a la vista sin identificar, por equipo.")]
-    IReadOnlyDictionary<int, int>? UnidentifiedSeconds = null);
+    IReadOnlyDictionary<int, int>? UnidentifiedSeconds = null,
+    [property: Description("Tipo del archivo de vídeo (p. ej. video/mp4), para reproducirlo en el momento de cada acción.")]
+    string? ContentType = null);
 
 public sealed record VideoAnalysisQualityDto(
     int Frames,
@@ -137,7 +139,9 @@ public sealed record VideoAnalysisTeamDto(
     [property: Description("Faltas que comete: el juego se para con el balón en el campo, el que lo tenía es del otro equipo y un jugador de este estaba a menos de 5 m. Las que recibe son las que comete el otro equipo.")]
     int Fouls = 0,
     [property: Description("Fueras de juego que le pitan. Los del rival son los que le pitan al otro equipo.")]
-    int Offsides = 0);
+    int Offsides = 0,
+    [property: Description("Segundo del vídeo de cada tiro, tiro a puerta, gol, córner, saque de banda, saque de puerta, falta y fuera de juego de este equipo, para verlo en el vídeo (los del otro equipo, en el suyo). null en análisis anteriores a Ojeador 2.1.2.")]
+    VideoTeamMoments? Moments = null);
 
 public sealed record VideoAnalysisPlayerDto(
     [property: Description("Número con el que el analizador sigue a esta persona; se corta al perderla de vista, así que un jugador puede tener varios.")]
@@ -162,7 +166,9 @@ public sealed record VideoAnalysisPlayerDto(
     [property: Description("Ficha de la plantilla que por el dorsal y el acta oficial es este jugador; null si no se sabe o es del rival.")]
     Guid? SuggestedSquadPlayerId = null,
     [property: Description("Minutos que jugó según el acta oficial cerrada (por descarte: sin cambio, el partido entero), aunque el vídeo no lo viera todo el rato; null sin acta cerrada o sin identificar.")]
-    int? SheetMinutes = null);
+    int? SheetMinutes = null,
+    [property: Description("Segundo del vídeo de cada acción de su propuesta (pases completados y fallados, pérdidas, recuperaciones, tiros, goles, paradas, faltas cometidas y recibidas y fueras de juego), para verla en el vídeo. null en análisis anteriores a Ojeador 2.1.2.")]
+    VideoPlayerMoments? Moments = null);
 
 // Lo que se sabe del acta oficial para proponer la ficha de cada jugador identificado: el lado de la plantilla y, por
 // dorsal, la ficha cruzada con la línea del acta que lo lleva.
@@ -220,7 +226,7 @@ internal static class VideoAnalysisMapper
         var teams = proposal?.Teams
             .Select(t => new VideoAnalysisTeamDto(
                 t.Index, t.Side, t.Color, proposal.Players.Count(p => p.Team == t.Index), t.PossessionPct, t.PossessionConfidence, t.PossessionBallPct, t.Shots, t.ShotsOnTarget,
-                t.Corners, t.ThrowIns, t.GoalKicks, t.Goals, t.Fouls, t.Offsides))
+                t.Corners, t.ThrowIns, t.GoalKicks, t.Goals, t.Fouls, t.Offsides, t.Moments))
             .ToList() ?? [];
 
         var players = proposal?.Players
@@ -241,7 +247,8 @@ internal static class VideoAnalysisMapper
                 identified && p.ShirtFromVideo && p.ShirtNumber is { } number && proposal.Team(p.Team)?.Side is { } teamSide
                     && hints.SheetMinutes.TryGetValue((teamSide, number), out var sheetMinutes)
                     ? sheetMinutes
-                    : null))
+                    : null,
+                p.Moments))
             .ToList() ?? [];
 
         var quality = analysis is { Status: VideoAnalysisStatus.Ready, Frames: { } frames, BallFramesPct: { } ball, CalibratedFramesPct: { } calibrated }
@@ -264,7 +271,8 @@ internal static class VideoAnalysisMapper
             analysis is { Status: VideoAnalysisStatus.Paused, IsWorking: true },
             identified,
             suggestedTeam,
-            identified ? proposal!.UnidentifiedSeconds : null);
+            identified ? proposal!.UnidentifiedSeconds : null,
+            video.ContentType);
     }
 
     public static IReadOnlyDictionary<int, Guid> Assignments(string? json)
