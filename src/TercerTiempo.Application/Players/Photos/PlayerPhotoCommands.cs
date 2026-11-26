@@ -20,15 +20,7 @@ public static class PlayerPhotos
     // También para las fotos de los técnicos.
     public static readonly IReadOnlySet<string> ContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "image/png", "image/jpeg", "image/webp" };
 
-    public static string Route(Guid playerId, string photoKey) => $"/api/players/{playerId}/photo?v={Version(photoKey)}";
-
-    // La versión va en la URL para que el navegador no enseñe la foto anterior después de cambiarla.
-    public static string Version(string photoKey)
-    {
-        var name = Path.GetFileNameWithoutExtension(photoKey);
-        var dash = name.LastIndexOf('-');
-        return dash >= 0 ? name[(dash + 1)..] : name;
-    }
+    public static string Route(Guid playerId, string photoKey) => $"/api/players/{playerId}/photo{ImageVersions.Query(photoKey)}";
 
     public static string? PhotoLink(this Player player) => player.PhotoKey is null ? null : Route(player.Id, player.PhotoKey);
 }

@@ -15,7 +15,7 @@ namespace TercerTiempo.Application.Coaches.Photos;
 public static class CoachPhotos
 {
     public static string? PhotoLink(this Coach coach) =>
-        coach.PhotoKey is null ? null : $"/api/coaches/{coach.Id}/photo?v={PlayerPhotos.Version(coach.PhotoKey)}";
+        coach.PhotoKey is null ? null : $"/api/coaches/{coach.Id}/photo{ImageVersions.Query(coach.PhotoKey)}";
 }
 
 // Foto del técnico, como la del jugador: la sube él mismo desde su perfil (el asistente del frontal recorta su figura y la
