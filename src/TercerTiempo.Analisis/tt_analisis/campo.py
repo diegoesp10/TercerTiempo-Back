@@ -145,7 +145,12 @@ class Calibrador:
     _acumulado: dict[int, list[tuple[float, float]]] = field(default_factory=lambda: defaultdict(list))
 
     def _detectar(self, imagen: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
-        xy, conf = self.modelo.puntos(imagen)
+        return self._vistos(self.modelo.puntos(imagen))
+
+    @staticmethod
+    def _vistos(puntos: tuple[np.ndarray, np.ndarray]) -> tuple[np.ndarray, np.ndarray] | None:
+        """(xy, máscara de los puntos que se ven bien) de lo que da el detector del campo; None si no ve ninguno."""
+        xy, conf = puntos
         if not conf.any():
             return None
         mascara = (conf > CONFIANZA_PUNTO) & (xy[:, 0] > 1) & (xy[:, 1] > 1)
@@ -182,13 +187,20 @@ class Calibrador:
 
     # ---- Por fotograma ----
 
-    def calibrar(self, imagen: np.ndarray, t: float, forzar: bool = False) -> Calibracion:
+    @property
+    def detecta_siempre(self) -> bool:
+        """Si cada fotograma pide los puntos del campo (cámara móvil y sin espaciar las calibraciones): entonces pueden
+        detectarse por adelantado (`calibrar(..., puntos=...)`)."""
+        return self.cada_s <= 0 and not (self.modo == "fija" and self.fija is not None and self.fija.valida)
+
+    def calibrar(self, imagen: np.ndarray, t: float, forzar: bool = False, puntos: tuple[np.ndarray, np.ndarray] | None = None) -> Calibracion:
+        """La homografía de este fotograma. `puntos`: los del campo ya detectados en él (`DetectorCampo.puntos`)."""
         if self.modo == "fija" and self.fija is not None and self.fija.valida:
             return self.fija
         if not forzar and self.actual.valida and self.cada_s > 0 and t - self.actual.t < self.cada_s:
             return self.actual
         self.intentos += 1
-        detectado = self._detectar(imagen)
+        detectado = self._detectar(imagen) if puntos is None else self._vistos(puntos)
         xy, mascara = detectado if detectado is not None else (None, None)
         n = 0 if mascara is None else int(mascara.sum())
 

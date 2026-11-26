@@ -483,7 +483,9 @@ class _Calibrador:
         self.actual = Calibracion()
         self.aciertos = 0
 
-    def calibrar(self, imagen, t, forzar=False):
+    detecta_siempre = False
+
+    def calibrar(self, imagen, t, forzar=False, puntos=None):
         self.actual = Calibracion(t=t) if round(t / 0.2) % 7 == 4 else Calibracion(self.h, 12, 2.0, t)
         self.aciertos += self.actual.valida
         return self.actual
@@ -512,7 +514,10 @@ class _Detector:
     def ultimo_balon(self):
         return self._ultimo
 
-    def detectar(self, imagen, t):
+    def crudo(self, imagen, campo=False):
+        return SimpleNamespace(campo=None)
+
+    def detectar(self, imagen, t, crudo=None):
         k = round(t / 0.2)
         if _AL_DETECTAR["mirar"] is not None:
             _AL_DETECTAR["mirar"](k)
@@ -552,7 +557,7 @@ def _leer(carpeta, nombre):
     return json.loads((carpeta / nombre).read_text(encoding="utf-8"))
 
 
-def test_la_repeticion_no_cambia_nada_de_lo_que_se_propone(tmp_path, monkeypatch):
+def _falsear_analizador(monkeypatch) -> None:
     modelos = SimpleNamespace(
         rutas={"jugadores": "prueba", "balon": "prueba", "campo": "prueba"}, device="cpu",
         jugadores=SimpleNamespace(motor="prueba"), balon=SimpleNamespace(motor="prueba"), campo=SimpleNamespace(motor="prueba"),
@@ -571,6 +576,30 @@ def test_la_repeticion_no_cambia_nada_de_lo_que_se_propone(tmp_path, monkeypatch
     }
     for nombre, falso in falsos.items():
         monkeypatch.setattr(analizador, nombre, falso)
+
+
+def test_solapar_la_pasada_no_cambia_nada(tmp_path, monkeypatch):
+    _falsear_analizador(monkeypatch)
+    for nombre, solapar in (("solapada", True), ("seguida", False)):
+        config = Configuracion(
+            video=tmp_path / "partido.mp4", salida=tmp_path / nombre, device="cpu", segmento=Segmento(0.0, 10.0), dorsales=False,
+            apariencia=False, clips=False, nombres_equipos=("CD Vallobín", "Real Titánico"), solapar=solapar,
+        )
+        analizador.analizar(config, informar=lambda texto: None)
+    solapada, seguida = tmp_path / "solapada", tmp_path / "seguida"
+    assert _leer(solapada, "acta-propuesta.json") == _leer(seguida, "acta-propuesta.json")
+    a, b = _leer(solapada, "analisis.json"), _leer(seguida, "analisis.json")
+    rendimiento = a.pop("rendimiento")
+    assert rendimiento["solapado"] is True and b.pop("rendimiento")["solapado"] is False
+    assert rendimiento["fotogramas"] == MUESTREADOS and {"leer_video", "esperar_gpu", "seguir_y_balon"} <= set(rendimiento["etapas_s"])
+    a.pop("tiempos")
+    b.pop("tiempos")
+    assert a == b
+    assert (solapada / CARPETA / FOTOGRAMAS).read_bytes() == (seguida / CARPETA / FOTOGRAMAS).read_bytes()
+
+
+def test_la_repeticion_no_cambia_nada_de_lo_que_se_propone(tmp_path, monkeypatch):
+    _falsear_analizador(monkeypatch)
     video = tmp_path / "partido.mp4"
     a_mitad = {}
 
@@ -612,6 +641,8 @@ def test_la_repeticion_no_cambia_nada_de_lo_que_se_propone(tmp_path, monkeypatch
     assert analisis_con["archivos"].pop("repeticion") == f"{CARPETA}/{FINAL}" and analisis_sin["archivos"].pop("repeticion") is None
     analisis_con.pop("tiempos")
     analisis_sin.pop("tiempos")
+    analisis_con.pop("rendimiento")
+    analisis_sin.pop("rendimiento")
     assert analisis_con == analisis_sin
     recuento = analisis_con["recuento"]
     assert recuento["fotogramas"] == MUESTREADOS and recuento["con_balon"] > 0 and recuento["tracklets"] >= 6

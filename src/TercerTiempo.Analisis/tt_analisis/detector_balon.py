@@ -36,28 +36,34 @@ class DetectorBalon:
         prediccion, ruta = rfdetr_comun.cargar(QUE, modelos, device)
         return cls(prediccion, device, ruta)
 
-    def _teselas(self, imagen_bgr: np.ndarray, origenes: list[tuple[int, int]]):
+    def _teselas(self, imagen_bgr: np.ndarray, origenes: list[tuple[int, int]], tensor=None):
+        """Las teselas de `origenes` en un lote (N, 3, LADO, LADO) en [0, 1]. De `tensor` (el fotograma ya subido y en
+        [0, 1]) salen los mismos valores que subiendo la imagen: dividir entre 255 antes o después de recortar da igual."""
         import torch
 
         alto, ancho = imagen_bgr.shape[:2]
-        fotograma = torch.from_numpy(np.ascontiguousarray(imagen_bgr)).to(self.device, non_blocking=True)
-        fotograma = fotograma.flip(-1).permute(2, 0, 1)
+        if tensor is not None:
+            fotograma = tensor[0]
+        else:
+            fotograma = torch.from_numpy(np.ascontiguousarray(imagen_bgr)).to(self.device, non_blocking=True)
+            fotograma = fotograma.flip(-1).permute(2, 0, 1)
         if alto < LADO or ancho < LADO:
             relleno = torch.zeros((3, max(alto, LADO), max(ancho, LADO)), dtype=fotograma.dtype, device=fotograma.device)
             relleno[:, :alto, :ancho] = fotograma
             fotograma = relleno
         lote = torch.stack([fotograma[:, y : y + LADO, x : x + LADO] for x, y in origenes])
-        return lote.float().div_(255.0)
+        return lote if tensor is not None else lote.float().div_(255.0)
 
-    def detectar(self, imagen_bgr: np.ndarray, conf: float, zona: tuple[int, int, int, int] | None = None) -> tuple[np.ndarray, np.ndarray]:
+    def detectar(self, imagen_bgr: np.ndarray, conf: float, zona: tuple[int, int, int, int] | None = None, tensor=None) -> tuple[np.ndarray, np.ndarray]:
         """Cajas (xyxy, en píxeles del fotograma) y puntuaciones de los balones con puntuación > `conf`. `zona` (x1, y1,
-        x2, y2) limita la búsqueda a las teselas que la tocan (p. ej. el campo, sin la grada)."""
+        x2, y2) limita la búsqueda a las teselas que la tocan (p. ej. el campo, sin la grada). `tensor`: el fotograma ya
+        subido (`rfdetr_comun.subir`)."""
         alto, ancho = imagen_bgr.shape[:2]
         origenes = rejilla(ancho, alto)
         if zona is not None:
             x1, y1, x2, y2 = zona
             origenes = [(x, y) for x, y in origenes if x < x2 and x + LADO > x1 and y < y2 and y + LADO > y1] or origenes
-        resultados = self.prediccion.predict(self._teselas(imagen_bgr, origenes), threshold=conf, include_source_image=False)
+        resultados = self.prediccion.predict(self._teselas(imagen_bgr, origenes, tensor), threshold=conf, include_source_image=False)
         if not isinstance(resultados, list):
             resultados = [resultados]
         cajas = [r.xyxy for r in resultados]

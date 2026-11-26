@@ -45,15 +45,11 @@ class DetectorJugadores:
         prediccion, ruta = rfdetr_comun.cargar(QUE, modelos, device)
         return cls(prediccion, device, ruta, clases_del_modelo(prediccion.class_names))
 
-    def _tensor(self, imagen_bgr: np.ndarray):
-        import torch
-
-        fotograma = torch.from_numpy(np.ascontiguousarray(imagen_bgr)).to(self.device, non_blocking=True)
-        return fotograma.flip(-1).permute(2, 0, 1).unsqueeze(0).float().div_(255.0)
-
-    def detectar(self, imagen_bgr: np.ndarray, conf: float) -> sv.Detections:
-        """Las personas con puntuación > `conf`, con las clases del análisis y en píxeles del fotograma."""
-        resultado = self.prediccion.predict(self._tensor(imagen_bgr), threshold=conf, include_source_image=False)
+    def detectar(self, imagen_bgr: np.ndarray, conf: float, tensor=None) -> sv.Detections:
+        """Las personas con puntuación > `conf`, con las clases del análisis y en píxeles del fotograma. `tensor`: el
+        fotograma ya subido (`rfdetr_comun.subir`)."""
+        tensor = tensor if tensor is not None else rfdetr_comun.subir(imagen_bgr, self.device)
+        resultado = self.prediccion.predict(tensor, threshold=conf, include_source_image=False)
         if isinstance(resultado, list):
             resultado = resultado[0]
         if len(resultado) == 0:

@@ -118,6 +118,12 @@ class Configuracion:
     guardar_dorsales: Path | None = None
     # La repetición para el visor (`repeticion.py`): cada fotograma analizado con lo que se vio y se sacó de él.
     repeticion: bool = True
+    # Solapar en la pasada principal la lectura del vídeo, la GPU y la CPU (`tuberia.py`): el resultado es el mismo, en
+    # menos tiempo. Sin solapar, cada cosa espera a la anterior: para medir lo que gana o descartarlo si algo falla.
+    solapar: bool = True
+    # En la GPU, el paso de cada detector grabado en un grafo CUDA (`rfdetr_comun.grabar`): los mismos números en menos
+    # tiempo. Sin grafos, para medir lo que gana o descartarlo si algo falla.
+    grafos: bool = True
 
 
 # Clases de las personas y del balón: las del detector de jugadores de Roboflow, que siguen en los datasets de

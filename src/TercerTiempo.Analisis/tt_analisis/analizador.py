@@ -37,12 +37,16 @@ from .porteros import Porteros, colocar_porteros, describir_porteros
 from .repeticion import Directo, escribir_repeticion
 from .seguimiento import MemoriaTracklet, Seguidor
 from .tipos import Instante, Persona, formato_minuto
+from .tuberia import Cronometro, TrabajadorGPU, adelantar, cerrar, en_segundo_plano, medir
 from .video import PCT_LEIDO_MINIMO, Lectura, fotograma_en, fotogramas, fotogramas_elegidos, info_video, pct_leido, recortar
 
 RUTA_FFMPEG_WINGET = Path.home() / "AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe"
 # El recorte del portero: de pie (la caja al menos esto más alta que ancha) y el más nítido de los tantos más altos.
 PROPORCION_DE_PIE = 1.5
 RECORTES_PORTERO = 5
+# Fotogramas muestreados que la GPU lleva de adelanto en la pasada principal (con `solapar`): con dos, no se queda
+# esperando a la CPU entre un fotograma y el siguiente.
+ADELANTO = 2
 
 
 def ruta_ffmpeg() -> str:
@@ -108,6 +112,11 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
         decir(f"Campo de {config.campo[0]:g} × {config.campo[1]:g} m.")
     modelos = cargar_modelos(config.modelos, config.device)
     decir(f"Detectores: {', '.join(f'{n} ({r})' for n, r in modelos.rutas.items())}.")
+    grabados: list[str] = []
+    if config.grafos and modelos.device.startswith("cuda"):
+        grabados, fallo = modelos.grabar(info.ancho, info.alto)
+        if fallo:
+            decir(f"Aviso: sin grafo CUDA para {fallo}. Va paso a paso: mismo resultado, más lento.")
     lector = cargar_lector(config.modelos, modelos.device, afinados=config.afinados) if config.dorsales else None
     if lector is not None:
         decir(f"Lector de dorsales: {lector.nombre}.")
@@ -200,131 +209,172 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
     pasada_pausa = 0.0
     # Lecturas del dorsal en el fotograma de la mitad entre dos muestreados (`dorsales.junto_al_balon`).
     lecturas_medio = 0
-    for fotograma in tqdm(fotogramas(config, info, paso=paso, lectura=lectura, vecinos=vecinos, medio=cola is not None), total=total, desc="Analizando", unit="fot", disable=config.progreso):
-        pasada_pausa += progreso.punto_de_control()
-        n += 1
-        progreso.fase("pasada", n, total)
-        imagen = fotograma.imagen
-        det = detector.detectar(imagen, fotograma.t)
-        seguidas = seguidor.registrar(det.personas)
-        calibracion = calibrador.calibrar(imagen, fotograma.t, forzar=(n == 1))
-        xy_imagen = seguidas.get_anchors_coordinates(sv.Position.BOTTOM_CENTER)
-        xy_campo = calibrador.a_campo(xy_imagen) if calibracion.valida and len(seguidas) else None
+    # Sin esperas (`tuberia.py`): el vídeo se lee en otro hilo, y lo de la GPU que no depende de los fotogramas anteriores
+    # (personas, candidatos a balón y puntos del campo) se lanza ADELANTO fotogramas antes en el hilo de la GPU, mientras la
+    # CPU sigue con el actual. Lo que sí depende de los anteriores (seguir, elegir el balón, calibrar, los vecinos) va en
+    # orden y con los mismos datos: el resultado no cambia.
+    crono = Cronometro()
+    detector.cronometro = crono
+    gpu = TrabajadorGPU(sincrono=not config.solapar)
+    campo_adelantado = calibrador.detecta_siempre
+    leidos = fotogramas(config, info, paso=paso, lectura=lectura, vecinos=vecinos, medio=cola is not None)
+    if config.solapar:
+        leidos = en_segundo_plano(leidos, maximo=ADELANTO + 2)
 
-        # Con el campo calibrado, quien está lejos de las líneas (gradas, banquillo) no es del partido. Pero si la
-        # homografía deja fuera a la mayoría, lo que está mal es la homografía: el fotograma queda sin calibrar.
-        if xy_campo is not None:
-            en_campo = np.array([campo.dentro((float(p[0]), float(p[1])), margen=MARGEN_CAMPO_CM) for p in xy_campo])
-            if len(en_campo) >= 6 and en_campo.mean() < 0.5:
-                calibrador.invalidar(fotograma.t)
-                calibracion = calibrador.actual
-                xy_campo = None
-            else:
-                fuera_de_campo += int((~en_campo).sum())
-                seguidas, xy_imagen, xy_campo = seguidas[en_campo], xy_imagen[en_campo], xy_campo[en_campo]
+    def lanzar(fotograma, k: int):
+        return crono.medido("lanzar_gpu", gpu.enviar, k, detector.crudo, fotograma.imagen, campo_adelantado)
 
-        equipos, pesos = clasificador.clasificar(imagen, seguidas)
-        seguidas = seguidor.votar_equipos(seguidas, equipos, pesos)
-        seguidas = seguidor.separar_cruces(seguidas, fotograma.t)
-        tapada = tapados(seguidas.xyxy) if len(seguidas) else np.zeros(0, dtype=bool)
+    adelantados = adelantar(medir(leidos, crono, "leer_video"), lanzar, ADELANTO if config.solapar else 0)
+    try:
+        for fotograma, de_la_gpu in tqdm(adelantados, total=total, desc="Analizando", unit="fot", disable=config.progreso):
+            pasada_pausa += progreso.punto_de_control()
+            n += 1
+            progreso.fase("pasada", n, total)
+            imagen = fotograma.imagen
+            with crono.etapa("esperar_gpu"):
+                crudo = de_la_gpu.result()
+            with crono.etapa("seguir_y_balon"):
+                det = detector.detectar(imagen, fotograma.t, crudo)
+                seguidas = seguidor.registrar(det.personas)
+            with crono.etapa("calibrar"):
+                calibracion = calibrador.calibrar(imagen, fotograma.t, forzar=(n == 1), puntos=crudo.campo)
+                xy_imagen = seguidas.get_anchors_coordinates(sv.Position.BOTTOM_CENTER)
+                xy_campo = calibrador.a_campo(xy_imagen) if calibracion.valida and len(seguidas) else None
 
-        personas = []
-        equipo_fotograma: dict[int, int] = {}
-        for i in range(len(seguidas)):
-            tid = int(seguidas.tracker_id[i])
-            memoria = seguidor.memorias[tid]
-            equipo_fotograma[tid] = int(equipos[i])
-            clase = memoria.clase
-            caja = tuple(float(v) for v in seguidas.xyxy[i])
-            if not tapada[i]:
-                # El color de la equipación, para encontrar a los porteros aunque el detector los tome por jugadores.
-                rasgos = rasgos_equipacion(imagen, caja)
-                if rasgos is not None:
-                    memoria.sumar_equipacion(rasgos, fotograma.t)
-            personas.append(
-                Persona(
-                    tracklet=tid,
-                    clase=clase,
-                    equipo=None if clase == CLASE_ARBITRO else memoria.equipo,
-                    xy_imagen=(float(xy_imagen[i][0]), float(xy_imagen[i][1])),
-                    xy_campo=None if xy_campo is None else (float(xy_campo[i][0]), float(xy_campo[i][1])),
-                    caja=caja,
-                    confianza=float(seguidas.confidence[i]) if seguidas.confidence is not None else 0.0,
+                # Con el campo calibrado, quien está lejos de las líneas (gradas, banquillo) no es del partido. Pero si la
+                # homografía deja fuera a la mayoría, lo que está mal es la homografía: el fotograma queda sin calibrar.
+                if xy_campo is not None:
+                    en_campo = np.array([campo.dentro((float(p[0]), float(p[1])), margen=MARGEN_CAMPO_CM) for p in xy_campo])
+                    if len(en_campo) >= 6 and en_campo.mean() < 0.5:
+                        calibrador.invalidar(fotograma.t)
+                        calibracion = calibrador.actual
+                        xy_campo = None
+                    else:
+                        fuera_de_campo += int((~en_campo).sum())
+                        seguidas, xy_imagen, xy_campo = seguidas[en_campo], xy_imagen[en_campo], xy_campo[en_campo]
+
+            balon_imagen = None
+            balon_campo = None
+            balon_confianza = None
+            if len(det.balon):
+                centro = det.balon.get_anchors_coordinates(sv.Position.CENTER)[0]
+                balon_imagen = (float(centro[0]), float(centro[1]))
+                balon_confianza = float(det.balon.confidence[0]) if det.balon.confidence is not None else None
+                if calibracion.valida:
+                    balon_campo = calibrador.punto_a_campo(balon_imagen)
+                    if balon_campo is not None and not campo.dentro(balon_campo, margen=MARGEN_CAMPO_CM):
+                        # Un «balón» en la grada o en el banquillo no es el balón.
+                        balon_imagen, balon_campo, balon_confianza = None, None, None
+
+            # El balón de los muestreados en los que no se vio, en sus fotogramas vecinos (los de este tramo: los de después
+            # del anterior y los de antes de este). Va en el hilo de la GPU (todo lo del detector del balón, en el mismo
+            # hilo) mientras la CPU sigue con los equipos y los dorsales, y se espera antes de acabar el fotograma: lo que
+            # encuentra cuenta para elegir el balón del siguiente. De las personas solo lee cajas y clases, que lo que viene
+            # después no toca (solo cambia sus tracklets).
+            ultimo = detector.ultimo_balon
+            actual = Muestreado(
+                fotograma.t, None if balon_imagen is None else np.asarray(balon_imagen, dtype=np.float32),
+                ultimo[2] if balon_imagen is not None and ultimo is not None and ultimo[0] == fotograma.t else None, det.personas,
+            )
+            de_los_vecinos = None
+            if fotograma.intermedios:
+                de_los_vecinos = gpu.enviar(
+                    n, crono.medido, "gpu_vecinos", detector.balon_vecinos, fotograma.intermedios, previo, actual, vecinos, 1 / info.fps, config.vecinos_enteros,
                 )
+
+            with crono.etapa("equipos"):
+                equipos, pesos = clasificador.clasificar(imagen, seguidas)
+                seguidas = seguidor.votar_equipos(seguidas, equipos, pesos)
+                seguidas = seguidor.separar_cruces(seguidas, fotograma.t)
+                tapada = tapados(seguidas.xyxy) if len(seguidas) else np.zeros(0, dtype=bool)
+
+            personas = []
+            equipo_fotograma: dict[int, int] = {}
+            for i in range(len(seguidas)):
+                tid = int(seguidas.tracker_id[i])
+                memoria = seguidor.memorias[tid]
+                equipo_fotograma[tid] = int(equipos[i])
+                clase = memoria.clase
+                caja = tuple(float(v) for v in seguidas.xyxy[i])
+                if not tapada[i]:
+                    # El color de la equipación, para encontrar a los porteros aunque el detector los tome por jugadores.
+                    with crono.etapa("equipacion"):
+                        rasgos = rasgos_equipacion(imagen, caja)
+                        if rasgos is not None:
+                            memoria.sumar_equipacion(rasgos, fotograma.t)
+                personas.append(
+                    Persona(
+                        tracklet=tid,
+                        clase=clase,
+                        equipo=None if clase == CLASE_ARBITRO else memoria.equipo,
+                        xy_imagen=(float(xy_imagen[i][0]), float(xy_imagen[i][1])),
+                        xy_campo=None if xy_campo is None else (float(xy_campo[i][0]), float(xy_campo[i][1])),
+                        caja=caja,
+                        confianza=float(seguidas.confidence[i]) if seguidas.confidence is not None else 0.0,
+                    )
+                )
+                if n % 10 == 0 and clase != CLASE_ARBITRO:
+                    memoria.guardar_recorte(fotograma.t, caja, personas[-1].confianza, imagen, int(equipos[i]))
+                if cola_aspecto is not None and clase != CLASE_ARBITRO and not tapada[i] and caja[3] - caja[1] >= ap.ALTO_MIN_PX and (n + tid) % ap.RECORTE_CADA == 0:
+                    with crono.etapa("aspecto"):
+                        cola_aspecto.poner(tid, recortar(imagen, caja, margen=2))
+                if cola is not None and clase != CLASE_ARBITRO:
+                    with crono.etapa("dorsales"):
+                        zona = zona_dorsal(imagen, caja)
+                        if zona is not None:
+                            cola.poner(tid, zona.copy(), recortar(imagen, caja, margen=6).copy(), seguidor.memorias, int(equipos[i]), fotograma.t)
+
+            alto_img, ancho_img = imagen.shape[:2]
+            inst = Instante(
+                fotograma.indice, fotograma.t, personas, balon_imagen, balon_campo, calibracion.valida, balon_confianza=balon_confianza,
+                homografia=calibracion.homografia if calibracion.valida else None,
+                vista_campo=calibrador.punto_a_campo((ancho_img / 2, alto_img / 2)) if calibracion.valida else None,
             )
-            if n % 10 == 0 and clase != CLASE_ARBITRO:
-                memoria.guardar_recorte(fotograma.t, caja, personas[-1].confianza, imagen, int(equipos[i]))
-            if cola_aspecto is not None and clase != CLASE_ARBITRO and not tapada[i] and caja[3] - caja[1] >= ap.ALTO_MIN_PX and (n + tid) % ap.RECORTE_CADA == 0:
-                cola_aspecto.poner(tid, recortar(imagen, caja, margen=2))
-            if cola is not None and clase != CLASE_ARBITRO:
-                zona = zona_dorsal(imagen, caja)
-                if zona is not None:
-                    cola.poner(tid, zona.copy(), recortar(imagen, caja, margen=6).copy(), seguidor.memorias, int(equipos[i]), fotograma.t)
+            instantes.append(inst)
+            vistos += balon_imagen is not None
+            if cola is not None and fotograma.medio is not None and len(instantes) >= 2:
+                medio = fotograma.medio
+                with crono.etapa("dorsales"):
+                    for tid, caja, equipo in junto_al_balon(instantes[-2], inst, medio.t, equipo_fotograma):
+                        zona = zona_dorsal(medio.imagen, caja)
+                        if zona is not None:
+                            cola.poner(tid, zona.copy(), recortar(medio.imagen, caja, margen=6).copy(), seguidor.memorias, equipo, medio.t)
+                            lecturas_medio += 1
+            calibrados_hasta += calibracion.valida
 
-        balon_imagen = None
-        balon_campo = None
-        balon_confianza = None
-        if len(det.balon):
-            centro = det.balon.get_anchors_coordinates(sv.Position.CENTER)[0]
-            balon_imagen = (float(centro[0]), float(centro[1]))
-            balon_confianza = float(det.balon.confidence[0]) if det.balon.confidence is not None else None
-            if calibracion.valida:
-                balon_campo = calibrador.punto_a_campo(balon_imagen)
-                if balon_campo is not None and not campo.dentro(balon_campo, margen=MARGEN_CAMPO_CM):
-                    # Un «balón» en la grada o en el banquillo no es el balón.
-                    balon_imagen, balon_campo, balon_confianza = None, None, None
-
-        alto_img, ancho_img = imagen.shape[:2]
-        inst = Instante(
-            fotograma.indice, fotograma.t, personas, balon_imagen, balon_campo, calibracion.valida, balon_confianza=balon_confianza,
-            homografia=calibracion.homografia if calibracion.valida else None,
-            vista_campo=calibrador.punto_a_campo((ancho_img / 2, alto_img / 2)) if calibracion.valida else None,
-        )
-        instantes.append(inst)
-        vistos += balon_imagen is not None
-        if cola is not None and fotograma.medio is not None and len(instantes) >= 2:
-            medio = fotograma.medio
-            for tid, caja, equipo in junto_al_balon(instantes[-2], inst, medio.t, equipo_fotograma):
-                zona = zona_dorsal(medio.imagen, caja)
-                if zona is not None:
-                    cola.poner(tid, zona.copy(), recortar(medio.imagen, caja, margen=6).copy(), seguidor.memorias, equipo, medio.t)
-                    lecturas_medio += 1
-        calibrados_hasta += calibracion.valida
-
-        # El balón de los muestreados en los que no se vio, en sus fotogramas vecinos (los de este tramo: los de después del
-        # anterior y los de antes de este).
-        ultimo = detector.ultimo_balon
-        actual = Muestreado(
-            inst.t, None if balon_imagen is None else np.asarray(balon_imagen, dtype=np.float32),
-            ultimo[2] if balon_imagen is not None and ultimo is not None and ultimo[0] == inst.t else None, det.personas,
-        )
-        entre = []
-        if fotograma.intermedios:
-            entre = detector.balon_vecinos(fotograma.intermedios, previo, actual, vecinos, 1 / info.fps, config.vecinos_enteros)
-            pista.extend(entre)
-            if balon_imagen is None and entre:
-                detector.recordar_balon(entre[-1][0], entre[-1][1])
-            if len(instantes) >= 2:
-                anterior = instantes[-2]
-                vistos_cerca += anterior.balon_imagen is not None or any(abs(t - anterior.t) <= margen_cerca for t, _, _ in pista[-8:])
-        previo = actual
-        directo.fotograma(inst, entre, tracklets=len(seguidor.memorias))
-        if progreso.toca():
-            activo_s = max(1e-6, time.monotonic() - pasada_inicio - pasada_pausa)
-            fps_proceso = n / activo_s
-            progreso.estado(
-                t_video=round(fotograma.t, 1),
-                fotogramas=n,
-                jugadores_en_imagen=sum(1 for p in personas if p.clase != CLASE_ARBITRO),
-                jugadores_seguidos=sum(1 for m in seguidor.memorias.values() if m.clase != CLASE_ARBITRO),
-                balon_pct=round(100 * (vistos_cerca if vecinos else vistos) / max(1, n - 1 if vecinos else n), 1),
-                calibrado_pct=round(100 * calibrados_hasta / n, 1),
-                fps=round(fps_proceso, 1),
-                velocidad=round(fps_proceso / fps_real, 2),
-                resta_s=round(max(0, total - n) / fps_proceso),
-            )
-        if renderizador:
-            renderizador.dibujar(imagen, inst)
+            entre = []
+            if de_los_vecinos is not None:
+                with crono.etapa("esperar_vecinos"):
+                    entre = de_los_vecinos.result()
+                pista.extend(entre)
+                if balon_imagen is None and entre:
+                    detector.recordar_balon(entre[-1][0], entre[-1][1])
+                if len(instantes) >= 2:
+                    anterior = instantes[-2]
+                    vistos_cerca += anterior.balon_imagen is not None or any(abs(t - anterior.t) <= margen_cerca for t, _, _ in pista[-8:])
+            previo = actual
+            with crono.etapa("directo"):
+                directo.fotograma(inst, entre, tracklets=len(seguidor.memorias))
+            if progreso.toca():
+                activo_s = max(1e-6, time.monotonic() - pasada_inicio - pasada_pausa)
+                fps_proceso = n / activo_s
+                progreso.estado(
+                    t_video=round(fotograma.t, 1),
+                    fotogramas=n,
+                    jugadores_en_imagen=sum(1 for p in personas if p.clase != CLASE_ARBITRO),
+                    jugadores_seguidos=sum(1 for m in seguidor.memorias.values() if m.clase != CLASE_ARBITRO),
+                    balon_pct=round(100 * (vistos_cerca if vecinos else vistos) / max(1, n - 1 if vecinos else n), 1),
+                    calibrado_pct=round(100 * calibrados_hasta / n, 1),
+                    fps=round(fps_proceso, 1),
+                    velocidad=round(fps_proceso / fps_real, 2),
+                    resta_s=round(max(0, total - n) / fps_proceso),
+                )
+            if renderizador:
+                renderizador.dibujar(imagen, inst)
+    finally:
+        gpu.cerrar()
+        cerrar(adelantados, leidos)
+    pasada_activa_s = max(1e-6, time.monotonic() - pasada_inicio - pasada_pausa)
     # Lo provisional del último instante, antes de que se complete el balón y se decida quién es quién.
     directo.fin_pasada()
     if renderizador:
@@ -550,6 +600,8 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
         },
         "archivos": {"mapas": mapas, "posiciones": posiciones, "anotado": "anotado.mp4" if renderizador else None, "repeticion": repeticion},
         "tiempos": {k: round(v, 1) for k, v in tiempos.items()},
+        # Desde la 2.4.0: en qué se va el tiempo de la pasada principal (`tuberia.Cronometro.resumen`).
+        "rendimiento": {**crono.resumen(n, pasada_activa_s, config.solapar), "grafos": grabados},
     }
     acta = acta_propuesta(resultado_eventos, posesion, resumenes, acciones, dorsales, recortes, config.nombres_equipos, colores, resolucion, acta_oficial, en_juego)
     if llm is not None:

@@ -19,6 +19,7 @@ la mayor con modelos o una cadena nueva, la menor con reglas nuevas y la de parc
 
 | Versión | Fecha | Qué cambia |
 |---|---|---|
+| 2.4.0 | 26-11-2026 | **La pasada sin esperas, con el mismo resultado**: el vídeo se lee en otro hilo, cada fotograma se sube una vez a la GPU para los tres detectores, lo de la GPU que no depende de los fotogramas anteriores (personas, candidatos a balón, puntos del campo) se lanza dos fotogramas antes en su propio hilo, los vecinos del balón en cuanto se sabe dónde estaba, y el paso de cada detector va grabado en un grafo CUDA, sin trazar ni congelar el modelo, que cambiaría los números (`tuberia.py`, `rfdetr_comun.grabar`). Nada de lo que propone cambia: en el J8 y en el partido entero, idéntico byte a byte a la 2.3.2 salvo los tiempos. La pasada baja de 174 a 132-136 ms por fotograma en el J8 (20:00-21:30) y de 166 a 132,5 en el tramo 20:00-30:00 (−20 %); el partido entero se analiza en 60,4 minutos, frente a 93,9 con la 2.3.2 (vídeo de 96,4). `--sin-solapar` y `--sin-grafos`, para medir; `rendimiento` en `analisis.json`, con lo que tarda cada etapa («La pasada sin esperas») |
 | 2.3.2 | 26-11-2026 | **Sin TensorRT: los tres detectores con PyTorch** (FP16 en la GPU, FP32 en la CPU), porque la licencia de TensorRT no deja ofrecerlo como servicio por internet sin permiso de NVIDIA; los mismos pesos valen en cualquier GPU sin compilar nada. Fuera las órdenes `exportar-*`, la opción `--motor` de las evaluaciones, la sonda de la 2.3.1 y los paquetes `tensorrt-cu12`, `onnx`, `onnxconverter-common` y `polygraphy`; `tests/test_licencias.py` falla si entra TensorRT, Ultralytics o `rfdetr[plus]`. Y `posiciones.csv.gz` ya no lleva la hora en la cabecera del gzip. En el J8 (20:00-30:00), dos pasadas idénticas byte a byte; frente a la 2.3.1, el campo calibrado igual (72,7 %), el balón con huecos del 67,1 al 66,6 %, 105 toques en vez de 107, 31 eventos en vez de 27 y la posesión de 40/60 a 43,6/56,4: otra pasada, ni mejor ni peor. La pasada tarda un 27 % más (497 s), y un partido entero sigue tardando menos de lo que dura (pasos 1 y 2; «Sin TensorRT») |
 | 2.3.1 | 25-11-2026 | **Dos pasadas del mismo vídeo dan lo mismo**: el motor TensorRT del campo (FP16) no devolvía siempre lo mismo con la misma imagen (hasta 136 px en un punto) y la calibración arrastraba cada diferencia; en el J8 (20:00-21:30), cuatro pasadas iguales daban el campo calibrado entre el 64 y el 83 %, de 1 a 4 eventos y la posesión de 62/38 a 41/59. Ahora un motor TensorRT solo se usa si **da siempre lo mismo** con una imagen de prueba al cargarlo (`rfdetr_comun.da_siempre_lo_mismo`); si no, van los pesos de PyTorch. El del campo no la pasa y va con PyTorch FP16: dos pasadas salen idénticas, calibra igual o algo más y cuesta unos 10 ms por fotograma analizado («Dos pasadas, el mismo resultado») |
 | 2.3.0 | 25-11-2026 | **El balón primero y quién es quién también por el aspecto**: al fotograma analizado sin balón se le busca en los de ±0,04 s (`vecinos_balon_s`), en una ventana junto al balón cercano y, sin él, en la imagen entera de un solo fotograma por hueco (`vecinos_enteros`); con el campo calibrado, los huecos de hasta 3 s se rellenan **siguiendo a la cámara**; **balón en juego** (`en_juego.py`): lo visto y la trayectoria se miden sobre ese tiempo (`recuento.balon_en_juego`, y `calidad.balonEnJuego` en la propuesta), la posesión solo reparte ese tiempo y la app enseña y avisa con el balón visto en juego; el seguidor recuerda 1,5 s al que pierde (antes 10) y parte los tracklets de dos del mismo equipo que se cruzan; el dorsal de los que están junto al balón se relee en el fotograma de la mitad; y **el aspecto** (SigLIP, modelo nuevo: tocaría la mayor, pero se pidió la 2.3): a la cadena sin dorsal se le da el jugador que dice una regresión aprendida en el mismo partido con las identificadas, solo si antes se comprueba que acierta en el 95 % de las que da y si podía ser él. En el J8, tramo 20:00-30:00: el balón con trayectoria pasa del 68,6 al 80 % del tiempo en juego (visto, del 41,3 al 48,6 %), el tiempo con identidad del 26 al 32 % y del 36 al 42 %, y la pasada de 239 a 359 s (pasos 2, 3 y 6; «El balón en juego y quién es quién por el aspecto») |
@@ -1058,7 +1059,74 @@ como servicio, así que TensorRT sale entero:
 - **Coste**: la pasada de esos 10 minutos tarda 497 s, frente a 359 con los tres en TensorRT (2.3.0) y unos 390 con la
   2.3.1 (359 más los 10 ms por fotograma del campo con PyTorch): un 27 % más. El análisis entero, 516 s: un partido
   sigue tardando menos de lo que dura (con la RTX 5070 Ti). Si hace falta más velocidad, se probarán alternativas
-  libres (`torch.compile`, ONNX Runtime con CUDA), nunca TensorRT.
+  libres (`torch.compile`, ONNX Runtime con CUDA), nunca TensorRT. Desde la 2.4.0 va más rápida sin cambiar nada de lo
+  que propone (ver «La pasada sin esperas»).
+
+## La pasada sin esperas (26-11-2026, Ojeador 2.4.0)
+
+Con la 2.3.2, un partido tardaba en analizarse más o menos lo que dura (el del J8, desde la app, 93,9 minutos para
+96,4 de vídeo; en algunos ratos, a 0,89-0,95 veces su velocidad). La pasada principal hacía cada
+fotograma analizado en fila: leer y decodificar el vídeo, subir la imagen a la GPU (tres veces, una por detector),
+esperar a cada detector, seguir a las personas, elegir el balón, calibrar, separar los equipos, preparar dorsales y
+aspecto, y buscar el balón en los fotogramas vecinos. Mientras la CPU trabajaba, la GPU esperaba, y al revés.
+
+Lo que cambia (`tuberia.py`, `analizador.py`):
+
+- **El vídeo se lee en otro hilo** (`en_segundo_plano`), hasta cuatro fotogramas por delante.
+- **Cada fotograma se sube una vez** a la GPU (`rfdetr_comun.subir`) y lo usan los tres detectores; las teselas del
+  balón salen de él con los mismos valores que subiéndolas aparte.
+- **Lo de la GPU que no depende de lo anterior** (las personas que ve el detector, los candidatos a balón y los puntos
+  del campo: `Detector.crudo`) se lanza dos fotogramas antes en un hilo de la GPU (`TrabajadorGPU`), que atiende por
+  orden de fotograma. Lo que sí depende de los fotogramas anteriores (seguir, elegir el balón, calibrar) sigue en el
+  hilo principal, en el mismo orden y con los mismos datos.
+- **Los vecinos del balón** se lanzan en cuanto se sabe dónde estaba el balón en el fotograma: la GPU los busca
+  mientras la CPU sigue con los equipos y los dorsales, y se esperan antes de pasar al siguiente fotograma, porque lo
+  que encuentran cuenta para elegir su balón.
+- **Grafos CUDA** (`rfdetr_comun.grabar`, `Modelos.grabar`): el paso de cada detector se graba una vez al cargarlo
+  (menos de 0,2 s) y luego se reproduce con los mismos kernels, sin lanzarlos uno a uno desde Python. Los de jugadores
+  y campo, con una imagen; el del balón, con las teselas del fotograma (24 en 1080p). Los vecinos del balón van sin
+  grafo, porque cada vez llevan un número distinto de teselas. La opción que trae RF-DETR (`inference(compile=True)`)
+  traza y congela el modelo, y eso sí cambia los números (en una prueba, ninguno de 12 fotogramas igual); grabarlo tal
+  cual da lo mismo: 40 de 40 fotogramas idénticos en los tres detectores, y uno que no se deje grabar sigue sin grafo.
+
+**El resultado es el mismo.** En el J8 (20:00-21:30), 227 de los 228 archivos son idénticos byte a byte a los de la
+2.3.2, con y sin solapar y con y sin grafos (el otro es `resumen.md`, que lleva los tiempos). En el tramo 20:00-30:00,
+1.205 de 1.206, con la versión de la 2.4.0 en lugar de la 2.3.2. En el partido entero (28.909 fotogramas), frente al
+análisis que hizo la app con la 2.3.2, 11.847 de 11.848: todos salvo `resumen.md`.
+
+**Velocidad** (RTX 5070 Ti; la pasada principal, y lo que tarda cada fotograma analizado):
+
+| Versión | J8 20:00-21:30 (450 fotogramas) | J8 20:00-30:00 (3.000) | Partido entero (28.909) |
+|---|---|---|---|
+| 2.3.2 | 78,2 s · 174 ms | 496,6 s · 166 ms | 5.562 s · 192 ms |
+| 2.4.0 sin grafos | 71,9 s · 159 ms | | |
+| **2.4.0** | **59,8-61,6 s · 132-136 ms** | **397,7 s · 132,5 ms** | **3.582 s · 124 ms** |
+
+El partido entero, con los mismos argumentos que la app (leyendo el vídeo del volumen de Docker y con la repetición
+para el visor): el análisis completo baja de 93,9 a 60,4 minutos para 96,4 de vídeo, de 1,03 a 1,60 veces su
+velocidad. En esa columna, la 2.3.2 es la pasada que hizo la app, más lenta por fotograma que en los tramos (192 ms
+frente a 166-174): parte de la diferencia es de las condiciones, y en el mismo tramo y en las mismas condiciones la
+2.4.0 ahorra un 20 %. Solo con leer el vídeo por adelantado y subir la imagen una vez, sin adelantar lo de la GPU ni
+grafos, el partido entero tardó 75,8 minutos (con otra prueba en la GPU unos 6 de ellos). Probado y descartado: que Python cambie de hilo más a menudo (`sys.setswitchinterval` a 0,5 ms: 146 ms
+en el primer tramo) y adelantar un solo fotograma (148 ms).
+
+**Dónde está ahora el límite: la GPU.** En el J8 (20:00-21:30), su hilo está ocupado el 99,5 % de la pasada y la GPU
+trabaja de verdad el 87 % del tiempo; la CPU solo necesita unos 35 ms por fotograma. Por fotograma analizado, el balón
+se lleva 50 ms, sus vecinos 48, los jugadores 17, el campo 15 y subir la imagen 2. En el partido entero, donde el balón
+se ve más a menudo y hay menos vecinos que buscar, el hilo de la GPU va ocupado el 98 %: balón 55 ms, vecinos 30,
+jugadores 18, campo 16 y subir 1; la CPU, unos 37. `analisis.json` lo cuenta en `rendimiento`: las etapas
+del hilo principal, lo de la GPU, cuánto estuvo ocupada y qué detectores van con grafo. `--sin-solapar` y
+`--sin-grafos` lo hacen a la antigua, para medir lo que gana cada cosa o apartarla si algo falla.
+
+Lo que no se hizo:
+
+- **Buscar el balón solo alrededor de donde se espera** (menos teselas). Con la 2.3.2 del partido entero, la ventana
+  habría bastado en el 22 % de los fotogramas (el 47 % de los que la prueban); en los demás habría que buscar dos
+  veces, y el ahorro neto se quedaba en 1-7 ms por fotograma, cambiando lo que se ve. No compensa.
+- **Compilar los modelos** (`torch.compile` o el trazado de RF-DETR): cambian los números. **TensorRT**, por su
+  licencia (ver «Sin TensorRT»).
+- Lo siguiente que más daría: **grafos también para los vecinos del balón** (uno por tamaño de lote, compartiendo la
+  memoria), hoy la parte más grande que va sin grafo.
 
 ## El balón con RF-DETR (17-11-2026)
 

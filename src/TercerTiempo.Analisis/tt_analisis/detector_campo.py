@@ -44,16 +44,11 @@ class DetectorCampo:
         prediccion, ruta = rfdetr_comun.cargar(QUE, modelos, device)
         return cls(prediccion, device, ruta)
 
-    def _tensor(self, imagen_bgr: np.ndarray):
-        import torch
-
-        fotograma = torch.from_numpy(np.ascontiguousarray(imagen_bgr)).to(self.device, non_blocking=True)
-        return fotograma.flip(-1).permute(2, 0, 1).unsqueeze(0).float().div_(255.0)
-
-    def detectar(self, imagen_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    def detectar(self, imagen_bgr: np.ndarray, tensor=None) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
         """(caja xyxy, puntos (32, 2) en píxeles, confianza de cada punto (32,)) del campo más claro; None si no ve
-        ninguno."""
-        resultado = self.prediccion.predict(self._tensor(imagen_bgr), threshold=CONF_CAMPO, include_source_image=False)
+        ninguno. `tensor`: el fotograma ya subido (`rfdetr_comun.subir`)."""
+        tensor = tensor if tensor is not None else rfdetr_comun.subir(imagen_bgr, self.device)
+        resultado = self.prediccion.predict(tensor, threshold=CONF_CAMPO, include_source_image=False)
         if isinstance(resultado, list):
             resultado = resultado[0]
         if resultado is None or len(resultado) == 0:
@@ -65,9 +60,9 @@ class DetectorCampo:
         caja = np.asarray(resultado.data["xyxy"][i], dtype=np.float32) if "xyxy" in resultado.data else None
         return caja, xy, conf
 
-    def puntos(self, imagen_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def puntos(self, imagen_bgr: np.ndarray, tensor=None) -> tuple[np.ndarray, np.ndarray]:
         """Los 32 vértices con su confianza (ceros si no ve el campo)."""
-        detectado = self.detectar(imagen_bgr)
+        detectado = self.detectar(imagen_bgr, tensor=tensor)
         if detectado is None:
             return np.zeros((NUM_PUNTOS, 2), dtype=np.float32), np.zeros(NUM_PUNTOS, dtype=np.float32)
         return detectado[1], detectado[2]

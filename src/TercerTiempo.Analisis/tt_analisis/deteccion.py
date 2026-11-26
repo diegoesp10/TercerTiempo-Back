@@ -19,6 +19,7 @@ import supervision as sv
 from .config import ALTURA_JUGADOR_CM, CLASE_ARBITRO, Configuracion
 from .modelos import Modelos
 from .rastreador import Rastreador
+from .rfdetr_comun import subir
 
 BALON_MIN_PX = 4
 BALON_MAX_PX = 70
@@ -97,6 +98,21 @@ class Detecciones:
     balon: sv.Detections
 
 
+@dataclass(frozen=True)
+class Crudo:
+    """Lo que hace la GPU con un fotograma muestreado sin mirar los anteriores: las personas que ve el detector (aún sin
+    seguir), los candidatos a balón (cajas y puntuaciones, sin elegir) y, si se piden, los puntos del campo (xy,
+    confianza). Por eso puede hacerse por adelantado y en otro hilo (`Detector.crudo`)."""
+
+    personas: sv.Detections
+    balon: tuple[np.ndarray, np.ndarray]
+    campo: tuple[np.ndarray, np.ndarray] | None = None
+
+
+def _sin_medir(etapa: str, funcion, *args, **kwargs):
+    return funcion(*args, **kwargs)
+
+
 def _cajas(xyxy: np.ndarray, confianza: np.ndarray) -> sv.Detections:
     xyxy = np.asarray(xyxy, dtype=np.float32).reshape(-1, 4)
     if len(xyxy) == 0:
@@ -159,17 +175,32 @@ class Detector:
     vecinos_enteros: int = 0
     # Último balón visto: (t, centro en px, velocidad en px/s o None).
     _ultimo_balon: tuple[float, np.ndarray, np.ndarray | None] | None = None
+    # Dónde apuntar lo que tarda cada detector (`tuberia.Cronometro`), si se mide.
+    cronometro: object | None = None
     rastreador: Rastreador = field(init=False)
 
     def __post_init__(self) -> None:
         self.rastreador = Rastreador(self.config.seguidor_efectivo(), self.config.fps_muestreo, self.config.camara)
 
-    def detectar(self, imagen: np.ndarray, t: float) -> Detecciones:
-        personas = self.rastreador.actualizar(self.modelos.jugadores.detectar(imagen, self.config.confianza), imagen, t)
-        return Detecciones(personas, self._detectar_balon(imagen, personas, t))
+    def crudo(self, imagen: np.ndarray, campo: bool = False) -> Crudo:
+        """La parte de la GPU de `detectar`, con el fotograma subido una sola vez para los tres detectores. No toca el
+        estado del detector: puede ir en otro hilo y antes de que se sigan los fotogramas anteriores. Con `cronometro`,
+        apunta lo que tarda cada detector (cada uno espera a que la GPU acabe lo suyo para devolverlo)."""
+        medir = self.cronometro.medido if self.cronometro is not None else _sin_medir
+        tensor = medir("gpu_subir", subir, imagen, self.modelos.device)
+        personas = medir("gpu_jugadores", self.modelos.jugadores.detectar, imagen, self.config.confianza, tensor=tensor)
+        balon = medir("gpu_balon", self.modelos.balon.detectar, imagen, CONF_BALON, tensor=tensor)
+        puntos = medir("gpu_campo", self.modelos.campo.puntos, imagen, tensor=tensor) if campo else None
+        return Crudo(personas, balon, puntos)
 
-    def _detectar_balon(self, imagen: np.ndarray, personas: sv.Detections, t: float) -> sv.Detections:
-        cajas, puntuaciones = self.modelos.balon.detectar(imagen, CONF_BALON)
+    def detectar(self, imagen: np.ndarray, t: float, crudo: Crudo | None = None) -> Detecciones:
+        """Las personas seguidas y el balón elegido. Lo de la GPU (`crudo`), si no viene hecho, se hace aquí."""
+        crudo = crudo if crudo is not None else self.crudo(imagen)
+        personas = self.rastreador.actualizar(crudo.personas, imagen, t)
+        return Detecciones(personas, self._elegir_balon(crudo.balon, personas, t))
+
+    def _elegir_balon(self, balon: tuple[np.ndarray, np.ndarray], personas: sv.Detections, t: float) -> sv.Detections:
+        cajas, puntuaciones = balon
         candidatos = self._plausibles(_cajas(cajas, puntuaciones), t)
         prediccion, radio = self._prediccion(t)
         balon, flojos = elegir_balon(candidatos, personas, prediccion, radio)

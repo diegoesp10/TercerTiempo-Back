@@ -47,6 +47,8 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--sin-apariencia", action="store_true", help="No reconocer por el aspecto a quien no se le lee el dorsal.")
     a.add_argument("--guardar-dorsales", type=Path, default=None, help="Carpeta donde dejar las zonas del dorsal y sus etiquetas (los jugadores identificados) para `entrenar-dorsales`.")
     a.add_argument("--sin-repeticion", action="store_true", help="No escribir repeticion/ (lo que se vio en cada fotograma, para `visor`).")
+    a.add_argument("--sin-solapar", action="store_true", help="Sin leer el vídeo ni usar la GPU por adelantado: cada paso espera al anterior (mismo resultado, más lento; para medir).")
+    a.add_argument("--sin-grafos", action="store_true", help="Sin grafos CUDA: cada detector lanza su paso operación a operación (mismo resultado, más lento; para medir).")
 
     v = sub.add_parser("visor", help="Abre el visor en una ventana propia: el vídeo con lo que vio y sacó el analizador encima, fotograma a fotograma.")
     v.add_argument("carpetas", type=Path, nargs="*", help="Carpetas de análisis (con analisis.json) o carpetas donde buscarlos; por defecto, salidas/.")
@@ -361,6 +363,8 @@ def main(argv: list[str] | None = None) -> int:
         saque=a_segundos(args.saque) if args.saque else 0.0,
         guardar_dorsales=args.guardar_dorsales,
         repeticion=not args.sin_repeticion,
+        solapar=not args.sin_solapar,
+        grafos=not args.sin_grafos,
     )
     from .analizador import analizar
     from .modelos import SinGpu

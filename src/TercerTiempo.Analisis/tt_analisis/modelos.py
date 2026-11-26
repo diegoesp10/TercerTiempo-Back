@@ -62,6 +62,22 @@ class Modelos:
     # Qué archivo de pesos se ha cargado para cada detector (relativo a la carpeta de modelos).
     rutas: dict[str, str] = field(default_factory=dict)
 
+    def grabar(self, ancho: int, alto: int) -> tuple[list[str], str | None]:
+        """Graba en grafos CUDA (`rfdetr_comun.grabar`) el paso de los detectores con las entradas de este vídeo: una
+        imagen para jugadores y campo, y todas las teselas del fotograma para el balón (los vecinos del balón, con lotes de
+        cualquier tamaño, van sin grafo). Devuelve los que se grabaron y, si alguno no pudo, por qué; ese sigue sin grafo."""
+        from . import rfdetr_comun
+        from .teselas import rejilla
+
+        grabados: list[str] = []
+        for que, lote in (("jugadores", 1), ("balon", len(rejilla(ancho, alto))), ("campo", 1)):
+            try:
+                rfdetr_comun.grabar(getattr(self, que).prediccion, lote, self.device)
+            except Exception as error:
+                return grabados, f"{que}: {error}"
+            grabados.append(que)
+        return grabados, None
+
 
 def cargar_modelos(carpeta: Path, device: str) -> Modelos:
     from .detector_balon import DetectorBalon
