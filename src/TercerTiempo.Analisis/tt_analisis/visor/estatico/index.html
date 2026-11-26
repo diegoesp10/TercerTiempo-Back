@@ -17,12 +17,14 @@
 
     <main class="lista" id="pantalla-lista" hidden>
       <h1>Análisis</h1>
-      <p class="ayuda">Cada análisis del Ojeador deja su repetición: el vídeo con lo que vio y lo que sacó en cada fotograma. Elige uno o pega la ruta de su carpeta (la que tiene <code>analisis.json</code>). Los que se están haciendo salen como «Analizando» y se pueden ver mientras avanzan.</p>
+      <p class="ayuda">Cada análisis del Ojeador deja su repetición: el vídeo con lo que vio y lo que sacó en cada fotograma. Elige uno o pega la ruta de su carpeta (la que tiene <code>analisis.json</code>). Los que se están haciendo salen como «Analizando» y se pueden ver mientras avanzan. Con «Carpeta» ves dónde está cada uno y con «Borrar» lo quitas.</p>
+      <section class="carpetas" id="carpetas" aria-label="Dónde se guardan" hidden></section>
       <form class="abrir" id="form-abrir">
         <input id="ruta-abrir" type="text" placeholder="C:\…\salidas\partido  o  \\wsl.localhost\…\videos\analysis\…" autocomplete="off" spellcheck="false" aria-label="Carpeta del análisis">
         <button class="boton primario" type="submit">Abrir</button>
       </form>
       <p class="error" id="error-lista" hidden></p>
+      <p class="aviso-lista" id="aviso-lista" role="status" hidden></p>
       <div class="tarjetas" id="tarjetas"></div>
     </main>
 
@@ -75,5 +77,18 @@
       </aside>
     </main>
   </div>
+
+  <dialog class="dialogo" id="dialogo-borrar" aria-labelledby="borrar-titulo">
+    <h2 id="borrar-titulo">¿Borrar este análisis?</h2>
+    <p class="borrar-partido" id="borrar-partido"></p>
+    <p class="ruta" id="borrar-ruta"></p>
+    <p id="borrar-como"></p>
+    <p class="sub" id="borrar-app" hidden>Es de la app: la app ya guardó lo que propone y las fotos de los jugadores, así que allí no se pierde nada. Aquí no se podrá volver a ver hasta que se vuelva a analizar el vídeo.</p>
+    <p class="error" id="borrar-error" role="alert" hidden></p>
+    <div class="dialogo-botones">
+      <button class="boton" type="button" id="btn-borrar-no">Cancelar</button>
+      <button class="boton peligro lleno" type="button" id="btn-borrar-si">Borrar</button>
+    </div>
+  </dialog>
 </body>
 </html>

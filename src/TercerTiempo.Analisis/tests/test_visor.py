@@ -1,13 +1,16 @@
 import http.client
 import json
 import os
+import shutil
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
 from tt_analisis.repeticion import CARPETA, DIRECTO, ESTADO_DIRECTO, FINAL, FOTOGRAMAS
-from tt_analisis.visor.servidor import Biblioteca, Servidor, identificador, absoluta
+from tt_analisis.visor import servidor as servidor_mod
+from tt_analisis.visor.servidor import Biblioteca, Servidor, identificador, absoluta, va_a_la_papelera
 
 VIDEO = bytes(range(256)) * 40
 
@@ -276,3 +279,140 @@ def test_si_lo_provisional_desaparece_la_pagina_lo_sabe_y_sigue_mirando(visor):
     directo = _json(servidor, f"/api/a/{ident}/directo?desde=0")
     assert directo["inicio"] == 2000.0 and directo["vivo"] is True and directo["instantes"]["t"] == [0.0]
     assert ident in [f["id"] for f in _json(servidor, "/api/analisis")]
+
+
+# ---------------------------------------------------------------- dónde están y borrarlos
+
+@pytest.fixture
+def papelera(monkeypatch):
+    """Sin tocar la Papelera de verdad: lo que se le manda se apunta y se borra."""
+    mandadas = []
+
+    def a_la_papelera(carpeta):
+        mandadas.append(carpeta)
+        shutil.rmtree(carpeta)
+
+    monkeypatch.setattr(servidor_mod, "va_a_la_papelera", lambda carpeta: True)
+    monkeypatch.setattr(servidor_mod, "a_la_papelera", a_la_papelera)
+    return mandadas
+
+
+def _borrar(servidor, carpeta, cabeceras=None):
+    respuesta, contenido = _pedir(servidor, "POST", f"/api/a/{identificador(absoluta(carpeta))}/borrar", {}, cabeceras)
+    return respuesta.status, json.loads(contenido)
+
+
+def test_dice_en_que_carpetas_busca(visor):
+    servidor, tmp_path = visor
+    assert _json(servidor, "/api/carpetas") == [{"ruta": str(absoluta(tmp_path / "salidas")), "existe": True}]
+
+
+def test_borrar_lo_manda_a_la_papelera_y_lo_quita_de_la_lista(visor, papelera):
+    servidor, tmp_path = visor
+    carpeta = tmp_path / "salidas" / "j8" / "pasada"
+    assert _json(servidor, f"/api/a/{_id(tmp_path)}/ficha")["papelera"] is True
+    # Desde otra web, nunca.
+    assert _borrar(servidor, carpeta, {"Origin": "http://malo.example"})[0] == 403
+    assert _borrar(servidor, carpeta, {"Sec-Fetch-Site": "cross-site"})[0] == 403
+    assert carpeta.exists() and papelera == []
+
+    assert _borrar(servidor, carpeta) == (200, {"ok": True, "papelera": True})
+    assert papelera == [absoluta(carpeta)] and not carpeta.exists()
+    # El vídeo del partido no se toca.
+    assert (tmp_path / "partido.mp4").read_bytes() == VIDEO
+    assert _json(servidor, "/api/analisis") == []
+    assert _pedir(servidor, "GET", f"/api/a/{_id(tmp_path)}/ficha")[0].status == 404
+    estado, respuesta = _borrar(servidor, carpeta)
+    assert estado == 404 and respuesta["error"] == "Ese análisis ya no está."
+
+
+def test_sin_papelera_se_borra_del_todo(visor, monkeypatch):
+    servidor, tmp_path = visor
+    mandadas = []
+    monkeypatch.setattr(servidor_mod, "va_a_la_papelera", lambda carpeta: False)
+    monkeypatch.setattr(servidor_mod, "a_la_papelera", mandadas.append)
+    carpeta = tmp_path / "salidas" / "j8" / "pasada"
+    assert _json(servidor, f"/api/a/{_id(tmp_path)}/ficha")["papelera"] is False
+    assert _borrar(servidor, carpeta) == (200, {"ok": True, "papelera": False})
+    assert not carpeta.exists() and mandadas == []
+
+
+def test_no_borra_uno_que_se_esta_haciendo_y_si_uno_que_se_paro(visor, papelera):
+    servidor, tmp_path = visor
+    video = tmp_path / "partido.mp4"
+    vivo = _en_marcha(tmp_path / "salidas" / "j9", video)
+    estado, respuesta = _borrar(servidor, vivo)
+    assert estado == 409 and respuesta["error"].startswith("Se está analizando")
+    assert (vivo / CARPETA / ESTADO_DIRECTO).exists()
+    # Tampoco uno vuelto a lanzar encima de otro terminado: mientras se hace, es el que manda.
+    encima = _analisis(tmp_path / "salidas" / "j10", video)
+    _en_marcha(encima, video)
+    assert _borrar(servidor, encima)[0] == 409 and (encima / "analisis.json").exists()
+
+    # Uno que se paró (sin noticias) o que falló, sí.
+    parado = _en_marcha(tmp_path / "salidas" / "j11", video, actualizado=time.time() - 120)
+    fallido = _en_marcha(tmp_path / "salidas" / "j12", video, error="CUDA sin memoria")
+    assert _borrar(servidor, parado) == (200, {"ok": True, "papelera": True})
+    assert _borrar(servidor, fallido) == (200, {"ok": True, "papelera": True})
+    assert not parado.exists() and not fallido.exists()
+    assert papelera == [absoluta(parado), absoluta(fallido)]
+    assert sorted(f["id"] for f in _json(servidor, "/api/analisis")) == sorted([_id(tmp_path), *(identificador(absoluta(c)) for c in (vivo, encima))])
+
+
+def test_no_borra_una_carpeta_con_mas_cosas_que_las_de_un_analisis(visor, papelera):
+    servidor, tmp_path = visor
+    video = tmp_path / "partido.mp4"
+    # Una --salida puesta en una carpeta con el vídeo y otras cosas.
+    mezclada = _analisis(tmp_path / "salidas" / "j14", video)
+    (mezclada / "partido-entero.mp4").write_bytes(b"video")
+    (mezclada / "notas.txt").write_text("ojo", encoding="utf-8")
+    estado, respuesta = _borrar(servidor, mezclada)
+    assert estado == 409 and "(«notas.txt», «partido-entero.mp4»)" in respuesta["error"]
+    (mezclada / "tactica").mkdir()
+    (mezclada / "fotos").mkdir()
+    (mezclada / "otro.mp4").write_bytes(b"")
+    assert "(«fotos», «notas.txt», «otro.mp4» y más)" in _borrar(servidor, mezclada)[1]["error"]
+    assert (mezclada / "partido-entero.mp4").exists() and (mezclada / "analisis.json").exists() and papelera == []
+
+    # Con todo lo que puede dejar un análisis (también lo opcional y lo de la app), sí.
+    completa = _analisis(tmp_path / "salidas" / "j15", video)
+    for nombre in ("acta-propuesta.json", "resumen.md", "posiciones.csv.gz", "anotado.mp4", "porteros.pkl", "tramos.pkl",
+                   "apariencias.pkl", "plantillas.json", "stderr.txt"):
+        (completa / nombre).write_bytes(b"")
+    for nombre in ("mapas", "Clips"):
+        (completa / nombre).mkdir()
+    assert _borrar(servidor, completa)[0] == 200 and not completa.exists()
+
+
+def test_la_ficha_dice_si_es_de_la_app(visor):
+    servidor, tmp_path = visor
+    de_la_app = _analisis(tmp_path / "salidas" / "videos" / "analysis" / ("ab" * 16), tmp_path / "partido.mp4")
+    suelta = _analisis(tmp_path / "salidas" / "analysis" / "j8", tmp_path / "partido.mp4")
+    fichas = {f["id"]: f for f in _json(servidor, "/api/analisis")}
+    assert fichas[identificador(absoluta(de_la_app))]["de_la_app"] is True
+    assert fichas[identificador(absoluta(suelta))]["de_la_app"] is False
+    assert fichas[_id(tmp_path)]["de_la_app"] is False
+
+
+def test_a_la_papelera_solo_va_lo_de_un_disco_del_equipo(tmp_path):
+    docker = Path(r"\\wsl.localhost\docker-desktop\mnt\docker-desktop-disk\data\docker\volumes\tt\_data\videos\analysis\x")
+    assert va_a_la_papelera(docker) is False
+    assert va_a_la_papelera(tmp_path) is (os.name == "nt")
+
+
+def test_solo_abre_en_el_explorador_carpetas_del_visor(visor, monkeypatch):
+    servidor, tmp_path = visor
+    abiertas = []
+    monkeypatch.setattr(servidor_mod, "abrir_en_el_explorador", abiertas.append)
+    carpeta = tmp_path / "salidas" / "j8" / "pasada"
+    # La de un análisis, aunque la lista aún no se haya pedido, y la carpeta en que busca.
+    assert _pedir(servidor, "POST", "/api/explorar", {"carpeta": str(carpeta)})[0].status == 200
+    assert _pedir(servidor, "POST", "/api/explorar", {"carpeta": f'"{tmp_path / "salidas"}"'})[0].status == 200
+    # Ni otra cualquiera (aunque exista), ni una que ya no está, ni desde otra web.
+    assert _pedir(servidor, "POST", "/api/explorar", {"carpeta": str(tmp_path)})[0].status == 404
+    assert _pedir(servidor, "POST", "/api/explorar", {"carpeta": str(tmp_path / "salidas" / "j8")})[0].status == 404
+    assert _pedir(servidor, "POST", "/api/explorar", {"carpeta": ""})[0].status == 404
+    assert _pedir(servidor, "POST", "/api/explorar", {"carpeta": str(carpeta)}, {"Origin": "http://malo.example"})[0].status == 403
+    assert abiertas == [absoluta(carpeta), absoluta(tmp_path / "salidas")]
+    shutil.rmtree(carpeta)
+    assert _pedir(servidor, "POST", "/api/explorar", {"carpeta": str(carpeta)})[0].status == 404

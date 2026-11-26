@@ -1,6 +1,8 @@
 """El visor: un servidor local (solo 127.0.0.1) que enseña en una ventana propia el vídeo de un análisis con lo que vio y
-sacó el Ojeador encima (`repeticion.py`). Solo lee: las carpetas de análisis, su vídeo y la página de `estatico/`. La
-ventana es Edge (o Chrome) en modo aplicación con un perfil propio; al cerrarla, el visor termina.
+sacó el Ojeador encima (`repeticion.py`). Lee las carpetas de análisis, su vídeo y la página de `estatico/`; y, cuando se
+le pide desde la página, abre la carpeta de un análisis en el Explorador o la borra (a la Papelera si se puede; nunca una
+que se esté analizando ni una con algo más que lo que deja un análisis). La ventana es Edge (o Chrome) en modo
+aplicación con un perfil propio; al cerrarla, el visor termina.
 
 Un análisis que se está haciendo (con `repeticion/directo.json` y sin `final.json` más nuevo) sale en la lista desde que
 empieza y se puede abrir: la página sigue lo provisional (`directo.jsonl`) según avanza y, en cuanto aparece la
@@ -8,6 +10,7 @@ repetición definitiva, pasa a ella."""
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import mimetypes
@@ -42,6 +45,24 @@ ESPERA_ADIOS_S = 6.0
 PROFUNDIDAD_BUSQUEDA = 3
 NOMBRE_RECORTE = re.compile(r"^[\w.-]+\.(jpg|jpeg|png)$", re.IGNORECASE)
 ARCHIVOS_JSON = {"analisis.json": "analisis.json", "acta-propuesta.json": "acta-propuesta.json", "final.json": f"{CARPETA}/{FINAL}"}
+# Lo que dejan en la carpeta de un análisis el analizador (también lo opcional: el vídeo anotado, los clips y lo de las
+# pruebas con TT_GUARDAR_TRAMOS) y la app (`plantillas.json` y `stderr.txt`). El visor solo borra una carpeta sin nada
+# más: nunca la de una `--salida` puesta donde hay vídeos u otras cosas.
+CONTENIDO_DE_UN_ANALISIS = frozenset({
+    "analisis.json", "acta-propuesta.json", "resumen.md", "posiciones.csv.gz", "anotado.mp4",
+    "porteros.pkl", "tramos.pkl", "apariencias.pkl", "plantillas.json", "stderr.txt",
+    CARPETA, "recortes", "mapas", "clips",
+})
+# La app deja cada análisis en videos/analysis/<id del vídeo>.
+CARPETA_DE_LA_APP = re.compile(r"[0-9a-f]{32}")
+
+
+class NoSeBorra(Exception):
+    """Por qué no se ha borrado un análisis, para decírselo a la página."""
+
+    def __init__(self, estado: int, mensaje: str) -> None:
+        super().__init__(mensaje)
+        self.estado = estado
 
 
 def identificador(carpeta: Path) -> str:
@@ -77,6 +98,48 @@ def en_curso(estado: dict) -> dict:
     return {k: estado.get(k) for k in ("etapa", "vivo", "pausado", "error", "fotogramas", "fotogramas_total", "t", "inicio", "actualizado")}
 
 
+def va_a_la_papelera(carpeta: Path) -> bool:
+    r"""En Windows, lo de un disco del equipo va a la Papelera. Lo de red (como el disco de Docker, \\wsl.localhost\…) o
+    lo de un disco extraíble se borra del todo: ahí no hay Papelera."""
+    if os.name != "nt":
+        return False
+    unidad = os.path.splitdrive(str(carpeta))[0]
+    if len(unidad) != 2 or unidad[1] != ":":
+        return False
+    return ctypes.windll.kernel32.GetDriveTypeW(f"{unidad}\\") == 3  # DRIVE_FIXED
+
+
+def a_la_papelera(carpeta: Path) -> None:
+    """Manda la carpeta entera a la Papelera de Windows, de donde se puede recuperar."""
+    from ctypes import wintypes
+
+    class Operacion(ctypes.Structure):  # SHFILEOPSTRUCTW
+        _fields_ = [
+            ("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", wintypes.LPCWSTR), ("pTo", wintypes.LPCWSTR),
+            ("fFlags", ctypes.c_ushort), ("fAnyOperationsAborted", wintypes.BOOL), ("hNameMappings", ctypes.c_void_p),
+            ("lpszProgressTitle", wintypes.LPCWSTR),
+        ]
+
+    borrar, sin_ventanas, sin_preguntar, deshacer, sin_errores = 0x3, 0x4, 0x10, 0x40, 0x400
+    # La lista de rutas acaba con dos nulos: el de la cadena y este.
+    operacion = Operacion(wFunc=borrar, pFrom=f"{carpeta}\0", fFlags=deshacer | sin_preguntar | sin_ventanas | sin_errores)
+    com = ctypes.windll.ole32.CoInitializeEx(None, 0x2)
+    try:
+        codigo = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operacion))
+    finally:
+        if com in (0, 1):
+            ctypes.windll.ole32.CoUninitialize()
+    if codigo or operacion.fAnyOperationsAborted or carpeta.exists():
+        raise OSError(f"Windows no ha podido mandarla a la Papelera (código {codigo:#x})")
+
+
+def abrir_en_el_explorador(carpeta: Path) -> None:
+    if os.name == "nt":
+        os.startfile(str(carpeta))
+    else:
+        subprocess.Popen(["xdg-open", str(carpeta)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 @dataclass
 class Analisis:
     carpeta: Path
@@ -110,6 +173,20 @@ class Analisis:
                 estado["vivo"] = vivo
                 return "directo", estado
         return ("final" if final is not None else None), None
+
+    def analizando(self) -> bool:
+        """Si en su carpeta hay un análisis en marcha: directo.json con noticias de hace poco y sin error (en pausa también
+        lo reescribe)."""
+        estado = leer_json(self._ruta(ESTADO_DIRECTO))
+        return estado is not None and not estado.get("error") and time.time() - float(estado.get("actualizado") or 0) <= SIN_NOTICIAS_S
+
+    def de_la_app(self) -> bool:
+        """Si es de los que lanza la app: lo que propone y las fotos ya están en su base, y la carpeta solo la usa el visor."""
+        return self.carpeta.parent.name.lower() == "analysis" and CARPETA_DE_LA_APP.fullmatch(self.carpeta.name.lower()) is not None
+
+    def ajenos(self) -> list[str]:
+        """Lo que hay en su carpeta y no deja un análisis."""
+        return sorted(e.name for e in os.scandir(self.carpeta) if e.name.lower() not in CONTENIDO_DE_UN_ANALISIS)
 
     def ruta_video(self, modo: str | None = None, estado: dict | None = None) -> Path | None:
         if self.video is not None:
@@ -183,6 +260,8 @@ class Analisis:
             "video_existe": bool(ruta_video and ruta_video.exists()),
             "balon_pct": datos.get("pct_con_balon"),
             "jugadores": datos.get("jugadores") or 0,
+            "de_la_app": self.de_la_app(),
+            "papelera": va_a_la_papelera(self.carpeta),
         }
 
     def directo(self, desde: int) -> dict:
@@ -247,6 +326,48 @@ class Biblioteca:
             if ident not in self.analisis and self.raices:
                 self.buscar()
             return self.analisis.get(ident)
+
+    def es_suya(self, carpeta: Path) -> bool:
+        """Si es una de las carpetas en que busca o la de uno de sus análisis (lo único que abre en el Explorador)."""
+        clave = str(absoluta(carpeta)).lower()
+
+        def conocida() -> bool:
+            return any(str(c).lower() == clave for c in [*self.raices, *(a.carpeta for a in self.analisis.values())])
+
+        with self._cerrojo:
+            # Uno de las carpetas que aún no se han recorrido, como en `get`.
+            if not conocida() and self.raices:
+                self.buscar()
+            return conocida()
+
+    def borrar(self, ident: str) -> bool:
+        """Borra la carpeta de un análisis y lo quita del visor; True si ha ido a la Papelera. Nunca uno que se está
+        haciendo ni una carpeta con algo más que lo que deja un análisis."""
+        analisis = self.get(ident)
+        if analisis is None or not es_analisis(analisis.carpeta):
+            raise NoSeBorra(HTTPStatus.NOT_FOUND, "Ese análisis ya no está.")
+        if analisis.analizando():
+            raise NoSeBorra(HTTPStatus.CONFLICT, "Se está analizando: se podrá borrar cuando termine (o si se para).")
+        try:
+            ajenos = analisis.ajenos()
+        except OSError as e:
+            raise NoSeBorra(HTTPStatus.INTERNAL_SERVER_ERROR, f"No se puede leer su carpeta: {e}") from e
+        if ajenos:
+            muestra = ", ".join(f"«{n}»" for n in ajenos[:3]) + (" y más" if len(ajenos) > 3 else "")
+            raise NoSeBorra(HTTPStatus.CONFLICT, f"En su carpeta hay más cosas que las de un análisis ({muestra}), así que el visor no la borra: si quieres, bórrala a mano.")
+        papelera = va_a_la_papelera(analisis.carpeta)
+        try:
+            if papelera:
+                a_la_papelera(analisis.carpeta)
+            else:
+                shutil.rmtree(analisis.carpeta)
+        except OSError as e:
+            raise NoSeBorra(HTTPStatus.INTERNAL_SERVER_ERROR, f"No se ha podido borrar del todo: {e}") from e
+        with self._cerrojo:
+            self.analisis.pop(ident, None)
+            if self.inicial == ident:
+                self.inicial = None
+        return papelera
 
 
 def _con_analisis(raiz: Path, profundidad: int):
@@ -339,6 +460,8 @@ class Manejador(BaseHTTPRequestHandler):
                 return self._estatico(partes[1])
             if partes[:2] == ["api", "analisis"] and len(partes) == 2:
                 return self._json([a.ficha() for a in self.server.biblioteca.buscar()])
+            if partes[:2] == ["api", "carpetas"] and len(partes) == 2:
+                return self._json([{"ruta": str(r), "existe": r.is_dir()} for r in self.server.biblioteca.raices])
             if partes[:2] == ["api", "inicio"]:
                 return self._json({"analisis": self.server.biblioteca.inicial})
             if partes[0] == "api" and len(partes) >= 4 and partes[1] == "a":
@@ -367,7 +490,26 @@ class Manejador(BaseHTTPRequestHandler):
             if not str(carpeta) or not es_analisis(absoluta(carpeta)):
                 return self._error(HTTPStatus.NOT_FOUND, "En esa carpeta no hay ningún análisis (ni analisis.json ni uno en marcha).")
             return self._json(self.server.biblioteca.registrar(carpeta).ficha())
+        if url.path == "/api/explorar":
+            try:
+                texto = str(json.loads(cuerpo.decode("utf-8") or "{}").get("carpeta") or "").strip().strip('"')
+            except (ValueError, AttributeError):
+                return self._error(HTTPStatus.BAD_REQUEST, "Petición no válida.")
+            carpeta = absoluta(Path(texto)) if texto else None
+            if carpeta is None or not self.server.biblioteca.es_suya(carpeta) or not carpeta.is_dir():
+                return self._error(HTTPStatus.NOT_FOUND, "Esa carpeta no es del visor o ya no está.")
+            try:
+                abrir_en_el_explorador(carpeta)
+            except OSError as e:
+                return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"No se ha podido abrir la carpeta: {e}")
+            return self._json({"ok": True})
         partes = [p for p in url.path.split("/") if p]
+        if len(partes) == 4 and partes[:2] == ["api", "a"] and partes[3] == "borrar":
+            try:
+                papelera = self.server.biblioteca.borrar(partes[2])
+            except NoSeBorra as e:
+                return self._error(e.estado, str(e))
+            return self._json({"ok": True, "papelera": papelera})
         if len(partes) == 4 and partes[:2] == ["api", "a"] and partes[3] == "video":
             analisis = self.server.biblioteca.get(partes[2])
             if analisis is None:

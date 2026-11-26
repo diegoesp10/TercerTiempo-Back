@@ -17,7 +17,7 @@ const BALON_CERCA_S = 0.12;
 export async function pedirJSON(url, opciones) {
   const r = await fetch(url, opciones);
   const datos = await r.json().catch(() => null);
-  if (!r.ok) throw new Error((datos && datos.error) || `Error ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error((datos && datos.error) || `Error ${r.status}`), { estado: r.status });
   return datos;
 }
 

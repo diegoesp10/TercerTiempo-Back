@@ -78,6 +78,7 @@ async function lista() {
   const cont = $('tarjetas');
   tarjetasHechas.clear();
   cont.replaceChildren(el('div', { clase: 'sub', texto: 'Buscando análisis…' }));
+  pintarCarpetas();
   await refrescarLista();
 }
 
@@ -122,18 +123,122 @@ function tarjeta(f) {
   } else {
     principal = el('span', { clase: `etiqueta ${f.repeticion ? 'bien' : 'mal'}`, texto: f.repeticion ? 'Con repetición' : 'Sin repetición: vuelve a analizarlo' });
   }
-  return el('button', { clase: `tarjeta${marcha ? ' en-marcha' : ''}`, type: 'button', onclick: () => { location.hash = `#/a/${f.id}`; } },
-    el('span', { clase: 'titulo', texto: titulo }),
-    el('span', { clase: 'linea-dato', texto: `Tramo ${minuto(f.tramo[0])} – ${minuto(f.tramo[1])} · ${f.analizador || 'Ojeador'}${fecha ? (marcha ? ' · empezado ' : ' · ') + fecha : ''}` }),
-    el('span', { clase: 'linea-dato', texto: f.carpeta }),
-    el('span', { clase: 'etiquetas' },
-      principal,
-      f.video_existe ? null : el('span', { clase: 'etiqueta mal', texto: 'No se encuentra el vídeo' }),
-      !marcha && f.balon_pct != null ? el('span', { clase: 'etiqueta', texto: `Balón visto ${String(f.balon_pct).replace('.', ',')} %` }) : null,
-      !marcha && f.jugadores ? el('span', { clase: 'etiqueta', texto: `${f.jugadores} identificados` }) : null,
+  const analizando = !!(marcha && marcha.vivo);
+  return el('div', { clase: `tarjeta${marcha ? ' en-curso' : ''}` },
+    el('button', { clase: 'tarjeta-abrir', type: 'button', onclick: () => { location.hash = `#/a/${f.id}`; } },
+      el('span', { clase: 'titulo', texto: titulo }),
+      el('span', { clase: 'linea-dato', texto: `Tramo ${minuto(f.tramo[0])} – ${minuto(f.tramo[1])} · ${f.analizador || 'Ojeador'}${fecha ? (marcha ? ' · empezado ' : ' · ') + fecha : ''}` }),
+      el('span', { clase: 'linea-dato', texto: f.carpeta }),
+      el('span', { clase: 'etiquetas' },
+        principal,
+        f.de_la_app ? el('span', { clase: 'etiqueta', texto: 'De la app' }) : null,
+        f.video_existe ? null : el('span', { clase: 'etiqueta mal', texto: 'No se encuentra el vídeo' }),
+        !marcha && f.balon_pct != null ? el('span', { clase: 'etiqueta', texto: `Balón visto ${String(f.balon_pct).replace('.', ',')} %` }) : null,
+        !marcha && f.jugadores ? el('span', { clase: 'etiqueta', texto: `${f.jugadores} identificados` }) : null,
+      ),
+    ),
+    el('div', { clase: 'tarjeta-acciones' },
+      el('button', { clase: 'boton pequeno', type: 'button', title: 'Abrir su carpeta en el Explorador', onclick: () => explorar(f.carpeta), texto: 'Carpeta' }),
+      el('button', {
+        clase: 'boton pequeno peligro', type: 'button', disabled: analizando,
+        title: analizando ? 'Se está analizando: se podrá borrar cuando termine' : 'Borrar este análisis',
+        onclick: () => confirmarBorrado(f), texto: 'Borrar',
+      }),
     ),
   );
 }
+
+// ---------------------------------------------------------------- dónde se guardan, abrir su carpeta y borrar
+
+function queCarpeta(ruta) {
+  const r = ruta.toLowerCase().replace(/\//g, '\\').replace(/\\+$/, '');
+  if (r.endsWith('\\videos\\analysis')) return 'Los de la app (disco de Docker)';
+  if (r.endsWith('\\salidas')) return 'Los que lanzas a mano';
+  return 'Otra carpeta';
+}
+
+async function pintarCarpetas() {
+  const cont = $('carpetas');
+  try {
+    const carpetas = await pedirJSON('/api/carpetas');
+    cont.replaceChildren(
+      el('h2', { texto: 'Dónde se guardan' }),
+      ...carpetas.map((c) => el('div', { clase: 'carpeta-fila' },
+        el('span', { clase: 'que', texto: queCarpeta(c.ruta) }),
+        el('span', { clase: 'ruta', texto: c.ruta }),
+        el('button', {
+          clase: 'boton pequeno', type: 'button', disabled: !c.existe, onclick: () => explorar(c.ruta), texto: 'Abrir',
+          title: c.existe ? 'Abrir en el Explorador' : 'Esta carpeta aún no existe',
+        }),
+      )),
+    );
+    cont.hidden = !carpetas.length;
+  } catch {
+    cont.hidden = true;
+  }
+}
+
+async function explorar(carpeta) {
+  try {
+    await pedirJSON('/api/explorar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ carpeta }) });
+  } catch (e) {
+    notificar(e.message, true);
+  }
+}
+
+let ocultarAviso = null;
+function avisoLista(texto, mal = false) {
+  const caja = $('aviso-lista');
+  caja.textContent = texto;
+  caja.classList.toggle('mal', mal);
+  caja.hidden = false;
+  clearTimeout(ocultarAviso);
+  ocultarAviso = setTimeout(() => { caja.hidden = true; }, 6000);
+}
+
+function notificar(texto, mal = false) {
+  if ($('pantalla-lista').hidden) avisar(texto, mal ? COLORES.balon.x : COLORES.balon.v, 5000);
+  else avisoLista(texto, mal);
+}
+
+function confirmarBorrado(f) {
+  const dialogo = $('dialogo-borrar');
+  const titulo = f.equipos && f.equipos.length ? f.equipos.join(' – ') : f.carpeta.split(/[\\/]/).pop();
+  $('borrar-partido').textContent = `${titulo} · tramo ${minuto(f.tramo[0])} – ${minuto(f.tramo[1])}`;
+  $('borrar-ruta').textContent = f.carpeta;
+  $('borrar-como').textContent = f.papelera
+    ? 'Se borra su carpeta con todo lo que dejó el análisis (la repetición, la propuesta, las fotos y los mapas) y va a la Papelera de Windows, de donde se puede recuperar. El vídeo no se toca.'
+    : 'Se borra su carpeta con todo lo que dejó el análisis (la repetición, la propuesta, las fotos y los mapas). Está en un disco sin Papelera (el de Docker o uno de red), así que se borra del todo y no se puede recuperar. El vídeo no se toca.';
+  $('borrar-app').hidden = !f.de_la_app;
+  const error = $('borrar-error');
+  error.hidden = true;
+  const si = $('btn-borrar-si');
+  si.disabled = false;
+  si.textContent = f.papelera ? 'Mandar a la Papelera' : 'Borrar del todo';
+  si.onclick = async () => {
+    si.disabled = true;
+    error.hidden = true;
+    try {
+      const r = await pedirJSON(`/api/a/${f.id}/borrar`, { method: 'POST' });
+      dialogo.close();
+      tarjetasHechas.delete(f.id);
+      // Si se estaba viendo, a la lista (donde sale el aviso).
+      if (rep && rep.id === f.id) location.hash = '#/';
+      else refrescarLista();
+      avisoLista(r.papelera ? 'Análisis borrado: está en la Papelera de Windows.' : 'Análisis borrado.');
+    } catch (e) {
+      error.textContent = e.message;
+      error.hidden = false;
+      // Si ya no está, se está analizando o su carpeta tiene más cosas, volver a pulsar no cambia nada.
+      const definitivo = e.estado === 404 || e.estado === 409;
+      si.disabled = definitivo;
+      if (definitivo) refrescarLista();
+    }
+  };
+  dialogo.showModal();
+}
+
+$('btn-borrar-no').addEventListener('click', () => $('dialogo-borrar').close());
 
 $('form-abrir').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -225,7 +330,10 @@ async function montar(nueva, conservar) {
   rep = nueva;
   dibujo = new Dibujo(rep);
   lineas = new Lineas($('linea-detalle'), $('linea-total'), rep, (t) => irA(t));
-  panel = new Panel($('panel-cuerpo'), rep, { ir: (t, quien) => irA(t, quien), elegir: (quien, buscar) => elegir(quien, buscar), loUltimo: () => irALoUltimo() });
+  panel = new Panel($('panel-cuerpo'), rep, {
+    ir: (t, quien) => irA(t, quien), elegir: (quien, buscar) => elegir(quien, buscar), loUltimo: () => irALoUltimo(),
+    carpeta: () => explorar(rep.ficha.carpeta), borrar: () => confirmarBorrado(rep.ficha),
+  });
   if (pestana) panel.mostrar(pestana);
   rep.alCargar = () => { if (video.paused) repintar(); };
   estado.desfase = recordar(`visor.desfase.${rep.id}`, 0);
@@ -758,7 +866,7 @@ function mostrarDesfase() {
 }
 
 function teclado(e) {
-  if (!rep || e.target.closest('input, select, textarea')) return;
+  if (!rep || e.target.closest('input, select, textarea, dialog')) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tecla = e.key;
   if (tecla === ' ') { e.preventDefault(); alternarPlay(); return; }

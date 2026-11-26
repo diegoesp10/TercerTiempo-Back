@@ -504,6 +504,28 @@ resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni
   solo mientras se hace, y la página abierta pasa sola al nuevo. Si lo provisional desaparece (el analizador dejó de
   escribirlo o se vació la carpeta), dice «Ya no llega nada en directo» y sigue mirando por si termina.
 
+**Dónde se guardan y cómo se borran** (desde el 26-11-2026)
+
+- Los de la app, en `videos\analysis\<id del vídeo>` junto a los vídeos: con Docker, en su volumen
+  (`\\wsl.localhost\docker-desktop\mnt\docker-desktop-disk\data\docker\volumes\<volumen>\_data\videos\analysis\<id>`);
+  sin Docker, en `<Videos:Directory>\analysis\<id>`. La app solo lee la carpeta al terminar y guarda en su base lo que
+  propone y las fotos: borrarla no le quita nada, solo deja de verse en el visor hasta que se vuelva a analizar. La app
+  la vacía antes de volver a analizar el vídeo y al eliminarlo.
+- Los que se lanzan a mano, en `salidas\<nombre del vídeo>` (o donde diga `--salida`).
+- En la lista, «Dónde se guardan» enseña las carpetas en que busca el visor, con «Abrir» para verlas en el Explorador;
+  cada análisis lleva su ruta, «Carpeta» (la abre en el Explorador) y «Borrar». Lo mismo en la pestaña «Análisis» del
+  panel.
+- «Borrar» pregunta antes, con la ruta. Lo de un disco del equipo va a la Papelera de Windows, de donde se recupera; lo
+  del disco de Docker (o de uno de red o extraíble) se borra del todo, y el diálogo lo dice. El vídeo nunca se toca.
+- No borra un análisis que se está haciendo (con noticias en los últimos 30 s, también en pausa; uno parado o fallido,
+  sí) ni una carpeta con algo más que lo que deja un análisis: `analisis.json`, `acta-propuesta.json`, `resumen.md`,
+  `posiciones.csv.gz`, `recortes\`, `mapas\`, `repeticion\` y, si los hay, `clips\`, `anotado.mp4`, los `.pkl` de las
+  pruebas con `TT_GUARDAR_TRAMOS` y lo que añade la app (`plantillas.json` y `stderr.txt`). Así nunca se lleva una
+  `--salida` puesta en una carpeta con vídeos u otras cosas: lo dice y hay que borrarla a mano. Un test comprueba que
+  todo lo que escribe el analizador está en esa lista.
+- Solo abre en el Explorador las carpetas en que busca y las de sus análisis y, como todo lo demás, solo si lo pide la
+  propia página del visor.
+
 **La repetición** (`repeticion/`, formato 1; el detalle, al principio de `repeticion.py`)
 
 - `fotogramas.jsonl`: una línea por fotograma analizado, con `t` lo primero para indexar el archivo sin leerlo entero.

@@ -20,6 +20,8 @@ export class Panel {
     this.ir = acciones.ir;
     this.elegir = acciones.elegir;
     this.loUltimo = acciones.loUltimo;
+    this.carpeta = acciones.carpeta;
+    this.borrar = acciones.borrar;
     this.pestana = 'estadisticas';
     this.filtro = { jugadas: true, acciones: true };
     this.ultimaClave = null;
@@ -141,6 +143,10 @@ export class Panel {
       ['Última noticia', d.actualizado ? hora(d.actualizado) : '–'],
       ['Carpeta', rep.ficha.carpeta],
     ]));
+    // Mientras se analiza no se puede borrar.
+    nodos.push(el('div', { clase: 'acciones-analisis' },
+      el('button', { clase: 'boton pequeno', type: 'button', onclick: () => this.carpeta(), texto: 'Abrir la carpeta' }),
+    ));
     nodos.push(el('h2', { texto: 'El vídeo' }));
     nodos.push(datos([
       ['Imagen', `${d.video?.ancho}×${d.video?.alto} a ${numero(d.video?.fps)} fps`],
@@ -328,6 +334,10 @@ export class Panel {
       ['Carpeta', rep.ficha.carpeta],
       ...(a.analizador?.modelos || []).map((m) => [m.que, [m.modelo, m.motor, m.huella].filter(Boolean).join(' · ')]),
     ]));
+    nodos.push(el('div', { clase: 'acciones-analisis' },
+      el('button', { clase: 'boton pequeno', type: 'button', onclick: () => this.carpeta(), texto: 'Abrir la carpeta' }),
+      el('button', { clase: 'boton pequeno peligro', type: 'button', onclick: () => this.borrar(), texto: 'Borrar este análisis' }),
+    ));
     nodos.push(el('h2', { texto: 'El vídeo' }));
     nodos.push(datos([
       ['Imagen', `${a.video?.ancho}×${a.video?.alto} a ${numero(a.video?.fps)} fps`],

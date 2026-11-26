@@ -35,6 +35,7 @@ from tt_analisis.repeticion import (
 )
 from tt_analisis.tipos import Evento, Instante, Persona, Toque
 from tt_analisis.video import Fotograma, InfoVideo
+from tt_analisis.visor.servidor import CONTENIDO_DE_UN_ANALISIS
 
 from conftest import instante, persona
 
@@ -601,6 +602,9 @@ def test_la_repeticion_no_cambia_nada_de_lo_que_se_propone(tmp_path, monkeypatch
     assert (con / CARPETA / FINAL).exists() and (con / CARPETA / FOTOGRAMAS).exists()
     assert not (con / CARPETA / DIRECTO).exists() and not (con / CARPETA / ESTADO_DIRECTO).exists()
     assert not (sin / CARPETA).exists()
+    # Todo lo que deja en su carpeta lo reconoce el visor como de un análisis: si no, no dejaría borrarla.
+    for salida in (con, sin):
+        assert {p.name.lower() for p in salida.iterdir()} <= CONTENIDO_DE_UN_ANALISIS
 
     # Y lo que se propone es lo mismo con y sin ella.
     assert _leer(con, "acta-propuesta.json") == _leer(sin, "acta-propuesta.json")
