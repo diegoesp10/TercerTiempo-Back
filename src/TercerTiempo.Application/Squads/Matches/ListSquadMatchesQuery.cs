@@ -34,9 +34,7 @@ internal sealed class ListSquadMatchesHandler(
         var teamIds = list.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();
         var teamMap = (await teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
 
-        var recorded = (await performances.GetBySquadAsync(squad.Id, cancellationToken))
-            .GroupBy(p => p.MatchId)
-            .ToDictionary(g => g.Key, g => g.Count());
+        var recorded = await performances.CountBySquadPerMatchAsync(squad.Id, cancellationToken);
 
         return list
             .OrderBy(m => m.Matchday)

@@ -5,6 +5,9 @@ public interface IPerformanceStore
     Task<PlayerMatchPerformance?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PlayerMatchPerformance>> GetBySquadPlayerAsync(Guid squadPlayerId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PlayerMatchPerformance>> GetBySquadAsync(Guid squadId, CancellationToken cancellationToken = default);
+
+    // Cuántas líneas tiene el acta interna de cada partido de la plantilla, sin cargarlas.
+    Task<IReadOnlyDictionary<Guid, int>> CountBySquadPerMatchAsync(Guid squadId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PlayerMatchPerformance>> GetBySquadAndMatchAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PlayerMatchPerformance>> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PlayerMatchPerformance>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default);

@@ -29,6 +29,28 @@ public class DataLoadingTests
     }
 
     [Fact]
+    public async Task The_cache_drops_what_expired_and_never_grows_past_its_cap()
+    {
+        var clock = new MovableClock(new DateTimeOffset(2026, 11, 26, 18, 0, 0, TimeSpan.Zero));
+        var cache = new PublicDataCache(clock);
+        string[] tags = [PublicTags.Rosters];
+
+        for (var i = 0; i < 10; i++) await cache.GetAsync($"equipo {i}", tags, _ => Task.FromResult("ficha"), default);
+        clock.Now += PublicDataCache.Lifetime + TimeSpan.FromSeconds(1);
+        await cache.GetAsync("otro equipo", tags, _ => Task.FromResult("ficha"), default);
+        Assert.Equal(1, cache.Count);
+
+        for (var i = 0; i < PublicDataCache.MaxEntries + 50; i++)
+        {
+            clock.Now += TimeSpan.FromMilliseconds(1);
+            await cache.GetAsync($"ficha {i}", tags, _ => Task.FromResult("ficha"), default);
+        }
+        Assert.InRange(cache.Count, 1, PublicDataCache.MaxEntries);
+        // Lo último leído sigue guardado: no se vuelve a pedir.
+        Assert.Equal("ficha", await cache.GetAsync($"ficha {PublicDataCache.MaxEntries + 49}", tags, _ => Task.FromResult("otra lectura"), default));
+    }
+
+    [Fact]
     public async Task What_was_read_while_the_data_changed_is_not_kept()
     {
         var cache = new PublicDataCache(TimeProvider.System);

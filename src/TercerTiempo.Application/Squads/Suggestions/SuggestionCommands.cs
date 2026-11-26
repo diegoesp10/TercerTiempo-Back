@@ -276,17 +276,15 @@ internal static class SuggestionMapper
     {
         if (list.Count == 0) return [];
 
-        var matchMap = new Dictionary<Guid, Match>();
-        foreach (var id in list.Select(s => s.MatchId).Distinct())
-        {
-            if (await matches.GetByIdAsync(id, cancellationToken) is { } match) matchMap[id] = match;
-        }
+        var matchMap = (await matches.GetByIdsAsync(list.Select(s => s.MatchId).Distinct().ToList(), cancellationToken)).ToDictionary(m => m.Id);
         var teamIds = matchMap.Values.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();
         var teamMap = (await teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
         var performanceMap = (await performances.GetBySquadAsync(squad.Id, cancellationToken))
             .ToDictionary(p => (p.MatchId, p.SquadPlayerId));
         var coachMap = (await coaches.GetByIdsAsync(list.Where(s => s.ResolvedByCoachId is not null).Select(s => s.ResolvedByCoachId!.Value).Distinct(), cancellationToken))
             .ToDictionary(c => c.Id);
+        var clubIds = list.Where(s => s.ResolvedByClubId is not null).Select(s => s.ResolvedByClubId!.Value).Distinct().ToList();
+        var clubMap = clubIds.Count == 0 ? [] : (await clubs.GetByIdsAsync(clubIds, cancellationToken)).ToDictionary(c => c.Id);
         var playerMap = squad.Players.ToDictionary(p => p.Id);
 
         var result = new List<SuggestionDto>();
@@ -296,7 +294,7 @@ internal static class SuggestionMapper
 
             string? resolvedBy = null;
             if (s.ResolvedByCoachId is { } coachId) resolvedBy = coachMap.GetValueOrDefault(coachId)?.DisplayName ?? "Cuerpo técnico";
-            else if (s.ResolvedByClubId is { } clubId) resolvedBy = (await clubs.GetByIdAsync(clubId, cancellationToken))?.Name ?? "Club";
+            else if (s.ResolvedByClubId is { } clubId) resolvedBy = clubMap.GetValueOrDefault(clubId)?.Name ?? "Club";
 
             performanceMap.TryGetValue((s.MatchId, s.SquadPlayerId), out var current);
 

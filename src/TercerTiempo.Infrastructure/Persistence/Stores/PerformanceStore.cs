@@ -18,6 +18,13 @@ internal sealed class PerformanceStore(AppDbContext db) : IPerformanceStore
             .Where(p => p.SquadId == squadId)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyDictionary<Guid, int>> CountBySquadPerMatchAsync(Guid squadId, CancellationToken cancellationToken = default) =>
+        await db.Performances.AsNoTracking()
+            .Where(p => p.SquadId == squadId)
+            .GroupBy(p => p.MatchId)
+            .Select(g => new { MatchId = g.Key, Lines = g.Count() })
+            .ToDictionaryAsync(x => x.MatchId, x => x.Lines, cancellationToken);
+
     public async Task<IReadOnlyList<PlayerMatchPerformance>> GetBySquadAndMatchAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default) =>
         await db.Performances
             .Where(p => p.SquadId == squadId && p.MatchId == matchId)

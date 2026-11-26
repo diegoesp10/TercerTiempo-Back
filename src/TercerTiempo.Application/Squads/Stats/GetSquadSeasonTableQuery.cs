@@ -82,8 +82,8 @@ internal sealed class GetSquadSeasonTableHandler(
             .ToDictionary(p => (p.MatchId, p.SquadPlayerId));
         var internalMatches = internalLines.Keys.Select(k => k.MatchId).ToHashSet();
 
-        var officialSheets = (await sheets.GetByMatchIdsAsync(played.Select(m => m.Id), cancellationToken))
-            .Where(s => s.IsAvailable)
+        // Solo las líneas de cada acta (sin sucesos ni cuerpo técnico): es lo único que se cruza con la plantilla.
+        var officialSheets = (await sheets.GetAvailableLinesByMatchIdsAsync(played.Select(m => m.Id), cancellationToken))
             .ToDictionary(s => s.MatchId);
 
         // También los que causaron baja: lo que jugaron mientras eran del equipo es suyo (en el acta oficial de cada partido

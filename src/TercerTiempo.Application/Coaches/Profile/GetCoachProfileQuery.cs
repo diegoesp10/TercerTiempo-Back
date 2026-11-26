@@ -8,6 +8,7 @@ using TercerTiempo.Application.Squads;
 using TercerTiempo.Application.Teams;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
+using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Common.Errors;
 using TercerTiempo.Domain.Matches;
 using TercerTiempo.Domain.OfficialSheets;
@@ -102,18 +103,29 @@ internal sealed class GetCoachProfileHandler(
         var tables = new Dictionary<Guid, IReadOnlyList<Standing>>();
         var counted = new Dictionary<Guid, (Guid Team, Match Match)>();
         var ranked = new Dictionary<(Guid Season, Guid Team), int>();
-        foreach (var appointment in await stores.Appointments.GetByCoachAsync(coach.Id, cancellationToken))
+        var appointments = await stores.Appointments.GetByCoachAsync(coach.Id, cancellationToken);
+        // Equipos, clubes y plantillas de todos sus nombramientos de una vez, y cada temporada una sola vez.
+        var teamIds = appointments.Select(a => a.TeamId).Distinct().ToList();
+        var teamMap = (await stores.Teams.GetByIdsAsync(teamIds, cancellationToken)).ToDictionary(t => t.Id);
+        var clubMap = (await stores.Clubs.GetByIdsAsync(appointments.Select(a => a.ClubId).Distinct().ToList(), cancellationToken)).ToDictionary(c => c.Id);
+        var squadIds = (await stores.Squads.GetRefsAsync(teamIds, appointments.Select(a => a.SeasonId), cancellationToken))
+            .GroupBy(s => (s.SeasonId, s.TeamId))
+            .ToDictionary(g => g.Key, g => g.First().Id);
+        var seasons = new Dictionary<Guid, (Competition Competition, Season Season)>();
+        foreach (var appointment in appointments)
         {
             var status = appointment.StatusOn(today);
             var leftOn = LeftOn(appointment);
             if (status == AppointmentStatus.Revoked ? leftOn is null : status is not (AppointmentStatus.Active or AppointmentStatus.Expired)) continue;
 
-            var team = await stores.Teams.GetByIdAsync(appointment.TeamId, cancellationToken);
-            var club = await stores.Clubs.GetByIdAsync(appointment.ClubId, cancellationToken);
-            var (competition, season) = await Resolvers.SeasonByIdAsync(stores.Competitions, appointment.SeasonId, cancellationToken);
-            var squad = await stores.Squads.GetByTeamAndSeasonAsync(appointment.TeamId, appointment.SeasonId, cancellationToken);
+            var team = teamMap.GetValueOrDefault(appointment.TeamId);
+            var club = clubMap.GetValueOrDefault(appointment.ClubId);
+            if (!seasons.TryGetValue(appointment.SeasonId, out var seasonOf))
+                seasons[appointment.SeasonId] = seasonOf = await Resolvers.SeasonByIdAsync(stores.Competitions, appointment.SeasonId, cancellationToken);
+            var (competition, season) = seasonOf;
 
             var key = (appointment.SeasonId, appointment.TeamId);
+            Guid? squadId = squadIds.TryGetValue(key, out var foundSquad) ? foundSquad : null;
             if (!teamMatches.TryGetValue(key, out var seasonMatches))
                 teamMatches[key] = seasonMatches = await matches.GetTeamMatchesAsync(appointment.SeasonId, appointment.TeamId, cancellationToken);
             var until = Min(leftOn ?? appointment.ValidUntil, today);
@@ -136,7 +148,7 @@ internal sealed class GetCoachProfileHandler(
             teams.Add(new CoachTeamDto(
                 appointment.TeamId, team?.Name ?? "Equipo", team?.ShortName ?? string.Empty, team?.CrestLink(), club?.Name ?? "Club",
                 competition.Name, season.Label, appointment.Role, appointment.ValidFrom, appointment.ValidUntil,
-                status == AppointmentStatus.Active, squad?.Id, leftOn,
+                status == AppointmentStatus.Active, squadId, leftOn,
                 Record(appointment.TeamId, played),
                 position,
                 position is null ? null : table.Count,

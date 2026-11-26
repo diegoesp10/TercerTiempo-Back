@@ -13,9 +13,16 @@ public sealed class PublicDataCache(TimeProvider clock)
     // Por si algo cambia sin pasar por Invalidate (una corrección a mano en la base): como mucho este tiempo.
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
 
+    // Hay una entrada por equipo y temporada, por categoría de árbitros...: lo caducado se quita cada Lifetime (si no, se
+    // quedaba en memoria hasta volver a leerse) y, si aun así se pasa de este tope, lo que antes caduca.
+    internal const int MaxEntries = 2_000;
+
     private readonly ConcurrentDictionary<string, Entry> _entries = new();
     private readonly ConcurrentDictionary<string, long> _tags = new();
     private long _version;
+    private long _nextSweep;
+
+    internal int Count => _entries.Count;
 
     public async Task<T> GetAsync<T>(string key, IReadOnlyList<string> tags, Func<CancellationToken, Task<T>> load, CancellationToken cancellationToken)
         where T : class
@@ -28,8 +35,27 @@ public sealed class PublicDataCache(TimeProvider clock)
         var value = await load(cancellationToken);
         // Si sus datos han cambiado mientras se leían, no se guarda lo leído: la siguiente lectura ya trae lo nuevo.
         if (Versions(tags).AsSpan().SequenceEqual(versions))
+        {
             _entries[key] = new Entry(value, versions, now + Lifetime);
+            Sweep(now);
+        }
         return value;
+    }
+
+    private void Sweep(DateTimeOffset now)
+    {
+        var due = Interlocked.Read(ref _nextSweep);
+        if (now.UtcTicks < due && _entries.Count <= MaxEntries) return;
+        // Uno solo barre; los demás siguen sin esperar.
+        if (Interlocked.CompareExchange(ref _nextSweep, (now + Lifetime).UtcTicks, due) != due) return;
+
+        foreach (var entry in _entries)
+            if (entry.Value.ExpiresAt <= now) _entries.TryRemove(entry);
+
+        var excess = _entries.Count - MaxEntries * 4 / 5;
+        if (excess <= 0) return;
+        foreach (var entry in _entries.OrderBy(e => e.Value.ExpiresAt).Take(excess).ToList())
+            _entries.TryRemove(entry);
     }
 
     public void Invalidate()

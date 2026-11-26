@@ -220,17 +220,17 @@ public class CoachProfileTests
             Stub<ICoachStore>((method, args) => method == nameof(ICoachStore.GetByIdAsync)
                 ? Task.FromResult<Coach?>((Guid)args![0]! == _coach.Id ? _coach : null)
                 : throw new NotSupportedException(method)),
-            Stub<IClubStore>((method, args) => method == nameof(IClubStore.GetByIdAsync)
-                ? Task.FromResult<Club?>((Guid)args![0]! == _club.Id ? _club : null)
+            Stub<IClubStore>((method, args) => method == nameof(IClubStore.GetByIdsAsync)
+                ? Task.FromResult<IReadOnlyList<Club>>(((IEnumerable<Guid>)args![0]!).Contains(_club.Id) ? [_club] : [])
                 : throw new NotSupportedException(method)),
             Stub<ICoachAppointmentStore>((method, _) => method == nameof(ICoachAppointmentStore.GetByCoachAsync)
                 ? Task.FromResult<IReadOnlyList<CoachAppointment>>(_appointments)
                 : throw new NotSupportedException(method)),
-            Stub<ISquadStore>((method, _) => method == nameof(ISquadStore.GetByTeamAndSeasonAsync)
-                ? Task.FromResult<Squad?>(null)
+            Stub<ISquadStore>((method, _) => method == nameof(ISquadStore.GetRefsAsync)
+                ? Task.FromResult<IReadOnlyList<SquadRef>>([])
                 : throw new NotSupportedException(method)),
-            Stub<ITeamStore>((method, args) => method == nameof(ITeamStore.GetByIdAsync)
-                ? Task.FromResult(new[] { _first, _filial }.FirstOrDefault(t => t.Id == (Guid)args![0]!))
+            Stub<ITeamStore>((method, args) => method == nameof(ITeamStore.GetByIdsAsync)
+                ? Task.FromResult<IReadOnlyList<Team>>(new[] { _first, _filial }.Where(t => ((IEnumerable<Guid>)args![0]!).Contains(t.Id)).ToList())
                 : throw new NotSupportedException(method)),
             Stub<ICompetitionStore>((method, _) => method == nameof(ICompetitionStore.GetBySeasonAsync)
                 ? Task.FromResult<Competition?>(_competition)

@@ -69,8 +69,7 @@ internal sealed class GetSquadPlayerProfileHandler(
             : null;
 
         // Líneas del acta oficial de este jugador (mismo cruce de nombres y dorsales que el comparador).
-        var officialSheets = (await sheets.GetByMatchIdsAsync(teamMatches.Select(m => m.Id), cancellationToken))
-            .Where(s => s.IsAvailable)
+        var officialSheets = (await sheets.GetAvailableLinesByMatchIdsAsync(teamMatches.Select(m => m.Id), cancellationToken))
             .ToDictionary(s => s.MatchId);
         var officialMap = new Dictionary<Guid, TercerTiempo.Domain.OfficialSheets.OfficialSheetLine>();
         foreach (var m in teamMatches)
