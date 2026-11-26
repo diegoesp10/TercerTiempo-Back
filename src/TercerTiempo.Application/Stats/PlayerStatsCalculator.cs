@@ -100,7 +100,7 @@ internal static class PlayerStatsCalculator
         Guid squadPlayerId,
         Guid? teamId,
         IReadOnlyCollection<Standing> standings,
-        IReadOnlyCollection<PlayerMatchPerformance> comparablePerformances)
+        IReadOnlyCollection<PlayerSeasonTotals> comparableTotals)
     {
         if (standings.Count == 0) return null;
 
@@ -111,16 +111,7 @@ internal static class PlayerStatsCalculator
 
         var teamStanding = teamId is { } id ? standings.FirstOrDefault(s => s.TeamId == id) : null;
 
-        var lines = comparablePerformances
-            .GroupBy(p => p.SquadPlayerId)
-            .Select(g => new PlayerSeasonLine(
-                g.Key,
-                g.Sum(p => p.MinutesPlayed),
-                g.Sum(p => p.Goals),
-                g.Sum(p => p.Assists),
-                AverageRating(g)))
-            .Where(l => l.Minutes > 0)
-            .ToList();
+        var lines = comparableTotals.Where(l => l.Minutes > 0).ToList();
 
         var me = lines.FirstOrDefault(l => l.SquadPlayerId == squadPlayerId);
 
@@ -144,7 +135,7 @@ internal static class PlayerStatsCalculator
     }
 
     internal static double? Percentile(
-        IReadOnlyCollection<PlayerSeasonLine> lines, PlayerSeasonLine? me, Func<PlayerSeasonLine, double> selector)
+        IReadOnlyCollection<PlayerSeasonTotals> lines, PlayerSeasonTotals? me, Func<PlayerSeasonTotals, double> selector)
     {
         if (me is null || lines.Count < 2) return null;
 
@@ -155,7 +146,12 @@ internal static class PlayerStatsCalculator
         return Round((below + 0.5 * equal) * 100.0 / lines.Count);
     }
 
-    internal sealed record PlayerSeasonLine(Guid SquadPlayerId, int Minutes, int Goals, int Assists, double? AverageRating);
+    // Lo mismo que suma la base en GetComparableTotalsBySeasonAsync, a partir de las líneas (pruebas).
+    internal static IReadOnlyList<PlayerSeasonTotals> Totals(IEnumerable<PlayerMatchPerformance> performances) =>
+        performances
+            .GroupBy(p => p.SquadPlayerId)
+            .Select(g => new PlayerSeasonTotals(g.Key, g.Sum(p => p.MinutesPlayed), g.Sum(p => p.Goals), g.Sum(p => p.Assists), AverageRating(g)))
+            .ToList();
 
     private static double? AverageRating(IEnumerable<PlayerMatchPerformance> performances)
     {

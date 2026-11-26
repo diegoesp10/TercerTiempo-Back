@@ -9,8 +9,9 @@ public interface IPerformanceStore
     Task<IReadOnlyList<PlayerMatchPerformance>> GetByMatchAsync(Guid matchId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PlayerMatchPerformance>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default);
 
-    // Las de la temporada que entran en las medias de la liga: las de esa plantilla y las de las plantillas públicas.
-    Task<IReadOnlyList<PlayerMatchPerformance>> GetComparableBySeasonAsync(Guid seasonId, Guid ownSquadId, CancellationToken cancellationToken = default);
+    // Lo de cada jugador en la temporada que entra en las medias de la liga: los de esa plantilla y los de las plantillas
+    // públicas. Sumado en la base (a final de temporada son miles de líneas; los jugadores, unos cientos).
+    Task<IReadOnlyList<PlayerSeasonTotals>> GetComparableTotalsBySeasonAsync(Guid seasonId, Guid ownSquadId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PlayerMatchPerformance>> GetWithoutRatingAsync(CancellationToken cancellationToken = default);
 
@@ -19,3 +20,6 @@ public interface IPerformanceStore
     void Add(PlayerMatchPerformance performance);
     void Remove(PlayerMatchPerformance performance);
 }
+
+// AverageRating: la media de las notas que hay (sin nota no cuenta), null si no tiene ninguna.
+public sealed record PlayerSeasonTotals(Guid SquadPlayerId, int Minutes, int Goals, int Assists, double? AverageRating);

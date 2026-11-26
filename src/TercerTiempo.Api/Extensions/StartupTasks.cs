@@ -12,12 +12,25 @@ internal static class StartupTasks
     public static void ApplyCrestPolicy(this IServiceProvider services) =>
         TeamCrests.ClubUploadsOnly = services.GetRequiredService<IOptions<CrestOptions>>().Value.ClubUploadsOnly;
 
-    public static async Task RecalculateMissingRatingsAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
-    {
-        using var scope = services.CreateScope();
-        var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<RecalculateMissingRatingsCommand, int>>();
-        await handler.Handle(new RecalculateMissingRatingsCommand(), cancellationToken);
-    }
+    // Si falla, lo vuelve a intentar el próximo arranque; mientras tanto cada acta interna se recalcula al escribirla.
+    public static void RecalculateMissingRatingsInBackground(this WebApplication app) =>
+        app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
+        {
+            var stopping = app.Lifetime.ApplicationStopping;
+            try
+            {
+                using var scope = app.Services.CreateScope();
+                var handler = scope.ServiceProvider.GetRequiredService<ICommandHandler<RecalculateMissingRatingsCommand, int>>();
+                await handler.Handle(new RecalculateMissingRatingsCommand(), stopping);
+            }
+            catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                app.Logger.LogError(ex, "No se han podido recalcular las notas pendientes al arrancar");
+            }
+        }));
 
     public static async Task NameVideosAfterMatchAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
     {

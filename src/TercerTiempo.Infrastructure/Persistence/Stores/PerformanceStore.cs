@@ -33,11 +33,13 @@ internal sealed class PerformanceStore(AppDbContext db) : IPerformanceStore
             .Where(p => p.SeasonId == seasonId)
             .ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<PlayerMatchPerformance>> GetComparableBySeasonAsync(Guid seasonId, Guid ownSquadId, CancellationToken cancellationToken = default) =>
-        await db.Performances
+    public async Task<IReadOnlyList<PlayerSeasonTotals>> GetComparableTotalsBySeasonAsync(Guid seasonId, Guid ownSquadId, CancellationToken cancellationToken = default) =>
+        await db.Performances.AsNoTracking()
             .Where(p => p.SeasonId == seasonId)
             .Where(p => db.Squads.Any(s => s.Id == p.SquadId && s.SeasonId == seasonId
                 && (s.Id == ownSquadId || s.Visibility == Domain.Squads.SquadVisibility.Public)))
+            .GroupBy(p => p.SquadPlayerId)
+            .Select(g => new PlayerSeasonTotals(g.Key, g.Sum(p => p.MinutesPlayed), g.Sum(p => p.Goals), g.Sum(p => p.Assists), g.Average(p => p.Rating)))
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<PlayerMatchPerformance>> GetWithoutRatingAsync(CancellationToken cancellationToken = default) =>

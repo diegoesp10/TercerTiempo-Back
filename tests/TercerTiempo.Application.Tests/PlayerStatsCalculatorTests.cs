@@ -81,7 +81,7 @@ public class PlayerStatsCalculatorTests
             Standing.Create(SeasonId, Rival, new StandingLine(2, 4, 1, 1, 2, 4, 7, 4), Now),
         };
 
-        var league = PlayerStatsCalculator.LeagueComparison(me.Id, MyTeam, standings, [.. performances, .. otherPerformances]);
+        var league = PlayerStatsCalculator.LeagueComparison(me.Id, MyTeam, standings, PlayerStatsCalculator.Totals([.. performances, .. otherPerformances]));
 
         Assert.NotNull(league);
         Assert.Equal(2, league!.TeamsCount);
@@ -103,7 +103,7 @@ public class PlayerStatsCalculatorTests
             Standing.Create(SeasonId, MyTeam, new StandingLine(1, 4, 2, 1, 1, 7, 4, 7), Now),
         };
 
-        var league = PlayerStatsCalculator.LeagueComparison(me.Id, MyTeam, standings, performances);
+        var league = PlayerStatsCalculator.LeagueComparison(me.Id, MyTeam, standings, PlayerStatsCalculator.Totals(performances));
 
         Assert.NotNull(league);
         Assert.Equal(1, league!.PlayersCompared);

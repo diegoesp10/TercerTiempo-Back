@@ -45,7 +45,7 @@ internal sealed class GetPlayerDashboardHandler(
         var table = await standings.GetBySeasonAsync(season.Id, cancellationToken);
 
         // La comparación es de medias de la liga: entran la propia plantilla y las públicas (las que abren sus actas a pases).
-        var comparable = await performances.GetComparableBySeasonAsync(season.Id, squad.Id, cancellationToken);
+        var comparable = await performances.GetComparableTotalsBySeasonAsync(season.Id, squad.Id, cancellationToken);
 
         var individual = PlayerStatsCalculator.Individual(myPerformances);
         var teamImpact = PlayerStatsCalculator.TeamImpact(squad.TeamId, seasonMatches, myPerformances);
