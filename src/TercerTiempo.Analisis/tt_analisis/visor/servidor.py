@@ -32,9 +32,12 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from ..evaluar_eventos import evaluar
 from ..repeticion import CARPETA, DIRECTO, ESTADO_DIRECTO, FINAL, FOTOGRAMAS, IndiceFotogramas
-from ..revision_eventos import ConflictoRevision, Revisiones, fuente_revision, huella_video
+from ..revision_eventos import ConflictoRevision, Revisiones, catalogo, fuente_revision, huella_video
 
 ESTATICO = Path(__file__).parent / "estatico"
+# Copia de lo revisado a mano, por vídeo, junto a los demás datos del analizador (git no la sube): si se pierde el
+# SQLite del equipo, el visor la recupera de aquí.
+COPIAS_REVISIONES = Path(__file__).resolve().parents[2] / "datasets" / "revisiones"
 BLOQUE = 1 << 20
 # Un análisis en marcha reescribe directo.json cada pocos segundos (`repeticion.LATIDO_S`), también en pausa: sin noticias
 # en este rato, se ha parado (el proceso se cortó o se mató, o el equipo se durmió).
@@ -153,6 +156,10 @@ class Analisis:
     _generacion: tuple | None = None
     # Lo de analisis.json que sale en la lista, por su fecha (la lista se pide cada pocos segundos).
     _resumen: tuple[int, dict] | None = None
+    # Lo que se revisa de la repetición, por la fecha de final.json, y la huella del vídeo, por su ruta, tamaño y fecha:
+    # cada clic de la revisión los pide y en un partido entero son varios MB que leer.
+    _fuente: tuple[int, dict] | None = None
+    _huella: tuple[tuple, str] | None = None
     _cerrojo: threading.Lock = field(default_factory=threading.Lock)
 
     @property
@@ -231,6 +238,28 @@ class Analisis:
                     "jugadores": len((datos.get("identificacion") or {}).get("jugadores") or []),
                 })
             return self._resumen[1]
+
+    def fuente_de_revision(self) -> dict | None:
+        ruta = self._ruta(FINAL)
+        try:
+            marca = ruta.stat().st_mtime_ns
+        except OSError:
+            return None
+        with self._cerrojo:
+            if self._fuente is None or self._fuente[0] != marca:
+                final = leer_json(ruta)
+                if final is None:
+                    return None
+                self._fuente = (marca, fuente_revision(final))
+            return self._fuente[1]
+
+    def huella_video(self, ruta: Path) -> str:
+        estado = ruta.stat()
+        clave = (str(ruta), estado.st_size, estado.st_mtime_ns)
+        with self._cerrojo:
+            if self._huella is None or self._huella[0] != clave:
+                self._huella = (clave, huella_video(ruta))
+            return self._huella[1]
 
     def ficha(self) -> dict:
         """Lo que se enseña en la lista de análisis."""
@@ -427,12 +456,14 @@ class Vida:
 class Servidor(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, direccion, biblioteca: Biblioteca, ruta_revisiones: Path | None = None) -> None:
+    def __init__(self, direccion, biblioteca: Biblioteca, ruta_revisiones: Path | None = None, copias_revisiones: Path | None = None) -> None:
         super().__init__(direccion, Manejador)
         self.biblioteca = biblioteca
         self.vida = Vida()
-        local = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "TercerTiempo"
-        self.revisiones = Revisiones(ruta_revisiones or local / "revisiones-ojeador.sqlite3")
+        if ruta_revisiones is None:
+            ruta_revisiones = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "TercerTiempo" / "revisiones-ojeador.sqlite3"
+            copias_revisiones = copias_revisiones or COPIAS_REVISIONES
+        self.revisiones = Revisiones(ruta_revisiones, copias_revisiones)
 
     def handle_error(self, request, client_address) -> None:
         # Al saltar en el vídeo el navegador corta las peticiones a medias: es lo normal y no hace falta contarlo.
@@ -479,13 +510,16 @@ class Manejador(BaseHTTPRequestHandler):
         if not self._host_valido():
             return self._error(HTTPStatus.FORBIDDEN, "Solo desde este equipo.")
         url = urlparse(self.path)
+        # Sin leer el cuerpo, lo que quede de él se tomaría por la petición siguiente: se cierra la conexión.
         try:
             largo = int(self.headers.get("Content-Length") or 0)
             if largo < 0:
                 raise ValueError
         except ValueError:
+            self.close_connection = True
             return self._error(HTTPStatus.BAD_REQUEST, "Tamaño de petición no válido.")
         if largo > 1 << 16:
+            self.close_connection = True
             return self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "La petición es demasiado grande.")
         cuerpo = self.rfile.read(largo) if largo else b""
         if url.path == "/api/latido":
@@ -595,19 +629,25 @@ class Manejador(BaseHTTPRequestHandler):
     def _revision_eventos(self, analisis: Analisis, cuerpo: bytes | None = None) -> None:
         if analisis.modo()[0] != "final":
             return self._error(HTTPStatus.CONFLICT, "La revisión se abre al terminar el análisis.")
-        final = leer_json(analisis.carpeta / CARPETA / FINAL)
         ruta = analisis.ruta_video()
-        if final is None or ruta is None or not ruta.is_file():
-            return self._error(HTTPStatus.NOT_FOUND, "Para revisar hace falta la repetición completa y el vídeo original.")
+        sin_lo_necesario = "Para revisar hace falta la repetición completa y el vídeo original."
+        if ruta is None or not ruta.is_file():
+            return self._error(HTTPStatus.NOT_FOUND, sin_lo_necesario)
         try:
-            fuente = fuente_revision(final)
-            video = huella_video(ruta)
+            fuente = analisis.fuente_de_revision()
+            if fuente is None:
+                return self._error(HTTPStatus.NOT_FOUND, sin_lo_necesario)
+            video = analisis.huella_video(ruta)
             almacen = self.server.revisiones
             if cuerpo is None:
                 revision = almacen.leer(video)
-                return self._json({"fuente": fuente, "revision": revision, "medicion": evaluar(revision, fuente)})
+                return self._json({"fuente": fuente, "catalogo": catalogo(), "revision": revision, "medicion": evaluar(revision, fuente)})
             revision = almacen.editar(video, fuente, json.loads(cuerpo))
-            return self._json({"revision": revision, "medicion": evaluar(revision, fuente)})
+            respuesta = {"revision": revision, "medicion": evaluar(revision, fuente)}
+            sin_copia = almacen.guardar_copia(revision)
+            if sin_copia:
+                respuesta["aviso"] = f"Guardado en este equipo, pero sin la copia de seguridad: {sin_copia}"
+            return self._json(respuesta)
         except ConflictoRevision as error:
             return self._error(HTTPStatus.CONFLICT, str(error))
         except (KeyError, TypeError, ValueError) as error:
@@ -630,6 +670,8 @@ class Manejador(BaseHTTPRequestHandler):
         self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(cuerpo)))
         self.send_header("Cache-Control", "no-store")
+        if self.close_connection:
+            self.send_header("Connection", "close")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(cuerpo)

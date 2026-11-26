@@ -39,7 +39,9 @@ def visor(tmp_path):
     video = tmp_path / "partido.mp4"
     video.write_bytes(VIDEO)
     _analisis(tmp_path / "salidas" / "j8" / "pasada", video)
-    servidor = Servidor(("127.0.0.1", 0), Biblioteca([tmp_path / "salidas"]))
+    # La revisión, en la carpeta de la prueba: nunca en la de etiquetas del equipo ni en datasets/revisiones.
+    revisiones = tmp_path / "revisiones"
+    servidor = Servidor(("127.0.0.1", 0), Biblioteca([tmp_path / "salidas"]), revisiones / "revisiones.sqlite3", revisiones / "copias")
     hilo = threading.Thread(target=servidor.serve_forever, daemon=True)
     hilo.start()
     yield servidor, tmp_path

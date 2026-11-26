@@ -98,8 +98,9 @@ export function minuto(t) {
 
 export function minutoPreciso(t) {
   if (t == null || !Number.isFinite(t)) return '–';
-  const decimas = Math.floor((Math.max(0, t) % 1) * 10);
-  return `${minuto(t)},${decimas}`;
+  // En décimas enteras: 143,2 s se guarda como 143,1999… y no debe salir como 02:23,1.
+  const decimas = Math.floor(Math.max(0, t) * 10 + 1e-6);
+  return `${minuto(Math.floor(decimas / 10))},${decimas % 10}`;
 }
 
 export function duracion(s) {
