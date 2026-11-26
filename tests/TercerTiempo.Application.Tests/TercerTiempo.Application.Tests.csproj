@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\TercerTiempo.Application\TercerTiempo.Application.csproj" />
     <ProjectReference Include="..\..\src\TercerTiempo.Infrastructure\TercerTiempo.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\TercerTiempo.Hosting\TercerTiempo.Hosting.csproj" />
   </ItemGroup>
 
   <ItemGroup>

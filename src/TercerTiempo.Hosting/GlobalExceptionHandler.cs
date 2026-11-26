@@ -64,12 +64,20 @@ internal sealed class GlobalExceptionHandler(
                 problem.Extensions["code"] = ex.Code;
                 return problem;
 
-            // Cuerpo JSON malformado, enum desconocido, parámetro obligatorio ausente... (en Development el framework los lanza).
+            // Parámetro obligatorio ausente o que no se puede leer, cuerpo que no es JSON válido, enum desconocido... (el
+            // framework los lanza en todos los entornos: RouteHandlerOptions.ThrowOnBadRequest). Se dice qué parámetro o
+            // qué campo del cuerpo, sin el mensaje del framework (en inglés y con los tipos internos).
             case BadHttpRequestException ex:
-                return Problem(
+                var (requestCode, parameter) = FrameworkProblems.FromBadRequest(ex.StatusCode, ex.Message, ex.InnerException);
+                var bad = Problem(
                     ex.StatusCode,
                     await TitleAsync(messages, ErrorCode.TitleBadRequest, language, cancellationToken),
-                    ex.InnerException is JsonException json ? $"{ex.Message} {json.Message}" : ex.Message);
+                    await messages.ResolveAsync(requestCode, language, parameter is null ? [] : [parameter], cancellationToken));
+                bad.Extensions["code"] = requestCode;
+                if (parameter is not null) bad.Extensions["parameter"] = parameter;
+                if (ex.InnerException is JsonException { Path: { } path } && path.TrimStart('$', '.') is { Length: > 0 } field)
+                    bad.Extensions["field"] = field;
+                return bad;
 
             default:
                 return Problem(

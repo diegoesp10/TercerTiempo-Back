@@ -566,6 +566,72 @@ namespace TercerTiempo.Infrastructure.Persistence.Migrations
                         },
                         new
                         {
+                            Code = "request.invalid",
+                            Language = "es",
+                            Message = "La petición no es válida."
+                        },
+                        new
+                        {
+                            Code = "request.missing_parameter",
+                            Language = "es",
+                            Message = "Falta el parámetro '{0}'."
+                        },
+                        new
+                        {
+                            Code = "request.invalid_parameter",
+                            Language = "es",
+                            Message = "El parámetro '{0}' no tiene un valor válido."
+                        },
+                        new
+                        {
+                            Code = "request.invalid_body",
+                            Language = "es",
+                            Message = "No se pueden leer los datos enviados: revisa su formato y el tipo de cada campo."
+                        },
+                        new
+                        {
+                            Code = "request.unsupported_media_type",
+                            Language = "es",
+                            Message = "Esta dirección no admite los datos en ese formato."
+                        },
+                        new
+                        {
+                            Code = "request.too_large",
+                            Language = "es",
+                            Message = "Lo enviado ocupa más de lo que admite esta dirección."
+                        },
+                        new
+                        {
+                            Code = "request.not_found",
+                            Language = "es",
+                            Message = "No existe o ya no está disponible."
+                        },
+                        new
+                        {
+                            Code = "request.method_not_allowed",
+                            Language = "es",
+                            Message = "Esta dirección no admite el método {0}."
+                        },
+                        new
+                        {
+                            Code = "auth.session_expired",
+                            Language = "es",
+                            Message = "Tu sesión ha caducado o ya no es válida: vuelve a iniciar sesión."
+                        },
+                        new
+                        {
+                            Code = "auth.forbidden",
+                            Language = "es",
+                            Message = "No tienes permiso para hacer esto."
+                        },
+                        new
+                        {
+                            Code = "auth.admin_read_only",
+                            Language = "es",
+                            Message = "Con la cuenta de administrador solo se puede mirar: los cambios los hace cada club, técnico o jugador desde su cuenta."
+                        },
+                        new
+                        {
                             Code = "auth.unauthenticated",
                             Language = "es",
                             Message = "Debes iniciar sesión para realizar esta acción."

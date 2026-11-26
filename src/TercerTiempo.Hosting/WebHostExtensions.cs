@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -26,6 +27,9 @@ public static class WebHostExtensions
 
         services.AddProblemDetails();
         services.AddExceptionHandler<GlobalExceptionHandler>();
+        // Un parámetro que falta o no se puede leer también se lanza fuera de Development, para que el manejador de
+        // errores diga cuál es y en el idioma de la petición (si no, el framework responde un 400 vacío).
+        services.PostConfigure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
 
         AddJwtAuthentication(services, configuration);
         AddCors(services, configuration);
@@ -47,6 +51,11 @@ public static class WebHostExtensions
 
         return services;
     }
+
+    // Las respuestas de error que el framework deja vacías (ruta o método que no existe, sin sesión, sin permiso), como
+    // problem+json traducido y con código del catálogo.
+    public static IApplicationBuilder UseProblemStatusCodePages(this IApplicationBuilder app) =>
+        app.UseStatusCodePages(FrameworkProblems.WriteStatusCodeAsync);
 
     private static void AddJwtAuthentication(IServiceCollection services, IConfiguration configuration)
     {

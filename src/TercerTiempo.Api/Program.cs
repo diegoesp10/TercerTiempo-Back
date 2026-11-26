@@ -43,7 +43,7 @@ await app.Services.NameVideosAfterMatchAsync();
 
 app.UseSecurityHeaders();
 app.UseExceptionHandler();
-app.UseStatusCodePages();
+app.UseProblemStatusCodePages();
 
 // Idioma de la petición (Accept-Language): los mensajes de error salen de la tabla ErrorMessages en ese idioma
 // (español por defecto) y FluentValidation usa la misma cultura para sus mensajes genéricos.

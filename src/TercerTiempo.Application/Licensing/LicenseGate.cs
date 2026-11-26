@@ -100,7 +100,7 @@ internal sealed class LicenseGate(
             throw new ForbiddenException(ErrorCode.LicenseRequired);
 
         if (!access.IsInsider && !await IsViewerLicensedAsync(user, cancellationToken))
-            throw new ForbiddenException(ErrorCode.LicenseViewerRequired);
+            throw ViewerRequired(user);
     }
 
     private async Task EnsureAsync(Squad squad, ICurrentUser user, CancellationToken cancellationToken)
@@ -110,8 +110,12 @@ internal sealed class LicenseGate(
             throw new ForbiddenException(ErrorCode.LicenseRequired);
 
         if (!await SquadAccess.IsInsiderAsync(squad, user, clock, clubs, cancellationToken) && !await IsViewerLicensedAsync(user, cancellationToken))
-            throw new ForbiddenException(ErrorCode.LicenseViewerRequired);
+            throw ViewerRequired(user);
     }
+
+    // Sin sesión no hay cuenta que pueda tener licencia: lo primero es entrar (401), no conseguir una licencia (403).
+    private static CodedException ViewerRequired(ICurrentUser user) =>
+        user.IsAuthenticated ? new ForbiddenException(ErrorCode.LicenseViewerRequired) : new UnauthenticatedException();
 
     public async Task EnsureVideoAccessAsync(Guid videoId, ICurrentUser user, CancellationToken cancellationToken)
     {

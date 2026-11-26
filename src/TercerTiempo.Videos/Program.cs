@@ -34,7 +34,7 @@ if (behindProxy)
 
 app.UseSecurityHeaders();
 app.UseExceptionHandler();
-app.UseStatusCodePages();
+app.UseProblemStatusCodePages();
 
 app.UseRequestLocalization(new RequestLocalizationOptions()
     .SetDefaultCulture("es-ES")

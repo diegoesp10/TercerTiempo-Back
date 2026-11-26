@@ -53,9 +53,16 @@ public class LicenseGateVideoTests
     public async Task Without_a_pass_the_viewer_must_belong_to_a_licensed_team()
     {
         var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
-            Gate(ClubLicense.Start(_club.Id, Today, 30, Now)).EnsureVideoAccessAsync(_video.Id, new Anonymous(), default));
+            Gate(ClubLicense.Start(_club.Id, Today, 30, Now)).EnsureVideoAccessAsync(_video.Id, new SignedIn(Guid.NewGuid()), default));
 
         Assert.Equal(ErrorCode.LicenseViewerRequired, error.Code);
+    }
+
+    [Fact]
+    public async Task Without_a_session_the_answer_is_to_sign_in_not_a_license()
+    {
+        await Assert.ThrowsAsync<UnauthenticatedException>(() =>
+            Gate(ClubLicense.Start(_club.Id, Today, 30, Now)).EnsureVideoAccessAsync(_video.Id, new Anonymous(), default));
     }
 
     private LicenseGate Gate(ClubLicense license) => new(
@@ -65,7 +72,12 @@ public class LicenseGateVideoTests
             nameof(IClubStore.GetByTeamAsync) or nameof(IClubStore.GetByIdAsync) => Task.FromResult<Club?>(_club),
             _ => throw new NotSupportedException(method),
         }),
-        Stub<ISquadStore>((method, _) => method == nameof(ISquadStore.GetByIdAsync) ? Task.FromResult<Squad?>(_squad) : throw new NotSupportedException(method)),
+        Stub<ISquadStore>((method, _) => method switch
+        {
+            nameof(ISquadStore.GetByIdAsync) => Task.FromResult<Squad?>(_squad),
+            nameof(ISquadStore.GetRefsByCoachAsync) => Task.FromResult<IReadOnlyList<SquadRef>>([]),
+            _ => throw new NotSupportedException(method),
+        }),
         Stub<IMatchVideoStore>((method, _) => method == nameof(IMatchVideoStore.GetByIdAsync) ? Task.FromResult<MatchVideo?>(_video) : throw new NotSupportedException(method)),
         Stub<IMatchPassStore>((method, _) => method == nameof(IMatchPassStore.GetRedeemedByAsync)
             ? Task.FromResult<IReadOnlyList<MatchPass>>(_redeemed)

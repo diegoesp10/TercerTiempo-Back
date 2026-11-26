@@ -26,6 +26,19 @@ public static class ErrorCode
     public const string ThrottleTooManyRequests = "throttle.too_many_requests";
     public const string ThrottleBanned = "throttle.banned";
 
+    // Lo que rechaza el propio framework antes de llegar al endpoint: parámetros, cuerpo, ruta, método, sesión o permiso
+    public const string RequestInvalid = "request.invalid";
+    public const string RequestMissingParameter = "request.missing_parameter";
+    public const string RequestInvalidParameter = "request.invalid_parameter";
+    public const string RequestInvalidBody = "request.invalid_body";
+    public const string RequestUnsupportedMediaType = "request.unsupported_media_type";
+    public const string RequestTooLarge = "request.too_large";
+    public const string RequestNotFound = "request.not_found";
+    public const string RequestMethodNotAllowed = "request.method_not_allowed";
+    public const string AuthSessionExpired = "auth.session_expired";
+    public const string AuthForbidden = "auth.forbidden";
+    public const string AuthAdminReadOnly = "auth.admin_read_only";
+
     // Cuentas y acceso
     public const string AuthUnauthenticated = "auth.unauthenticated";
     public const string AuthInvalidCredentials = "auth.invalid_credentials";
