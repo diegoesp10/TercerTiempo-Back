@@ -206,8 +206,9 @@ public sealed record PendingRefereeRatingDto(
     int NoVotes);
 
 // Los árbitros se buscan siempre dentro de una categoría: la categoría manda en el listado.
+// Take: solo los primeros en ese orden (la portada y el panel enseñan 5 o 3 de una categoría que puede tener 150).
 public sealed record ListRefereesQuery(
-    string Category, OfficialDuty? Duty = null, string? Search = null, RefereeSort? Sort = null, SortOrder? Order = null)
+    string Category, OfficialDuty? Duty = null, string? Search = null, RefereeSort? Sort = null, SortOrder? Order = null, int? Take = null)
     : IQuery<RefereeCategoryListDto>;
 
 public sealed record ListRefereeCategoriesQuery : IQuery<IReadOnlyList<RefereeCategoryDto>>;
@@ -671,7 +672,8 @@ internal sealed class ListRefereesHandler(IRefereeStore referees, ICompetitionSt
 
         var sort = query.Sort ?? RefereeSort.Average;
         var order = query.Order ?? (sort == RefereeSort.Name ? SortOrder.Asc : SortOrder.Desc);
-        return new RefereeCategoryListDto(category, query.Duty, sort, order, RefereeSorting.Apply(rows, sort, order));
+        var sorted = RefereeSorting.Apply(rows, sort, order);
+        return new RefereeCategoryListDto(category, query.Duty, sort, order, query.Take is > 0 and var take ? sorted.Take(take).ToList() : sorted);
     }
 }
 

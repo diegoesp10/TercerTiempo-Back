@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddSingleton<Jobs.IJobProgress, Jobs.JobProgress>();
         services.AddSingleton<Presence.PresenceBoard>();
         services.AddSingleton<Search.SearchIndexHolder>();
+        services.AddSingleton<Common.PhotoAccessMemo>();
         services.AddScoped<AppointmentRedemption>();
         services.AddScoped<Licensing.ILicenseGate, Licensing.LicenseGate>();
         services.AddSingleton<Licensing.LicensingCatalogCache>();

@@ -16,13 +16,14 @@ internal sealed class GetRosterPhotoHandler(
     ICurrentUser currentUser,
     ISquadStore squads,
     IClubStore clubs,
-    TimeProvider clock) : IQueryHandler<GetRosterPhotoQuery, CrestFile?>
+    TimeProvider clock,
+    PhotoAccessMemo memo) : IQueryHandler<GetRosterPhotoQuery, CrestFile?>
 {
     public async Task<CrestFile?> Handle(GetRosterPhotoQuery query, CancellationToken cancellationToken)
     {
         var entry = await teams.GetRosterEntryAsync(query.EntryId, cancellationToken);
         if (entry is not { PhotoKey: { } key, Hidden: false } || entry.TeamId != query.TeamId) return null;
-        if (!await PhotoAccess.CanSeeTeamPhotosAsync(entry.TeamId, entry.SeasonId, currentUser, squads, clubs, clock, cancellationToken)) return null;
+        if (!await PhotoAccess.CanSeeTeamPhotosAsync(entry.TeamId, entry.SeasonId, currentUser, squads, clubs, clock, memo, cancellationToken)) return null;
         return await photos.OpenReadAsync(key, cancellationToken);
     }
 }

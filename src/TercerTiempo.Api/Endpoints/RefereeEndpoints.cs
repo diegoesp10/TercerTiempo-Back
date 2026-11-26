@@ -18,12 +18,12 @@ internal static class RefereeEndpoints
             .WithDescription("Primer paso para buscar árbitros: las categorías de los partidos con equipo arbitral (sus grupos van juntos), de la más alta a la más baja, con cuántos árbitros principales, asistentes, partidos y notas tiene cada una y sus ligas (competitionIds). Pública: sin token, con el de una cuenta o con el de administrador da lo mismo.");
 
         group.MapGet("/categories/{category}", (
-                string category, OfficialDuty? duty, string? search, RefereeSort? sort, SortOrder? order, IRefereesRepository referees, CancellationToken ct) =>
-                referees.ListAsync(category, duty, search, sort, order, ct))
+                string category, OfficialDuty? duty, string? search, RefereeSort? sort, SortOrder? order, int? take, IRefereesRepository referees, CancellationToken ct) =>
+                referees.ListAsync(category, duty, search, sort, order, take, ct))
             .AllowAnonymous()
             .WithName("ListReferees")
             .WithSummary("Árbitros de una categoría")
-            .WithDescription("Los árbitros se buscan siempre dentro de una categoría (su clave, de GET /api/referees/categories, p. ej. 3a-asturfutbol). Una fila por árbitro y función con sus partidos pitados, cuántas notas tiene y su media (0-10) en la categoría. duty: Main (principal) o Assistant (asistente o cuarto árbitro); sin él, las dos. search busca por nombre sin distinguir tildes. sort: Average (por defecto), Ratings, Matches, Name o LastMatch; order: Desc o Asc (por defecto Desc, y Asc por nombre). Pública, sin token.")
+            .WithDescription("Los árbitros se buscan siempre dentro de una categoría (su clave, de GET /api/referees/categories, p. ej. 3a-asturfutbol). Una fila por árbitro y función con sus partidos pitados, cuántas notas tiene y su media (0-10) en la categoría. duty: Main (principal) o Assistant (asistente o cuarto árbitro); sin él, las dos. search busca por nombre sin distinguir tildes. sort: Average (por defecto), Ratings, Matches, Name o LastMatch; order: Desc o Asc (por defecto Desc, y Asc por nombre). take: solo los primeros en ese orden (sin él, todos). Pública, sin token.")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapGet("/pending", (IRefereesRepository referees, CancellationToken ct) => referees.GetPendingAsync(ct))

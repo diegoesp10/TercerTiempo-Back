@@ -293,6 +293,8 @@ public class RefereeTests
         var worstFirst = await list.Handle(new ListRefereesQuery("3a-asturfutbol", Sort: RefereeSort.Average, Order: SortOrder.Asc), default);
         Assert.Equal([sara.Id, pepe.Id], worstFirst.Referees.Select(r => r.Id));
         var byName = await list.Handle(new ListRefereesQuery("3a-asturfutbol", Sort: RefereeSort.Name), default);
+        var firstByName = await list.Handle(new ListRefereesQuery("3a-asturfutbol", Sort: RefereeSort.Name, Take: 1), default);
+        Assert.Equal(byName.Referees[0], Assert.Single(firstByName.Referees));
         Assert.Equal((SortOrder.Asc, pepe.Id), (byName.Order, byName.Referees[0].Id));
 
         var asAssistant = Assert.Single((await list.Handle(new ListRefereesQuery("2a-asturfutbol", OfficialDuty.Assistant), default)).Referees);

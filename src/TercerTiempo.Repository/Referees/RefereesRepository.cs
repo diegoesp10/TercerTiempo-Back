@@ -9,7 +9,7 @@ public interface IRefereesRepository
 {
     Task<IReadOnlyList<RefereeCategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default);
     Task<RefereeCategoryListDto> ListAsync(
-        string category, OfficialDuty? duty, string? search, RefereeSort? sort, SortOrder? order, CancellationToken cancellationToken = default);
+        string category, OfficialDuty? duty, string? search, RefereeSort? sort, SortOrder? order, int? take = null, CancellationToken cancellationToken = default);
     Task<RefereeDetailDto> GetAsync(Guid refereeId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PendingRefereeRatingDto>> GetPendingAsync(CancellationToken cancellationToken = default);
     Task<MatchOfficialsDto> GetMatchOfficialsAsync(Guid matchId, CancellationToken cancellationToken = default);
@@ -45,8 +45,8 @@ internal sealed class RefereesRepository(
     ICommandHandler<NoVoteMatchOfficialsCommand, MatchOfficialsDto> noVote) : IRefereesRepository
 {
     public Task<RefereeCategoryListDto> ListAsync(
-        string category, OfficialDuty? duty, string? search, RefereeSort? sort, SortOrder? order, CancellationToken cancellationToken = default) =>
-        list.Handle(new ListRefereesQuery(category, duty, search, sort, order), cancellationToken);
+        string category, OfficialDuty? duty, string? search, RefereeSort? sort, SortOrder? order, int? take = null, CancellationToken cancellationToken = default) =>
+        list.Handle(new ListRefereesQuery(category, duty, search, sort, order, take), cancellationToken);
 
     public Task<IReadOnlyList<RefereeCategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default) =>
         categories.Handle(new ListRefereeCategoriesQuery(), cancellationToken);
