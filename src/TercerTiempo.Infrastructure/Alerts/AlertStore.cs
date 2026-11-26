@@ -43,6 +43,21 @@ internal sealed class AlertStore(AppDbContext db) : IAlertStore
         return new AlertPage(unseen, fresh.Concat(earlier).OrderByDescending(a => a.CreatedAt).ToList());
     }
 
+    public async Task<AlertStamp> GetStampForAsync(Guid? clubId, Guid? playerId, Guid? coachId, CancellationToken cancellationToken = default)
+    {
+        var none = new AlertStamp(0, 0, 0, 0);
+        if (clubId is null && playerId is null && coachId is null) return none;
+        // Los cuatro recuentos en una sola consulta.
+        return await For(clubId, playerId, coachId)
+            .GroupBy(_ => 1)
+            .Select(g => new AlertStamp(
+                g.Count(),
+                g.Count(a => a.SeenAt == null && a.ResolvedAt == null),
+                g.Count(a => a.ReadAt == null),
+                g.Count(a => a.ResolvedAt == null)))
+            .FirstOrDefaultAsync(cancellationToken) ?? none;
+    }
+
     public async Task<IReadOnlyList<Alert>> GetOpenByKeyPrefixAsync(
         string keyPrefix, IReadOnlyCollection<Guid> playerIds, IReadOnlyCollection<Guid> coachIds, Guid? clubId, CancellationToken cancellationToken = default)
     {

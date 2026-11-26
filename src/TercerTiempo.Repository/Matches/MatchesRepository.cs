@@ -11,7 +11,8 @@ internal sealed class MatchesRepository(
     IQueryHandler<GetMatchPreviewQuery, MatchPreviewDto> getPreview,
     IQueryHandler<GetMatchQuery, MatchDetailDto> getMatch,
     IQueryHandler<GetOfficialSheetQuery, OfficialSheetDto> getOfficialSheet,
-    IQueryHandler<ListMatchVideosQuery, IReadOnlyList<MatchVideoDto>> listVideos) : IMatchesRepository
+    IQueryHandler<ListMatchVideosQuery, IReadOnlyList<MatchVideoDto>> listVideos,
+    IQueryHandler<GetMatchVideosProgressQuery, IReadOnlyList<MatchVideoProgressDto>> getVideosProgress) : IMatchesRepository
 {
     public Task<MatchPreviewDto> GetPreviewAsync(Guid matchId, CancellationToken cancellationToken = default) =>
         getPreview.Handle(new GetMatchPreviewQuery(matchId), cancellationToken);
@@ -24,4 +25,7 @@ internal sealed class MatchesRepository(
 
     public Task<IReadOnlyList<MatchVideoDto>> ListVideosAsync(Guid matchId, CancellationToken cancellationToken = default) =>
         listVideos.Handle(new ListMatchVideosQuery(matchId), cancellationToken);
+
+    public Task<IReadOnlyList<MatchVideoProgressDto>> GetVideosProgressAsync(Guid matchId, IReadOnlyList<Guid> videoIds, CancellationToken cancellationToken = default) =>
+        getVideosProgress.Handle(new GetMatchVideosProgressQuery(matchId, videoIds), cancellationToken);
 }

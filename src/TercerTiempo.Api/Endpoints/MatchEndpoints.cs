@@ -34,6 +34,11 @@ internal static class MatchEndpoints
             .WithDescription("Vídeos subidos por el cuerpo técnico de cualquiera de los dos equipos, con el acceso del usuario a cada uno: Owner (su plantilla lo subió), Free, Purchased, Locked (técnico de otra plantilla: puede comprarlo) o None. Público, pero sin sesión nunca hay acceso.")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{matchId:guid}/videos/progress", (Guid matchId, Guid[]? id, IMatchesRepository matches, CancellationToken ct) => matches.GetVideosProgressAsync(matchId, id ?? [], ct))
+            .WithName("GetMatchVideosProgress")
+            .WithSummary("Estado y avance de la compresión de unos vídeos del partido")
+            .WithDescription("Muy ligera (una consulta): para seguir la compresión sin volver a pedir la lista. Se pasan los ids de los vídeos que ya se ven (?id=…&id=…, como mucho 20) y devuelve el estado y el avance de cada uno; uno que no sale se ha borrado. Si cambia el estado de alguno, se vuelve a pedir la lista. De un id que no es de este partido no dice nada. Público.");
+
         return app;
     }
 }

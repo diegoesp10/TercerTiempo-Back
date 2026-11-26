@@ -303,7 +303,12 @@ public interface IMatchVideoStore
 
     // Leído de la base en el momento, sin pasar por lo que ya esté cargado.
     Task<bool> IsDeletedAsync(Guid id, CancellationToken cancellationToken = default);
+
+    // Solo el estado y el avance de unos vídeos del partido (sin los borrados), sin cargarlos.
+    Task<IReadOnlyList<MatchVideoProgress>> GetProgressAsync(Guid matchId, IReadOnlyCollection<Guid> videoIds, CancellationToken cancellationToken = default);
 }
+
+public sealed record MatchVideoProgress(Guid Id, VideoStatus Status, int Progress);
 
 public interface IVideoUploadStore
 {

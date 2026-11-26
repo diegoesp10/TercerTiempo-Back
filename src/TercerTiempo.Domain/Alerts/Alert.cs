@@ -127,6 +127,11 @@ public sealed class Alert : AggregateRoot
 // más reciente al más antiguo (solo para leer).
 public sealed record AlertPage(int Unseen, IReadOnlyList<Alert> Latest);
 
+// Recuentos de los avisos de una cuenta. Un aviso no cambia de texto: solo se crea, se ve, se lee, se resuelve o se borra
+// (resuelto y viejo), y cada una de esas cosas mueve al menos uno de los cuatro, así que si no se mueve ninguno no ha
+// cambiado nada de la campanita.
+public sealed record AlertStamp(int Total, int Unseen, int Unread, int Unresolved);
+
 public interface IAlertStore
 {
     Task<Alert?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
@@ -136,6 +141,7 @@ public interface IAlertStore
     Task<IReadOnlyList<Alert>> GetForAsync(Guid? clubId, Guid? playerId, Guid? coachId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Alert>> GetByKindAsync(AlertKind kind, CancellationToken cancellationToken = default);
     Task<AlertPage> GetPageForAsync(Guid? clubId, Guid? playerId, Guid? coachId, int newTake, int earlierTake, CancellationToken cancellationToken = default);
+    Task<AlertStamp> GetStampForAsync(Guid? clubId, Guid? playerId, Guid? coachId, CancellationToken cancellationToken = default);
 
     // Sin resolver y cuya clave empieza por keyPrefix, de cualquiera de esos destinatarios (con seguimiento, para resolverlos).
     Task<IReadOnlyList<Alert>> GetOpenByKeyPrefixAsync(

@@ -6,6 +6,7 @@ namespace TercerTiempo.Repository.Alerts;
 public interface IAlertsRepository
 {
     Task<ClubAlertsDto> GetMineAsync(CancellationToken cancellationToken = default);
+    Task<string> GetStampAsync(CancellationToken cancellationToken = default);
     Task<ClubAlertsDto> MarkReadAsync(Guid alertId, CancellationToken cancellationToken = default);
     Task<ClubAlertsDto> MarkAllReadAsync(CancellationToken cancellationToken = default);
     Task<ClubAlertsDto> MarkSeenAsync(IReadOnlyList<Guid> alertIds, CancellationToken cancellationToken = default);
@@ -13,12 +14,16 @@ public interface IAlertsRepository
 
 internal sealed class AlertsRepository(
     IQueryHandler<GetClubAlertsQuery, ClubAlertsDto> getAlerts,
+    IQueryHandler<GetAlertsStampQuery, string> getStamp,
     ICommandHandler<MarkAlertReadCommand, ClubAlertsDto> markRead,
     ICommandHandler<MarkAllAlertsReadCommand, ClubAlertsDto> markAllRead,
     ICommandHandler<MarkAlertsSeenCommand, ClubAlertsDto> markSeen) : IAlertsRepository
 {
     public Task<ClubAlertsDto> GetMineAsync(CancellationToken cancellationToken = default) =>
         getAlerts.Handle(new GetClubAlertsQuery(), cancellationToken);
+
+    public Task<string> GetStampAsync(CancellationToken cancellationToken = default) =>
+        getStamp.Handle(new GetAlertsStampQuery(), cancellationToken);
 
     public Task<ClubAlertsDto> MarkReadAsync(Guid alertId, CancellationToken cancellationToken = default) =>
         markRead.Handle(new MarkAlertReadCommand(alertId), cancellationToken);

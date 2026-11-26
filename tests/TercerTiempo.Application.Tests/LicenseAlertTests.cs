@@ -105,6 +105,8 @@ public class LicenseAlertTests
             Task.FromResult<IReadOnlyList<Alert>>(alerts.Where(a => a.IsFor(clubId, playerId, coachId)).ToList());
         public Task<AlertPage> GetPageForAsync(Guid? clubId, Guid? playerId, Guid? coachId, int newTake, int earlierTake, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+        public Task<AlertStamp> GetStampForAsync(Guid? clubId, Guid? playerId, Guid? coachId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
         public Task<int> MarkSeenAsync(
             Guid? clubId, Guid? playerId, Guid? coachId, IReadOnlyCollection<Guid> alertIds, DateTimeOffset now, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();

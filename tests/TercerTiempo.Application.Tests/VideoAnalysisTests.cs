@@ -1141,6 +1141,9 @@ internal sealed class FakeVideoStore : IMatchVideoStore
     public Task<IReadOnlyList<MatchVideo>> GetProcessingAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<MatchVideo>>(Items.Where(v => v.Status == VideoStatus.Processing).ToList());
     public Task<bool> IsDeletedAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(DeletedIds.Contains(id));
+    public Task<IReadOnlyList<MatchVideoProgress>> GetProgressAsync(Guid matchId, IReadOnlyCollection<Guid> videoIds, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<MatchVideoProgress>>(Items.Where(v => v.MatchId == matchId && !v.IsDeleted && videoIds.Contains(v.Id))
+            .Select(v => new MatchVideoProgress(v.Id, v.Status, v.ProcessingProgress)).ToList());
 }
 
 internal sealed class FakeAnalysisStore : IMatchVideoAnalysisStore

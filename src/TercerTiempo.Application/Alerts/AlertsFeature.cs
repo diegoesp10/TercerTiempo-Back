@@ -32,9 +32,13 @@ public sealed record ClubAlertsDto(
     [property: Description("Avisos nuevos (sin ver y vigentes): el número de la campanita.")]
     int Unread,
     [property: Description("Los avisos nuevos y los últimos anteriores (vistos o resueltos), del más reciente al más antiguo.")]
-    IReadOnlyList<AlertDto> Alerts);
+    IReadOnlyList<AlertDto> Alerts,
+    [property: Description("Huella de la campanita: el latido de la sesión (POST /api/presence) devuelve la de ahora y, mientras coincida, no hace falta volver a pedir los avisos.")]
+    string Stamp = "");
 
 public sealed record GetClubAlertsQuery : IQuery<ClubAlertsDto>;
+
+public sealed record GetAlertsStampQuery : IQuery<string>;
 
 public sealed record MarkAlertReadCommand(Guid AlertId) : ICommand<ClubAlertsDto>;
 
@@ -69,8 +73,23 @@ internal static class ClubAlerts
     public static async Task<ClubAlertsDto> MineAsync(ICurrentUser user, IAlertStore alerts, CancellationToken cancellationToken)
     {
         if (!user.IsAuthenticated) throw new UnauthenticatedException();
-        return ToDto(await alerts.GetPageForAsync(user.ClubId, user.PlayerId, user.CoachId, NewShown, EarlierShown, cancellationToken));
+        // La huella antes que la página: un aviso que llegue entre las dos sale en la página y cambia la huella siguiente
+        // (una carga de más), nunca al revés (un aviso que la campanita no volvería a pedir).
+        var stamp = await StampAsync(user, alerts, cancellationToken);
+        return ToDto(await alerts.GetPageForAsync(user.ClubId, user.PlayerId, user.CoachId, NewShown, EarlierShown, cancellationToken)) with { Stamp = stamp };
     }
+
+    public static async Task<string> StampAsync(ICurrentUser user, IAlertStore alerts, CancellationToken cancellationToken)
+    {
+        var s = await alerts.GetStampForAsync(user.ClubId, user.PlayerId, user.CoachId, cancellationToken);
+        return $"{s.Total}.{s.Unseen}.{s.Unread}.{s.Unresolved}";
+    }
+}
+
+internal sealed class GetAlertsStampHandler(ICurrentUser currentUser, IAlertStore alerts) : IQueryHandler<GetAlertsStampQuery, string>
+{
+    public Task<string> Handle(GetAlertsStampQuery query, CancellationToken cancellationToken) =>
+        ClubAlerts.StampAsync(currentUser, alerts, cancellationToken);
 }
 
 internal sealed class GetClubAlertsHandler(ICurrentUser currentUser, IAlertStore alerts) : IQueryHandler<GetClubAlertsQuery, ClubAlertsDto>

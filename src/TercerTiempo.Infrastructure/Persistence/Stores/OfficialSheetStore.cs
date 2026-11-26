@@ -105,4 +105,14 @@ internal sealed class MatchVideoStore(AppDbContext db) : IMatchVideoStore
 
     public Task<bool> IsDeletedAsync(Guid id, CancellationToken cancellationToken = default) =>
         db.MatchVideos.AsNoTracking().AnyAsync(v => v.Id == id && v.DeletedAt != null, cancellationToken);
+
+    public async Task<IReadOnlyList<MatchVideoProgress>> GetProgressAsync(Guid matchId, IReadOnlyCollection<Guid> videoIds, CancellationToken cancellationToken = default)
+    {
+        var ids = videoIds.Distinct().ToList();
+        if (ids.Count == 0) return [];
+        return await db.MatchVideos.AsNoTracking()
+            .Where(v => v.MatchId == matchId && v.DeletedAt == null && ids.Contains(v.Id))
+            .Select(v => new MatchVideoProgress(v.Id, v.Status, v.ProcessingProgress))
+            .ToListAsync(cancellationToken);
+    }
 }

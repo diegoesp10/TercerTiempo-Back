@@ -11,4 +11,5 @@ public interface IMatchesRepository
     Task<MatchPreviewDto> GetPreviewAsync(Guid matchId, CancellationToken cancellationToken = default);
     Task<OfficialSheetDto> GetOfficialSheetAsync(Guid matchId, bool refresh, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MatchVideoDto>> ListVideosAsync(Guid matchId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MatchVideoProgressDto>> GetVideosProgressAsync(Guid matchId, IReadOnlyList<Guid> videoIds, CancellationToken cancellationToken = default);
 }

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using TercerTiempo.Application.Abstractions.Identity;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Abstractions.Videos;
@@ -64,6 +65,30 @@ internal sealed class ListMatchVideosHandler(
             .Where(x => x.Level != VideoAccessLevel.None)
             .Select(x => x.Dto)
             .ToList();
+    }
+}
+
+public sealed record MatchVideoProgressDto(
+    [property: Description("El vídeo.")] Guid Id,
+    [property: Description("Su estado: Uploaded (en cola), Processing (comprimiéndose), Ready o Failed.")] VideoStatus Status,
+    [property: Description("Avance de la compresión en %, mientras está en Processing.")] int Progress);
+
+// Lo que pregunta la página del partido mientras se comprime alguno de los vídeos que ya ve: su estado y su avance, en una
+// consulta y sin volver a mirar permisos, pases ni nombres. Los ids salen de la lista, que ya aplicó los permisos, y de un
+// vídeo que no conoce no se dice nada (ni que existe). El que ya no sale es que se ha borrado.
+public sealed record GetMatchVideosProgressQuery(Guid MatchId, IReadOnlyList<Guid> VideoIds) : IQuery<IReadOnlyList<MatchVideoProgressDto>>;
+
+internal sealed class GetMatchVideosProgressHandler(IMatchVideoStore videos) : IQueryHandler<GetMatchVideosProgressQuery, IReadOnlyList<MatchVideoProgressDto>>
+{
+    // Un partido tiene pocos vídeos (uno o dos por equipo); el tope solo evita una consulta con miles de ids.
+    internal const int MaxVideos = 20;
+
+    public async Task<IReadOnlyList<MatchVideoProgressDto>> Handle(GetMatchVideosProgressQuery query, CancellationToken cancellationToken)
+    {
+        var ids = query.VideoIds.Distinct().Take(MaxVideos).ToList();
+        if (ids.Count == 0) return [];
+        var rows = await videos.GetProgressAsync(query.MatchId, ids, cancellationToken);
+        return rows.Select(r => new MatchVideoProgressDto(r.Id, r.Status, r.Progress)).ToList();
     }
 }
 
