@@ -54,7 +54,7 @@ public sealed record VideoAnalysisPartDto(
     VideoStatus VideoStatus,
     [property: Description("Avance de la compresión del vídeo en %, mientras está en Processing.")]
     int VideoProgress,
-    [property: Description("Duración del vídeo en segundos, cuando se conoce: el análisis tarda más o menos lo mismo.")]
+    [property: Description("Duración del vídeo en segundos, cuando se conoce: el análisis tarda unos dos tercios de eso.")]
     int? DurationSeconds,
     [property: Description("NotRequested, WaitingForVideo (se está comprimiendo), Pending (en cola), Running, Ready, Failed o Cancelled.")]
     VideoAnalysisState State,
