@@ -110,10 +110,10 @@ con la GPU. Basta con analizar el partido una vez con `--guardar-pasada` y despu
 uv run tt-analisis rehacer-jugadas salidas/j8
 ```
 
-Rehace esa capa con el código de ahora en unos segundos, en `salidas/j8-rehecho`, y saca la misma tabla que
-`evaluar_eventos` con lo revisado de ese vídeo en el visor. No hace falta exportar nada: lee el SQLite del visor, solo
-para leer, o su copia. Lo rehecho se abre en el visor como cualquier análisis y comparte los veredictos con las pasadas
-que propongan lo mismo. El detalle, en el README, apartado «Rehacer las jugadas sin la GPU».
+Rehace esa capa con el código de ahora (medio minuto con un partido entero), en `salidas/j8-rehecho`, y saca la misma
+tabla que `evaluar_eventos` con lo revisado de ese vídeo en el visor. No hace falta exportar nada: lee el SQLite del
+visor, solo para leer, o su copia. Lo rehecho se abre en el visor como cualquier análisis y comparte los veredictos con
+las pasadas que propongan lo mismo. El detalle, en el README, apartado «Rehacer las jugadas sin la GPU».
 
 ## Buenas costumbres
 

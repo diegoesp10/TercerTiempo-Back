@@ -588,14 +588,16 @@ jugadas y las acciones, y las salidas. Para afinar esa capa con lo revisado en e
 
 ```powershell
 uv run tt-analisis analizar partido.mp4 --salida salidas\j8 --guardar-pasada     # una vez, con la GPU
-uv run tt-analisis rehacer-jugadas salidas\j8                                    # tras cada cambio de lógica, en segundos
+uv run tt-analisis rehacer-jugadas salidas\j8                                    # tras cada cambio de lógica
 ```
 
-- `--guardar-pasada` (o la variable de entorno `TT_GUARDAR_PASADA=1`, que sirve también para lo que lanza la app)
-  guarda al acabar la pasada, en `pasada.pkl.gz`, todo lo que entra en esa capa (`rehacer.EstadoPasada`): cada instante
-  tal como sale de la pasada (antes de completar el balón y de colocar a los porteros, que lo cambian), cada tracklet con
-  sus votos, recortes y lecturas del dorsal, el aspecto, el acta y lo que la pasada contó por el camino. En la sonda de
-  20 s del J8 ocupa 1,3 MB, casi todo recortes.
+- `--guardar-pasada` (o la variable de entorno `TT_GUARDAR_PASADA=1`, que sirve también para lo que lanza la app) guarda
+  al acabar la pasada, en `pasada.pkl.gz`, todo lo que entra en esa capa (`rehacer.EstadoPasada`): cada instante tal
+  como sale de la pasada (antes de completar el balón y de colocar a los porteros, que lo cambian), cada tracklet con
+  sus votos, recortes y lecturas del dorsal, el aspecto, el acta y lo que la pasada contó por el camino. Casi todo son
+  recortes y crece con lo que dura el vídeo: 1,3 MB la sonda de 20 s del J8 y 419 MB el partido entero (96 min), que
+  tarda unos 14 s en guardarse. Con la variable de entorno, cada análisis de la app dejaría otro tanto: mejor ponerla
+  solo para los partidos que se vayan a afinar.
 - `rehacer-jugadas <carpeta>` repite los pasos 3 a 5 con el código de ahora. Deja un análisis completo en
   `salidas\<carpeta>-rehecho` (o en `--salida`), con su repetición para el visor y un bloque `rehecho` en
   `analisis.json` que dice de qué carpeta sale y con qué versión se hizo la pasada. Si ahí había algo rehecho, lo
@@ -607,7 +609,9 @@ uv run tt-analisis rehacer-jugadas salidas\j8                                   
   `tests/test_rehacer_jugadas.py`, que pasa el analizador entero con dorsales, aspecto y acta de prueba y compara cada
   archivo byte a byte. En el J8 (20:00-20:20, con los argumentos de la app), el análisis con `--guardar-pasada` sale
   igual que la sonda de la 2.3.2 (102 de 102 archivos, sin contar la versión ni los tiempos). Lo rehecho sale igual que
-  él (102 de 102) y la capa tarda 1,4 s.
+  él (102 de 102) y la capa tarda 1,4 s. Con el partido entero pasa lo mismo: el análisis con `--guardar-pasada` sale
+  igual que el de la 2.3.2 y lo rehecho, igual que él (11.847 de 11.847 archivos). Rehacerlo tarda 31 s (5 s leer lo
+  guardado y 25 s la capa) y pide 1,7 GB de memoria.
 - No saca clips, no usa el modelo de lenguaje ni guarda el material del lector (`--guardar-dorsales`), porque piden el
   vídeo o la GPU. La foto del portero se vuelve a sacar del vídeo si está. Si no, sale de los recortes guardados: puede
   cambiar la foto, nunca la propuesta.
