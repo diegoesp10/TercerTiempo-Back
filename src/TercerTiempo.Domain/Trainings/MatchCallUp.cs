@@ -261,5 +261,12 @@ public interface ICallUpStore
 
     // El número de la última convocatoria que lo tiene: lo que se propone al preguntar a cuántos se convoca.
     Task<int?> GetLatestSizeAsync(Guid squadId, CancellationToken cancellationToken = default);
+
+    // Solo lo que entra en la huella de la convocatoria publicada (null si no la hay o es un borrador), sin cargarla.
+    Task<CallUpStampRow?> GetStampRowAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
     void Add(MatchCallUp callUp);
 }
+
+public sealed record CallUpStampRow(Guid Id, DateTimeOffset UpdatedAt, IReadOnlyList<CallUpStampLine> Lines);
+
+public sealed record CallUpStampLine(Guid SquadPlayerId, bool Called, CallUpResponse Response, DateTimeOffset? NotifiedAt, DateTimeOffset? SeenAt);

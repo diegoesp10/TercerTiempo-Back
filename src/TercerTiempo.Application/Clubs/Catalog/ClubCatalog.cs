@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Text.RegularExpressions;
 using TercerTiempo.Application.Abstractions.Messaging;
 using TercerTiempo.Application.Auth;
+using TercerTiempo.Application.Common;
 using TercerTiempo.Application.OfficialSheets;
 using TercerTiempo.Domain.Common;
 using TercerTiempo.Domain.Teams;
@@ -52,7 +53,7 @@ internal static partial class ClubCatalog
     // El catálogo solo cambia con los datos reales (equipos, ligas, clasificaciones y partidos): se guarda entre peticiones.
     public static Task<IReadOnlyList<ClubCatalogEntry>> LoadAsync(AccountStores stores, CancellationToken cancellationToken) =>
         stores.Cache is { } cache
-            ? cache.GetAsync("club-catalog", ct => ReadAsync(stores, ct), cancellationToken)
+            ? cache.GetAsync("club-catalog", [PublicTags.Structure, PublicTags.AllStandings, PublicTags.AllMatches], ct => ReadAsync(stores, ct), cancellationToken)
             : ReadAsync(stores, cancellationToken);
 
     private static async Task<IReadOnlyList<ClubCatalogEntry>> ReadAsync(AccountStores stores, CancellationToken cancellationToken)

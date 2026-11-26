@@ -50,21 +50,14 @@ internal static class VideoAnalysisStamp
 internal sealed class GetVideoAnalysisStampHandler(
     ICurrentUser currentUser,
     ISquadStore squads,
-    IClubStore clubs,
     IMatchVideoAnalysisStore analyses,
     IVideoAnalyzerHeartbeatStore analyzers,
     TimeProvider clock) : IQueryHandler<GetVideoAnalysisStampQuery, VideoAnalysisStampDto>
 {
     public async Task<VideoAnalysisStampDto> Handle(GetVideoAnalysisStampQuery query, CancellationToken cancellationToken)
     {
-        if (!currentUser.IsAuthenticated) throw new UnauthenticatedException();
-
-        var squad = await squads.GetByIdAsync(query.SquadId, cancellationToken)
-            ?? throw new NotFoundException(ErrorCode.SquadNotFound, query.SquadId);
-        if (!currentUser.IsAdmin && !await SquadAccess.IsManagerAsync(squad, currentUser, clock, clubs, cancellationToken))
-            throw new ForbiddenException(ErrorCode.SquadManagersOnly);
-
-        var rows = await analyses.GetStampRowsAsync(squad.Id, query.MatchId, cancellationToken);
+        var access = await SquadAccess.ManagerAccessAsync(squads, currentUser, query.SquadId, clock, cancellationToken);
+        var rows = await analyses.GetStampRowsAsync(access.Id, query.MatchId, cancellationToken);
         var seen = await analyzers.LastSeenAsync(cancellationToken);
         return new VideoAnalysisStampDto(VideoAnalysisStamp.Of(rows, VideoAnalyzerHeartbeat.IsOnline(seen, clock.GetUtcNow())));
     }

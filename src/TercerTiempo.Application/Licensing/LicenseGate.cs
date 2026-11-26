@@ -90,11 +90,17 @@ internal sealed class LicenseGate(
         return await IsViewerLicensedAsync(user, cancellationToken);
     }
 
+    // Con la proyección de la plantilla (equipo y si es de dentro), no con la plantilla entera: las huellas que se
+    // preguntan cada pocos segundos pasan por aquí y no la necesitan.
     public async Task EnsureSquadAccessAsync(Guid squadId, ICurrentUser user, CancellationToken cancellationToken)
     {
-        var squad = await squads.GetByIdAsync(squadId, cancellationToken);
-        if (squad is null) return;
-        await EnsureAsync(squad, user, cancellationToken);
+        if (user.IsAdmin) return;
+        if (await SquadAccess.AccessAsync(squads, user, squadId, clock, cancellationToken) is not { } access) return;
+        if (await StatusForTeamAsync(access.TeamId, cancellationToken) == LicenseStatus.Expired)
+            throw new ForbiddenException(ErrorCode.LicenseRequired);
+
+        if (!access.IsInsider && !await IsViewerLicensedAsync(user, cancellationToken))
+            throw new ForbiddenException(ErrorCode.LicenseViewerRequired);
     }
 
     private async Task EnsureAsync(Squad squad, ICurrentUser user, CancellationToken cancellationToken)

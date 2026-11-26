@@ -50,42 +50,72 @@ public sealed record SearchQuery(
     [property: Description("Resultados por tipo (1-50; por defecto 6).")]
     int? Limit) : IQuery<SearchResultsDto>;
 
-// El índice se comparte entre peticiones. Si han cambiado los datos que enlaza (plantillas, fichas, clubes...) la
-// siguiente búsqueda espera al índice nuevo, para no llevar a una plantilla que ya no existe; si solo ha pasado su
-// vigencia, se rehace en segundo plano y mientras tanto se sigue buscando en el anterior.
+// El índice se comparte entre peticiones y una búsqueda nunca espera a rehacerlo, salvo la primera (aún no hay ninguno):
+// si han cambiado los datos que enlaza (plantillas, fichas, clubes...) o ha pasado su vigencia, se rehace en segundo
+// plano y mientras tanto se sigue buscando en el anterior (medio segundo; un enlace a algo recién borrado da «no
+// encontrado»). Si alguien ha buscado hace poco, se empieza a rehacer en cuanto cambian los datos, para que la
+// siguiente búsqueda ya lo vea; si no, al buscar. Como mucho uno cada pocos segundos: una sincronización guarda muchas
+// veces seguidas.
 public sealed class SearchIndexHolder(IServiceScopeFactory scopes, TimeProvider clock, ILogger<SearchIndexHolder> logger)
 {
     // Cada guardado que toca lo que se busca ya lo marca para rehacer (Invalidate); esto es solo por si algo cambia por fuera.
     private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(30);
+    internal static readonly TimeSpan MinRebuildGap = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan RecentUse = TimeSpan.FromMinutes(10);
     private readonly SemaphoreSlim _building = new(1, 1);
     private volatile SearchIndex? _index;
     private volatile bool _stale;
+    private int _scheduled;
+    private long _lastUsedTicks;
+    private long _lastAttemptTicks;
 
     internal async Task<SearchIndex> GetAsync(CancellationToken cancellationToken)
     {
-        var current = _index;
-        if (current is null || _stale)
+        Interlocked.Exchange(ref _lastUsedTicks, clock.GetUtcNow().UtcTicks);
+        if (_index is not { } current)
         {
-            await RebuildAsync(cancellationToken, wait: true);
+            await RebuildAsync(cancellationToken);
             return _index!;
         }
 
-        if (clock.GetUtcNow() - current.BuiltAt > MaxAge) _ = Task.Run(() => RebuildAsync(CancellationToken.None, wait: false));
+        if (_stale || clock.GetUtcNow() - current.BuiltAt > MaxAge) Schedule();
         return current;
     }
 
-    // Los datos han cambiado (sincronización de las ligas, plantillas, fichas): la próxima búsqueda rehace el índice.
-    public void Invalidate() => _stale = true;
-
-    private async Task RebuildAsync(CancellationToken cancellationToken, bool wait)
+    // Los datos han cambiado (sincronización de las ligas, plantillas, fichas).
+    public void Invalidate()
     {
-        // En segundo plano, si ya lo está rehaciendo otra petición no hace falta otra vez; si se espera, se espera a esa.
-        if (wait) await _building.WaitAsync(cancellationToken);
-        else if (!await _building.WaitAsync(0, cancellationToken)) return;
+        _stale = true;
+        if (_index is not null && clock.GetUtcNow().UtcTicks - Interlocked.Read(ref _lastUsedTicks) < RecentUse.Ticks) Schedule();
+    }
+
+    private void Schedule()
+    {
+        if (Interlocked.Exchange(ref _scheduled, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var wait = MinRebuildGap.Ticks - (clock.GetUtcNow().UtcTicks - Interlocked.Read(ref _lastAttemptTicks));
+                if (wait > 0) await Task.Delay(TimeSpan.FromTicks(wait), clock);
+            }
+            finally
+            {
+                // Antes de rehacerlo: lo que cambie mientras se rehace vuelve a programar otro.
+                Volatile.Write(ref _scheduled, 0);
+            }
+            await RebuildAsync(CancellationToken.None);
+        });
+    }
+
+    private async Task RebuildAsync(CancellationToken cancellationToken)
+    {
+        await _building.WaitAsync(cancellationToken);
         try
         {
             if (_index is not null && !_stale && clock.GetUtcNow() - _index.BuiltAt <= MaxAge) return;
             _stale = false;
+            Interlocked.Exchange(ref _lastAttemptTicks, clock.GetUtcNow().UtcTicks);
             using var scope = scopes.CreateScope();
             var corpus = await scope.ServiceProvider.GetRequiredService<ISearchCorpusSource>().LoadAsync(cancellationToken);
             var index = SearchIndex.Build(corpus, clock.GetUtcNow());
@@ -94,6 +124,8 @@ public sealed class SearchIndexHolder(IServiceScopeFactory scopes, TimeProvider 
         }
         catch (Exception ex) when (_index is not null)
         {
+            // Se vuelve a intentar en la siguiente búsqueda.
+            _stale = true;
             logger.LogWarning(ex, "No se pudo rehacer el índice del buscador; se sigue con el anterior");
         }
         finally

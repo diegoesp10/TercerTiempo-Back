@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TercerTiempo.Application.Abstractions.Teams;
+using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Search;
 using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Common;
@@ -122,6 +123,7 @@ public sealed class RealDataSqlFixture : IAsyncLifetime
             .AddSingleton(TimeProvider.System)
             .AddLogging()
             .AddSingleton<SearchIndexHolder>()
+            .AddSingleton<PublicDataCache>()
             .AddDbContext<RealDataDbContext>(o => o.UseSqlServer(realData))
             .BuildServiceProvider();
 

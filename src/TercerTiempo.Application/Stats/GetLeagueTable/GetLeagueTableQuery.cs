@@ -30,7 +30,7 @@ internal sealed class GetLeagueTableHandler(
         if (season is null)
             return new LeagueTableDto(null, [], "Todavía no hay temporada en curso: la clasificación aparecerá cuando empiecen los partidos.");
 
-        return await cache.GetAsync($"league-table:{season.Id}", ct => TableAsync(competition, season, ct), cancellationToken);
+        return await cache.GetAsync($"league-table:{season.Id}", [PublicTags.Structure, PublicTags.Standings(season.Id)], ct => TableAsync(competition, season, ct), cancellationToken);
     }
 
     private async Task<LeagueTableDto> TableAsync(Competition competition, Season season, CancellationToken cancellationToken)

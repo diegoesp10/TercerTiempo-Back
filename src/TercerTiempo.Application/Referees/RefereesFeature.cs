@@ -399,7 +399,7 @@ internal sealed record RefereeStats(
 {
     public static Task<RefereeStats> GetAsync(
         IRefereeStore referees, ICompetitionStore competitions, ITerritoryStore territories, PublicDataCache cache, CancellationToken cancellationToken) =>
-        cache.GetAsync("referee-stats", ct => LoadAsync(referees, competitions, territories, ct), cancellationToken);
+        cache.GetAsync("referee-stats", [PublicTags.Structure, PublicTags.Referees, PublicTags.AllMatches], ct => LoadAsync(referees, competitions, territories, ct), cancellationToken);
 
     private static async Task<RefereeStats> LoadAsync(
         IRefereeStore referees, ICompetitionStore competitions, ITerritoryStore territories, CancellationToken cancellationToken)

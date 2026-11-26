@@ -18,7 +18,7 @@ internal sealed class ListCompetitionsHandler(
     public async Task<IReadOnlyList<CompetitionDto>> Handle(ListCompetitionsQuery query, CancellationToken cancellationToken)
     {
         var year = await seasons.SelectedAsync(cancellationToken);
-        return await cache.GetAsync($"competitions:{year?.Id}", ct => LoadAsync(year, ct), cancellationToken);
+        return await cache.GetAsync($"competitions:{year?.Id}", [PublicTags.Structure, PublicTags.AllStandings], ct => LoadAsync(year, ct), cancellationToken);
     }
 
     private async Task<IReadOnlyList<CompetitionDto>> LoadAsync(SeasonYear? year, CancellationToken cancellationToken)

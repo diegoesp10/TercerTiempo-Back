@@ -45,4 +45,28 @@ internal static class SquadAccess
         if (!await CanViewAsync(squad, user, clock, clubs, cancellationToken))
             throw new ForbiddenException(ErrorCode.SquadPrivate);
     }
+
+    public static Task<SquadAccessRow?> AccessAsync(ISquadStore squads, ICurrentUser user, Guid squadId, TimeProvider clock, CancellationToken cancellationToken) =>
+        squads.GetAccessAsync(squadId, user.CoachId, user.PlayerId, user.ClubId, Today(clock), cancellationToken);
+
+    // Como IsInsiderAsync e IsManagerAsync, pero con la proyección y sin la plantilla entera: para las huellas.
+    public static async Task<SquadAccessRow> InsiderAccessAsync(ISquadStore squads, ICurrentUser user, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var access = await RequireAccessAsync(squads, user, squadId, clock, cancellationToken);
+        if (!user.IsAdmin && !access.IsInsider) throw new ForbiddenException(ErrorCode.SquadPrivate);
+        return access;
+    }
+
+    public static async Task<SquadAccessRow> ManagerAccessAsync(ISquadStore squads, ICurrentUser user, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var access = await RequireAccessAsync(squads, user, squadId, clock, cancellationToken);
+        if (!user.IsAdmin && !access.IsManager) throw new ForbiddenException(ErrorCode.SquadManagersOnly);
+        return access;
+    }
+
+    private static async Task<SquadAccessRow> RequireAccessAsync(ISquadStore squads, ICurrentUser user, Guid squadId, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        if (!user.IsAuthenticated) throw new UnauthenticatedException();
+        return await AccessAsync(squads, user, squadId, clock, cancellationToken) ?? throw new NotFoundException(ErrorCode.SquadNotFound, squadId);
+    }
 }

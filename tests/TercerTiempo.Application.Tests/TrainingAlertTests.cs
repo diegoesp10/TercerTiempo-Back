@@ -842,7 +842,7 @@ public class TrainingAlertTests
 
         public GetMatchCallUpHandler GetCallUp(ICurrentUser user) => new(user, Squads, Clubs, Matches, Teams, CallUpStore, Grounds, InjuryStore, Suspensions, Clock);
 
-        public GetMatchCallUpStampHandler GetCallUpStamp(ICurrentUser user) => new(user, Squads, Clubs, Matches, CallUpStore, Clock);
+        public GetMatchCallUpStampHandler GetCallUpStamp(ICurrentUser user) => new(user, Squads, Matches, CallUpStore, Clock);
 
         // Tarjetas en el acta interna del partido ya jugado.
         public void Book(SquadPlayer player, int yellowCards, bool redCard) =>
@@ -901,6 +901,7 @@ public class TrainingAlertTests
         private ISquadStore Squads => Stub<ISquadStore>((method, args) => method switch
         {
             nameof(ISquadStore.GetByIdAsync) => Task.FromResult((Guid)args![0]! == Squad.Id ? Squad : null),
+            nameof(ISquadStore.GetAccessAsync) => SquadAccessStub.For(Squad, [Club], args!),
             nameof(ISquadStore.GetByPlayerAsync) => Task.FromResult(Squad.IsMember((Guid)args![0]!) ? Squad : null),
             nameof(ISquadStore.GetBySeasonAsync) => Task.FromResult<IReadOnlyList<Squad>>((Guid)args![0]! == Squad.SeasonId ? [Squad] : []),
             nameof(ISquadStore.GetByTeamIdsAsync) when args!.Length == 3 => Task.FromResult<IReadOnlyList<Squad>>(
@@ -944,6 +945,7 @@ public class TrainingAlertTests
         {
             nameof(ICallUpStore.GetByIdAsync) => Task.FromResult(CallUps.FirstOrDefault(c => c.Id == (Guid)args![0]!)),
             nameof(ICallUpStore.GetByMatchAsync) => Task.FromResult(CallUps.FirstOrDefault(c => c.SquadId == (Guid)args![0]! && c.MatchId == (Guid)args[1]!)),
+            nameof(ICallUpStore.GetStampRowAsync) => Task.FromResult(CallUpStamp.Row(CallUps.FirstOrDefault(c => c.SquadId == (Guid)args![0]! && c.MatchId == (Guid)args[1]!))),
             nameof(ICallUpStore.GetPublishedBySquadAsync) => Task.FromResult<IReadOnlyList<MatchCallUp>>(CallUps.Where(c => c.IsPublished).ToList()),
             nameof(ICallUpStore.GetBySquadAsync) => Task.FromResult<IReadOnlyList<MatchCallUp>>(CallUps.ToList()),
             nameof(ICallUpStore.GetBySquadAndMatchesAsync) => Task.FromResult<IReadOnlyList<MatchCallUp>>(CallUps

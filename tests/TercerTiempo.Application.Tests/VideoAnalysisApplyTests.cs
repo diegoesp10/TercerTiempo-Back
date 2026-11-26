@@ -595,6 +595,7 @@ public class VideoAnalysisApplyTests
         private ISquadStore SquadStore => TestStub.Of<ISquadStore>((method, args) => method switch
         {
             nameof(ISquadStore.GetByIdAsync) => Task.FromResult((Guid)args![0]! == Squad.Id ? Squad : null),
+            nameof(ISquadStore.GetAccessAsync) => SquadAccessStub.For(Squad, OtherClubs.Append(Club), args!),
             _ => throw new NotSupportedException(method),
         });
         private IClubStore Clubs => TestStub.Of<IClubStore>((_, args) =>
@@ -648,7 +649,7 @@ public class VideoAnalysisApplyTests
 
         public GetVideoAnalysisHandler Get(ICurrentUser user) => new(Reader(user));
 
-        public GetVideoAnalysisStampHandler Stamp(ICurrentUser user) => new(user, SquadStore, Clubs, Analyses, Heartbeats, TimeProvider.System);
+        public GetVideoAnalysisStampHandler Stamp(ICurrentUser user) => new(user, SquadStore, Analyses, Heartbeats, TimeProvider.System);
 
         public RequestVideoAnalysisHandler Request(ICurrentUser user) => new(Reader(user), Analyses, Signal, Unit, TimeProvider.System);
 

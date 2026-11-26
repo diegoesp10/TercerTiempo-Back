@@ -9,6 +9,7 @@ internal sealed class SquadStore(AppDbContext db) : ISquadStore
     // (plantilla, cuerpo técnico y fichas). Con seguimiento sirve la que ya tiene el contexto; en las lecturas sin
     // seguimiento, la que se leyó durante el ámbito.
     private readonly Dictionary<Guid, Squad?> _readById = [];
+    private readonly Dictionary<(Guid, Guid?, Guid?, Guid?, DateOnly), SquadAccessRow?> _access = [];
 
     private bool Reading => db.ChangeTracker.QueryTrackingBehavior != QueryTrackingBehavior.TrackAll;
 
@@ -101,6 +102,22 @@ internal sealed class SquadStore(AppDbContext db) : ISquadStore
         if (list.Count == 0) return [];
 
         return await db.Squads.Where(s => list.Contains(s.TeamId)).ToListAsync(cancellationToken);
+    }
+
+    // La puerta de licencia la pide antes que el handler: la segunda vez, la del ámbito.
+    public async Task<SquadAccessRow?> GetAccessAsync(
+        Guid squadId, Guid? coachId, Guid? playerId, Guid? clubId, DateOnly today, CancellationToken cancellationToken = default)
+    {
+        var key = (squadId, coachId, playerId, clubId, today);
+        if (_access.TryGetValue(key, out var cached)) return cached;
+        return _access[key] = await db.Squads.AsNoTracking()
+            .Where(s => s.Id == squadId)
+            .Select(s => new SquadAccessRow(
+                s.Id, s.TeamId, s.SeasonId,
+                coachId != null && s.Staff.Any(m => m.CoachId == coachId && m.LeftAt == null && (m.ValidUntil == null || m.ValidUntil >= today)),
+                playerId != null && s.Players.Any(p => p.PlayerId == playerId && p.Status == SquadPlayerStatus.Active),
+                clubId != null && db.ClubTeams.Any(t => t.ClubId == clubId && t.TeamId == s.TeamId)))
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public void Add(Squad squad) => db.Squads.Add(squad);

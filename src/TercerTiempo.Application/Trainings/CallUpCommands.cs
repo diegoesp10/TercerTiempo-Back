@@ -270,17 +270,23 @@ internal sealed class GetMatchCallUpHandler(
     }
 }
 
-// Solo la huella: ni lesiones, ni sanciones, ni campos. Quien no ve la plantilla tampoco ve esto.
+// Solo la huella: ni lesiones, ni sanciones, ni campos. Quien no ve la plantilla tampoco ve esto. Se pregunta cada pocos
+// segundos por pestaña, así que todo va con proyecciones: el permiso (el que ya leyó la puerta de licencia), el partido
+// y las líneas de la convocatoria.
 internal sealed class GetMatchCallUpStampHandler(
-    ICurrentUser currentUser, ISquadStore squads, IClubStore clubs, IMatchStore matches, ICallUpStore callUps, TimeProvider clock)
+    ICurrentUser currentUser, ISquadStore squads, IMatchStore matches, ICallUpStore callUps, TimeProvider clock)
     : IQueryHandler<GetMatchCallUpStampQuery, CallUpStampDto>
 {
     public async Task<CallUpStampDto> Handle(GetMatchCallUpStampQuery query, CancellationToken cancellationToken)
     {
-        var squad = await TrainingAccess.SquadForViewerAsync(squads, clubs, currentUser, query.SquadId, clock, cancellationToken);
-        var match = await CallUps.MatchOfSquadAsync(squad, query.MatchId, matches, cancellationToken);
-        var callUp = await callUps.GetByMatchAsync(squad.Id, match.Id, cancellationToken);
-        return new CallUpStampDto(CallUpStamp.Of(callUp, match.KickoffAt <= clock.GetUtcNow()));
+        var access = await SquadAccess.InsiderAccessAsync(squads, currentUser, query.SquadId, clock, cancellationToken);
+        var match = await matches.GetByIdAsync(query.MatchId, cancellationToken)
+            ?? throw new NotFoundException(ErrorCode.MatchNotFound, query.MatchId);
+        if (match.SeasonId != access.SeasonId || !match.Involves(access.TeamId))
+            throw new ConflictException(ErrorCode.CallUpMatchNotOfSquad);
+
+        var row = await callUps.GetStampRowAsync(access.Id, match.Id, cancellationToken);
+        return new CallUpStampDto(CallUpStamp.Of(row, match.KickoffAt <= clock.GetUtcNow()));
     }
 }
 

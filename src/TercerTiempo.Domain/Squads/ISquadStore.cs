@@ -33,9 +33,21 @@ public interface ISquadStore
     // Los nombres de los jugadores en activo de todas las plantillas, sin cargarlas: para buscar fichas repetidas.
     Task<IReadOnlyList<SquadPlayerName>> GetActivePlayerNamesAsync(CancellationToken cancellationToken = default);
 
+    // Qué es esa cuenta en la plantilla (cuerpo técnico vigente, jugador en activo o el club del equipo) sin cargarla:
+    // para la puerta de licencia y las huellas que se preguntan cada pocos segundos. Mismas reglas que Squad.IsStaff,
+    // Squad.IsMember y Club.Manages; null si la plantilla no existe.
+    Task<SquadAccessRow?> GetAccessAsync(
+        Guid squadId, Guid? coachId, Guid? playerId, Guid? clubId, DateOnly today, CancellationToken cancellationToken = default);
+
     void Add(Squad squad);
 }
 
 public sealed record SquadRef(Guid Id, Guid TeamId, Guid SeasonId, SquadVisibility Visibility);
+
+public sealed record SquadAccessRow(Guid Id, Guid TeamId, Guid SeasonId, bool IsStaff, bool IsMember, bool IsClub)
+{
+    public bool IsInsider => IsStaff || IsMember || IsClub;
+    public bool IsManager => IsStaff || IsClub;
+}
 
 public sealed record SquadPlayerName(Guid SquadId, Guid SquadPlayerId, string NormalizedName);

@@ -16,17 +16,14 @@ using TercerTiempo.Domain.Teams;
 namespace TercerTiempo.Infrastructure.Search;
 
 // Al guardar cambios en lo que enlaza el buscador (plantillas y sus jugadores, fichas, equipos, clubes, ligas, cuentas
-// de jugador, técnicos y sus nombramientos), el índice se da por viejo cuando el guardado ha terminado: la siguiente búsqueda ya ve lo nuevo. Lo mismo
-// con las lecturas públicas en memoria (PublicDataCache) cuando cambian ligas, partidos, clasificaciones o árbitros.
+// de jugador, técnicos y sus nombramientos), el índice se da por viejo cuando el guardado ha terminado y se rehace en
+// segundo plano. Las lecturas públicas en memoria (PublicDataCache) solo pierden lo que depende de lo guardado: ligas,
+// partidos y clasificaciones de esa temporada, o árbitros.
 internal sealed class SearchIndexInvalidator(SearchIndexHolder holder, PublicDataCache publicData) : SaveChangesInterceptor
 {
     private static readonly Type[] Indexed =
         [typeof(Squad), typeof(SquadPlayer), typeof(RosterEntry), typeof(Team), typeof(Club), typeof(ClubTeam), typeof(Competition), typeof(Season), typeof(Player),
          typeof(Coach), typeof(CoachAppointment)];
-
-    private static readonly Type[] Public =
-        [typeof(SeasonYear), typeof(Competition), typeof(Season), typeof(Team), typeof(Match), typeof(Standing), typeof(SeasonZone),
-         typeof(Referee), typeof(MatchOfficial), typeof(RefereeRating)];
 
     private readonly ConditionalWeakTable<DbContext, Pending> _pending = [];
 
@@ -57,22 +54,33 @@ internal sealed class SearchIndexInvalidator(SearchIndexHolder holder, PublicDat
     private void Track(DbContext? context)
     {
         if (context is null) return;
-        var changed = context.ChangeTracker.Entries()
-            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
-            .Select(e => e.Metadata.ClrType)
-            .Distinct()
-            .ToList();
-        var pending = new Pending(changed.Any(Indexed.Contains), changed.Any(Public.Contains));
-        if (pending.Search || pending.PublicData) _pending.AddOrUpdate(context, pending);
+        var search = false;
+        var tags = new HashSet<string>();
+        foreach (var entry in context.ChangeTracker.Entries())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)) continue;
+            search |= Indexed.Contains(entry.Metadata.ClrType);
+            tags.UnionWith(PublicTagsOf(entry.Entity));
+        }
+        if (search || tags.Count > 0) _pending.AddOrUpdate(context, new Pending(search, tags));
     }
+
+    internal static IEnumerable<string> PublicTagsOf(object entity) => entity switch
+    {
+        Match match => [PublicTags.Matches(match.SeasonId), PublicTags.AllMatches],
+        Standing standing => [PublicTags.Standings(standing.SeasonId), PublicTags.AllStandings],
+        Referee or MatchOfficial or RefereeRating => [PublicTags.Referees],
+        SeasonYear or Competition or Season or SeasonZone or Team => [PublicTags.Structure],
+        _ => [],
+    };
 
     private void Flush(DbContext? context)
     {
         if (context is null || !_pending.TryGetValue(context, out var pending)) return;
         _pending.Remove(context);
         if (pending.Search) holder.Invalidate();
-        if (pending.PublicData) publicData.Invalidate();
+        if (pending.PublicTags.Count > 0) publicData.Invalidate(pending.PublicTags);
     }
 
-    private sealed record Pending(bool Search, bool PublicData);
+    private sealed record Pending(bool Search, IReadOnlySet<string> PublicTags);
 }

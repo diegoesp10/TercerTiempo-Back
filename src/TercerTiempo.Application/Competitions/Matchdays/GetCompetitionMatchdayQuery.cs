@@ -50,7 +50,7 @@ internal sealed class GetCompetitionMatchdayHandler(
         if (Common.Resolvers.SeasonFor(competition, await seasons.SelectedAsync(cancellationToken)) is not { } season)
             return new CompetitionMatchdayDto(competition.Id, competition.Name, null, null, null, [], [], "Todavía no hay temporada en curso: los partidos aparecerán cuando la federación publique el calendario.");
 
-        var seasonMatches = await cache.GetAsync($"matchday:{season.Id}", async ct =>
+        var seasonMatches = await cache.GetAsync($"matchday:{season.Id}", [PublicTags.Structure, PublicTags.Matches(season.Id)], async ct =>
         {
             var list = await matches.GetBySeasonAsync(season.Id, ct);
             var teamIds = list.SelectMany(m => new[] { m.HomeTeamId, m.AwayTeamId }).Distinct();

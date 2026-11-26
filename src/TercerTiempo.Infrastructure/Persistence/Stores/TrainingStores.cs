@@ -114,6 +114,21 @@ internal sealed class CallUpStore(AppDbContext db) : ICallUpStore
     public Task<MatchCallUp?> GetByMatchAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default) =>
         db.MatchCallUps.FirstOrDefaultAsync(c => c.SquadId == squadId && c.MatchId == matchId, cancellationToken);
 
+    public async Task<CallUpStampRow?> GetStampRowAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default)
+    {
+        var head = await db.MatchCallUps.AsNoTracking()
+            .Where(c => c.SquadId == squadId && c.MatchId == matchId && c.Status == CallUpStatus.Published)
+            .Select(c => new { c.Id, c.UpdatedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (head is null) return null;
+
+        var lines = await db.Set<CallUpEntry>().AsNoTracking()
+            .Where(e => e.CallUpId == head.Id)
+            .Select(e => new CallUpStampLine(e.SquadPlayerId, e.Called, e.Response, e.NotifiedAt, e.SeenAt))
+            .ToListAsync(cancellationToken);
+        return new CallUpStampRow(head.Id, head.UpdatedAt, lines);
+    }
+
     public async Task<IReadOnlyList<MatchCallUp>> GetPublishedBySquadAsync(Guid squadId, CancellationToken cancellationToken = default) =>
         await db.MatchCallUps.Where(c => c.SquadId == squadId && c.Status == CallUpStatus.Published).ToListAsync(cancellationToken);
 
