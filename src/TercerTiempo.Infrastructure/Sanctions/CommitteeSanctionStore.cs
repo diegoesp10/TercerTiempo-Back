@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using TercerTiempo.Application.Common;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Sanctions;
 using TercerTiempo.Infrastructure.Persistence;
@@ -7,13 +8,17 @@ using TercerTiempo.Infrastructure.Persistence.Configurations;
 
 namespace TercerTiempo.Infrastructure.Sanctions;
 
-internal sealed class CommitteeSanctionStore(AppDbContext db) : ICommitteeSanctionStore
+internal sealed class CommitteeSanctionStore(AppDbContext db, PublicDataCache cache) : ICommitteeSanctionStore
 {
-    public async Task<IReadOnlyList<CommitteeResolution>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
-        await db.Set<CommitteeResolution>().AsNoTracking()
-            .Where(r => r.SeasonId == seasonId)
-            .OrderBy(r => r.MeetingOn).ThenBy(r => r.Matchday)
-            .ToListAsync(cancellationToken);
+    // Las leen las sanciones de cada plantilla y del cuerpo técnico (agenda, convocatoria, acta, disciplina), a veces dos
+    // veces en la misma petición, y solo cambian con la descarga del comité (pocas veces por semana): se guardan hasta que
+    // cambia alguna resolución o sanción (PublicTags.Committee). Sin seguimiento y solo para leer.
+    public Task<IReadOnlyList<CommitteeResolution>> GetBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
+        cache.GetAsync<IReadOnlyList<CommitteeResolution>>($"comite:{seasonId:N}", [PublicTags.Committee], async ct =>
+            await db.Set<CommitteeResolution>().AsNoTracking()
+                .Where(r => r.SeasonId == seasonId)
+                .OrderBy(r => r.MeetingOn).ThenBy(r => r.Matchday)
+                .ToListAsync(ct), cancellationToken);
 
     public async Task<IReadOnlyList<CommitteeResolution>> GetStoredBySeasonAsync(Guid seasonId, CancellationToken cancellationToken = default) =>
         await db.Set<CommitteeResolution>().Where(r => r.SeasonId == seasonId).ToListAsync(cancellationToken);
