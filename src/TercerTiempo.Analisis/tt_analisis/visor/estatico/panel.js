@@ -2,6 +2,7 @@
 // las jugadas y todo lo que dejó el análisis. De un análisis en marcha, cómo va y lo que ya se puede contar.
 
 import { nombreCorto } from './datos.js';
+import { RevisionEventos } from './revision-eventos.js';
 import { ACCIONES_PLURAL, COLORES, ETAPAS, METODO, ORIGEN_BALON, TIPOS_ACCION, TIPOS_EVENTO, duracion, el, estadoEnCurso, hora, minuto, numero, pct } from './util.js';
 
 const EVENTOS_CONTADOS = ['gol', 'tiro', 'corner', 'falta', 'fuera_de_juego', 'saque_banda', 'saque_puerta', 'fuera_fondo'];
@@ -25,6 +26,12 @@ export class Panel {
     this.pestana = 'estadisticas';
     this.filtro = { jugadas: true, acciones: true };
     this.ultimaClave = null;
+    this.revision = new RevisionEventos(rep, acciones, () => {
+      if (this.pestana === 'revision' && acciones.vigente()) {
+        this.ultimaClave = null;
+        this.actualizar(0, null);
+      }
+    });
   }
 
   mostrar(pestana) {
@@ -34,6 +41,14 @@ export class Panel {
 
   // Se llama a menudo: solo se vuelve a pintar si ha cambiado algo de lo que se enseña (en directo, también lo que llega).
   actualizar(t, seleccion) {
+    if (this.pestana === 'revision') {
+      if (this.ultimaClave === 'revision') return;
+      this.ultimaClave = 'revision';
+      const scroll = this.cuerpo.scrollTop;
+      this.cuerpo.replaceChildren(...this.revision.mostrar());
+      this.cuerpo.scrollTop = scroll;
+      return;
+    }
     const rep = this.rep;
     const k = rep.instante(t);
     const clave = `${this.pestana}|${this.pestana === 'analisis' && !rep.enDirecto ? '' : k}|${seleccion}|${this.filtro.jugadas}${this.filtro.acciones}|${rep.version}`;

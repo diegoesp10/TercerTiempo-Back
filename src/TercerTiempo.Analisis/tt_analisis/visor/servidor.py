@@ -17,6 +17,7 @@ import mimetypes
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -29,7 +30,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from ..evaluar_eventos import evaluar
 from ..repeticion import CARPETA, DIRECTO, ESTADO_DIRECTO, FINAL, FOTOGRAMAS, IndiceFotogramas
+from ..revision_eventos import ConflictoRevision, Revisiones, fuente_revision, huella_video
 
 ESTATICO = Path(__file__).parent / "estatico"
 BLOQUE = 1 << 20
@@ -424,10 +427,12 @@ class Vida:
 class Servidor(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, direccion, biblioteca: Biblioteca) -> None:
+    def __init__(self, direccion, biblioteca: Biblioteca, ruta_revisiones: Path | None = None) -> None:
         super().__init__(direccion, Manejador)
         self.biblioteca = biblioteca
         self.vida = Vida()
+        local = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "TercerTiempo"
+        self.revisiones = Revisiones(ruta_revisiones or local / "revisiones-ojeador.sqlite3")
 
     def handle_error(self, request, client_address) -> None:
         # Al saltar en el vídeo el navegador corta las peticiones a medias: es lo normal y no hace falta contarlo.
@@ -474,8 +479,15 @@ class Manejador(BaseHTTPRequestHandler):
         if not self._host_valido():
             return self._error(HTTPStatus.FORBIDDEN, "Solo desde este equipo.")
         url = urlparse(self.path)
-        largo = int(self.headers.get("Content-Length") or 0)
-        cuerpo = self.rfile.read(min(largo, 1 << 16)) if largo else b""
+        try:
+            largo = int(self.headers.get("Content-Length") or 0)
+            if largo < 0:
+                raise ValueError
+        except ValueError:
+            return self._error(HTTPStatus.BAD_REQUEST, "Tamaño de petición no válido.")
+        if largo > 1 << 16:
+            return self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "La petición es demasiado grande.")
+        cuerpo = self.rfile.read(largo) if largo else b""
         if url.path == "/api/latido":
             self.server.vida.latido()
             return self._json({"ok": True})
@@ -504,6 +516,11 @@ class Manejador(BaseHTTPRequestHandler):
                 return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"No se ha podido abrir la carpeta: {e}")
             return self._json({"ok": True})
         partes = [p for p in url.path.split("/") if p]
+        if len(partes) == 4 and partes[:2] == ["api", "a"] and partes[3] == "revision-eventos":
+            analisis = self.server.biblioteca.get(partes[2])
+            if analisis is None:
+                return self._error(HTTPStatus.NOT_FOUND, "Ese análisis no está abierto en el visor.")
+            return self._revision_eventos(analisis, cuerpo)
         if len(partes) == 4 and partes[:2] == ["api", "a"] and partes[3] == "borrar":
             try:
                 papelera = self.server.biblioteca.borrar(partes[2])
@@ -546,6 +563,8 @@ class Manejador(BaseHTTPRequestHandler):
         que = resto[0]
         if que == "ficha" and len(resto) == 1:
             return self._json(analisis.ficha())
+        if que == "revision-eventos" and len(resto) == 1:
+            return self._revision_eventos(analisis)
         if que in ARCHIVOS_JSON and len(resto) == 1:
             return self._archivo(analisis.carpeta / ARCHIVOS_JSON[que], "application/json; charset=utf-8")
         if que == "directo" and len(resto) == 1:
@@ -572,6 +591,29 @@ class Manejador(BaseHTTPRequestHandler):
         if que == "recortes" and len(resto) == 2 and NOMBRE_RECORTE.match(resto[1]):
             return self._archivo(analisis.carpeta / "recortes" / resto[1])
         return self._error(HTTPStatus.NOT_FOUND, "No existe.")
+
+    def _revision_eventos(self, analisis: Analisis, cuerpo: bytes | None = None) -> None:
+        if analisis.modo()[0] != "final":
+            return self._error(HTTPStatus.CONFLICT, "La revisión se abre al terminar el análisis.")
+        final = leer_json(analisis.carpeta / CARPETA / FINAL)
+        ruta = analisis.ruta_video()
+        if final is None or ruta is None or not ruta.is_file():
+            return self._error(HTTPStatus.NOT_FOUND, "Para revisar hace falta la repetición completa y el vídeo original.")
+        try:
+            fuente = fuente_revision(final)
+            video = huella_video(ruta)
+            almacen = self.server.revisiones
+            if cuerpo is None:
+                revision = almacen.leer(video)
+                return self._json({"fuente": fuente, "revision": revision, "medicion": evaluar(revision, fuente)})
+            revision = almacen.editar(video, fuente, json.loads(cuerpo))
+            return self._json({"revision": revision, "medicion": evaluar(revision, fuente)})
+        except ConflictoRevision as error:
+            return self._error(HTTPStatus.CONFLICT, str(error))
+        except (KeyError, TypeError, ValueError) as error:
+            return self._error(HTTPStatus.BAD_REQUEST, f"No se puede revisar: {error}")
+        except (OSError, sqlite3.Error) as error:
+            return self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"No se pudo leer o guardar la revisión: {error}")
 
     def _estatico(self, nombre: str) -> None:
         ruta = ESTATICO / nombre

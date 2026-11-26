@@ -333,6 +333,8 @@ async function montar(nueva, conservar) {
   panel = new Panel($('panel-cuerpo'), rep, {
     ir: (t, quien) => irA(t, quien), elegir: (quien, buscar) => elegir(quien, buscar), loUltimo: () => irALoUltimo(),
     carpeta: () => explorar(rep.ficha.carpeta), borrar: () => confirmarBorrado(rep.ficha),
+    vigente: () => rep === nueva, segundo: () => video.currentTime,
+    ver: (t) => irRevision(t, true), saltar: (t) => irRevision(t),
   });
   if (pestana) panel.mostrar(pestana);
   rep.alCargar = () => { if (video.paused) repintar(); };
@@ -792,6 +794,16 @@ function irA(t, quien) {
   repintar();
 }
 
+function irRevision(t, reproducir = false) {
+  if (!rep) return;
+  const destino = Math.max(rep.inicio, Math.min(t, rep.fin));
+  if (!reproducir) video.pause();
+  rep.asegurar(destino + estado.desfase).catch(() => {});
+  video.currentTime = destino;
+  if (reproducir) video.play().catch(() => {});
+  repintar();
+}
+
 // Al instante analizado anterior o siguiente (donde el analizador miró de verdad).
 function instanteVecino(sentido) {
   if (!rep) return;
@@ -869,6 +881,7 @@ function teclado(e) {
   if (!rep || e.target.closest('input, select, textarea, dialog')) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const tecla = e.key;
+  if (tecla === ' ' && e.target.closest('.revision-eventos button, .revision-eventos summary')) return;
   if (tecla === ' ') { e.preventDefault(); alternarPlay(); return; }
   if (tecla === 'ArrowLeft') { e.preventDefault(); saltar(e.shiftKey ? -5 : -1); return; }
   if (tecla === 'ArrowRight') { e.preventDefault(); saltar(e.shiftKey ? 5 : 1); return; }
