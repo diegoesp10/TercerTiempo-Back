@@ -131,6 +131,13 @@ internal static class SquadEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        group.MapGet("/{squadId:guid}/matches/{matchId:guid}/video-analysis/stamp", (Guid squadId, Guid matchId, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.GetStampAsync(squadId, matchId, ct))
+            .WithName("GetMatchVideoAnalysisStamp")
+            .WithSummary("Huella del análisis del vídeo, para seguirlo en directo")
+            .WithDescription("Muy ligera (sin la propuesta, el acta oficial ni los recortes): cambia en cuanto cambia algo de lo que enseña el análisis (estado y avance, también de la compresión del vídeo, lo que cuenta en directo, el registro, las pausas, lo volcado, si hay analizador). Si no coincide con el stamp del análisis que se tiene, se vuelve a pedir entero. Mismos permisos que el análisis.")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         group.MapPost("/{squadId:guid}/matches/{matchId:guid}/video-analysis", (Guid squadId, Guid matchId, RequestVideoAnalysisRequest? request, IVideoAnalysisRepository analysis, CancellationToken ct) => analysis.RequestAsync(squadId, matchId, request, ct))
             .WithName("RequestMatchVideoAnalysis")
             .WithSummary("Analizar (o volver a analizar) el vídeo del partido")

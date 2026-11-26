@@ -15,6 +15,35 @@ internal sealed class MatchVideoAnalysisStore(AppDbContext db) : IMatchVideoAnal
         return await db.MatchVideoAnalyses.Where(a => ids.Contains(a.VideoId)).ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<VideoAnalysisStampRow>> GetStampRowsAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default)
+    {
+        var videos = await db.MatchVideos.AsNoTracking()
+            .Where(v => v.SquadId == squadId && v.MatchId == matchId && v.DeletedAt == null)
+            .Select(v => new { v.Id, v.Status, v.ProcessingProgress })
+            .ToListAsync(cancellationToken);
+        if (videos.Count == 0) return [];
+
+        var ids = videos.Select(v => v.Id).ToList();
+        var analyses = await db.MatchVideoAnalyses.AsNoTracking()
+            .Where(a => ids.Contains(a.VideoId))
+            .Select(a => new
+            {
+                a.VideoId, a.Id, a.Status, a.Progress, a.Attempts, a.RequestedAt, a.StartedAt, a.FinishedAt, a.LiveAt, a.PausedAt,
+                a.PausedSeconds, a.WorkerId, a.AppliedAt, a.OurTeam, LogLength = a.LogJson == null ? 0 : a.LogJson.Length,
+            })
+            .ToDictionaryAsync(a => a.VideoId, cancellationToken);
+
+        return videos
+            .Select(v => analyses.GetValueOrDefault(v.Id) is { } a
+                ? new VideoAnalysisStampRow(
+                    v.Id, v.Status, v.ProcessingProgress, a.Id, a.Status, a.Progress, a.Attempts, a.RequestedAt, a.StartedAt, a.FinishedAt,
+                    a.LiveAt, a.PausedAt, a.PausedSeconds,
+                    a.Status == VideoAnalysisStatus.Running || (a.Status == VideoAnalysisStatus.Paused && a.WorkerId != null),
+                    a.AppliedAt, a.OurTeam, a.LogLength)
+                : new VideoAnalysisStampRow(v.Id, v.Status, v.ProcessingProgress, null, null, 0, 0, null, null, null, null, null, 0, false, null, null, 0))
+            .ToList();
+    }
+
     public void Add(MatchVideoAnalysis analysis) => db.MatchVideoAnalyses.Add(analysis);
 
     public void Remove(MatchVideoAnalysis analysis) => db.MatchVideoAnalyses.Remove(analysis);

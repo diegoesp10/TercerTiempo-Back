@@ -1175,6 +1175,11 @@ internal sealed class FakeAnalysisStore : IMatchVideoAnalysisStore
         Task.FromResult(Crops.GetValueOrDefault(analysisId)?.FirstOrDefault(c => c.Tracklet == tracklet)?.Content);
     public Task<IReadOnlySet<int>> GetCropTrackletsAsync(Guid analysisId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlySet<int>>((Crops.GetValueOrDefault(analysisId) ?? []).Select(c => c.Tracklet).ToHashSet());
+    public Task<IReadOnlyList<VideoAnalysisStampRow>> GetStampRowsAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<VideoAnalysisStampRow>>((Videos?.Items ?? [])
+            .Where(v => v.SquadId == squadId && v.MatchId == matchId && !v.IsDeleted)
+            .Select(v => VideoAnalysisStamp.Row(v, Items.FirstOrDefault(a => a.VideoId == v.Id)))
+            .ToList());
 }
 
 internal sealed class FakeAnalysisSignal : IVideoAnalysisSignal

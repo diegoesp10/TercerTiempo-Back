@@ -82,9 +82,11 @@ internal sealed class VideoAnalysisReader(
         // Si nadie atiende la cola (no hay ningún analizador encendido) lo pendiente se quedaría «en cola» sin más: la
         // app lo avisa.
         var seen = await analyzers.LastSeenAsync(cancellationToken);
-        return new MatchVideoAnalysisDto(Enabled, scope.CanManage, parts, VideoAnalyzerHeartbeat.IsOnline(seen, clock.GetUtcNow()), seen)
+        var online = VideoAnalyzerHeartbeat.IsOnline(seen, clock.GetUtcNow());
+        return new MatchVideoAnalysisDto(Enabled, scope.CanManage, parts, online, seen)
         {
             OfficialSheetClosed = sheet is { IsAvailable: true },
+            Stamp = VideoAnalysisStamp.Of(scope.Videos.Select(v => VideoAnalysisStamp.Row(v, scope.Analyses.GetValueOrDefault(v.Id))), online),
         };
     }
 

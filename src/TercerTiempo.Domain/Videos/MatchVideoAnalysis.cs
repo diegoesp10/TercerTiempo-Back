@@ -461,9 +461,19 @@ public interface IMatchVideoAnalysisStore
     Task<bool> DiscardChangesAsync(MatchVideoAnalysis analysis, CancellationToken cancellationToken = default);
     Task<byte[]?> GetCropAsync(Guid analysisId, int tracklet, CancellationToken cancellationToken = default);
     Task<IReadOnlySet<int>> GetCropTrackletsAsync(Guid analysisId, CancellationToken cancellationToken = default);
+
+    // Lo justo para la huella del análisis de cada vídeo (no eliminado) de la plantilla en el partido, sin las columnas
+    // grandes (propuesta, lo que cuenta en directo, el registro).
+    Task<IReadOnlyList<VideoAnalysisStampRow>> GetStampRowsAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
 }
 
 public sealed record VideoAnalysisControlState(VideoAnalysisStatus Status, string? WorkerId);
+
+public sealed record VideoAnalysisStampRow(
+    Guid VideoId, VideoStatus VideoStatus, int VideoProgress,
+    Guid? AnalysisId, VideoAnalysisStatus? Status, int Progress, int Attempts, DateTimeOffset? RequestedAt, DateTimeOffset? StartedAt,
+    DateTimeOffset? FinishedAt, DateTimeOffset? LiveAt, DateTimeOffset? PausedAt, int PausedSeconds, bool Working,
+    DateTimeOffset? AppliedAt, int? OurTeam, int LogLength);
 
 // Latido de cada analizador en marcha (el servicio de vídeo con Analysis:RunWorker): así la app sabe si hay alguien que
 // atienda la cola o si un análisis se va a quedar «en cola» para siempre.

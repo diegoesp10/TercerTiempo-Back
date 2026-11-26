@@ -476,6 +476,35 @@ public class VideoAnalysisApplyTests
     }
 
     [Fact]
+    public async Task La_huella_ligera_es_la_del_analisis_entero_y_cambia_al_avanzar()
+    {
+        var f = new Fixture();
+        var analysis = MatchVideoAnalysis.Queue(f.Video, Now);
+        f.Analyses.Items.Add(analysis);
+
+        var queued = await f.Get(f.ClubUser).Handle(new GetVideoAnalysisQuery(f.Squad.Id, f.Played.Id), default);
+        Assert.Equal(queued.Stamp, (await f.Stamp(f.ClubUser).Handle(new GetVideoAnalysisStampQuery(f.Squad.Id, f.Played.Id), default)).Stamp);
+
+        analysis.Start(Now);
+        analysis.ReportLive(12, "Jugadores", null, Now.AddSeconds(5));
+        var running = await f.Get(f.ClubUser).Handle(new GetVideoAnalysisQuery(f.Squad.Id, f.Played.Id), default);
+        Assert.NotEqual(queued.Stamp, running.Stamp);
+        Assert.Equal(running.Stamp, (await f.Stamp(f.ClubUser).Handle(new GetVideoAnalysisStampQuery(f.Squad.Id, f.Played.Id), default)).Stamp);
+
+        analysis.AddLog("Campo calibrado", Now.AddSeconds(6));
+        Assert.NotEqual(running.Stamp, (await f.Stamp(f.ClubUser).Handle(new GetVideoAnalysisStampQuery(f.Squad.Id, f.Played.Id), default)).Stamp);
+    }
+
+    [Fact]
+    public async Task La_huella_tiene_los_permisos_del_analisis()
+    {
+        var f = new Fixture();
+        var stranger = new User(ClubId: Guid.NewGuid(), UserId: Guid.NewGuid());
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => f.Stamp(stranger).Handle(new GetVideoAnalysisStampQuery(f.Squad.Id, f.Played.Id), default));
+    }
+
+    [Fact]
     public async Task Nothing_is_applied_until_the_analysis_is_ready_or_for_a_match_not_played()
     {
         var f = new Fixture();
@@ -618,6 +647,8 @@ public class VideoAnalysisApplyTests
             new(user, SquadStore, Clubs, Matches, Videos, Analyses, Heartbeats, Sheets, Options.Create(new VideoAnalysisOptions { Enabled = _enabled }), TimeProvider.System);
 
         public GetVideoAnalysisHandler Get(ICurrentUser user) => new(Reader(user));
+
+        public GetVideoAnalysisStampHandler Stamp(ICurrentUser user) => new(user, SquadStore, Clubs, Analyses, Heartbeats, TimeProvider.System);
 
         public RequestVideoAnalysisHandler Request(ICurrentUser user) => new(Reader(user), Analyses, Signal, Unit, TimeProvider.System);
 

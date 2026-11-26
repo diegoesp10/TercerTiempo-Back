@@ -29,6 +29,7 @@ public sealed record ApplyVideoAnalysisRequest(
 public interface IVideoAnalysisRepository
 {
     Task<MatchVideoAnalysisDto> GetAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
+    Task<VideoAnalysisStampDto> GetStampAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default);
     Task<MatchVideoAnalysisDto> RequestAsync(Guid squadId, Guid matchId, RequestVideoAnalysisRequest? request, CancellationToken cancellationToken = default);
     Task<MatchVideoAnalysisDto> CancelAsync(Guid squadId, Guid matchId, CancelVideoAnalysisRequest? request, CancellationToken cancellationToken = default);
     Task<MatchVideoAnalysisDto> PauseAsync(Guid squadId, Guid matchId, CancelVideoAnalysisRequest? request, bool paused, CancellationToken cancellationToken = default);
@@ -38,6 +39,7 @@ public interface IVideoAnalysisRepository
 
 internal sealed class VideoAnalysisRepository(
     IQueryHandler<GetVideoAnalysisQuery, MatchVideoAnalysisDto> get,
+    IQueryHandler<GetVideoAnalysisStampQuery, VideoAnalysisStampDto> stamp,
     ICommandHandler<RequestVideoAnalysisCommand, MatchVideoAnalysisDto> request,
     ICommandHandler<CancelVideoAnalysisCommand, MatchVideoAnalysisDto> cancel,
     ICommandHandler<PauseVideoAnalysisCommand, MatchVideoAnalysisDto> pause,
@@ -46,6 +48,9 @@ internal sealed class VideoAnalysisRepository(
 {
     public Task<MatchVideoAnalysisDto> GetAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default) =>
         get.Handle(new GetVideoAnalysisQuery(squadId, matchId), cancellationToken);
+
+    public Task<VideoAnalysisStampDto> GetStampAsync(Guid squadId, Guid matchId, CancellationToken cancellationToken = default) =>
+        stamp.Handle(new GetVideoAnalysisStampQuery(squadId, matchId), cancellationToken);
 
     public Task<MatchVideoAnalysisDto> RequestAsync(Guid squadId, Guid matchId, RequestVideoAnalysisRequest? body, CancellationToken cancellationToken = default) =>
         request.Handle(new RequestVideoAnalysisCommand(squadId, matchId, body?.VideoId), cancellationToken);

@@ -42,6 +42,9 @@ public sealed record MatchVideoAnalysisDto(
 {
     [Description("El acta oficial del partido está cerrada: al volcar, los minutos (por descarte), la titularidad, los goles y las tarjetas salen de ella.")]
     public bool OfficialSheetClosed { get; init; }
+
+    [Description("Huella de lo que se ve: mientras GET …/video-analysis/stamp devuelva la misma, no hace falta volver a pedir el análisis.")]
+    public string Stamp { get; init; } = "";
 }
 
 public sealed record VideoAnalysisPartDto(

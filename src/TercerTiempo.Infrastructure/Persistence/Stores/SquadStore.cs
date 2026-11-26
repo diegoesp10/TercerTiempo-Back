@@ -5,8 +5,20 @@ namespace TercerTiempo.Infrastructure.Persistence.Stores;
 
 internal sealed class SquadStore(AppDbContext db) : ISquadStore
 {
-    public Task<Squad?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        db.Squads.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+    // Como en ClubStore: la puerta de licencia lee la plantilla antes que el handler, y cada lectura son tres consultas
+    // (plantilla, cuerpo técnico y fichas). Con seguimiento sirve la que ya tiene el contexto; en las lecturas sin
+    // seguimiento, la que se leyó durante el ámbito.
+    private readonly Dictionary<Guid, Squad?> _readById = [];
+
+    private bool Reading => db.ChangeTracker.QueryTrackingBehavior != QueryTrackingBehavior.TrackAll;
+
+    public async Task<Squad?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (db.Squads.Local.FindEntry(id) is { State: not EntityState.Detached } tracked) return tracked.Entity;
+        if (!Reading) return await db.Squads.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        if (_readById.TryGetValue(id, out var cached)) return cached;
+        return _readById[id] = await db.Squads.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+    }
 
     public Task<Squad?> GetByTeamAndSeasonAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken = default) =>
         db.Squads.FirstOrDefaultAsync(s => s.TeamId == teamId && s.SeasonId == seasonId, cancellationToken);
