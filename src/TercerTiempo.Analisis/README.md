@@ -527,6 +527,16 @@ resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni
 - Solo abre en el Explorador las carpetas en que busca y las de sus análisis y, como todo lo demás, solo si lo pide la
   propia página del visor.
 
+**La revisión** (desde el 26-11-2026; cómo se usa, en [`REVISION_EVENTOS.md`](REVISION_EVENTOS.md))
+
+- La pestaña «Revisión» sirve para apuntar lo que de verdad pasa en el vídeo y medir con ello cada versión, sin tocar lo
+  que propone. Abarca seis jugadas (gol, tiro, parada, saque de puerta, córner y saque de banda) y las cinco acciones del
+  acta (pase, pase fallado, pérdida, recuperación y saque del portero), con quién la hizo y, en las falsas, por qué.
+- Se guarda en `%LOCALAPPDATA%\TercerTiempo\revisiones-ojeador.sqlite3`, con una copia por vídeo en
+  `datasets/revisiones/` (fuera de git), y vale para todas las pasadas del mismo vídeo.
+- `python -m tt_analisis.evaluar_eventos <revisión> <carpeta de la pasada>` saca, por tipo, la precisión, la cobertura,
+  el acierto de jugador y los motivos de las falsas, para comparar versiones con la misma revisión.
+
 **La repetición** (`repeticion/`, formato 1; el detalle, al principio de `repeticion.py`)
 
 - `fotogramas.jsonl`: una línea por fotograma analizado, con `t` lo primero para indexar el archivo sin leerlo entero.
