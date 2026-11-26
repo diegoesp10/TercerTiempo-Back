@@ -49,6 +49,17 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--sin-repeticion", action="store_true", help="No escribir repeticion/ (lo que se vio en cada fotograma, para `visor`).")
     a.add_argument("--sin-solapar", action="store_true", help="Sin leer el vídeo ni usar la GPU por adelantado: cada paso espera al anterior (mismo resultado, más lento; para medir).")
     a.add_argument("--sin-grafos", action="store_true", help="Sin grafos CUDA: cada detector lanza su paso operación a operación (mismo resultado, más lento; para medir).")
+    a.add_argument("--guardar-pasada", action="store_true", help="Guarda al acabar la pasada lo que entra en la capa de jugadas (pasada.pkl.gz), para repetirla sin la GPU con `rehacer-jugadas`.")
+
+    rj = sub.add_parser(
+        "rehacer-jugadas",
+        help="Repite sin la GPU lo que va tras la pasada (balón, porteros, quién es quién, jugadas y salidas) con el código de ahora, desde un análisis hecho con --guardar-pasada, y lo mide con las etiquetas del visor si las hay.",
+    )
+    rj.add_argument("carpeta", type=Path, help="Carpeta del análisis (con pasada.pkl.gz).")
+    rj.add_argument("--salida", type=Path, default=None, help="Dónde dejar lo rehecho (por defecto salidas/<carpeta>-rehecho). Si ahí hay algo rehecho de antes, se sustituye.")
+    rj.add_argument("--revision", type=Path, default=None, help="JSON de etiquetas exportado del visor (por defecto, las del visor para ese vídeo).")
+    rj.add_argument("--margen", type=float, default=None, help="Al medir, diferencia máxima en segundos para todos los tipos (por defecto, 2 en las jugadas y 1 en las acciones).")
+    rj.add_argument("--sin-medir", action="store_true", help="No medir con las etiquetas del visor.")
 
     v = sub.add_parser("visor", help="Abre el visor en una ventana propia: el vídeo con lo que vio y sacó el analizador encima, fotograma a fotograma.")
     v.add_argument("carpetas", type=Path, nargs="*", help="Carpetas de análisis (con analisis.json) o carpetas donde buscarlos; por defecto, salidas/.")
@@ -313,6 +324,26 @@ def main(argv: list[str] | None = None) -> int:
         for ruta in descargar_modelos(args.modelos, con_videos=args.con_videos):
             print(ruta)
         return 0
+    if args.orden == "rehacer-jugadas":
+        from .analizador import rehacer_jugadas
+        from .rehacer import leer, medir, preparar_salida, salida_por_defecto
+
+        salida = args.salida or salida_por_defecto(args.carpeta)
+        # Solo los fallos de lo guardado y de la salida, con su mensaje; uno de la capa de jugadas sale entero, con dónde.
+        try:
+            estado = leer(args.carpeta)
+            preparar_salida(args.carpeta, salida)
+        except (OSError, ValueError) as error:
+            print(f"No se puede rehacer: {error}", file=sys.stderr)
+            return 2
+        rehacer_jugadas(args.carpeta, salida, estado=estado)
+        if not args.sin_medir:
+            try:
+                print(medir(salida, args.revision, args.margen))
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                print(f"Sin medir: {error}", file=sys.stderr)
+        return 0
+
     if args.orden == "visor":
         from .visor import abrir_visor
 
@@ -365,6 +396,7 @@ def main(argv: list[str] | None = None) -> int:
         repeticion=not args.sin_repeticion,
         solapar=not args.sin_solapar,
         grafos=not args.sin_grafos,
+        guardar_pasada=args.guardar_pasada,
     )
     from .analizador import analizar
     from .modelos import SinGpu

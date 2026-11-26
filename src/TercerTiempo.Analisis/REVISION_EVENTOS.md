@@ -101,6 +101,20 @@ Cómo cuenta:
 - Alrededor de lo marcado «No se ve», en cualquier pasada, no se cuentan ni falsas ni omisiones, para que todas las
   versiones se midan igual.
 
+## Medir un cambio sin repetir la pasada
+
+Para un cambio en cómo se interpreta lo visto (jugadas, acciones, porteros, quién es quién), no hace falta otra pasada
+con la GPU. Basta con analizar el partido una vez con `--guardar-pasada` y después, tras cada cambio:
+
+```powershell
+uv run tt-analisis rehacer-jugadas salidas/j8
+```
+
+Rehace esa capa con el código de ahora en unos segundos, en `salidas/j8-rehecho`, y saca la misma tabla que
+`evaluar_eventos` con lo revisado de ese vídeo en el visor. No hace falta exportar nada: lee el SQLite del visor, solo
+para leer, o su copia. Lo rehecho se abre en el visor como cualquier análisis y comparte los veredictos con las pasadas
+que propongan lo mismo. El detalle, en el README, apartado «Rehacer las jugadas sin la GPU».
+
 ## Buenas costumbres
 
 - Primero la precisión: mejor no proponer que proponer mal.

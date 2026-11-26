@@ -60,6 +60,13 @@ ESTADOS = ("real", "falsa", "dudosa", "pendiente")
 QUIEN = ("bien", "otro", "no_se_sabe")
 FORMATO = 1
 HUELLA = re.compile(r"[0-9a-f]{64}")
+# La copia de lo revisado, por vídeo, junto a los demás datos del analizador (git no la sube).
+COPIAS = Path(__file__).resolve().parents[1] / "datasets" / "revisiones"
+
+
+def ruta_por_defecto() -> Path:
+    """El SQLite del visor en este equipo."""
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "TercerTiempo" / "revisiones-ojeador.sqlite3"
 
 
 class ConflictoRevision(ValueError):
@@ -225,6 +232,21 @@ class Revisiones:
         except OSError as error:
             return str(error)
         return None
+
+
+def buscar_revision(video: str, ruta: Path | None = None, copias: Path | None = None) -> dict | None:
+    """Lo revisado de un vídeo sin crear ni tocar nada (para medir desde fuera del visor): del SQLite, abierto solo para
+    leer, o de su copia. None si no hay nada."""
+    ruta = ruta or ruta_por_defecto()
+    if ruta.is_file():
+        try:
+            with closing(sqlite3.connect(f"{ruta.resolve().as_uri()}?mode=ro", uri=True)) as conexion:
+                fila = conexion.execute("SELECT datos FROM revisiones WHERE video = ?", (video,)).fetchone()
+            if fila:
+                return json.loads(fila[0])
+        except (sqlite3.Error, ValueError):
+            pass
+    return Revisiones(ruta, copias or COPIAS)._recuperar(video)
 
 
 def _tipo(orden):

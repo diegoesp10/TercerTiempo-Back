@@ -97,6 +97,8 @@ uv run tt-analisis analizar partido.mp4 --llm ollama --modelo-llm gemma4:12b    
 uv run tt-analisis analizar partido.mp4 --fps 3 --sin-clips                          # más rápido, menos fino
 uv run tt-analisis comparar salidas\a salidas\b salidas\c                              # varias pasadas del mismo tramo, lado a lado
 uv run tt-analisis visor salidas                                                     # verlo encima del vídeo (ver «El visor del Ojeador»)
+uv run tt-analisis analizar partido.mp4 --salida salidas\j8 --guardar-pasada        # guarda lo que entra en la capa de jugadas
+uv run tt-analisis rehacer-jugadas salidas\j8                                        # rehace esa capa sin la GPU y la mide (ver «Rehacer las jugadas sin la GPU»)
 ```
 
 Opciones: `--camara movil|fija` (ver abajo), `--fps` (fotogramas analizados por segundo, 5 por defecto),
@@ -110,8 +112,9 @@ quién»), `--saque 1:30` (segundo del vídeo en que empieza el partido, para pa
 defecto), `--sin-dorsales` (no leer dorsales: un jugador por tracklet, como antes), `--progreso` (el avance como líneas `##progreso N` en la salida estándar, sin barras: para quien lo
 lanza como proceso), `--exigir-gpu` (sin GPU CUDA termina con el código de salida 3 en vez de analizar en CPU) y
 `--semilla N` (para medir la estabilidad: fija los generadores y muestrea otros fotogramas del mismo tramo,
-desplazados dentro del paso) y `--sin-repeticion` (no guardar `repeticion/`, lo que lee el visor, ni lo que deja
-verlo mientras se hace). `comparar` pone varias pasadas lado a lado (balón, calibración, toques, posesión y su
+desplazados dentro del paso), `--sin-repeticion` (no guardar `repeticion/`, lo que lee el visor, ni lo que deja
+verlo mientras se hace) y `--guardar-pasada` (guardar en `pasada.pkl.gz` lo que entra en la capa de jugadas, para
+rehacerla sin la GPU con `rehacer-jugadas`). `comparar` pone varias pasadas lado a lado (balón, calibración, toques, posesión y su
 confianza, emparejando los equipos por el color de la camiseta) y dice cuántos puntos se mueve la posesión, total y
 por minuto, respecto a la primera.
 
@@ -213,6 +216,7 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
 | `posiciones.csv.gz` | Posición de cada persona y del balón en cada fotograma analizado (campo en cm e imagen en px) |
 | `repeticion/` | Desde el 25-11-2026: lo que vio el analizador en cada fotograma y lo que sacó de ello, para el visor (`fotogramas.jsonl` y `final.json`; mientras se analiza, `directo.json` y `directo.jsonl`, que se borran al terminar; ver «El visor del Ojeador»). No cambia nada del análisis y la app no lo lee |
 | `anotado.mp4` | Con `--video-anotado`: cajas por equipo, número de tracklet, balón y radar del campo |
+| `pasada.pkl.gz` | Con `--guardar-pasada`: lo que entra en la capa de jugadas, para rehacerla sin la GPU (ver «Rehacer las jugadas sin la GPU»). La app no lo lee |
 
 ## Cómo funciona
 
@@ -521,7 +525,8 @@ resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni
 - No borra un análisis que se está haciendo (con noticias en los últimos 30 s, también en pausa; uno parado o fallido,
   sí) ni una carpeta con algo más que lo que deja un análisis: `analisis.json`, `acta-propuesta.json`, `resumen.md`,
   `posiciones.csv.gz`, `recortes\`, `mapas\`, `repeticion\` y, si los hay, `clips\`, `anotado.mp4`, los `.pkl` de las
-  pruebas con `TT_GUARDAR_TRAMOS` y lo que añade la app (`plantillas.json` y `stderr.txt`). Así nunca se lleva una
+  pruebas con `TT_GUARDAR_TRAMOS`, el `pasada.pkl.gz` de `--guardar-pasada` y lo que añade la app (`plantillas.json` y
+  `stderr.txt`). Así nunca se lleva una
   `--salida` puesta en una carpeta con vídeos u otras cosas: lo dice y hay que borrarla a mano. Un test comprueba que
   todo lo que escribe el analizador está en esa lista.
 - Solo abre en el Explorador las carpetas en que busca y las de sus análisis y, como todo lo demás, solo si lo pide la
@@ -536,6 +541,8 @@ resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni
   `datasets/revisiones/` (fuera de git), y vale para todas las pasadas del mismo vídeo.
 - `python -m tt_analisis.evaluar_eventos <revisión> <carpeta de la pasada>` saca, por tipo, la precisión, la cobertura,
   el acierto de jugador y los motivos de las falsas, para comparar versiones con la misma revisión.
+- Para medir un cambio de lógica sin repetir la pasada, `rehacer-jugadas` (ver «Rehacer las jugadas sin la GPU»): rehace
+  y mide con lo revisado de ese vídeo en segundos.
 
 **La repetición** (`repeticion/`, formato 1; el detalle, al principio de `repeticion.py`)
 
@@ -572,6 +579,43 @@ resultado que recibe la app, pero encima del vídeo. No forma parte de la app ni
 - Probado el 25-11-2026 con un análisis de verdad (en CPU, 20:00-20:04 del Vallobín, con la GPU ocupada): sale en la
   lista desde que empieza, se ve avanzar, dice «Se ha parado» al cortarlo, la página pasa sola al relanzado en la misma
   carpeta y, al terminar, a la repetición definitiva.
+
+## Rehacer las jugadas sin la GPU (26-11-2026)
+
+La pasada (detectar, seguir, calibrar, leer dorsales y aspecto) es lo que tarda: una hora por partido con la 2.4.0. Lo
+de después tarda segundos y es donde se interpreta lo visto: la trayectoria del balón, los porteros, quién es quién, las
+jugadas y las acciones, y las salidas. Para afinar esa capa con lo revisado en el visor sin repetir la pasada:
+
+```powershell
+uv run tt-analisis analizar partido.mp4 --salida salidas\j8 --guardar-pasada     # una vez, con la GPU
+uv run tt-analisis rehacer-jugadas salidas\j8                                    # tras cada cambio de lógica, en segundos
+```
+
+- `--guardar-pasada` (o la variable de entorno `TT_GUARDAR_PASADA=1`, que sirve también para lo que lanza la app)
+  guarda al acabar la pasada, en `pasada.pkl.gz`, todo lo que entra en esa capa (`rehacer.EstadoPasada`): cada instante
+  tal como sale de la pasada (antes de completar el balón y de colocar a los porteros, que lo cambian), cada tracklet con
+  sus votos, recortes y lecturas del dorsal, el aspecto, el acta y lo que la pasada contó por el camino. En la sonda de
+  20 s del J8 ocupa 1,3 MB, casi todo recortes.
+- `rehacer-jugadas <carpeta>` repite los pasos 3 a 5 con el código de ahora. Deja un análisis completo en
+  `salidas\<carpeta>-rehecho` (o en `--salida`), con su repetición para el visor y un bloque `rehecho` en
+  `analisis.json` que dice de qué carpeta sale y con qué versión se hizo la pasada. Si ahí había algo rehecho, lo
+  sustituye; una carpeta con otras cosas, la del análisis o una que la contenga no las toca.
+- Después mide lo rehecho con lo revisado de ese vídeo: saca la tabla de `evaluar_eventos`. Lo lee del SQLite del visor,
+  abierto solo para leer, o de su copia en `datasets/revisiones/`. Con `--revision <json>` usa un JSON exportado; con
+  `--sin-medir`, no mide.
+- Con el mismo código, lo rehecho es igual que el análisis: solo cambian los tiempos. Lo prueba
+  `tests/test_rehacer_jugadas.py`, que pasa el analizador entero con dorsales, aspecto y acta de prueba y compara cada
+  archivo byte a byte. En el J8 (20:00-20:20, con los argumentos de la app), el análisis con `--guardar-pasada` sale
+  igual que la sonda de la 2.3.2 (102 de 102 archivos, sin contar la versión ni los tiempos). Lo rehecho sale igual que
+  él (102 de 102) y la capa tarda 1,4 s.
+- No saca clips, no usa el modelo de lenguaje ni guarda el material del lector (`--guardar-dorsales`), porque piden el
+  vídeo o la GPU. La foto del portero se vuelve a sacar del vídeo si está. Si no, sale de los recortes guardados: puede
+  cambiar la foto, nunca la propuesta.
+- Se guarda con pickle, comprimido y sin la hora del gzip. Al leerlo solo se admiten las clases que guarda la pasada
+  (`rehacer._PERMITIDAS`), así que un archivo cambiado a propósito no puede ejecutar nada. Si cambia lo que se guarda,
+  sube `rehacer.FORMATO`: lo guardado antes ya no se lee y hay que repetir la pasada.
+- No cambia lo que se propone, así que la versión no sube. `TT_GUARDAR_TRAMOS` sigue para lo suyo: los `.pkl` para
+  afinar a mano los porteros y `identidades.resolver`.
 
 ## Docker (GPU)
 

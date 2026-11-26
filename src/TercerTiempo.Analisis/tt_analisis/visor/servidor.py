@@ -32,12 +32,12 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from ..evaluar_eventos import evaluar
 from ..repeticion import CARPETA, DIRECTO, ESTADO_DIRECTO, FINAL, FOTOGRAMAS, IndiceFotogramas
-from ..revision_eventos import ConflictoRevision, Revisiones, catalogo, fuente_revision, huella_video
+from ..revision_eventos import COPIAS, ConflictoRevision, Revisiones, catalogo, fuente_revision, huella_video, ruta_por_defecto
 
 ESTATICO = Path(__file__).parent / "estatico"
 # Copia de lo revisado a mano, por vídeo, junto a los demás datos del analizador (git no la sube): si se pierde el
 # SQLite del equipo, el visor la recupera de aquí.
-COPIAS_REVISIONES = Path(__file__).resolve().parents[2] / "datasets" / "revisiones"
+COPIAS_REVISIONES = COPIAS
 BLOQUE = 1 << 20
 # Un análisis en marcha reescribe directo.json cada pocos segundos (`repeticion.LATIDO_S`), también en pausa: sin noticias
 # en este rato, se ha parado (el proceso se cortó o se mató, o el equipo se durmió).
@@ -51,12 +51,12 @@ ESPERA_ADIOS_S = 6.0
 PROFUNDIDAD_BUSQUEDA = 3
 NOMBRE_RECORTE = re.compile(r"^[\w.-]+\.(jpg|jpeg|png)$", re.IGNORECASE)
 ARCHIVOS_JSON = {"analisis.json": "analisis.json", "acta-propuesta.json": "acta-propuesta.json", "final.json": f"{CARPETA}/{FINAL}"}
-# Lo que dejan en la carpeta de un análisis el analizador (también lo opcional: el vídeo anotado, los clips y lo de las
-# pruebas con TT_GUARDAR_TRAMOS) y la app (`plantillas.json` y `stderr.txt`). El visor solo borra una carpeta sin nada
+# Lo que dejan en la carpeta de un análisis el analizador (también lo opcional: el vídeo anotado, los clips, lo de las
+# pruebas con TT_GUARDAR_TRAMOS y lo que guarda --guardar-pasada) y la app (`plantillas.json` y `stderr.txt`). El visor solo borra una carpeta sin nada
 # más: nunca la de una `--salida` puesta donde hay vídeos u otras cosas.
 CONTENIDO_DE_UN_ANALISIS = frozenset({
     "analisis.json", "acta-propuesta.json", "resumen.md", "posiciones.csv.gz", "anotado.mp4",
-    "porteros.pkl", "tramos.pkl", "apariencias.pkl", "plantillas.json", "stderr.txt",
+    "porteros.pkl", "tramos.pkl", "apariencias.pkl", "pasada.pkl.gz", "plantillas.json", "stderr.txt",
     CARPETA, "recortes", "mapas", "clips",
 })
 # La app deja cada análisis en videos/analysis/<id del vídeo>.
@@ -461,7 +461,7 @@ class Servidor(ThreadingHTTPServer):
         self.biblioteca = biblioteca
         self.vida = Vida()
         if ruta_revisiones is None:
-            ruta_revisiones = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "TercerTiempo" / "revisiones-ojeador.sqlite3"
+            ruta_revisiones = ruta_por_defecto()
             copias_revisiones = copias_revisiones or COPIAS_REVISIONES
         self.revisiones = Revisiones(ruta_revisiones, copias_revisiones)
 

@@ -379,7 +379,7 @@ def test_no_borra_una_carpeta_con_mas_cosas_que_las_de_un_analisis(visor, papele
     # Con todo lo que puede dejar un análisis (también lo opcional y lo de la app), sí.
     completa = _analisis(tmp_path / "salidas" / "j15", video)
     for nombre in ("acta-propuesta.json", "resumen.md", "posiciones.csv.gz", "anotado.mp4", "porteros.pkl", "tramos.pkl",
-                   "apariencias.pkl", "plantillas.json", "stderr.txt"):
+                   "apariencias.pkl", "pasada.pkl.gz", "plantillas.json", "stderr.txt"):
         (completa / nombre).write_bytes(b"")
     for nombre in ("mapas", "Clips"):
         (completa / nombre).mkdir()

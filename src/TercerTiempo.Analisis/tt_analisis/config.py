@@ -124,6 +124,9 @@ class Configuracion:
     # En la GPU, el paso de cada detector grabado en un grafo CUDA (`rfdetr_comun.grabar`): los mismos números en menos
     # tiempo. Sin grafos, para medir lo que gana o descartarlo si algo falla.
     grafos: bool = True
+    # Guardar al acabar la pasada lo que entra en la capa de jugadas (`rehacer.py`), para repetirla sin la GPU con
+    # `rehacer-jugadas`. También con la variable de entorno TT_GUARDAR_PASADA.
+    guardar_pasada: bool = False
 
 
 # Clases de las personas y del balón: las del detector de jugadores de Roboflow, que siguen en los datasets de

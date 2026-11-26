@@ -3,11 +3,13 @@ informes. `analizar(config)` deja todo en la carpeta de salida y devuelve el JSO
 
 from __future__ import annotations
 
+import json
 import os
 
 import shutil
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +36,9 @@ from .jugadas import analizar_jugadas, buscar_descanso
 from .mitades import mitades
 from .oficial import leer_acta
 from .porteros import Porteros, colocar_porteros, describir_porteros
+from .rehacer import EstadoPasada
+from .rehacer import guardar as guardar_pasada
+from .rehacer import leer as leer_pasada
 from .repeticion import Directo, escribir_repeticion
 from .seguimiento import MemoriaTracklet, Seguidor
 from .tipos import Instante, Persona, formato_minuto
@@ -394,6 +399,47 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
         corte = f" (se cortó en {formato_minuto(lectura.cortado_en_s)})" if lectura.cortado_en_s is not None else ""
         decir(f"Aviso: solo se han podido leer {n} de los {total} fotogramas esperados del tramo ({leido_pct} %){corte}; el archivo puede estar dañado o cortado.")
 
+    # Lo que entra en la capa de jugadas (pasos 3 a 5), que ya no necesita ni la GPU ni el vídeo. Con --guardar-pasada se
+    # guarda, para rehacer esa capa con otro código en segundos (`rehacer.py`).
+    datos_acta = json.loads(config.plantillas.read_text(encoding="utf-8")) if config.plantillas is not None else None
+    estado = EstadoPasada(
+        config=config, info=info, fin_s=fin_s, dt=dt, fps_real=fps_real, vecinos=vecinos, campo=campo, analizador=analizador,
+        datos_acta=datos_acta, instantes=instantes, pista=pista, seguidor=seguidor, historial=historial, apariencias=apariencias,
+        identificacion=None if cola is None else {
+            "lecturas": cola.leidas, "junto_al_balon": lecturas_medio, "recortes_apariencia": cola_aspecto.recortes if cola_aspecto is not None else 0,
+        },
+        colores=clasificador.colores, reparto=reparto, muestras=muestras, calibracion=calibrador.resumen(),
+        pasada={
+            "fotogramas_esperados": total, "pct_leido": leido_pct, "lectura_cortada_s": lectura.cortado_en_s, "con_balon_fotograma": vistos,
+            "personas_fuera_del_campo": fuera_de_campo, "vecinos_mirados": detector.intermedios_mirados, "vecinos_enteros_mirados": detector.vecinos_enteros,
+            "balones_descartados": detector.descartados, "balones_flojos_descartados": detector.flojos_descartados,
+        },
+        parametros={
+            "device": modelos.device, "seguidor": detector.rastreador.nombre, "motor_jugadores": modelos.jugadores.motor,
+            "motor_balon": modelos.balon.motor, "motor_campo": modelos.campo.motor, "modelos": modelos.rutas,
+        },
+        rendimiento={**crono.resumen(n, pasada_activa_s, config.solapar), "grafos": grabados},
+        tiempos=tiempos, anotado=renderizador is not None, antes_s=time.time() - inicio_total,
+    )
+    if config.guardar_pasada or os.environ.get("TT_GUARDAR_PASADA"):
+        ruta = guardar_pasada(estado, config.salida)
+        decir(f"Guardado lo que entra en la capa de jugadas ({ruta.name}, {ruta.stat().st_size / 2**20:.0f} MB): `tt-analisis rehacer-jugadas` la repite sin la GPU.")
+    return _jugadas_y_salidas(estado, decir, progreso, directo, inicio_total, lector=lector, guarda=guarda)
+
+
+def _jugadas_y_salidas(
+    estado: EstadoPasada, decir, progreso: Avance, directo: Directo, inicio_total: float, lector=None, guarda: GuardaZonas | None = None,
+    rehecho: dict | None = None,
+) -> dict:
+    """Pasos 3 a 5: lo que sale de lo visto en la pasada (`estado`). Lo llama `analizar` al acabar la pasada y
+    `rehacer_jugadas` con lo que esta guardó. `lector` y `guarda`, solo para el material del lector (`--guardar-dorsales`);
+    `rehecho`, de dónde sale lo rehecho."""
+    inicio = time.time()
+    config, info, campo, instantes, seguidor = estado.config, estado.info, estado.campo, estado.instantes, estado.seguidor
+    pista, historial, apariencias, dt, vecinos, fin_s = estado.pista, estado.historial, estado.apariencias, estado.dt, estado.vecinos, estado.fin_s
+    analizador, datos_acta, identificacion, pasada, parametros = estado.analizador, estado.datos_acta, estado.identificacion, estado.pasada, estado.parametros
+    tiempos = dict(estado.tiempos)
+
     # 3. Lo que sale de las posiciones. Primero la trayectoria del balón (fuera los objetos fijos y los avistamientos
     # sueltos, y se rellenan los huecos cortos); después quién es quién y, con eso, `jugadas.analizar_jugadas`.
     progreso.punto_de_control()
@@ -407,19 +453,14 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
     intermedios = completar_con_intermedios(instantes, pista_xy, 1 / info.fps, campo, MARGEN_CAMPO_CM, vecinos=max(1, vecinos))
     if vecinos:
         decir(
-            f"Fotogramas vecinos de los que no tenían balón: visto en {intermedios.detecciones} de {detector.intermedios_mirados} mirados "
-            f"({detector.vecinos_enteros} enteros); {intermedios.completados} instantes sin balón lo tienen por ellos."
+            f"Fotogramas vecinos de los que no tenían balón: visto en {intermedios.detecciones} de {pasada['vecinos_mirados']} mirados "
+            f"({pasada['vecinos_enteros_mirados']} enteros); {intermedios.completados} instantes sin balón lo tienen por ellos."
         )
     relleno = limpiar_trayectoria(instantes)
     balon_cobertura = cobertura(instantes)
     for objeto in relleno.objetos_fijos:
         decir(f"Objeto quieto en el campo tomado por el balón en ({objeto.centro[0] / 100:.0f} m, {objeto.centro[1] / 100:.0f} m): {objeto.permanencias} veces entre {formato_minuto(objeto.t_primera)} y {formato_minuto(objeto.t_ultima)}; se descarta.")
 
-    datos_acta = None
-    if config.plantillas is not None:
-        import json as _json
-
-        datos_acta = _json.loads(config.plantillas.read_text(encoding="utf-8"))
     acta_oficial = leer_acta(datos_acta)
 
     # Las dos partes y, con ellas, los porteros: quién es portero, por la equipación que no es de ningún equipo ni del
@@ -442,7 +483,7 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
     # Quién es quién: con el dorsal leído, los tracklets de un mismo jugador pasan a ser uno solo (y como mucho los que
     # jugaron por equipo) antes de contar toques, pases y acciones. Los minutos del acta necesitan el descanso.
     resolucion: Resolucion | None = None
-    if cola is not None:
+    if identificacion is not None:
         plantillas = leer_plantillas(datos_acta, config.saque, descanso_previo) if datos_acta else []
         tramos = tramos_de(instantes, seguidor, porteros, mitad_de, historial)
         if os.environ.get("TT_GUARDAR_TRAMOS"):
@@ -469,7 +510,7 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
                 persona.equipo = equipo_de.get(persona.tracklet, persona.equipo)
         por_equipo = {e: sum(1 for x in resolucion.identidades if x.equipo == e) for e in (0, 1)}
         decir(
-            f"Dorsales: {cola.leidas} lecturas ({lecturas_medio} junto al balón entre dos fotogramas); {len(tramos)} tracklets en {resolucion.cadenas} cadenas; "
+            f"Dorsales: {identificacion['lecturas']} lecturas ({identificacion['junto_al_balon']} junto al balón entre dos fotogramas); {len(tramos)} tracklets en {resolucion.cadenas} cadenas; "
             f"{por_equipo[0]} y {por_equipo[1]} jugadores identificados por el dorsal"
             + (" (con el acta oficial)" if plantillas else "") + "."
         )
@@ -537,7 +578,7 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
     if config.clips:
         with tqdm(desc="Clips de eventos", unit="clip", disable=config.progreso) as barra:
             clips = extraer_clips(resultado_eventos, config.video, config.salida, config.clip_margen_s, ruta_ffmpeg(), avance=lambda k: barra.update(k - barra.n))
-    colores = [color_hex(c) for c in clasificador.colores]
+    colores = [color_hex(c) for c in estado.colores]
     equipos_json = [{"id": e, "nombre": config.nombres_equipos[e], "color": colores[e]} for e in (0, 1)]
     video_json = datos_del_video(config, info, fin_s)
     repeticion = None
@@ -555,40 +596,41 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
 
     progreso.fase("salidas", 2, 3)
     con_balon = balon_cobertura["vistos"]
+    vistos = pasada["con_balon_fotograma"]
     calibrados = sum(1 for i in instantes if i.calibrado)
     analisis = {
         "version": __version__,
         "analizador": analizador,
         "video": video_json,
-        "parametros": {"fps_muestreo": round(fps_real, 2), "vecinos_balon": vecinos, "vecinos_balon_s": config.vecinos_balon_s, "vecinos_enteros": config.vecinos_enteros, "device": modelos.device, "camara": config.camara, "seguidor": detector.rastreador.nombre, "motor_jugadores": modelos.jugadores.motor, "motor_balon": modelos.balon.motor, "motor_campo": modelos.campo.motor, "llm": llm.nombre if llm else None, "modelos": modelos.rutas, "campo_m": [campo.largo / 100, campo.ancho / 100]},
+        "parametros": {"fps_muestreo": round(estado.fps_real, 2), "vecinos_balon": vecinos, "vecinos_balon_s": config.vecinos_balon_s, "vecinos_enteros": config.vecinos_enteros, "device": parametros["device"], "camara": config.camara, "seguidor": parametros["seguidor"], "motor_jugadores": parametros["motor_jugadores"], "motor_balon": parametros["motor_balon"], "motor_campo": parametros["motor_campo"], "llm": llm.nombre if llm else None, "modelos": parametros["modelos"], "campo_m": [campo.largo / 100, campo.ancho / 100]},
         "llm": llm.nombre if llm else None,
         "equipos": equipos_json,
         "direcciones_ataque": {f"equipo{e}_mitad{m}": d for (e, m), d in sorted(direcciones.items())},
         "descanso_s": descanso,
-        "calibracion": calibrador.resumen(),
+        "calibracion": estado.calibracion,
         "recuento": {
             # `con_balon` y `pct_con_balon` son el balón **visto** por el detector (lo que guarda la app): en su fotograma o,
             # desde la 2.3.0, en uno de sus vecinos (`balon_vecinos`); solo en su fotograma, `con_balon_fotograma`.
             # Con los huecos rellenados por la trayectoria, `con_balon_interpolado` y `pct_con_balon_total`.
             "fotogramas": len(instantes), "con_balon": con_balon, "pct_con_balon": round(100 * con_balon / len(instantes), 1),
             "con_balon_fotograma": vistos, "pct_con_balon_fotograma": round(100 * vistos / len(instantes), 1),
-            "balon_vecinos": {**intermedios.a_dict(), "mirados": detector.intermedios_mirados, "enteros": detector.vecinos_enteros, "vecinos": vecinos},
+            "balon_vecinos": {**intermedios.a_dict(), "mirados": pasada["vecinos_mirados"], "enteros": pasada["vecinos_enteros_mirados"], "vecinos": vecinos},
             "con_balon_interpolado": balon_cobertura["interpolados"], "pct_con_balon_total": balon_cobertura["pct_con_balon"], "balon_relleno": relleno.a_dict(),
             # Desde la 2.3.0: lo mismo solo con el balón en juego (`en_juego.py`), que es cuando importa verlo.
             "balon_en_juego": en_juego,
             "pct_calibrados": round(100 * calibrados / len(instantes), 1),
             # Lo que se pudo leer del archivo frente a lo esperado: por debajo del 95 % la app lo marca como calidad baja.
-            "fotogramas_esperados": total, "pct_leido": leido_pct, "lectura_cortada_s": lectura.cortado_en_s,
-            "muestras_equipos": muestras, "reparto_equipos": list(reparto), "tracklets": len(resumenes), "tracklets_partidos": seguidor.cortes, "cruces_partidos": seguidor.cruces, "toques": len(toques), "secuencias": len(secs),
-            "balones_descartados": detector.descartados, "balones_flojos_descartados": detector.flojos_descartados, "personas_fuera_del_campo": fuera_de_campo, "clips": clips,
+            "fotogramas_esperados": pasada["fotogramas_esperados"], "pct_leido": pasada["pct_leido"], "lectura_cortada_s": pasada["lectura_cortada_s"],
+            "muestras_equipos": estado.muestras, "reparto_equipos": list(estado.reparto), "tracklets": len(resumenes), "tracklets_partidos": seguidor.cortes, "cruces_partidos": seguidor.cruces, "toques": len(toques), "secuencias": len(secs),
+            "balones_descartados": pasada["balones_descartados"], "balones_flojos_descartados": pasada["balones_flojos_descartados"], "personas_fuera_del_campo": pasada["personas_fuera_del_campo"], "clips": clips,
         },
         "posesion": posesion.a_dict(),
         "eventos": [e.a_dict() for e in resultado_eventos],
         "tracklets": [dict(r.a_dict(), acciones=acciones.get(tid, None).a_dict() if tid in acciones else None, recorte=recortes.get(tid), dorsal_llm=dorsales.get(tid)) for tid, r in sorted(resumenes.items())],
         "identificacion": None if resolucion is None else {
-            "lecturas": cola.leidas if cola is not None else 0,
-            "lecturas_junto_al_balon": lecturas_medio,
-            "recortes_apariencia": cola_aspecto.recortes if cola_aspecto is not None else 0,
+            "lecturas": identificacion["lecturas"],
+            "lecturas_junto_al_balon": identificacion["junto_al_balon"],
+            "recortes_apariencia": identificacion["recortes_apariencia"],
             "apariencia": {str(e): r for e, r in resolucion.apariencia.items()},
             "cadenas": resolucion.cadenas,
             "lado_de_equipo": {str(e): lado for e, lado in resolucion.lado_de_equipo.items()},
@@ -598,11 +640,13 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
                 for x in resolucion.identidades
             ],
         },
-        "archivos": {"mapas": mapas, "posiciones": posiciones, "anotado": "anotado.mp4" if renderizador else None, "repeticion": repeticion},
+        "archivos": {"mapas": mapas, "posiciones": posiciones, "anotado": "anotado.mp4" if estado.anotado else None, "repeticion": repeticion},
         "tiempos": {k: round(v, 1) for k, v in tiempos.items()},
         # Desde la 2.4.0: en qué se va el tiempo de la pasada principal (`tuberia.Cronometro.resumen`).
-        "rendimiento": {**crono.resumen(n, pasada_activa_s, config.solapar), "grafos": grabados},
+        "rendimiento": estado.rendimiento,
     }
+    if rehecho is not None:
+        analisis["rehecho"] = rehecho
     acta = acta_propuesta(resultado_eventos, posesion, resumenes, acciones, dorsales, recortes, config.nombres_equipos, colores, resolucion, acta_oficial, en_juego)
     if llm is not None:
         resumen_llm = redactar_resumen(analisis, llm)
@@ -613,9 +657,30 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
         f"Balón visto en el {analisis['recuento']['pct_con_balon']} % de los fotogramas y, con los huecos rellenados, en el {balon_cobertura['pct_con_balon']} %; "
         f"posesión {posesion.porcentaje(0)} / {posesion.porcentaje(1)} sobre {posesion.segundos_atribuidos:.0f} s con balón (confianza {posesion.confianza})."
     )
-    decir(f"Listo en {tiempos['total_s'] / 60:.1f} min: {config.salida / 'resumen.md'}")
+    if rehecho is None:
+        decir(f"Listo en {tiempos['total_s'] / 60:.1f} min: {config.salida / 'resumen.md'}")
+    else:
+        decir(f"Rehecho en {time.time() - inicio:.1f} s: {config.salida / 'resumen.md'}")
     progreso.fin()
     return analisis
+
+
+def rehacer_jugadas(origen: Path, salida: Path, informar=print, estado: EstadoPasada | None = None) -> dict:
+    """Los pasos 3 a 5 otra vez, con el código de ahora, sobre lo que guardó la pasada de `origen` (`--guardar-pasada`;
+    `estado`, si ya se leyó): sin la GPU ni el vídeo, en segundos. Deja en `salida` un análisis completo, con su repetición
+    para el visor y un bloque `rehecho` que dice de dónde sale. Sin clips, sin modelo de lenguaje y sin el material del
+    lector."""
+    if estado is None:
+        estado = leer_pasada(origen)
+    version_pasada = estado.analizador.get("version")
+    estado.config = replace(estado.config, salida=salida, repeticion=True, clips=False, llm="none", guardar_dorsales=None, progreso=False, guardar_pasada=False)
+    estado.analizador = {**estado.analizador, "version": __version__}
+    # Las medidas del campo valen para todo el paquete (`campo.configurar_campo`): las mismas que en la pasada.
+    configurar_campo(estado.campo.largo, estado.campo.ancho)
+    salida.mkdir(parents=True, exist_ok=True)
+    informar(f"Rehaciendo con {NOMBRE} {__version__} lo que va tras la pasada de {origen} ({NOMBRE} {version_pasada}, {len(estado.instantes)} fotogramas).")
+    rehecho = {"de": str(origen.resolve()), "version_de_la_pasada": version_pasada}
+    return _jugadas_y_salidas(estado, informar, Avance(False), Directo(salida, activo=False), time.time() - estado.antes_s, rehecho=rehecho)
 
 
 def tramos_de(
