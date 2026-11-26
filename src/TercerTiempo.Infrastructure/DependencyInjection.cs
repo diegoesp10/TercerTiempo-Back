@@ -312,6 +312,7 @@ public static class DependencyInjection
         services.AddScoped<ICrestStorage>(sp => sp.GetRequiredService<DatabaseTarget>().RealData
             ? ActivatorUtilities.CreateInstance<RealDataCrestStorage>(sp)
             : sp.GetRequiredService<FileSystemCrestStorage>());
+        services.AddSingleton<ICrestThumbnails, CrestThumbnails>();
         services.AddSingleton<IPlayerPhotoStorage, FileSystemPlayerPhotoStorage>();
         services.AddOptions<InjuryDocumentOptions>()
             .Bind(configuration.GetSection(InjuryDocumentOptions.SectionName));

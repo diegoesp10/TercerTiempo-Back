@@ -27,8 +27,8 @@ internal sealed class TeamsRepository(
     public Task<IReadOnlyList<MatchDto>> GetMatchesAsync(Guid teamId, CancellationToken cancellationToken = default) =>
         listMatches.Handle(new ListTeamMatchesQuery(teamId), cancellationToken);
 
-    public Task<CrestFile?> OpenCrestAsync(Guid teamId, CancellationToken cancellationToken = default) =>
-        getCrest.Handle(new GetTeamCrestQuery(teamId), cancellationToken);
+    public Task<CrestFile?> OpenCrestAsync(Guid teamId, int? size = null, CancellationToken cancellationToken = default) =>
+        getCrest.Handle(new GetTeamCrestQuery(teamId, size), cancellationToken);
 
     public Task<CrestFile?> OpenRosterPhotoAsync(Guid teamId, Guid entryId, CancellationToken cancellationToken = default) =>
         getRosterPhoto.Handle(new GetRosterPhotoQuery(teamId, entryId), cancellationToken);

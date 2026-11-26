@@ -20,17 +20,17 @@ internal static class TeamEndpoints
             .WithDescription("Competición y temporada, clasificación, plantilla según el proveedor (roster, con el id que se usa para reclamar la ficha; rosterPublished indica si el proveedor la publica) y jugadores registrados en la plataforma. Público.")
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        group.MapGet("/{teamId:guid}/crest", async (Guid teamId, HttpContext context, ITeamsRepository teams, CancellationToken ct) =>
+        group.MapGet("/{teamId:guid}/crest", async (Guid teamId, int? size, HttpContext context, ITeamsRepository teams, CancellationToken ct) =>
             {
-                var crest = await teams.OpenCrestAsync(teamId, ct);
+                var crest = await teams.OpenCrestAsync(teamId, size, ct);
                 if (crest is null) return Results.NotFound();
 
-                context.Response.Headers.CacheControl = "public, max-age=86400";
+                ImageCache.SetPublic(context);
                 return Results.Stream(crest.Content, crest.ContentType);
             })
             .WithName("GetTeamCrest")
             .WithSummary("Escudo del equipo")
-            .WithDescription("Escudo descargado de la federación y guardado en la plataforma (crestUrl de las respuestas apunta aquí cuando existe). 404 si el equipo no tiene escudo guardado. Público.")
+            .WithDescription("Escudo descargado de la federación y guardado en la plataforma (crestUrl de las respuestas apunta aquí cuando existe). Con size (en px), una miniatura en PNG cuyo lado mayor es 64, 128 o 192 (lo pedido sube al siguiente; por encima de 192, el original); nunca se agranda y los SVG y WebP se sirven tal cual. Con ?v= (la versión que trae crestUrl) se puede guardar un año. 404 si el equipo no tiene escudo guardado. Público.")
             .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .ProducesProblem(StatusCodes.Status404NotFound);
 

@@ -13,7 +13,7 @@ internal static class CoachEndpoints
                 var photo = await coaches.OpenPhotoAsync(coachId, ct);
                 if (photo is null) return Results.NotFound();
 
-                context.Response.Headers.CacheControl = "public, max-age=86400";
+                ImageCache.SetPublic(context);
                 return Results.Stream(photo.Content, photo.ContentType);
             })
             .WithTags("Cuerpo técnico")
