@@ -68,15 +68,22 @@ internal sealed class StaffDisciplineReader(
     public async Task<StaffDiscipline> LoadAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken) =>
         await LoadAsync(teamId, seasonId, await matches.GetTeamMatchesAsync(seasonId, teamId, cancellationToken), cancellationToken);
 
-    public async Task<StaffDiscipline> LoadAsync(Guid teamId, Guid seasonId, IReadOnlyList<Match> season, CancellationToken cancellationToken)
+    public Task<StaffDiscipline> LoadAsync(Guid teamId, Guid seasonId, IReadOnlyList<Match> season, CancellationToken cancellationToken) =>
+        LoadAsync(teamId, seasonId, season, null, cancellationToken);
+
+    // staffSheets: las actas con cuerpo técnico de los partidos ya empezados, si quien llama ya las tiene (la ficha del
+    // equipo); si no, se leen.
+    public async Task<StaffDiscipline> LoadAsync(
+        Guid teamId, Guid seasonId, IReadOnlyList<Match> season, IReadOnlyList<OfficialMatchSheet>? staffSheets, CancellationToken cancellationToken)
     {
         var now = clock.GetUtcNow();
         var next = NextMatch(season, now);
         var past = season.Where(m => m.KickoffAt <= now && m.Status is not (MatchStatus.Cancelled or MatchStatus.Postponed)).ToList();
         if (past.Count == 0) return new StaffDiscipline(next, []);
 
-        var official = (await sheets.GetStaffByMatchIdsAsync(past.Select(m => m.Id), cancellationToken))
-            .Where(s => s.IsAvailable)
+        var pastIds = past.Select(m => m.Id).ToHashSet();
+        var official = (staffSheets ?? await sheets.GetStaffByMatchIdsAsync(pastIds, cancellationToken))
+            .Where(s => s.IsAvailable && pastIds.Contains(s.MatchId))
             .GroupBy(s => s.MatchId)
             .ToDictionary(g => g.Key, g => g.First());
 

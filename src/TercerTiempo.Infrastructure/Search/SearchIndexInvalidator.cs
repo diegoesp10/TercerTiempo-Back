@@ -7,8 +7,10 @@ using TercerTiempo.Domain.Clubs;
 using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.OfficialSheets;
 using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Referees;
+using TercerTiempo.Domain.Sanctions;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
 using TercerTiempo.Domain.Teams;
@@ -18,7 +20,7 @@ namespace TercerTiempo.Infrastructure.Search;
 // Al guardar cambios en lo que enlaza el buscador (plantillas y sus jugadores, fichas, equipos, clubes, ligas, cuentas
 // de jugador, técnicos y sus nombramientos), el índice se da por viejo cuando el guardado ha terminado y se rehace en
 // segundo plano. Las lecturas públicas en memoria (PublicDataCache) solo pierden lo que depende de lo guardado: ligas,
-// partidos y clasificaciones de esa temporada, o árbitros.
+// partidos y clasificaciones de esa temporada, árbitros, fichas, actas, cuerpo técnico o comité.
 internal sealed class SearchIndexInvalidator(SearchIndexHolder holder, PublicDataCache publicData) : SaveChangesInterceptor
 {
     private static readonly Type[] Indexed =
@@ -70,7 +72,11 @@ internal sealed class SearchIndexInvalidator(SearchIndexHolder holder, PublicDat
         Match match => [PublicTags.Matches(match.SeasonId), PublicTags.AllMatches],
         Standing standing => [PublicTags.Standings(standing.SeasonId), PublicTags.AllStandings],
         Referee or MatchOfficial or RefereeRating => [PublicTags.Referees],
-        SeasonYear or Competition or Season or SeasonZone or Team => [PublicTags.Structure],
+        SeasonYear or Competition or Season or SeasonZone or Team or TeamProfile => [PublicTags.Structure],
+        RosterEntry => [PublicTags.Rosters],
+        OfficialMatchSheet or OfficialSheetLine or OfficialSheetEvent or OfficialSheetStaff => [PublicTags.Sheets],
+        CoachAppointment or Coach => [PublicTags.Staff],
+        CommitteeResolution or CommitteeSanction => [PublicTags.Committee],
         _ => [],
     };
 

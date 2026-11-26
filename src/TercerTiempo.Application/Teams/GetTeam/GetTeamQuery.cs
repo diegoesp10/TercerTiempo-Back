@@ -34,6 +34,7 @@ internal sealed class GetTeamHandler(
     ICoachStore coaches,
     Seasons.ISeasonContext seasons,
     Squads.Suspensions.StaffDisciplineReader staffDiscipline,
+    PublicDataCache cache,
     TimeProvider clock) : IQueryHandler<GetTeamQuery, TeamDetailDto>
 {
     public async Task<TeamDetailDto> Handle(GetTeamQuery query, CancellationToken cancellationToken)
@@ -43,13 +44,20 @@ internal sealed class GetTeamHandler(
 
         var (competition, season) = await Resolvers.SeasonOfTeamAsync(competitions, seasons, team.Id, cancellationToken);
 
-        var standing = await standings.GetByTeamAsync(season.Id, team.Id, cancellationToken);
-
-        var roster = await RosterSummary.ListAsync(team.Id, season.Id, teams, matches, sheets, cancellationToken);
+        // Lo público de la ficha (clasificación, fichas con sus números y cuerpo técnico de las actas) es igual para todas
+        // las cuentas, salvo lo del cuerpo técnico que solo se enseña con sesión: se guarda por equipo y temporada hasta que
+        // cambia algo de lo que sale. Lo de cada cuenta (fotos, plantilla) se pone después.
+        var signedIn = currentUser.IsAuthenticated;
+        var shared = await cache.GetAsync(
+            $"team:{team.Id:N}:{season.Id:N}:{(signedIn ? "sesion" : "publico")}",
+            [PublicTags.Structure, PublicTags.Standings(season.Id), PublicTags.Matches(season.Id), PublicTags.Rosters, PublicTags.Sheets, PublicTags.Staff, PublicTags.Committee],
+            ct => PublicAsync(team, competition, season, signedIn, ct),
+            cancellationToken);
 
         var squad = await squads.GetByTeamAndSeasonAsync(team.Id, season.Id, cancellationToken);
 
         // La ficha del equipo es pública, las fotos de los jugadores no: el enlace solo va a quien puede abrirlo.
+        var roster = shared.Roster;
         if (!await PhotoAccess.CanSeeTeamPhotosAsync(team.Id, squad, currentUser, clubs, clock, cancellationToken))
             roster = roster.Select(r => r with { PhotoUrl = null }).ToList();
         var squadDto = squad is null
@@ -59,29 +67,39 @@ internal sealed class GetTeamHandler(
                 await SquadAccess.CanViewAsync(squad, currentUser, clock, clubs, cancellationToken),
                 await SquadAccess.IsInsiderAsync(squad, currentUser, clock, clubs, cancellationToken));
 
+        return shared with { Roster = roster, Squad = squadDto };
+    }
+
+    private async Task<TeamDetailDto> PublicAsync(Team team, Competition competition, Season season, bool signedIn, CancellationToken cancellationToken)
+    {
+        var standing = await standings.GetByTeamAsync(season.Id, team.Id, cancellationToken);
+        // Los partidos del equipo se leen una vez: los usan las fichas, el cuerpo técnico y sus sanciones.
+        var seasonMatches = await matches.GetTeamMatchesAsync(season.Id, team.Id, cancellationToken);
+        var roster = await RosterSummary.ListAsync(team.Id, season.Id, seasonMatches, teams, sheets, cancellationToken);
+
         return new TeamDetailDto(
             team.Id, team.Name, team.ShortName, team.CrestLink(),
             SeasonDto.From(competition, season),
             standing is null ? null : StandingDto.From(standing, team),
             RosterPublished: roster.Count > 0,
             roster,
-            squadDto,
+            Squad: null,
             TeamProfileDto.From(team.Profile),
             team.OfficialRef is { } official && official.Provider == profiles.ProviderName ? profiles.TeamUrl(official.ExternalId) : null,
-            await StaffAsync(team.Id, season.Id, cancellationToken),
+            await StaffAsync(team.Id, season.Id, seasonMatches, signedIn, cancellationToken),
             SourceUrl(team.ExternalRef));
     }
 
     // Lo que dicen las actas oficiales es público; el perfil de cada uno, su función en la app y a quién más ha nombrado el
     // club, solo para cuentas con sesión (como el perfil del técnico y el buscador).
-    private async Task<TeamStaffDto> StaffAsync(Guid teamId, Guid seasonId, CancellationToken cancellationToken)
+    private async Task<TeamStaffDto> StaffAsync(Guid teamId, Guid seasonId, IReadOnlyList<Match> season, bool signedIn, CancellationToken cancellationToken)
     {
-        var season = await matches.GetTeamMatchesAsync(seasonId, teamId, cancellationToken);
         var byMatch = season
             .Where(m => m.KickoffAt <= clock.GetUtcNow())
             .ToDictionary(m => m.Id);
+        var staffSheets = await sheets.GetStaffByMatchIdsAsync(byMatch.Keys, cancellationToken);
         var rows = new List<SheetStaffEntry>();
-        foreach (var sheet in await sheets.GetStaffByMatchIdsAsync(byMatch.Keys, cancellationToken))
+        foreach (var sheet in staffSheets)
         {
             var match = byMatch[sheet.MatchId];
             var side = match.IsHome(teamId) ? MatchSide.Home : MatchSide.Away;
@@ -102,8 +120,8 @@ internal sealed class GetTeamHandler(
                 a.Role, a.IsActiveOn(today));
         }).ToList();
 
-        var discipline = rows.Count == 0 ? null : await staffDiscipline.LoadAsync(teamId, seasonId, season, cancellationToken);
-        return TeamStaffSummary.Build(rows, appointed, includeAppOnly: currentUser.IsAuthenticated, includeProfiles: currentUser.IsAuthenticated, discipline);
+        var discipline = rows.Count == 0 ? null : await staffDiscipline.LoadAsync(teamId, seasonId, season, staffSheets, cancellationToken);
+        return TeamStaffSummary.Build(rows, appointed, includeAppOnly: signedIn, includeProfiles: signedIn, discipline);
     }
 
     // futbolasturiano.es lleva de /?p={id} a la página del equipo (/equipo/{slug}/).

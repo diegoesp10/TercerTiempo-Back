@@ -30,13 +30,19 @@ internal static class RosterSummary
         IReadOnlyList<RosterEntry> roster,
         IMatchStore matches,
         IOfficialSheetStore sheets,
+        CancellationToken cancellationToken) =>
+        await AppearancesAsync(teamId, roster, roster.Count == 0 ? [] : await matches.GetTeamMatchesAsync(seasonId, teamId, cancellationToken), sheets, cancellationToken);
+
+    // Con los partidos del equipo en la temporada ya leídos (la ficha del equipo los usa también para el cuerpo técnico).
+    public static async Task<IReadOnlyDictionary<Guid, List<RosterAppearance>>> AppearancesAsync(
+        Guid teamId,
+        IReadOnlyList<RosterEntry> roster,
+        IReadOnlyList<Match> teamMatches,
+        IOfficialSheetStore sheets,
         CancellationToken cancellationToken)
     {
         var result = roster.ToDictionary(r => r.Id, _ => new List<RosterAppearance>());
-        if (roster.Count == 0) return result;
-
-        var teamMatches = await matches.GetTeamMatchesAsync(seasonId, teamId, cancellationToken);
-        if (teamMatches.Count == 0) return result;
+        if (roster.Count == 0 || teamMatches.Count == 0) return result;
 
         var byMatch = (await sheets.GetAvailableLinesByMatchIdsAsync(teamMatches.Select(m => m.Id), cancellationToken))
             .ToDictionary(s => s.MatchId);
@@ -96,9 +102,11 @@ internal static class RosterSummary
         IReadOnlyList<RosterEntry> roster,
         IMatchStore matches,
         IOfficialSheetStore sheets,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        People(roster, await AppearancesAsync(teamId, seasonId, roster, matches, sheets, cancellationToken));
+
+    private static List<RosterPersonSeason> People(IReadOnlyList<RosterEntry> roster, IReadOnlyDictionary<Guid, List<RosterAppearance>> appearances)
     {
-        var appearances = await AppearancesAsync(teamId, seasonId, roster, matches, sheets, cancellationToken);
         bool InTheSameSheet(RosterEntry a, RosterEntry b) => appearances[a.Id].Any(x => appearances[b.Id].Any(y => y.Match.Id == x.Match.Id));
 
         return RosterPeople.Group(roster, InTheSameSheet)
@@ -137,8 +145,23 @@ internal static class RosterSummary
         CancellationToken cancellationToken)
     {
         var roster = await teams.GetRosterAsync(teamId, seasonId, cancellationToken);
-        var people = await PeopleAsync(teamId, seasonId, roster, matches, sheets, cancellationToken);
+        return Entries(await PeopleAsync(teamId, seasonId, roster, matches, sheets, cancellationToken));
+    }
 
+    public static async Task<IReadOnlyList<RosterEntryDto>> ListAsync(
+        Guid teamId,
+        Guid seasonId,
+        IReadOnlyList<Match> teamMatches,
+        ITeamStore teams,
+        IOfficialSheetStore sheets,
+        CancellationToken cancellationToken)
+    {
+        var roster = await teams.GetRosterAsync(teamId, seasonId, cancellationToken);
+        return Entries(People(roster, await AppearancesAsync(teamId, roster, teamMatches, sheets, cancellationToken)));
+    }
+
+    private static List<RosterEntryDto> Entries(IEnumerable<RosterPersonSeason> people)
+    {
         return people
             .OrderBy(p => p.Person.Position is { } position ? (int)position : int.MaxValue)
             .ThenBy(p => p.Person.Main.NormalizedName, StringComparer.Ordinal)

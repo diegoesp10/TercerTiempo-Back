@@ -2,8 +2,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using TercerTiempo.Application.Common;
 using TercerTiempo.Application.Search;
+using TercerTiempo.Domain.Clubs;
+using TercerTiempo.Domain.Coaches;
 using TercerTiempo.Domain.Competitions;
 using TercerTiempo.Domain.Matches;
+using TercerTiempo.Domain.Players;
 using TercerTiempo.Domain.Referees;
 using TercerTiempo.Domain.Squads;
 using TercerTiempo.Domain.Standings;
@@ -59,6 +62,10 @@ public class SearchIndexHolderTests
         Assert.Equal([PublicTags.Standings(season), PublicTags.AllStandings], SearchIndexInvalidator.PublicTagsOf(standing));
         Assert.Equal([PublicTags.Referees], SearchIndexInvalidator.PublicTagsOf(Referee.Create("Árbitro", null, now)));
         Assert.Equal([PublicTags.Structure], SearchIndexInvalidator.PublicTagsOf(team));
+        Assert.Equal([PublicTags.Rosters], SearchIndexInvalidator.PublicTagsOf(RosterEntry.CreateByClub(team.Id, season, "Pelayo", Position.Forward, now)));
+        Assert.Equal([PublicTags.Staff], SearchIndexInvalidator.PublicTagsOf(Coach.Register(Guid.NewGuid(), "Técnico", now)));
+        Assert.Equal([PublicTags.Staff], SearchIndexInvalidator.PublicTagsOf(CoachAppointment.Create(
+            Guid.NewGuid(), team.Id, season, "Técnico", null, StaffRole.HeadCoach, DateOnly.FromDateTime(now.UtcDateTime), DateOnly.FromDateTime(now.UtcDateTime).AddMonths(6), now)));
         Assert.Empty(SearchIndexInvalidator.PublicTagsOf(Squad.Create(team.Id, season, Guid.NewGuid(), now)));
     }
 

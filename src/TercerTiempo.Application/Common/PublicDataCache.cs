@@ -56,13 +56,18 @@ public sealed class PublicDataCache(TimeProvider clock)
 
 // De qué datos depende cada lectura guardada. Cada guardado sube la versión de lo que toca (SearchIndexInvalidator): un
 // partido, la de los partidos de su temporada y la de todos; una clasificación, igual; un árbitro, una designación o una
-// nota, la de los árbitros; ligas, temporadas, zonas y equipos, la de la estructura.
+// nota, la de los árbitros; ligas, temporadas, zonas y equipos, la de la estructura; y fichas, actas oficiales,
+// nombramientos y perfiles del cuerpo técnico y resoluciones del comité, cada uno la suya.
 public static class PublicTags
 {
     public const string Structure = "estructura";
     public const string Referees = "arbitros";
     public const string AllMatches = "partidos";
     public const string AllStandings = "clasificaciones";
+    public const string Rosters = "fichas";
+    public const string Sheets = "actas";
+    public const string Staff = "cuerpo-tecnico";
+    public const string Committee = "comite";
 
     public static string Matches(Guid seasonId) => $"partidos:{seasonId:N}";
     public static string Standings(Guid seasonId) => $"clasificaciones:{seasonId:N}";
