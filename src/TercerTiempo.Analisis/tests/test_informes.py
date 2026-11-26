@@ -1,9 +1,10 @@
+import gzip
 import json
 
 import numpy as np
 
 from tt_analisis.estadisticas import ResumenTracklet
-from tt_analisis.informes import acta_propuesta, escribir_json, mapa_calor_png, resumen_markdown
+from tt_analisis.informes import acta_propuesta, escribir_json, escribir_posiciones, mapa_calor_png, resumen_markdown
 from tt_analisis.posesion import AccionesJugador, ResumenPosesion
 from tt_analisis.tipos import Evento
 
@@ -165,3 +166,17 @@ def test_con_el_acta_oficial_los_minutos_y_los_goles_salen_de_ella():
     oficiales = {(j["lado"], j["dorsal"]): j for j in acta["actaOficial"]["jugadores"]}
     assert oficiales[("local", 9)] == {"lado": "local", "dorsal": 9, "nombre": "Nueve", "titular": False, "minutos": 20, "goles": 0, "visto": False}
     assert oficiales[("local", 7)]["visto"] and acta["actaOficial"]["resultado"] == {"local": 2, "visitante": 0}
+
+
+def test_las_posiciones_no_llevan_la_hora_en_la_cabecera_del_gzip(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+
+    escribir_posiciones([], tmp_path / "a")
+    escribir_posiciones([], tmp_path / "b")
+
+    a = (tmp_path / "a" / "posiciones.csv.gz").read_bytes()
+    # Bytes 4 a 7 de la cabecera: la hora de escritura, que haría distintos dos archivos con el mismo contenido.
+    assert a[4:8] == b"\0\0\0\0"
+    assert a == (tmp_path / "b" / "posiciones.csv.gz").read_bytes()
+    assert gzip.decompress(a).decode("utf-8").splitlines() == ["t,tracklet,equipo,clase,x_cm,y_cm,x_px,y_px"]

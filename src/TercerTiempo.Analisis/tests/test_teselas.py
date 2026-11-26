@@ -13,7 +13,7 @@ def test_las_teselas_cubren_el_fotograma_y_se_solapan_lo_bastante():
         assert inicios[0] == 0 and inicios[-1] + LADO == total
         assert all(b - a <= LADO - SOLAPE for a, b in zip(inicios, inicios[1:]))
     assert posiciones(300) == [0]
-    # Un fotograma de 1080p: 6 × 4 teselas, el lote que se compila en TensorRT.
+    # Un fotograma de 1080p: 6 × 4 teselas, que van a la GPU en un solo lote.
     assert len(rejilla(1920, 1080)) == 24
 
 

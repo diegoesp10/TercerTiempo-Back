@@ -5,7 +5,6 @@ devuelve son las de siempre (`CLASE_PORTERO`, `CLASE_JUGADOR`, `CLASE_ARBITRO`),
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,18 +25,6 @@ def entrenar(dataset: Path, modelos: Path, salida: Path, resolucion: int = RESOL
     return rfdetr_comun.entrenar(QUE, dataset, modelos, salida, resolucion, CLASES, epocas, lote, acumular, lr, paciencia, device, None, informar)
 
 
-def resolucion_entrenada(modelos: Path) -> int:
-    datos = rfdetr_comun.ruta_pesos(modelos, QUE).with_suffix(".json")
-    if datos.exists():
-        return int(json.loads(datos.read_text(encoding="utf-8")).get("resolucion", RESOLUCION))
-    return RESOLUCION
-
-
-def exportar_tensorrt(modelos: Path, informar=print) -> Path:
-    """Un fotograma por llamada: lote fijo de 1."""
-    return rfdetr_comun.exportar_tensorrt(QUE, modelos, resolucion_entrenada(modelos), 1, 1, informar)
-
-
 def clases_del_modelo(nombres) -> np.ndarray:
     """De los índices de clase del modelo a las clases del análisis (-1 si no es ninguna de las tres)."""
     if isinstance(nombres, dict):
@@ -50,13 +37,13 @@ class DetectorJugadores:
     prediccion: object
     device: str
     ruta: Path
-    motor: str
     clases: np.ndarray
+    motor: str = rfdetr_comun.MOTOR
 
     @classmethod
-    def cargar(cls, modelos: Path, device: str = "cuda", preferir_trt: bool = True) -> "DetectorJugadores":
-        prediccion, ruta, motor = rfdetr_comun.cargar(QUE, modelos, device, preferir_trt)
-        return cls(prediccion, device, ruta, motor, clases_del_modelo(prediccion.class_names))
+    def cargar(cls, modelos: Path, device: str = "cuda") -> "DetectorJugadores":
+        prediccion, ruta = rfdetr_comun.cargar(QUE, modelos, device)
+        return cls(prediccion, device, ruta, clases_del_modelo(prediccion.class_names))
 
     def _tensor(self, imagen_bgr: np.ndarray):
         import torch

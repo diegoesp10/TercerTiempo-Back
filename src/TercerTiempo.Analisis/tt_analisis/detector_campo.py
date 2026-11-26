@@ -7,7 +7,6 @@ Se entrena por destilación (`dataset_campo.py`): aprende a ver lo que veía el 
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,29 +32,17 @@ def entrenar(dataset: Path, modelos: Path, salida: Path, resolucion: int = RESOL
     return rfdetr_comun.entrenar(QUE, dataset, modelos, salida, resolucion, CLASES, epocas, lote, acumular, lr, paciencia, device, {"puntos": NUM_PUNTOS}, informar, variante="puntos", opciones=opciones)
 
 
-def resolucion_entrenada(modelos: Path) -> int:
-    datos = rfdetr_comun.ruta_pesos(modelos, QUE).with_suffix(".json")
-    if datos.exists():
-        return int(json.loads(datos.read_text(encoding="utf-8")).get("resolucion", RESOLUCION))
-    return RESOLUCION
-
-
-def exportar_tensorrt(modelos: Path, informar=print) -> Path:
-    """Un fotograma por llamada: lote fijo de 1."""
-    return rfdetr_comun.exportar_tensorrt(QUE, modelos, resolucion_entrenada(modelos), 1, 1, informar)
-
-
 @dataclass
 class DetectorCampo:
     prediccion: object
     device: str
     ruta: Path
-    motor: str
+    motor: str = rfdetr_comun.MOTOR
 
     @classmethod
-    def cargar(cls, modelos: Path, device: str = "cuda", preferir_trt: bool = True) -> "DetectorCampo":
-        prediccion, ruta, motor = rfdetr_comun.cargar(QUE, modelos, device, preferir_trt)
-        return cls(prediccion, device, ruta, motor)
+    def cargar(cls, modelos: Path, device: str = "cuda") -> "DetectorCampo":
+        prediccion, ruta = rfdetr_comun.cargar(QUE, modelos, device)
+        return cls(prediccion, device, ruta)
 
     def _tensor(self, imagen_bgr: np.ndarray):
         import torch

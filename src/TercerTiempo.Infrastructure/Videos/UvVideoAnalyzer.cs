@@ -560,7 +560,7 @@ internal sealed class UvVideoAnalyzer(
             ? text.Trim()
             : null;
 
-    // «Balón: RF-DETR Medium (rfdetr-balon-20261117-v2, TensorRT, huella b46dbd49)».
+    // «Balón: RF-DETR Medium (rfdetr-balon-20261117-v2, PyTorch, huella 7ac16f16)».
     private static string DescribeModel(JsonElement model)
     {
         var role = Text(model, "que") ?? "modelo";

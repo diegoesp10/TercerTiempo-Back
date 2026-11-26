@@ -127,13 +127,9 @@ def construir_parser() -> argparse.ArgumentParser:
     ec.add_argument("--paciencia", type=int, default=8)
     ec.add_argument("--device", default="cuda")
 
-    xc = sub.add_parser("exportar-campo", help="Compila el detector del campo a TensorRT para la GPU de este equipo (modelos/rfdetr/campo.trt).")
-    xc.add_argument("--modelos", type=Path, default=Path("modelos"))
-
     vc = sub.add_parser("evaluar-campo", help="Mide el detector del campo (fotogramas calibrables, puntos y error de la homografía) sobre la validación de uno o varios datasets.")
     vc.add_argument("datasets", type=Path, nargs="+", help="Carpetas de `etiquetar` (se usa su campo/) o la de `preparar-campo`.")
     vc.add_argument("--modelos", type=Path, default=Path("modelos"))
-    vc.add_argument("--motor", choices=["tensorrt", "pytorch"], default="tensorrt")
     vc.add_argument("--device", default="cuda")
 
     pb = sub.add_parser("preparar-balon", help="Saca las teselas del balón (RF-DETR) de uno o varios datasets que dejó `etiquetar`.")
@@ -154,15 +150,9 @@ def construir_parser() -> argparse.ArgumentParser:
     eb.add_argument("--paciencia", type=int, default=8)
     eb.add_argument("--device", default="cuda")
 
-    xb = sub.add_parser("exportar-balon", help="Compila el detector del balón a TensorRT para la GPU de este equipo (modelos/rfdetr/balon.trt).")
-    xb.add_argument("--modelos", type=Path, default=Path("modelos"))
-    xb.add_argument("--lote", type=int, default=24, help="Lote para el que se afina el motor (las 24 teselas de un fotograma de 1080p).")
-    xb.add_argument("--lote-max", type=int, default=32)
-
     vb = sub.add_parser("evaluar-balon", help="Mide el detector del balón sobre los fotogramas enteros de validación de uno o varios datasets.")
     vb.add_argument("datasets", type=Path, nargs="+", help="Carpetas de `etiquetar`; se usa su balon/images/val.")
     vb.add_argument("--modelos", type=Path, default=Path("modelos"))
-    vb.add_argument("--motor", choices=["tensorrt", "pytorch"], default="tensorrt")
     vb.add_argument("--device", default="cuda")
 
     pj = sub.add_parser("preparar-jugadores", help="Junta las personas (porteros, jugadores, árbitros) de uno o varios datasets que dejó `etiquetar` para RF-DETR.")
@@ -181,13 +171,9 @@ def construir_parser() -> argparse.ArgumentParser:
     ej.add_argument("--paciencia", type=int, default=6)
     ej.add_argument("--device", default="cuda")
 
-    xj = sub.add_parser("exportar-jugadores", help="Compila el detector de personas a TensorRT para la GPU de este equipo (modelos/rfdetr/jugadores.trt).")
-    xj.add_argument("--modelos", type=Path, default=Path("modelos"))
-
     vj = sub.add_parser("evaluar-jugadores", help="Compara el detector de personas con las etiquetas de validación de uno o varios datasets.")
     vj.add_argument("datasets", type=Path, nargs="+", help="Carpetas de `etiquetar` (se usa su personas/images/val) o la de `preparar-jugadores`.")
     vj.add_argument("--modelos", type=Path, default=Path("modelos"))
-    vj.add_argument("--motor", choices=["tensorrt", "pytorch"], default="tensorrt")
     vj.add_argument("--device", default="cuda")
     return parser
 
@@ -229,18 +215,13 @@ def main(argv: list[str] | None = None) -> int:
         salida = args.salida or Path("entrenamientos") / f"rfdetr-campo-{datetime.now():%Y%m%d-%H%M}"
         entrenar_campo(args.dataset, args.modelos, salida, resolucion=args.resolucion, epocas=args.epocas, lote=args.lote, acumular=args.acumular, lr=args.lr, paciencia=args.paciencia, device=args.device)
         return 0
-    if args.orden == "exportar-campo":
-        from .detector_campo import exportar_tensorrt as exportar_campo
-
-        exportar_campo(args.modelos)
-        return 0
     if args.orden == "evaluar-campo":
         import json
 
         from .detector_campo import DetectorCampo
         from .detector_campo import evaluar as evaluar_campo
 
-        detector = DetectorCampo.cargar(args.modelos, args.device, preferir_trt=args.motor == "tensorrt")
+        detector = DetectorCampo.cargar(args.modelos, args.device)
         carpetas = [d if (d / "data.yaml").exists() else d / "campo" for d in args.datasets]
         resumen = evaluar_campo(detector.puntos, carpetas, f"RF-DETR ({detector.motor})")
         destino = args.modelos / "rfdetr" / f"evaluacion-campo-{detector.motor}.json"
@@ -260,18 +241,13 @@ def main(argv: list[str] | None = None) -> int:
         salida = args.salida or Path("entrenamientos") / f"rfdetr-balon-{datetime.now():%Y%m%d-%H%M}"
         entrenar_balon(args.dataset, args.modelos, salida, epocas=args.epocas, lote=args.lote, acumular=args.acumular, lr=args.lr, paciencia=args.paciencia, device=args.device)
         return 0
-    if args.orden == "exportar-balon":
-        from .detector_balon import exportar_tensorrt
-
-        exportar_tensorrt(args.modelos, lote=args.lote, lote_max=args.lote_max)
-        return 0
     if args.orden == "evaluar-balon":
         import json
 
         from .detector_balon import DetectorBalon
         from .detector_balon import evaluar as evaluar_balon
 
-        detector = DetectorBalon.cargar(args.modelos, args.device, preferir_trt=args.motor == "tensorrt")
+        detector = DetectorBalon.cargar(args.modelos, args.device)
         resumen = evaluar_balon(detector, [d / "balon" for d in args.datasets])
         destino = args.modelos / "rfdetr" / f"evaluacion-balon-{detector.motor}.json"
         destino.write_text(json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -290,18 +266,13 @@ def main(argv: list[str] | None = None) -> int:
         salida = args.salida or Path("entrenamientos") / f"rfdetr-jugadores-{datetime.now():%Y%m%d-%H%M}"
         entrenar_jugadores(args.dataset, args.modelos, salida, resolucion=args.resolucion, epocas=args.epocas, lote=args.lote, acumular=args.acumular, lr=args.lr, paciencia=args.paciencia, device=args.device)
         return 0
-    if args.orden == "exportar-jugadores":
-        from .detector_jugadores import exportar_tensorrt as exportar_jugadores
-
-        exportar_jugadores(args.modelos)
-        return 0
     if args.orden == "evaluar-jugadores":
         import json
 
         from .detector_jugadores import DetectorJugadores
         from .detector_jugadores import evaluar as evaluar_jugadores
 
-        detector = DetectorJugadores.cargar(args.modelos, args.device, preferir_trt=args.motor == "tensorrt")
+        detector = DetectorJugadores.cargar(args.modelos, args.device)
         carpetas = [d if (d / "data.yaml").exists() and not (d / "personas").exists() else d / "personas" for d in args.datasets]
         resumen = evaluar_jugadores(detector, carpetas)
         destino = args.modelos / "rfdetr" / f"evaluacion-jugadores-{detector.motor}.json"

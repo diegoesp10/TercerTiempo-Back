@@ -117,16 +117,11 @@ try {
         Pop-Location
     }
 
-    # Los tres detectores son RF-DETR entrenados aquí: el motor TensorRT (compilado para esta GPU) o, si no, los pesos de
-    # PyTorch.
+    # Los tres detectores son RF-DETR entrenados aquí, con sus pesos de PyTorch.
     foreach ($detector in @(@{ Que = 'balon'; Nombre = 'del balón' }, @{ Que = 'jugadores'; Nombre = 'de jugadores' }, @{ Que = 'campo'; Nombre = 'del campo' })) {
-        $engine = Join-Path $analyzer "modelos\rfdetr\$($detector.Que).trt"
         $weights = Join-Path $analyzer "modelos\rfdetr\$($detector.Que).pth"
-        if (-not (Test-Path -LiteralPath $engine) -and -not (Test-Path -LiteralPath $weights)) {
-            throw "Falta el detector $($detector.Nombre) en $analyzer\modelos\rfdetr ($($detector.Que).trt o $($detector.Que).pth). Entrénalo con «tt-analisis entrenar-$($detector.Que)» y compílalo con «tt-analisis exportar-$($detector.Que)»."
-        }
-        if (-not (Test-Path -LiteralPath $engine)) {
-            Write-Warning "Sin motor TensorRT $($detector.Nombre) (modelos\rfdetr\$($detector.Que).trt): se usará PyTorch, más lento. Compílalo con «tt-analisis exportar-$($detector.Que)»."
+        if (-not (Test-Path -LiteralPath $weights)) {
+            throw "Falta el detector $($detector.Nombre) en $analyzer\modelos\rfdetr ($($detector.Que).pth). Entrénalo con «tt-analisis entrenar-$($detector.Que)»."
         }
     }
 

@@ -1,6 +1,6 @@
 [project]
 name = "tt-analisis"
-version = "2.3.1"
+version = "2.3.2"
 description = "Tercer Tiempo: análisis del vídeo de un partido (detección, seguimiento, posesión, eventos) para proponer el acta interna."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -21,10 +21,6 @@ dependencies = [
     "gdown>=5.2",
     "timm>=1.0",
     "rfdetr[train]>=1.12",
-    "tensorrt-cu12>=10.16,<11",
-    "onnx>=1.16,<2",
-    "onnxconverter-common>=1.16.0",
-    "polygraphy>=0.53.6",
     "trackers>=2.7",
 ]
 

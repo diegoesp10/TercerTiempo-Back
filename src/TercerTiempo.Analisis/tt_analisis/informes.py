@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import io
 import json
 import math
 from collections import defaultdict
@@ -79,7 +80,8 @@ def escribir_recortes(memorias, salida: Path) -> dict[int, str]:
 
 def escribir_posiciones(instantes: list[Instante], salida: Path) -> str:
     ruta = salida / "posiciones.csv.gz"
-    with gzip.open(ruta, "wt", newline="", encoding="utf-8") as f:
+    # Sin la hora en la cabecera del gzip (mtime=0), dos análisis del mismo vídeo dejan el mismo archivo, byte a byte.
+    with gzip.GzipFile(ruta, "wb", mtime=0) as comprimido, io.TextIOWrapper(comprimido, encoding="utf-8", newline="") as f:
         escritor = csv.writer(f)
         escritor.writerow(["t", "tracklet", "equipo", "clase", "x_cm", "y_cm", "x_px", "y_px"])
         for inst in instantes:

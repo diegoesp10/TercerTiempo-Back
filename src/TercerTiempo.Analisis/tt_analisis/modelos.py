@@ -76,7 +76,7 @@ def cargar_modelos(carpeta: Path, device: str) -> Modelos:
     return Modelos(jugadores, balon, campo, device, rutas={nombre: ruta.relative_to(carpeta).as_posix() for nombre, ruta in rutas.items()})
 
 
-MOTORES = {"tensorrt": "TensorRT", "pytorch": "PyTorch"}
+MOTORES = {"pytorch": "PyTorch"}
 
 
 def describir_modelos(modelos: Modelos, carpeta: Path, lector=None, apariencia=None) -> list[dict]:

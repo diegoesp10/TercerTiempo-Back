@@ -11,13 +11,15 @@ los recortes y redacta el resumen.
 
 Se llama **Ojeador** y lleva versión (`tt_analisis/__init__.py`, la misma que `pyproject.toml` y `uv.lock`; lo comprueba
 `tests/test_version.py`). Cada análisis deja en `analisis.json` el bloque `analizador`: nombre, versión y cada modelo con
-su arquitectura, el entrenamiento del que salieron los pesos, el motor (TensorRT o PyTorch) y su huella (los 8 primeros
+su arquitectura, el entrenamiento del que salieron los pesos, el motor (PyTorch; en los análisis anteriores a la 2.3.2
+puede decir TensorRT) y su huella (los 8 primeros
 caracteres del SHA-256 del archivo cargado). La app lo guarda con el análisis y lo enseña en el acta interna («analizado
 con Ojeador 2.0.0»; los modelos, solo al administrador). **Sube la versión con cada cambio que altere lo que propone**:
 la mayor con modelos o una cadena nueva, la menor con reglas nuevas y la de parche con arreglos.
 
 | Versión | Fecha | Qué cambia |
 |---|---|---|
+| 2.3.2 | 26-11-2026 | **Sin TensorRT: los tres detectores con PyTorch** (FP16 en la GPU, FP32 en la CPU), porque la licencia de TensorRT no deja ofrecerlo como servicio por internet sin permiso de NVIDIA; los mismos pesos valen en cualquier GPU sin compilar nada. Fuera las órdenes `exportar-*`, la opción `--motor` de las evaluaciones, la sonda de la 2.3.1 y los paquetes `tensorrt-cu12`, `onnx`, `onnxconverter-common` y `polygraphy`; `tests/test_licencias.py` falla si entra TensorRT, Ultralytics o `rfdetr[plus]`. Y `posiciones.csv.gz` ya no lleva la hora en la cabecera del gzip. En el J8 (20:00-30:00), dos pasadas idénticas byte a byte; frente a la 2.3.1, el campo calibrado igual (72,7 %), el balón con huecos del 67,1 al 66,6 %, 105 toques en vez de 107, 31 eventos en vez de 27 y la posesión de 40/60 a 43,6/56,4: otra pasada, ni mejor ni peor. La pasada tarda un 27 % más (497 s), y un partido entero sigue tardando menos de lo que dura (pasos 1 y 2; «Sin TensorRT») |
 | 2.3.1 | 25-11-2026 | **Dos pasadas del mismo vídeo dan lo mismo**: el motor TensorRT del campo (FP16) no devolvía siempre lo mismo con la misma imagen (hasta 136 px en un punto) y la calibración arrastraba cada diferencia; en el J8 (20:00-21:30), cuatro pasadas iguales daban el campo calibrado entre el 64 y el 83 %, de 1 a 4 eventos y la posesión de 62/38 a 41/59. Ahora un motor TensorRT solo se usa si **da siempre lo mismo** con una imagen de prueba al cargarlo (`rfdetr_comun.da_siempre_lo_mismo`); si no, van los pesos de PyTorch. El del campo no la pasa y va con PyTorch FP16: dos pasadas salen idénticas, calibra igual o algo más y cuesta unos 10 ms por fotograma analizado («Dos pasadas, el mismo resultado») |
 | 2.3.0 | 25-11-2026 | **El balón primero y quién es quién también por el aspecto**: al fotograma analizado sin balón se le busca en los de ±0,04 s (`vecinos_balon_s`), en una ventana junto al balón cercano y, sin él, en la imagen entera de un solo fotograma por hueco (`vecinos_enteros`); con el campo calibrado, los huecos de hasta 3 s se rellenan **siguiendo a la cámara**; **balón en juego** (`en_juego.py`): lo visto y la trayectoria se miden sobre ese tiempo (`recuento.balon_en_juego`, y `calidad.balonEnJuego` en la propuesta), la posesión solo reparte ese tiempo y la app enseña y avisa con el balón visto en juego; el seguidor recuerda 1,5 s al que pierde (antes 10) y parte los tracklets de dos del mismo equipo que se cruzan; el dorsal de los que están junto al balón se relee en el fotograma de la mitad; y **el aspecto** (SigLIP, modelo nuevo: tocaría la mayor, pero se pidió la 2.3): a la cadena sin dorsal se le da el jugador que dice una regresión aprendida en el mismo partido con las identificadas, solo si antes se comprueba que acierta en el 95 % de las que da y si podía ser él. En el J8, tramo 20:00-30:00: el balón con trayectoria pasa del 68,6 al 80 % del tiempo en juego (visto, del 41,3 al 48,6 %), el tiempo con identidad del 26 al 32 % y del 36 al 42 %, y la pasada de 239 a 359 s (pasos 2, 3 y 6; «El balón en juego y quién es quién por el aspecto») |
 | 2.2.0 | 25-11-2026 | **Solo las acciones que se ven**: medido en el Vallobín - Real Titánico, casi todos los pases, pérdidas y recuperaciones de la 2.1.2 no estaban en el vídeo (balones que pasaban cerca de alguien, forcejeos, balones parados, cosas quietas en el césped y momentos sin el campo calibrado). Ahora las acciones de cada jugador salen de **toques controlados** (`MaquinaControl`: el balón a menos de 2 m en 0,2 s seguidos con el balón visto, sin cruzar de un lado a otro del jugador, quitárselo a quien lo tiene solo estando claramente más cerca y sin avistamientos más rápidos que un tiro); la posesión del equipo sigue con el más cercano. **Pase**: balón golpeado (4 m o más, entre 4 y 30 m/s) a un compañero. **Pérdida y recuperación**: el rival se hace con el balón en 2,5 s como mucho, no parado, y lo conserva 1,5 s o más. Sin el campo calibrado en los dos extremos no se cuenta. Un tiro no es pérdida ni pase. **El portero no pasa, ni pierde, ni recupera**: el balón del rival con el que se queda en su área 1 s o más es una **parada** (ya no sale del tiro a puerta) y el que pone en juego desde su área (a 8 m en 3 s), un **saque** (`distributions` en la propuesta y en `momentos`; no va al acta). El portero no tira. Junto a un objeto fijo solo vale el balón que va de paso, aunque haya un jugador al lado. Salen muchas menos acciones, pero las que salen se ven (paso 4) |
@@ -67,11 +69,9 @@ uv run tt-analisis info
 ```
 
 `descargar-modelos` baja el lector de dorsales y dos clips de muestra. Los tres detectores (balón, jugadores y puntos
-del campo) no se descargan: son **RF-DETR** (Apache 2.0) entrenados con nuestros partidos y compilados a TensorRT para
-la GPU de cada equipo (`modelos/rfdetr/`, ver «El balón con RF-DETR y TensorRT», «Los jugadores con RF-DETR» y «El
-campo con RF-DETR Keypoint»). Un motor TensorRT solo se usa si da siempre lo mismo con la misma imagen; el del campo no
-lo hace y el análisis va con sus pesos de PyTorch (ver «Dos pasadas, el mismo resultado»). Desde el 18-11-2026 no queda
-nada de Ultralytics (AGPL-3.0).
+del campo) no se descargan: son **RF-DETR** (Apache 2.0) entrenados con nuestros partidos (`modelos/rfdetr/<que>.pth`,
+ver «El balón con RF-DETR», «Los jugadores con RF-DETR» y «El campo con RF-DETR Keypoint») y van con PyTorch en
+cualquier GPU, sin compilar nada para cada equipo.
 
 El modelo del aspecto (SigLIP, desde la 2.3.0) tampoco lo baja `descargar-modelos`: se guarda una vez la parte de la
 imagen en `modelos/siglip` (unos 370 MB). Sale idéntico al que se midió (huella `fad78ac3`). Sin esa carpeta el
@@ -82,6 +82,9 @@ uv run python -c "from transformers import SiglipVisionModel as M; M.from_pretra
 ```
 
 ffmpeg hace falta solo para los clips de los eventos (en Windows se busca también el de winget).
+
+Todo lo que se instala y los modelos tienen que poder venderse y ofrecerse como servicio sin pagar ni pedir permiso:
+ver «Licencias».
 
 ## Uso
 
@@ -121,15 +124,12 @@ uv run tt-analisis medir-campo partido.mp4                       # intenta medir
 uv run tt-analisis etiquetar partido.mp4 --salida datasets\partido [--campo 100x62]
 uv run tt-analisis preparar-balon datasets\partido [datasets\otro-partido...]   # teselas del balón (datasets\balon-teselas)
 uv run tt-analisis entrenar-balon                                # RF-DETR Medium → modelos\rfdetr\balon.pth
-uv run tt-analisis exportar-balon                                # TensorRT para esta GPU → modelos\rfdetr\balon.trt
-uv run tt-analisis evaluar-balon datasets\partido                # fotogramas enteros de validación (--motor pytorch para comparar)
+uv run tt-analisis evaluar-balon datasets\partido                # fotogramas enteros de validación
 uv run tt-analisis preparar-jugadores datasets\partido [datasets\otro-partido...]   # personas (datasets\jugadores)
 uv run tt-analisis entrenar-jugadores                            # RF-DETR Medium a 1280 → modelos\rfdetr\jugadores.pth
-uv run tt-analisis exportar-jugadores                            # TensorRT para esta GPU → modelos\rfdetr\jugadores.trt
 uv run tt-analisis evaluar-jugadores datasets\jugadores          # contra las etiquetas de validación
 uv run tt-analisis preparar-campo partido.mp4 [otro.mp4...]       # 32 puntos por destilación (datasets\campo)
 uv run tt-analisis entrenar-campo                                # RF-DETR Keypoint a 768 → modelos\rfdetr\campo.pth
-uv run tt-analisis exportar-campo                                # TensorRT → modelos\rfdetr\campo.trt (solo se usa si da siempre lo mismo)
 uv run tt-analisis evaluar-campo datasets\partido [datasets\campo]   # calibrables, puntos y error de la homografía
 ```
 
@@ -246,7 +246,7 @@ respaldo del servidor ante un rechazo de seguridad (`fallbacks: "default"`). Con
 2. **Pasada principal** (5 fotogramas/s): detección de personas con el RF-DETR de jugadores en el fotograma entero a
    1280 px (`detector_jugadores.py`) y seguimiento con BoT-SORT o ByteTrack según la cámara (`rastreador.py`, paquete
    `trackers`), detección del balón (`deteccion.py` y `detector_balon.py`: RF-DETR en
-   todo el fotograma por 24 teselas de 384 px a resolución nativa, en un lote con TensorRT; filtros de tamaño y de
+   todo el fotograma por 24 teselas de 384 px a resolución nativa, en un solo lote a la GPU; filtros de tamaño y de
    salto; entre varios candidatos gana el más coherente con la trayectoria
    reciente y con dónde están los jugadores, y un candidato flojo solo vale cerca de un jugador o de donde se
    esperaba el balón; desde la 2.3.0, al fotograma en el que no se ve se le busca en los de ±0,04 s, `vecinos_balon_s`:
@@ -552,13 +552,31 @@ subirla (8-12 GB) o correr el analizador fuera de Docker, como en las pruebas.
 
 ## Licencias
 
-`sports`, `supervision`, `trackers`, WASB y RF-DETR son MIT/Apache. **Ultralytics (YOLO) es AGPL-3.0**: decidido el
-17-11-2026 pasar todos los detectores a RF-DETR en vez de pagar su licencia comercial, y hecho el 18-11-2026: balón y
-jugadores son RF-DETR Medium, el campo RF-DETR Keypoint y el seguidor el BoT-SORT/ByteTrack de `trackers` (Roboflow,
-Apache 2.0). `ultralytics` ya no está en las dependencias, y los pesos YOLO públicos (`football-*.pt`) se quitaron de `modelos/`
-el 18-11-2026. El modelo del aspecto (desde la 2.3.0) es SigLIP de Google (`google/siglip-base-patch16-224`, Apache
-2.0), con `transformers` (Apache 2.0); en `modelos/siglip` va solo la parte de la imagen, guardada con
-`SiglipVisionModel.save_pretrained` desde los pesos publicados.
+Todo lo que usa el analizador tiene que poder publicarse, venderse y ofrecerse como servicio por internet sin pagar ni
+pedir permiso a nadie: los modelos se entrenan aquí para cobrar por su uso (26-11-2026).
+
+- **Librerías**: casi todas Apache 2.0, MIT o BSD (torch, torchvision, transformers, `rfdetr`, `supervision`,
+  `trackers`, `sports`, OpenCV, numpy, scikit-learn…). `certifi` y `tqdm` son MPL-2.0: valen tal cual, porque esa
+  licencia solo obliga a publicar los cambios que se hagan en sus propios archivos, y no se tocan.
+- **CUDA y cuDNN**, que vienen con torch: son propietarios de NVIDIA, pero gratis, y sus licencias no prohíben
+  ofrecerlos como servicio; solo piden una GPU NVIDIA. Sin ellos no hay GPU.
+- **Modelos**: RF-DETR Medium (balón y jugadores) y RF-DETR Keypoint Preview (campo), Apache 2.0 y entrenados aquí;
+  PARSeq (dorsales), Apache 2.0 y afinado aquí; y SigLIP de Google (`google/siglip-base-patch16-224`, el aspecto, desde
+  la 2.3.0), Apache 2.0: en `modelos/siglip` va solo la parte de la imagen, guardada con
+  `SiglipVisionModel.save_pretrained` desde los pesos publicados. El seguidor es el BoT-SORT/ByteTrack de `trackers`
+  (Roboflow, Apache 2.0).
+
+Fuera:
+
+- **Ultralytics (YOLO)**, AGPL-3.0: decidido el 17-11-2026 pasar todos los detectores a RF-DETR en vez de pagar su
+  licencia comercial, y hecho el 18-11-2026. `ultralytics` ya no está en las dependencias, y los pesos YOLO públicos
+  (`football-*.pt`) se quitaron de `modelos/` ese día.
+- **TensorRT**, desde el 26-11-2026 (Ojeador 2.3.2): es gratis, pero su licencia no deja ofrecerlo como servicio por
+  internet sin permiso de NVIDIA (ver «Sin TensorRT»).
+- Los modelos de **`rfdetr[plus]`** (PML 1.0, de pago en un servidor propio): los de detección XL y 2XL, Atto, Femto,
+  Pico y NAS. Nunca se instala ese extra.
+
+`tests/test_licencias.py` falla si alguno de los tres entra en `uv.lock`.
 
 ## Estado de las pruebas (05-11-2026)
 
@@ -931,7 +949,7 @@ dorsal más leído (baja si el seguidor se va con otro).
 - **Lo que no se ha hecho**: volver a entrenar el detector del balón, que es lo que subiría lo visto: solo hay vídeo del
   Vallobín, y la segunda tanda de etiquetado con él no mejoró el balón.
 
-## Dos pasadas, el mismo resultado (25-11-2026, Ojeador 2.3.1)
+## Dos pasadas, el mismo resultado (25-11-2026, Ojeador 2.3.1 y 2.3.2)
 
 Dos pasadas iguales del J8 (tramo 20:00-21:30, mismos argumentos, una detrás de otra) no daban lo mismo. Para saber
 dónde se separaban, un arnés apuntó, llamada a llamada, una huella de lo que entra y lo que sale de cada pieza (los
@@ -952,19 +970,18 @@ y se compararon dos pasadas:
 | PyTorch FP16 | 0 de 40 | 18,9 ms |
 | PyTorch FP32 | 0 de 40 | 31,2 ms |
 
-Los motores de jugadores y balón son deterministas; el del campo en FP16, no. Dentro del motor no se ha aislado qué
-capa es; cambia algo de una llamada a otra con la misma entrada, que es lo que importa.
+Los motores TensorRT de jugadores y balón eran deterministas; el del campo en FP16, no (más abajo, qué parte era).
 
-**Qué cambia** (`rfdetr_comun.py`): un motor TensorRT solo se usa si **da siempre lo mismo con la misma imagen**. Al
-cargarlo se le pasa cuatro veces una imagen de ruido con semilla, con umbral casi cero para que salgan todas las
-consultas (`da_siempre_lo_mismo`), y si alguna vez cambia algo, se usan los pesos de PyTorch y se dice. Con un fotograma
-real o con un campo dibujado pasa lo mismo: la sonda pilla siempre al del campo y nunca a los otros dos. Al compilar un
-motor (`exportar-<que>`) también se avisa de si el análisis lo va a usar, lo que importará al recompilarlos en otra GPU.
+**Qué cambió en la 2.3.1** (`rfdetr_comun.py`): un motor TensorRT solo se usaba si **daba siempre lo mismo con la misma
+imagen** (una sonda al cargarlo: cuatro veces una imagen de ruido con semilla, con umbral casi cero) y, si no, los pesos
+de PyTorch. La sonda pillaba siempre al del campo y nunca a los otros dos. En la 2.3.2, TensorRT sale del analizador, y
+la sonda con él (ver «Sin TensorRT»).
 
-Hoy el del campo va con PyTorch FP16, y dos pasadas del mismo tramo salen idénticas: las 3.643 llamadas registradas,
-`analisis.json` y `acta-propuesta.json` (solo cambian el tiempo de cálculo del resumen y la fecha que gzip pone en la
-cabecera de `posiciones.csv.gz`). En el mismo equipo, el mismo vídeo da siempre lo mismo; en otra GPU o con otras
-versiones de torch o de los controladores, el resultado puede ser otro, pero también fijo.
+En la 2.3.1 el del campo pasó a PyTorch FP16, y dos pasadas del mismo tramo salían idénticas: las 3.643 llamadas
+registradas, `analisis.json` y `acta-propuesta.json`. Solo cambian los tiempos de cálculo (`tiempos` en `analisis.json`
+y la línea del resumen), y hasta la 2.3.2 también la fecha que gzip ponía en la cabecera de `posiciones.csv.gz`. En el
+mismo equipo, el mismo vídeo da siempre lo mismo; en otra GPU o con otras versiones de torch o de los controladores,
+el resultado puede ser otro, pero también fijo.
 
 - **Calidad**: igual o algo mejor que el motor de antes. En las evaluaciones del 18-11, PyTorch daba más fotogramas
   calibrables en los tres conjuntos (67,7, 68,9 y 65,0 % frente a 64,1, 68,1 y 62,4 %) con prácticamente los mismos
@@ -980,11 +997,48 @@ En el tramo 20:00-21:30 del J8:
 | 2.3.0, TensorRT, 3.ª | 68 % | 17 % | 4 | 41,0 / 59,0 |
 | 2.3.0, TensorRT, 4.ª | 70 % | 18 % | 4 | 60,6 / 39,4 |
 | **2.3.1, todas** | **77 %** | **15 %** | **5** | **37,0 / 63,0** |
+| **2.3.2** | **77 %** | **16 %** | **5** | **40,6 / 59,4** |
 
-Lo de la 2.3.1 no es «la buena»: es una pasada como las otras, pero ahora es siempre la misma. Por eso, desde la 2.3.1,
-la diferencia entre dos versiones del analizador en el mismo tramo es del cambio y no de la pasada.
+Ni la 2.3.1 ni la 2.3.2 son «la buena»: cada una es una pasada como las otras, pero ahora siempre la misma (la 2.3.2 ve
+el balón y a los jugadores con PyTorch y no con TensorRT, y basta para que el análisis vaya por otro camino). Por eso,
+desde la 2.3.1, la diferencia entre dos versiones del analizador en el mismo tramo es del cambio y no de la pasada.
 
-## El balón con RF-DETR y TensorRT (17-11-2026)
+**Lo que cambiaba en el motor del campo.** Se volvió a compilar su ONNX en FP16 con una parte cada vez en FP32: lo que
+cambiaba de una llamada a otra era la autoatención entre las fichas de los 32 puntos de cada consulta
+(`kp_inst_self_attn`, en cada capa del decodificador). Con esas 144 capas en FP32, el motor daba siempre lo mismo, iba
+igual de rápido (7-8 ms por fotograma) y veía como los pesos; con todo el decodificador en FP32 también daba siempre lo
+mismo, pero sin ver ningún punto: dar siempre lo mismo no es ver bien. Ese motor no llegó a publicarse, porque TensorRT
+salió del analizador por su licencia (ver «Sin TensorRT»).
+
+## Sin TensorRT (26-11-2026, Ojeador 2.3.2)
+
+TensorRT es gratis, pero su licencia (propietaria, de NVIDIA) no deja ofrecerlo (ni lo que hace) a terceros como
+servicio por internet salvo con permiso expreso, y NVIDIA puede terminarla con 90 días de aviso. CUDA y cuDNN también
+son propietarios, pero sus licencias no ponen esa condición (ver «Licencias»). El analizador tiene que poder ofrecerse
+como servicio, así que TensorRT sale entero:
+
+- Los tres detectores cargan sus pesos (`modelos/rfdetr/<que>.pth`) con PyTorch, en FP16 en la GPU y en FP32 en la
+  CPU (`rfdetr_comun.cargar`). Valen en cualquier GPU sin compilar nada, también en la nube.
+- Fuera `exportar-balon`, `exportar-jugadores` y `exportar-campo`, la opción `--motor` de las evaluaciones, la sonda y
+  los paquetes `tensorrt-cu12`, `onnx`, `onnxconverter-common` y `polygraphy` (con `ml-dtypes`, que solo venía con
+  ellos). `Start-Analyzer.ps1` ya solo pide los `.pth`.
+- Los motores `.trt` que había quedan apartados en `modelos/rfdetr/anteriores/tensorrt-20261126/` (no se borran). Un
+  `.trt` que se quede en `modelos/rfdetr/` no se usa.
+- **Calidad**: la de los pesos. En las evaluaciones del 17 y el 18-11, PyTorch daba los mismos balones que el motor y
+  prácticamente las mismas personas (ver «El balón con RF-DETR» y «Los jugadores con RF-DETR»); el campo ya iba con
+  PyTorch desde la 2.3.1.
+- **Dos pasadas**: en el J8 (20:00-30:00), idénticas: las 23.556 llamadas que apunta el arnés, `analisis.json`,
+  `acta-propuesta.json` y `posiciones.csv.gz`, byte a byte. Una pasada sin el arnés da también lo mismo.
+- **Lo que propone**, frente a la 2.3.1 en ese tramo: el campo calibrado igual (72,7 %), el balón visto del 41,7 al
+  41,8 % y con huecos del 67,1 al 66,6 %, 1.371 tracklets en vez de 1.451, 105 toques en vez de 107, 31 eventos en vez
+  de 27 y la posesión de 40,0/60,0 a 43,6/56,4. Cambiar de motor es otra pasada, ni mejor ni peor (ver «Dos pasadas, el
+  mismo resultado»).
+- **Coste**: la pasada de esos 10 minutos tarda 497 s, frente a 359 con los tres en TensorRT (2.3.0) y unos 390 con la
+  2.3.1 (359 más los 10 ms por fotograma del campo con PyTorch): un 27 % más. El análisis entero, 516 s: un partido
+  sigue tardando menos de lo que dura (con la RTX 5070 Ti). Si hace falta más velocidad, se probarán alternativas
+  libres (`torch.compile`, ONNX Runtime con CUDA), nunca TensorRT.
+
+## El balón con RF-DETR (17-11-2026)
 
 Para no depender de Ultralytics (AGPL-3.0), el detector del balón pasa a **RF-DETR Medium** (Apache 2.0). Como el
 balón mide unos 8 px en 1080p, no se mira el fotograma reducido: se entrena y se busca en **teselas de 384 px a
@@ -997,9 +1051,9 @@ el análisis (`teselas.py`). Un fotograma de 1080p son 24 teselas, que van en un
   y 1.046 / 201 negativos difíciles (entrenamiento / validación, con los mismos bloques de tiempo que el etiquetado).
 - **Entrenamiento** (`entrenar-balon`): 26 épocas en 69 min (lote 8 × 2, 7,5 GB de GPU), parado solo tras 8 épocas
   sin mejorar; en las teselas de validación, mAP50 0,94 y mAP50-95 0,71.
-- **TensorRT** (`exportar-balon`): motor FP16 para la RTX 5070 Ti, lote de 1 a 32 afinado para 24, compilado en 70 s
-  (`modelos/rfdetr/balon.trt`). Va atado a la GPU y a la versión de TensorRT (`tensorrt-cu12` 10.x, la que casa con
-  torch cu128): en otra GPU o en Docker hay que volver a compilarlo; si no carga, el analizador sigue con PyTorch.
+- **Inferencia**: con PyTorch en FP16, las teselas de cada fotograma en un lote. Hasta el 26-11-2026 iba con un motor
+  TensorRT compilado para la RTX 5070 Ti, con los mismos aciertos y más rápido; salió por su licencia (ver «Sin
+  TensorRT»). Los tiempos de la tabla de abajo son de entonces.
 
 En los fotogramas enteros de validación de la ronda 1 (134 balones, los mismos con los que se midió el YOLO):
 
@@ -1017,7 +1071,7 @@ de verdad** (un segundo balón junto a la banda o en la portería, balones en el
 etiquetado no llegó a confirmar, en fotogramas marcados «sin balón»); de verdad falsos solo hay unos cinco (dos
 destellos de focos, una media o un pantalón movido). Por eso el análisis usa 0,2 como suelo y 0,5 como confianza a
 partir de la cual un candidato vale aunque no haya un jugador cerca ni lo espere la trayectoria (`deteccion.py`).
-TensorRT da los mismos aciertos que PyTorch, 1,8 veces más rápido.
+Con PyTorch salen los mismos balones encontrados en todos los umbrales, y los «falsos» cambian en uno.
 
 En el tramo 20:00-30:00 del Vallobín, contra la pasada del 16-11 con el YOLO afinado (`salidas/dorsales-20-30-v3`):
 
@@ -1073,8 +1127,10 @@ falta teselas: el fotograma entero reescalado a 1280.
   838 / 187 porteros, 47.962 / 11.722 jugadores y 6.083 / 1.545 árbitros. Son pseudoetiquetas del YOLO público (≥ 0,45).
 - **Entrenamiento** (`entrenar-jugadores`): 12 épocas en 75 min (lote 4 × 4, 10,5 GB de GPU); en su validación
   mAP50 0,81 y mAP50-95 0,67, aún subiendo despacio (0,665 → 0,671 en las tres últimas épocas).
-- **TensorRT** (`exportar-jugadores`): motor FP16 de lote 1, compilado en 69 s; 14,4 ms por fotograma frente a 26,1
-  con PyTorch, con los mismos aciertos.
+- **Inferencia**: con PyTorch en FP16, un fotograma por llamada. Hasta el 26-11-2026 iba con un motor TensorRT (14,4 ms
+  por fotograma frente a 26,1 con PyTorch); salió por su licencia (ver «Sin TensorRT»). La tabla de abajo es de
+  entonces: con PyTorch sale prácticamente lo mismo (a 0,3, 12.770 encontradas en vez de 12.785 y 3.185 de más en vez
+  de 3.192).
 
 Contra las etiquetas de validación (785 fotogramas, 13.454 personas):
 
@@ -1140,9 +1196,9 @@ dependencias. La calibración (`campo.py`) no cambia: puntos con confianza > 0,5
   menos de 0,001 por época (mAP50-95 0,725; la caja del campo, 0,96). Probado y descartado: seis épocas más con la
   tasa de aprendizaje diez veces menor y más peso al error de los puntos (peor: 54 % de fotogramas calibrables), y cada
   vértice como un objeto pequeño para RF-DETR Medium (igual que el de puntos a la misma altura del entrenamiento).
-- **TensorRT** (`exportar-campo`): 7-10 ms por fotograma frente a 16 con PyTorch y unos 10 el YOLO. Desde la 2.3.1 no se
-  usa: con la misma imagen no da siempre lo mismo, y el análisis va con PyTorch FP16 (ver «Dos pasadas, el mismo
-  resultado»).
+- **Inferencia**: con PyTorch en FP16, unos 17,6 ms por fotograma. Hasta la 2.3.0 iba con un motor TensorRT (7-10 ms),
+  que se dejó en la 2.3.1 porque con la misma imagen no daba siempre lo mismo (ver «Dos pasadas, el mismo resultado»);
+  desde la 2.3.2 no hay TensorRT en el analizador (ver «Sin TensorRT»).
 
 **Cómo medirlo.** Las etiquetas de `datasets/vallobin/campo` son los puntos coherentes **del propio YOLO**, así que
 contra ellas el YOLO se mide a sí mismo: 76 % calibrables, 5,4 puntos a menos de 15 px y 13 px de error frente al 64-68
@@ -1217,8 +1273,5 @@ detector de eventos es ahora una clase con un paso por instante (`eventos._Detec
   de los jugadores (uno en el suelo) para confirmar las paradas por frenazo.
 - Dorsales: un piso para el peso de cada lectura, reajustando con él los umbrales de la identificación (sin reajustar
   sube la cobertura pero mete errores; ver «Las lecturas del portero cuyo tracklet saltó»).
-- El campo otra vez con TensorRT (unos 10 ms por fotograma analizado): hace falta un motor que pase la sonda y vaya más
-  rápido que PyTorch FP16. En FP32 la pasa, pero tarda 25,7 ms; queda probar FP16 con solo algunas capas en FP32 o una
-  versión nueva de TensorRT (ver «Dos pasadas, el mismo resultado»).
 - Lanzar el análisis desde el propio visor, con los mismos argumentos que la app (`UvVideoAnalyzer.Arguments`); verlo
   mientras se hace ya se puede (ver «El visor del Ojeador»).

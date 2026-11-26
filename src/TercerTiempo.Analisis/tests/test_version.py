@@ -27,10 +27,10 @@ def test_cada_modelo_dice_su_arquitectura_entrenamiento_motor_y_huella(tmp_path:
     rfdetr = tmp_path / "rfdetr"
     rfdetr.mkdir()
     detectores = {}
-    for que, extension, motor in (("jugadores", "trt", "tensorrt"), ("balon", "trt", "tensorrt"), ("campo", "pth", "pytorch")):
-        pesos = rfdetr / f"{que}.{extension}"
+    for que in ("jugadores", "balon", "campo"):
+        pesos = rfdetr / f"{que}.pth"
         pesos.write_bytes(que.encode())
-        detectores[que] = SimpleNamespace(ruta=pesos, motor=motor)
+        detectores[que] = SimpleNamespace(ruta=pesos, motor="pytorch")
         datos = {"checkpoint": f"entrenamientos\\rfdetr-{que}-20261117\\checkpoint_best_total.pth"}
         if que == "campo":
             datos["variante"] = "puntos"
@@ -43,9 +43,8 @@ def test_cada_modelo_dice_su_arquitectura_entrenamiento_motor_y_huella(tmp_path:
     descritos = describir_modelos(modelos, tmp_path, SimpleNamespace(ruta=afinado))
 
     assert [d["que"] for d in descritos] == ["jugadores", "balon", "campo", "dorsales"]
-    assert descritos[0] == {"que": "jugadores", "modelo": "RF-DETR Medium", "entrenamiento": "rfdetr-jugadores-20261117", "motor": "TensorRT", "huella": huella(detectores["jugadores"].ruta)}
+    assert descritos[0] == {"que": "jugadores", "modelo": "RF-DETR Medium", "entrenamiento": "rfdetr-jugadores-20261117", "motor": "PyTorch", "huella": huella(detectores["jugadores"].ruta)}
     assert descritos[2]["modelo"] == "RF-DETR Keypoint"
-    assert descritos[2]["motor"] == "PyTorch"
     assert descritos[3] == {"que": "dorsales", "modelo": "PARSeq", "entrenamiento": "afinado con nuestros partidos", "motor": "PyTorch", "huella": huella(afinado)}
     assert len(descritos[3]["huella"]) == 8
 

@@ -1,5 +1,5 @@
-"""El detector del balón con RF-DETR (Apache 2.0): entrenamiento sobre teselas, exportación a TensorRT y búsqueda en
-el fotograma por teselas (`rfdetr_comun.py` tiene lo que comparte con el de los jugadores)."""
+"""El detector del balón con RF-DETR (Apache 2.0): entrenamiento sobre teselas y búsqueda en el fotograma por teselas
+(`rfdetr_comun.py` tiene lo que comparte con el de los jugadores)."""
 
 from __future__ import annotations
 
@@ -14,24 +14,12 @@ from .teselas import LADO, a_fotograma, recortar, rejilla
 
 QUE = "balon"
 RESOLUCION = 576
-LOTE_MAX_TRT = 32
-
-
-def ruta_pesos(modelos: Path) -> Path:
-    return rfdetr_comun.ruta_pesos(modelos, QUE)
-
-
-def ruta_motor(modelos: Path) -> Path:
-    return rfdetr_comun.ruta_motor(modelos, QUE)
+# Teselas por lote a la GPU en `detectar_zonas` (las de un fotograma de 1080p son 24).
+LOTE_TESELAS = 32
 
 
 def entrenar(dataset: Path, modelos: Path, salida: Path, epocas: int = 40, lote: int = 8, acumular: int = 2, lr: float = 1e-4, paciencia: int = 8, device: str = "cuda", informar=print) -> Path:
     return rfdetr_comun.entrenar(QUE, dataset, modelos, salida, RESOLUCION, ["ball"], epocas, lote, acumular, lr, paciencia, device, {"tesela": LADO}, informar)
-
-
-def exportar_tensorrt(modelos: Path, lote: int = 24, lote_max: int = LOTE_MAX_TRT, informar=print) -> Path:
-    """Lote dinámico afinado para 24: las teselas de un fotograma de 1080p."""
-    return rfdetr_comun.exportar_tensorrt(QUE, modelos, RESOLUCION, lote, lote_max, informar)
 
 
 @dataclass
@@ -41,12 +29,12 @@ class DetectorBalon:
     prediccion: object
     device: str
     ruta: Path
-    motor: str
+    motor: str = rfdetr_comun.MOTOR
 
     @classmethod
-    def cargar(cls, modelos: Path, device: str = "cuda", preferir_trt: bool = True) -> "DetectorBalon":
-        prediccion, ruta, motor = rfdetr_comun.cargar(QUE, modelos, device, preferir_trt)
-        return cls(prediccion, device, ruta, motor)
+    def cargar(cls, modelos: Path, device: str = "cuda") -> "DetectorBalon":
+        prediccion, ruta = rfdetr_comun.cargar(QUE, modelos, device)
+        return cls(prediccion, device, ruta)
 
     def _teselas(self, imagen_bgr: np.ndarray, origenes: list[tuple[int, int]]):
         import torch
@@ -90,13 +78,13 @@ class DetectorBalon:
                     trozos.append(recortar(imagen, x, y))
                     de_quien.append((k, (x, y)))
         salida: list[tuple[list, list, list]] = [([], [], []) for _ in imagenes_bgr]
-        for inicio in range(0, len(trozos), LOTE_MAX_TRT):
-            lote = torch.from_numpy(np.ascontiguousarray(np.stack(trozos[inicio : inicio + LOTE_MAX_TRT]))).to(self.device, non_blocking=True)
+        for inicio in range(0, len(trozos), LOTE_TESELAS):
+            lote = torch.from_numpy(np.ascontiguousarray(np.stack(trozos[inicio : inicio + LOTE_TESELAS]))).to(self.device, non_blocking=True)
             lote = lote.flip(-1).permute(0, 3, 1, 2).float().div_(255.0)
             resultados = self.prediccion.predict(lote, threshold=conf, include_source_image=False)
             if not isinstance(resultados, list):
                 resultados = [resultados]
-            for r, (k, origen) in zip(resultados, de_quien[inicio : inicio + LOTE_MAX_TRT]):
+            for r, (k, origen) in zip(resultados, de_quien[inicio : inicio + LOTE_TESELAS]):
                 cajas, puntuaciones, origenes = salida[k]
                 cajas.append(r.xyxy)
                 puntuaciones.append(r.confidence if r.confidence is not None else np.ones(len(r.xyxy)))

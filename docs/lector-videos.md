@@ -156,8 +156,11 @@ que tira de la cola, o se alquila GPU por horas en la nube solo mientras analiza
 
 **Licencias**: Ultralytics (YOLO) es AGPL-3.0: en un servicio cerrado hay que pagar su licencia comercial o usar
 detectores Apache 2.0 (RF-DETR, RT-DETR, YOLOX). El resto (supervision, ByteTrack, SoccerNet, WASB) es MIT o
-Apache. **Decidido el 17-11-2026: RF-DETR** (con TensorRT en la GPU que analice). El balón ya es RF-DETR; quedan
-jugadores, el seguidor (ByteTrack de supervision) y los puntos del campo (RF-DETR Keypoint).
+Apache. **Decidido el 17-11-2026: RF-DETR**, y hecho el 18-11-2026: balón y jugadores con RF-DETR Medium, los puntos
+del campo con RF-DETR Keypoint y el seguidor el BoT-SORT/ByteTrack de `trackers` (Roboflow, Apache 2.0). **26-11-2026:
+sin TensorRT**, todo con PyTorch: TensorRT es gratis, pero su licencia no deja ofrecerlo como servicio por internet sin
+permiso de NVIDIA. Nada de pago ni que impida venderlo u ofrecerlo como servicio; el detalle (también CUDA y cuDNN, y
+las dos librerías MPL-2.0), en «Licencias» del README del analizador.
 
 ### C. Híbrido (recomendado): B para los números, un LLM para lo que hay que «entender»
 
