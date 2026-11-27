@@ -1145,10 +1145,29 @@ Lo que cambia (`tuberia.py`, `analizador.py`):
   y campo, con una imagen; el del balón, con las teselas del fotograma (24 en 1080p). Los vecinos del balón van sin
   grafo, porque cada vez llevan un número distinto de teselas. La opción que trae RF-DETR (`inference(compile=True)`)
   traza y congela el modelo, y eso sí cambia los números (en una prueba, ninguno de 12 fotogramas igual); grabarlo tal
-  cual da lo mismo: 40 de 40 fotogramas idénticos en los tres detectores. Si un detector no se deja grabar, sigue sin
-  grafo, con el mismo resultado. Ojo si lo que falla es la grabación misma: RF-DETR avisa de que el proceso puede quedar
-  tocado para la GPU, y entonces el análisis puede caer más adelante y hay que repetirlo con `--sin-grafos`. Pendiente:
-  que se repita solo en un proceso limpio.
+  cual da lo mismo: 40 de 40 fotogramas idénticos en los tres detectores. Si un detector no se deja preparar para
+  grabarlo, sigue sin grafo, con el mismo resultado.
+- **Si falla la grabación misma** (`repetir.py`, desde el 27-11-2026), el análisis se repite solo en un proceso limpio,
+  sin grafos. RF-DETR avisa de que una grabación fallida puede dejar inservible para el resto del proceso el estado de
+  los números aleatorios de CUDA, así que no se sigue en él. El proceso que falló se queda de puente:
+  1. Da el hito «Aviso: falló la grabación del grafo CUDA del balón…» y suelta lo que puede de la GPU.
+  2. Lanza el mismo análisis con `--sin-grafos`.
+  3. Le pasa la pausa y la reanudación que le lleguen por la entrada estándar (también la pausa pedida antes del fallo).
+  4. Lo deja escribir en su misma salida y termina con su mismo código.
+
+  Para quien lo lanzó es el mismo proceso. El servicio de vídeo no cambia, y al cancelar mata el árbol entero: el nuevo
+  cae con él. En el visor, el análisis sigue en marcha mientras tanto. `analisis.json` lo cuenta en
+  `rendimiento.sin_grafos_por` (qué detector y qué dijo CUDA), y el proceso nuevo da el hito «Repetición sin grafos
+  CUDA…».
+
+  Probado el 27-11 con un fallo de verdad: el grafo del balón pide un número a la GPU mientras se graba (el lanzador de
+  prueba `fallo_forzado.py`), y CUDA invalida la grabación (`cudaErrorStreamCaptureInvalidated`). Fue en el J8
+  20:00–21:00 con los argumentos de la app:
+  - Iguales a los de la pasada con grafos 186 de 187 archivos; el otro es `resumen.md`, que lleva el tiempo de cálculo.
+  - La pausa y la reanudación llegan al proceso nuevo.
+  - Al matar el árbol del puente no queda ningún proceso del analizador.
+  - El fallo cuesta unos 8 s (lo que tarda en cargar y fallar el primer intento) más la pasada sin grafos: 158 ms por
+    fotograma en vez de 142 en ese tramo.
 
 **El resultado es el mismo.** Todo se compara byte a byte (lo comprimido, descomprimido) salvo `analisis.json`, al que
 se le quitan los tiempos y el bloque nuevo `rendimiento` y se le iguala el número de versión. En el J8 (20:00-21:30),

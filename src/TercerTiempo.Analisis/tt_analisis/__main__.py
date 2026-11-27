@@ -48,7 +48,7 @@ def construir_parser() -> argparse.ArgumentParser:
     a.add_argument("--guardar-dorsales", type=Path, default=None, help="Carpeta donde dejar las zonas del dorsal y sus etiquetas (los jugadores identificados) para `entrenar-dorsales`.")
     a.add_argument("--sin-repeticion", action="store_true", help="No escribir repeticion/ (lo que se vio en cada fotograma, para `visor`).")
     a.add_argument("--sin-solapar", action="store_true", help="Sin leer el vídeo ni usar la GPU por adelantado: cada paso espera al anterior (mismo resultado, más lento; para medir).")
-    a.add_argument("--sin-grafos", action="store_true", help="Sin grafos CUDA: cada detector lanza su paso operación a operación (mismo resultado, más lento; para medir).")
+    a.add_argument("--sin-grafos", action="store_true", help="Sin grafos CUDA: cada detector lanza su paso operación a operación (mismo resultado, más lento; para medir). Si falla la grabación de un grafo, el análisis se repite solo así, en un proceso limpio.")
     a.add_argument("--guardar-pasada", action="store_true", help="Guarda al acabar la pasada lo que entra en la capa de jugadas (pasada.pkl.gz), para repetirla sin la GPU con `rehacer-jugadas`.")
 
     rj = sub.add_parser(
@@ -400,13 +400,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     from .analizador import analizar
     from .modelos import SinGpu
+    from .repetir import CapturaFallida, repetir_sin_grafos
 
     try:
         analizar(config)
     except SinGpu as sin_gpu:
         print(sin_gpu, file=sys.stderr)
         return CODIGO_SIN_GPU
-    return 0
+    except CapturaFallida as fallo:
+        motivo, ordenes = fallo.motivo, fallo.ordenes
+    else:
+        return 0
+    # Este proceso puede haber quedado tocado para la GPU: el análisis se repite en uno limpio (`repetir`). Fuera del
+    # `except`, para que el error ya no retenga lo que tenía en la GPU.
+    return repetir_sin_grafos(sys.argv[1:] if argv is None else list(argv), motivo, ordenes)
 
 
 if __name__ == "__main__":

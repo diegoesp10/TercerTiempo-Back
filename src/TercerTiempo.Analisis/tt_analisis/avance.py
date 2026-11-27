@@ -8,7 +8,8 @@ salida estándar:
 
 Y lee órdenes por la entrada estándar: «##pausa» para el análisis en el siguiente punto de control (entre fotogramas)
 sin perder nada de lo hecho, y «##sigue» lo reanuda. En pausa sigue escribiendo su estado cada pocos segundos para que
-quien lo vigila sepa que no se ha colgado."""
+quien lo vigila sepa que no se ha colgado. Si el análisis se repite en otro proceso porque falló la grabación de un grafo
+CUDA (`repetir`), las órdenes que lleguen se le pasan a él."""
 
 from __future__ import annotations
 
@@ -56,7 +57,11 @@ class Avance:
         self.etapa_actual: str | None = None
         self._pausa = threading.Event()
         self.pausa_total_s = 0.0
-        if activo and entrada is not None:
+        # Si el análisis se repite en otro proceso (`repetir`), las órdenes van a su entrada: un solo hilo lee la de este.
+        self._reenvio = None
+        self._cerrojo_ordenes = threading.Lock()
+        self.escucha = activo and entrada is not None
+        if self.escucha:
             threading.Thread(target=self._escuchar, args=(entrada,), daemon=True, name="ordenes-del-analisis").start()
 
     # --- porcentaje -------------------------------------------------------------------------------------------------
@@ -142,15 +147,40 @@ class Avance:
         self.estado(forzar=True)
         return fin - inicio
 
+    def reenviar(self, destino) -> None:
+        """Desde ya, las órdenes que lleguen van a `destino` (la entrada del proceso que repite el análisis, ver
+        `repetir`), empezando por la pausa si estaba en pausa. Si se cierra la entrada de este, se cierra `destino`."""
+        with self._cerrojo_ordenes:
+            self._reenvio = destino
+            if self.pausado:
+                self._pasar(ORDEN_PAUSA)
+
+    def _pasar(self, orden: str) -> None:
+        try:
+            self._reenvio.write(orden + "\n")
+            self._reenvio.flush()
+        except (OSError, ValueError):
+            pass  # El otro proceso ya terminó.
+
     def _escuchar(self, entrada: Iterable[str]) -> None:
         try:
             for linea in entrada:
                 orden = linea.strip()
-                if orden == ORDEN_PAUSA:
-                    self.pausar()
-                elif orden == ORDEN_SIGUE:
-                    self.seguir()
+                with self._cerrojo_ordenes:
+                    if self._reenvio is not None:
+                        if orden:
+                            self._pasar(orden)
+                    elif orden == ORDEN_PAUSA:
+                        self.pausar()
+                    elif orden == ORDEN_SIGUE:
+                        self.seguir()
         except (OSError, ValueError):
             pass
-        # Sin quien mande (se cerró la entrada), nunca se queda en pausa para siempre.
+        # Sin quien mande (se cerró la entrada), nunca se queda en pausa para siempre; el proceso que repite, tampoco.
+        with self._cerrojo_ordenes:
+            if self._reenvio is not None:
+                try:
+                    self._reenvio.close()
+                except (OSError, ValueError):
+                    pass
         self.seguir()

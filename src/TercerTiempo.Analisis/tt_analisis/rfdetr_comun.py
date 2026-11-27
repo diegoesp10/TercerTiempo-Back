@@ -12,6 +12,8 @@ import shutil
 import time
 from pathlib import Path
 
+from .repetir import CapturaFallida, describir
+
 CARPETA = "rfdetr"
 MOTOR = "pytorch"
 # "medium": detector de cajas (balón y jugadores); "puntos": el modelo de puntos clave (campo), que lee el número de
@@ -141,7 +143,10 @@ class _Grabado:
 def grabar(prediccion, lote: int, device: str) -> None:
     """Graba en un grafo CUDA el paso del detector para lotes de `lote` imágenes: luego se reproduce con los mismos
     kernels (los mismos números que sin grafo) sin lanzarlos uno a uno desde Python, que en un modelo con poco cálculo
-    por imagen es casi todo lo que tarda. Sin trazar ni congelar el modelo, que sí cambiaría los números."""
+    por imagen es casi todo lo que tarda. Sin trazar ni congelar el modelo, que sí cambiaría los números.
+
+    Si la grabación falla (`CapturaFallida`), el proceso puede haber quedado tocado para la GPU: el análisis se repite en
+    otro proceso, sin grafos (`repetir`)."""
     import torch
     from rfdetr.detr import _CUDAGraphInferenceModel
 
@@ -154,7 +159,13 @@ def grabar(prediccion, lote: int, device: str) -> None:
         if hasattr(modulo, "enable_cuda_graph_capture"):
             modulo.enable_cuda_graph_capture()
     muestra = torch.zeros(forma, dtype=nativo._optimized_dtype, device=device)
-    nativo.model.inference_model = _Grabado(modelo, _CUDAGraphInferenceModel(modelo, muestra, torch.device(device)), forma)
+    try:
+        grafo = _CUDAGraphInferenceModel(modelo, muestra, torch.device(device))
+    except Exception as error:
+        # Lo que falle aquí (el calentamiento o la grabación) cuenta como grabación fallida: RF-DETR avisa de que puede
+        # dejar inservible el estado de los números aleatorios de CUDA para el resto del proceso.
+        raise CapturaFallida(describir(error)) from error
+    nativo.model.inference_model = _Grabado(modelo, grafo, forma)
 
 
 def cargar(que: str, modelos: Path, device: str = "cuda") -> tuple[object, Path]:

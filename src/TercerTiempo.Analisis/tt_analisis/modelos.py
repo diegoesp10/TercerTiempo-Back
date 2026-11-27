@@ -65,14 +65,20 @@ class Modelos:
     def grabar(self, ancho: int, alto: int) -> tuple[list[str], str | None]:
         """Graba en grafos CUDA (`rfdetr_comun.grabar`) el paso de los detectores con las entradas de este vídeo: una
         imagen para jugadores y campo, y todas las teselas del fotograma para el balón (los vecinos del balón, con lotes de
-        cualquier tamaño, van sin grafo). Devuelve los que se grabaron y, si alguno no pudo, por qué; ese sigue sin grafo."""
+        cualquier tamaño, van sin grafo). Devuelve los que se grabaron y, si alguno no pudo antes de grabar, por qué; ese
+        sigue sin grafo. Si lo que falla es la grabación misma, el proceso puede haber quedado tocado: `CapturaFallida`
+        sigue hacia arriba, con el detector, y el análisis se repite en otro proceso (`repetir`)."""
         from . import rfdetr_comun
+        from .repetir import CapturaFallida
         from .teselas import rejilla
 
         grabados: list[str] = []
         for que, lote in (("jugadores", 1), ("balon", len(rejilla(ancho, alto))), ("campo", 1)):
             try:
                 rfdetr_comun.grabar(getattr(self, que).prediccion, lote, self.device)
+            except CapturaFallida as error:
+                error.detector = que
+                raise
             except Exception as error:
                 return grabados, f"{que}: {error}"
             grabados.append(que)

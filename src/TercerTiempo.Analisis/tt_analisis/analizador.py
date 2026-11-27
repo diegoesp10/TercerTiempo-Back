@@ -40,6 +40,7 @@ from .rehacer import EstadoPasada
 from .rehacer import guardar as guardar_pasada
 from .rehacer import leer as leer_pasada
 from .repeticion import Directo, escribir_repeticion
+from .repetir import CapturaFallida, motivo_de_la_repeticion
 from .seguimiento import MemoriaTracklet, Seguidor
 from .tipos import Instante, Persona, formato_minuto
 from .tuberia import Cronometro, TrabajadorGPU, adelantar, cerrar, en_segundo_plano, medir
@@ -83,6 +84,9 @@ def analizar(config: Configuracion, informar=print) -> dict:
     directo = Directo(config.salida, activo=config.repeticion)
     try:
         return _analizar(config, informar, directo)
+    except CapturaFallida:
+        # Lo repite otro proceso (`repetir`), que empieza lo suyo en esta misma carpeta: para el visor sigue en marcha.
+        raise
     except BaseException as error:
         directo.fallo(error)
         raise
@@ -118,10 +122,19 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
     modelos = cargar_modelos(config.modelos, config.device)
     decir(f"Detectores: {', '.join(f'{n} ({r})' for n, r in modelos.rutas.items())}.")
     grabados: list[str] = []
+    sin_grafos_por = motivo_de_la_repeticion()
     if config.grafos and modelos.device.startswith("cuda"):
-        grabados, fallo = modelos.grabar(info.ancho, info.alto)
+        try:
+            grabados, fallo = modelos.grabar(info.ancho, info.alto)
+        except CapturaFallida as error:
+            # Este proceso puede haber quedado tocado: el análisis se repite en otro, que recibe las órdenes de este.
+            decir(error.aviso)
+            error.ordenes = progreso
+            raise
         if fallo:
             decir(f"Aviso: sin grafo CUDA para {fallo}. Va paso a paso: mismo resultado, más lento.")
+    elif sin_grafos_por:
+        decir("Repetición sin grafos CUDA, porque falló su grabación en el primer intento: el mismo resultado, más lento.")
     lector = cargar_lector(config.modelos, modelos.device, afinados=config.afinados) if config.dorsales else None
     if lector is not None:
         decir(f"Lector de dorsales: {lector.nombre}.")
@@ -418,7 +431,10 @@ def _analizar(config: Configuracion, informar, directo: Directo) -> dict:
             "device": modelos.device, "seguidor": detector.rastreador.nombre, "motor_jugadores": modelos.jugadores.motor,
             "motor_balon": modelos.balon.motor, "motor_campo": modelos.campo.motor, "modelos": modelos.rutas,
         },
-        rendimiento={**crono.resumen(n, pasada_activa_s, config.solapar), "grafos": grabados},
+        rendimiento={
+            **crono.resumen(n, pasada_activa_s, config.solapar), "grafos": grabados,
+            **({"sin_grafos_por": sin_grafos_por} if sin_grafos_por else {}),
+        },
         tiempos=tiempos, anotado=renderizador is not None, antes_s=time.time() - inicio_total,
     )
     if config.guardar_pasada or os.environ.get("TT_GUARDAR_PASADA"):
